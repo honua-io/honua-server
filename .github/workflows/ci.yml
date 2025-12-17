@@ -27,16 +27,13 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore
-        working-directory: src
+        run: dotnet restore Honua.sln
 
       - name: Build (warnings as errors)
-        run: dotnet build --no-restore --configuration Release /p:TreatWarningsAsErrors=true
-        working-directory: src
+        run: dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
 
       - name: Format Check
-        run: dotnet format --verify-no-changes --verbosity diagnostic
-        working-directory: src
+        run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
 
   test-unit:
     name: Unit Tests
@@ -51,19 +48,17 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore
-        working-directory: src
+        run: dotnet restore Honua.sln
 
       - name: Run Unit Tests
         run: |
-          dotnet test \
+          dotnet test Honua.sln \
             --no-restore \
             --configuration Release \
             --filter "Category!=Integration" \
             --logger "trx;LogFileName=unit-results.trx" \
             --collect:"XPlat Code Coverage" \
-            --results-directory ./TestResults
-        working-directory: tests
+            --results-directory ./tests/TestResults
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
@@ -90,19 +85,17 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore
-        working-directory: src
+        run: dotnet restore Honua.sln
 
       - name: Run Integration Tests
         run: |
-          dotnet test \
+          dotnet test Honua.sln \
             --no-restore \
             --configuration Release \
             --filter "Category=Integration" \
             --logger "trx;LogFileName=integration-results.trx" \
             --collect:"XPlat Code Coverage" \
-            --results-directory ./TestResults
-        working-directory: tests
+            --results-directory ./tests/TestResults
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
 
@@ -158,10 +151,16 @@ jobs:
           # Extract line coverage percentage from summary
           COVERAGE=$(grep -oP 'Line coverage: \K[\d.]+' ./coverage/report/Summary.txt || echo "0")
           echo "Line coverage: ${COVERAGE}%"
+          BRANCH_COVERAGE=$(grep -oP 'Branch coverage: \K[\d.]+' ./coverage/report/Summary.txt || echo "0")
+          echo "Branch coverage: ${BRANCH_COVERAGE}%"
 
           # Fail if below 80%
           if (( $(echo "$COVERAGE < 80" | bc -l) )); then
             echo "::error::Coverage ${COVERAGE}% is below 80% threshold"
+            exit 1
+          fi
+          if (( $(echo "$BRANCH_COVERAGE < 70" | bc -l) )); then
+            echo "::error::Branch coverage ${BRANCH_COVERAGE}% is below 70% threshold"
             exit 1
           fi
 
@@ -178,8 +177,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore
-        working-directory: src
+        run: dotnet restore Honua.sln
 
       - name: Publish AOT
         run: |

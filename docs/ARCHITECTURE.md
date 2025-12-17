@@ -6222,7 +6222,7 @@ Keep `appsettings.json` for defaults and structure only. All secrets via environ
 
 ## Native AOT
 
-.NET 9 Native AOT for faster startup and lower memory. Minimal APIs are AOT-friendly by design.
+.NET 10 Native AOT for faster startup and lower memory. Minimal APIs are AOT-friendly by design.
 
 ### Project Configuration
 
@@ -6230,7 +6230,7 @@ Keep `appsettings.json` for defaults and structure only. All secrets via environ
 <!-- Honua.Server.csproj -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>

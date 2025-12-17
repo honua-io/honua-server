@@ -1,12 +1,14 @@
 # GitHub Issue Updates
 
-This document contains new issues to create and updates to existing issues to improve architecture/design guidance.
+This document contains new issues (already created) and updates to existing issues to improve architecture/design guidance.
 
 ---
 
-## New Issues to Create
+## New Issues (Created)
 
-### Issue: Admin UI wireframes and UX design
+### Issue #59: Admin UI wireframes and UX design
+
+Status: Created (GitHub #59).
 
 **Labels:** `enhancement`, `design`, `phase-4`
 
@@ -70,7 +72,9 @@ Phase 4 (Admin UI) - but should be completed **before** Phase 4 coding begins
 
 ---
 
-### Issue: Admin UI Playwright integration tests
+### Issue #60: Admin UI Playwright integration tests
+
+Status: Created (GitHub #60).
 
 **Labels:** `enhancement`, `testing`, `phase-4`
 
@@ -444,8 +448,8 @@ Per ARCHITECTURE.md, we implement minimal OData without the heavy Microsoft libr
 
 | Type | Item | Status |
 |------|------|--------|
-| **New Issue** | Admin UI wireframes and UX design | Create |
-| **New Issue** | Admin UI Playwright integration tests | Create |
+| **New Issue** | Admin UI wireframes and UX design | Created |
+| **New Issue** | Admin UI Playwright integration tests | Created |
 | **Update** | #1 Database schema v1 | Add DDL, indexes |
 | **Update** | #3 IFeatureStore abstraction | Add interface, UoW relationship |
 | **Update** | #19 MVT tiles | Add safeguard thresholds |
