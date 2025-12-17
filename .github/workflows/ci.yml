@@ -1,0 +1,200 @@
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+    branches: [trunk]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  build:
+    name: Build & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+        working-directory: src
+
+      - name: Build (warnings as errors)
+        run: dotnet build --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+        working-directory: src
+
+      - name: Format Check
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+        working-directory: src
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+        working-directory: src
+
+      - name: Run Unit Tests
+        run: |
+          dotnet test \
+            --no-restore \
+            --configuration Release \
+            --filter "Category!=Integration" \
+            --logger "trx;LogFileName=unit-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
+        working-directory: tests
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: tests/TestResults/
+
+  test-integration:
+    name: Integration Tests (Testcontainers + PostGIS)
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      # Testcontainers will manage containers, but we need Docker available
+      docker:
+        image: docker:dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+        working-directory: src
+
+      - name: Run Integration Tests
+        run: |
+          dotnet test \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=Integration" \
+            --logger "trx;LogFileName=integration-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
+        working-directory: tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: false
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: tests/TestResults/
+
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [test-unit, test-integration]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Unit Test Results
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-results
+          path: ./coverage/unit
+
+      - name: Download Integration Test Results
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-test-results
+          path: ./coverage/integration
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Generate Coverage Report
+        run: |
+          reportgenerator \
+            -reports:"./coverage/**/coverage.cobertura.xml" \
+            -targetdir:"./coverage/report" \
+            -reporttypes:"Html;Cobertura;TextSummary"
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ./coverage/report/
+
+      - name: Check Coverage Threshold
+        run: |
+          # Extract line coverage percentage from summary
+          COVERAGE=$(grep -oP 'Line coverage: \K[\d.]+' ./coverage/report/Summary.txt || echo "0")
+          echo "Line coverage: ${COVERAGE}%"
+
+          # Fail if below 80%
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below 80% threshold"
+            exit 1
+          fi
+
+  aot-build:
+    name: AOT Build Verification
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+        working-directory: src
+
+      - name: Publish AOT
+        run: |
+          dotnet publish \
+            --configuration Release \
+            -p:PublishAot=true \
+            -p:StripSymbols=true \
+            -o ./publish
+        working-directory: src/Honua.Server
+
+      - name: Verify Binary Size
+        run: |
+          SIZE=$(stat --printf="%s" ./publish/Honua.Server 2>/dev/null || echo "0")
+          SIZE_MB=$((SIZE / 1024 / 1024))
+          echo "Binary size: ${SIZE_MB}MB"
+
+          # Warn if over 100MB (target from MVP_PLAN)
+          if [ "$SIZE_MB" -gt 100 ]; then
+            echo "::warning::AOT binary ${SIZE_MB}MB exceeds 100MB target"
+          fi
+        working-directory: src/Honua.Server
