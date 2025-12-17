@@ -56,16 +56,107 @@ Each protocol requires tests for all implemented operations:
 | **MVT** | GetTile, TileJSON | `Tiles/*Tests.cs` |
 | **Admin** | CreateLayer, UpdateLayer, DeleteLayer, ListLayers, GetLayer | `Admin/*Tests.cs` |
 
-### 3. Coverage Levels
+### 3. Parameter and Filter Combination Coverage
+
+Beyond endpoint coverage, each endpoint must have tests for:
+
+#### Query Parameters (per endpoint)
+
+| Parameter Category | Required Test Coverage |
+|--------------------|----------------------|
+| **Spatial Filters** | bbox, geometry, spatialRel (intersects, contains, within, overlaps, crosses, touches) |
+| **Attribute Filters** | where/filter with all operators (=, <>, <, >, <=, >=, LIKE, IN, BETWEEN, IS NULL) |
+| **Logical Operators** | AND, OR, NOT, nested parentheses |
+| **Output Control** | outFields/properties, returnGeometry, outSR/crs |
+| **Pagination** | resultOffset/offset, resultRecordCount/limit, exceeds max |
+| **Sorting** | orderByFields/$orderby (ASC, DESC, multiple fields) |
+| **Geometry Options** | returnCentroid, returnExtentOnly, geometryPrecision |
+| **Response Format** | f=json, f=geojson, f=pbf (where applicable) |
+
+#### Filter Operator Matrix
+
+Each filter implementation must have tests for:
+
+```
+Comparison:     =, <>, <, >, <=, >=
+String:         LIKE, ILIKE (with %, _), STARTS_WITH, ENDS_WITH, CONTAINS
+Null:           IS NULL, IS NOT NULL
+Range:          BETWEEN, NOT BETWEEN
+Set:            IN, NOT IN (strings, numbers, mixed)
+Logical:        AND, OR, NOT
+Grouping:       Nested parentheses ((a AND b) OR (c AND d))
+Spatial:        ST_Intersects, ST_Contains, ST_Within, ST_DWithin
+Temporal:       Date comparisons, DURING (OGC)
+```
+
+#### Test Matrix Example (Query Endpoint)
+
+```csharp
+[Protocol(Protocols.FeatureServer)]
+[Operation(Operations.Query)]
+public class QueryParameterTests
+{
+    // Spatial filter tests
+    [Theory]
+    [InlineData("intersects")]
+    [InlineData("contains")]
+    [InlineData("within")]
+    [InlineData("crosses")]
+    [InlineData("overlaps")]
+    [InlineData("touches")]
+    public async Task Query_SpatialRel_FiltersCorrectly(string spatialRel) { }
+
+    // Attribute filter operator tests
+    [Theory]
+    [InlineData("population = 1000")]
+    [InlineData("population <> 1000")]
+    [InlineData("population > 1000")]
+    [InlineData("population >= 1000")]
+    [InlineData("population < 1000")]
+    [InlineData("population <= 1000")]
+    [InlineData("name LIKE 'San%'")]
+    [InlineData("name IN ('A', 'B', 'C')")]
+    [InlineData("population BETWEEN 100 AND 1000")]
+    [InlineData("description IS NULL")]
+    [InlineData("description IS NOT NULL")]
+    public async Task Query_WhereOperator_FiltersCorrectly(string where) { }
+
+    // Logical combination tests
+    [Theory]
+    [InlineData("a = 1 AND b = 2")]
+    [InlineData("a = 1 OR b = 2")]
+    [InlineData("NOT a = 1")]
+    [InlineData("(a = 1 AND b = 2) OR c = 3")]
+    [InlineData("a = 1 AND (b = 2 OR c = 3)")]
+    public async Task Query_LogicalOperators_CombineCorrectly(string where) { }
+
+    // Pagination boundary tests
+    [Fact] public async Task Query_OffsetZero_ReturnsFromStart() { }
+    [Fact] public async Task Query_OffsetBeyondResults_ReturnsEmpty() { }
+    [Fact] public async Task Query_LimitExceedsMax_CapsAtMaxRecordCount() { }
+    [Fact] public async Task Query_OffsetPlusLimit_PaginatesCorrectly() { }
+
+    // Output format tests
+    [Theory]
+    [InlineData("json")]
+    [InlineData("geojson")]
+    [InlineData("pbf")]
+    public async Task Query_OutputFormat_ReturnsCorrectContentType(string format) { }
+}
+```
+
+### 4. Coverage Levels
 
 | Level | Target | Enforcement |
 |-------|--------|-------------|
 | **API Surface** | 100% | Architecture test (hard fail) |
+| **Parameter Coverage** | All documented params | Code review checklist |
+| **Filter Operators** | All supported operators | Theory tests required |
 | **Line Coverage** | 80% | CI gate (hard fail) |
 | **Branch Coverage** | 70% | CI gate (hard fail) |
 | **Conformance** | Per spec | Nightly CI (report) |
 
-### 4. Test Categories and Attributes
+### 6. Test Categories and Attributes
 
 ```csharp
 // Required attributes for API tests
@@ -82,7 +173,7 @@ public class QueryEndpointTests
 
 The `[Endpoint]` attribute explicitly ties tests to route patterns, enabling the architecture test to verify coverage.
 
-### 5. Conformance Test Requirements
+### 7. Conformance Test Requirements
 
 External specification conformance tests are separate from functional tests:
 
@@ -102,7 +193,7 @@ public class OgcConformanceTests
 }
 ```
 
-### 6. Endpoint Registry for Validation
+### 8. Endpoint Registry for Validation
 
 Endpoints must be registered in a discoverable way:
 
@@ -148,7 +239,7 @@ public static class EndpointRegistry
 }
 ```
 
-### 7. CI Integration
+### 9. CI Integration
 
 ```yaml
 # .github/workflows/ci.yml
