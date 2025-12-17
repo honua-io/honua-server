@@ -31,6 +31,7 @@ When porting behavior, document the source:
 
 - **Warnings as errors**: All builds must pass with `TreatWarningsAsErrors=true`
 - **Coverage gates**: 80%+ line coverage, 70%+ branch coverage
+- **API surface coverage**: 100% - every endpoint must have integration tests
 - **AOT compatibility**: No reflection in hot paths, source-generated JSON/logging
 - **Dependency limits**: Max 5 dependencies per endpoint, max 4 per handler
 
@@ -40,6 +41,36 @@ When porting behavior, document the source:
 2. Implement minimum code to pass
 3. Refactor with confidence
 4. Verify phase coverage checkpoint met
+
+### Testing Requirements (ADR-0011)
+
+**API Surface Coverage**: Every implemented endpoint requires at least one integration test. This is enforced by architecture tests.
+
+**Test Attributes**: Use protocol and operation attributes for discoverability:
+```csharp
+[Collection("Database")]
+[Protocol(Protocols.FeatureServer)]
+public class QueryEndpointTests
+{
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithWhereClause_ReturnsFilteredFeatures() { }
+}
+```
+
+**Coverage Levels**:
+| Level | Target | Enforcement |
+|-------|--------|-------------|
+| API Surface | 100% | Architecture test (hard fail) |
+| Line Coverage | 80% | CI gate (hard fail) |
+| Branch Coverage | 70% | CI gate (hard fail) |
+
+**Test Naming**: `MethodUnderTest_Scenario_ExpectedBehavior`
+```csharp
+Query_WithWhereClause_ReturnsFilteredFeatures()
+Query_InvalidSyntax_Returns400WithErrorDetails()
+```
 
 ### Architecture
 
