@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Instruction Sync (Claude/Codex)
+        run: bash scripts/check-instructions-sync.sh
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
