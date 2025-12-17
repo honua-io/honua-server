@@ -84,7 +84,7 @@ Honua/
 │   │   ├── OData/                 # OData v4 tests
 │   │   ├── Tiles/                 # MVT tile tests
 │   │   ├── Admin/                 # Admin API tests
-│   │   ├── Performance/           # Memory leak & soak tests
+│   │   ├── Performance/           # Soak and concurrency tests
 │   │   └── Conformance/           # Protocol conformance tests
 │   │
 │   └── Honua.Architecture.Tests/  # Architecture enforcement
@@ -95,6 +95,7 @@ Honua/
 │       ├── QueryBenchmarks.cs     # Query endpoint benchmarks
 │       ├── EditBenchmarks.cs      # ApplyEdits benchmarks
 │       ├── TileBenchmarks.cs      # MVT generation benchmarks
+│       ├── MemorySoakBenchmarks.cs # Memory soak benchmarks
 │       └── StartupBenchmarks.cs   # Cold start measurement
 │
 ├── docker/
@@ -126,7 +127,7 @@ Honua/
 │
 ├── scripts/
 │   ├── check-perf-regression.py   # Benchmark regression checker
-│   └── check-memory-growth.py     # Memory leak analyzer
+│   └── check-instructions-sync.sh # Ensure CLAUDE/CODEX parity
 │
 ├── .github/
 │   ├── workflows/
@@ -151,6 +152,12 @@ Honua/
 3. **Integration-First Testing**: Real database in tests, minimal mocking
 4. **Immutable by Default**: Records, readonly, functional patterns where sensible
 5. **Fail Fast**: Validate early, throw on invalid state, no silent failures
+
+### Issue Traceability
+
+- Every plan task maps to a GitHub issue; issue acceptance criteria are the source of truth
+- PRs must reference the issue and keep plan + issues in sync
+- If plan and issues diverge, reconcile immediately before coding
 
 ---
 
@@ -753,71 +760,45 @@ public class QueryBenchmarks
 }
 ```
 
-### Memory Leak Detection
+### Memory Regression & Leak Detection (BenchmarkDotNet)
 
-BenchmarkDotNet tracks allocations but not leaks. Leaks require long-running tests with memory monitoring.
+Use BenchmarkDotNet for allocations and a dedicated soak benchmark to detect heap growth across sustained operations. Treat heap delta as a metric and gate it in CI using the same benchmark regression tooling.
 
 ```csharp
-// tests/Honua.Server.Tests/Performance/MemoryLeakTests.cs
-[Collection("MemoryLeak")]
-public class MemoryLeakTests : IAsyncLifetime
+// benchmarks/Honua.Benchmarks/MemorySoakBenchmarks.cs
+[MemoryDiagnoser]
+[SimpleJob(RuntimeMoniker.Net100, warmupCount: 1, iterationCount: 1)]
+public class MemorySoakBenchmarks
 {
-    private readonly WebApplicationFactory<Program> _factory;
-
-    [Fact]
-    public async Task QueryEndpoint_RepeatedCalls_NoMemoryGrowth()
+    [Benchmark]
+    public async Task<long> Query_Soak_10k()
     {
-        var client = _factory.CreateClient();
+        await WarmupAsync();
 
-        // Warm up
-        for (int i = 0; i < 100; i++)
-            await client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1=1");
+        var baseline = GC.GetTotalMemory(forceFullCollection: true);
 
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-
-        var baselineMemory = GC.GetTotalMemory(forceFullCollection: true);
-
-        // Sustained load
         for (int i = 0; i < 10_000; i++)
-            await client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1=1");
+        {
+            await _handler.HandleAsync(_query, CancellationToken.None);
+        }
 
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
 
-        var finalMemory = GC.GetTotalMemory(forceFullCollection: true);
-        var growth = finalMemory - baselineMemory;
-
-        // Allow 10MB growth max (connection pools, caches)
-        Assert.True(growth < 10 * 1024 * 1024,
-            $"Memory grew by {growth / 1024 / 1024}MB - possible leak");
+        return GC.GetTotalMemory(forceFullCollection: true) - baseline;
     }
 }
 ```
 
 ```yaml
-# CI memory leak detection via dotnet-counters
-- name: Memory Leak Soak Test
+# CI memory regression via BenchmarkDotNet
+- name: Memory Soak Benchmarks
   run: |
-    # Start app in background
-    dotnet run --project src/Honua.Server &
-    APP_PID=$!
-    sleep 5
-
-    # Monitor memory during load test
-    dotnet-counters monitor --process-id $APP_PID \
-      --counters System.Runtime[gc-heap-size] \
-      --duration 60 > memory-trace.txt &
-
-    # Run sustained load
-    hey -z 60s -c 50 http://localhost:8080/rest/services/test/FeatureServer/0/query
-
-    # Check for growth trend
-    python scripts/check-memory-growth.py memory-trace.txt --max-growth-mb 50
-
-    kill $APP_PID
+    dotnet run --project benchmarks/Honua.Benchmarks \
+      --configuration Release \
+      --exporters json \
+      -- --filter '*MemorySoak*' --join
 ```
 
 ### CI Performance Gate
@@ -840,7 +821,7 @@ performance:
 
     - name: Compare Against Baseline
       run: |
-        # Fail if any benchmark regresses >10% from baseline
+        # Fail if time or allocation metrics regress >10% from baseline
         python scripts/check-perf-regression.py \
           --baseline .github/perf-baseline.json \
           --current BenchmarkDotNet.Artifacts/results.json \
@@ -1312,8 +1293,16 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 - [ ] Response compression enabled
 - [ ] Output caching for metadata endpoints
 - [ ] Benchmarks pass CI gate
+- [ ] Allocation budgets enforced via BenchmarkDotNet MemoryDiagnoser
 - [ ] AOT build tested for all endpoints
 - [ ] Cold start < 100ms verified
+
+### Performance Validation (Beyond Microbenchmarks)
+
+- Maintain a baseline dataset for perf testing (schema + seed data) and keep it versioned
+- For new or modified SQL paths, capture `EXPLAIN (ANALYZE, BUFFERS)` and verify index usage
+- Run load tests (k6/wrk/nbomber) on critical endpoints nightly or before release; gate >10% regression
+- Run soak benchmarks with BenchmarkDotNet (memory + heap delta) and track connection pools to catch leaks early
 
 ---
 
@@ -1581,7 +1570,7 @@ tests/
 │   ├── Admin/
 │   │   └── LayerManagementTests.cs
 │   ├── Performance/
-│   │   ├── MemoryLeakTests.cs
+│   │   ├── SoakTests.cs
 │   │   └── ConcurrencyTests.cs
 │   ├── Conformance/                     # Protocol conformance
 │   │   ├── EsriCompatibilityTests.cs
@@ -1847,6 +1836,9 @@ test:
 jobs:
   build:
     steps:
+      - name: Instruction Sync
+        run: bash scripts/check-instructions-sync.sh
+
       - name: Build
         run: dotnet build --configuration Release --warnaserror
 
@@ -1877,6 +1869,9 @@ jobs:
       - name: Architecture Tests
         run: dotnet test --filter "Category=Architecture"
 
+      - name: Dependency Vulnerability Scan
+        run: dotnet list package --vulnerable --include-transitive
+
       - name: Security Scan
         uses: github/codeql-action/analyze@v3
 
@@ -1904,6 +1899,34 @@ jobs:
           # Verify binary size < 50MB
           # Smoke test startup time < 100ms
 ```
+
+### Change-Level Definition of Done (Every PR)
+
+- Tests updated or added (integration-first)
+- Coverage does not fall below the current phase checkpoint
+- Format, analyzers, architecture tests, and instruction sync all pass
+- Security checks pass for modified surface area
+- Docs updated when behavior or configuration changes
+
+### Instruction Parity (Claude/Codex)
+
+- `CODEX.md` must match `CLAUDE.md`
+- `.codex/` must mirror `.claude/` for settings and guidance
+- CI enforces sync to prevent drift
+
+### Architecture Guardrails
+
+- NetArchTest rules enforce vertical slice boundaries and dependency limits
+- Dependency limits: max 5 dependencies per endpoint, max 4 per handler
+- Architecture tests run in CI and block merges on violation
+
+### Security Baseline (Always-On)
+
+- SAST: CodeQL on every PR
+- SCA: `dotnet list package --vulnerable --include-transitive` gate for high/critical issues
+- Secrets: GitHub secret scanning enabled; local `gitleaks` optional for releases
+- HTTP security headers configured for API + admin UI
+- Security regression tests cover injection, path traversal, and XSS
 
 ### Code Quality Standards
 
@@ -2229,7 +2252,7 @@ Critical paths include:
 |------|-------------|
 | Blazor project setup | WASM project, API integration |
 | Connection management | Add/test PostGIS connections |
-| Table discovery | List tables/views with geometry |
+| Table discovery | List tables/views with geometry, PK detection, row-count estimate |
 | Layer publishing | Create layer from table |
 | Service management | Enable/disable layers |
 | Esri Import Wizard | Parse Esri service URL, import |
@@ -2242,11 +2265,13 @@ Critical paths include:
 
 **Exit Criteria:**
 - [ ] Can add PostGIS connection and discover tables
+- [ ] Table discovery excludes system tables, includes geometry type, SRID, PK detection, and row-count estimate
 - [ ] Can publish table as FeatureServer layer
 - [ ] Can import layer from Esri service URL
 - [ ] Can import GeoJSON/Shapefile/GeoPackage/CSV/KML files
 - [ ] CRS auto-detected or manually specified
 - [ ] Can enable/disable services
+- [ ] Disabled layers return 404 on all endpoints; bulk enable/disable supported
 - [ ] Basic health status visible
 - [ ] Map preview renders MVT tiles
 - [ ] Styles can be edited and saved via Maputnik
@@ -2309,11 +2334,11 @@ Critical paths include:
 | **Dev bypass mode** | `HONUA_DEV_AUTH=true` skips auth for local dev |
 | Error handling audit | Consistent error responses |
 | Edge cases | Null handling, large payloads, unicode |
-| Performance | Query optimization, connection pooling |
+| Performance | Query optimization, connection pooling, query plan review, load/soak tests |
 | Redis cache (optional) | Metadata cache via Redis with in-memory fallback |
 | Documentation | README, API docs, deployment guide |
-| Docker optimization | Multi-stage, minimal image |
-| Security hardening | Input validation, SQL injection prevention |
+| Docker optimization | Multi-stage, minimal image, non-root, read-only FS |
+| Security hardening | Input validation, security headers, SQL injection prevention |
 
 **Exit Criteria:**
 - [ ] OIDC login flow works with Azure AD
@@ -2324,8 +2349,12 @@ Critical paths include:
 - [ ] No known critical bugs
 - [ ] Documentation complete
 - [ ] Docker image < 100MB
+- [ ] Container runs as non-root and is read-only filesystem compatible
+- [ ] Container drops unnecessary Linux capabilities
 - [ ] Cold start < 1s
-- [ ] Security scan clean
+- [ ] Load test baseline meets latency/throughput targets; memory profile shows no leaks
+- [ ] Security scan clean (CodeQL + dependency vulnerability scan)
+- [ ] Security headers set on all responses (HSTS, X-Content-Type-Options, frame-ancestors/CSP, Referrer-Policy)
 - [ ] Redis metadata cache works when configured (in-memory fallback otherwise)
 - [ ] **Coverage checkpoint (FINAL):** 80%+ line coverage overall, 70%+ branch coverage, 95%+ on critical paths (query execution, transaction handling, auth middleware)
 
@@ -2372,7 +2401,7 @@ Critical paths include:
 - [ ] p99 query latency < 300ms (100 features)
 - [ ] Throughput > 1000 rps for simple queries
 - [ ] All benchmarks within 10% of baseline
-- [ ] Memory leak tests pass (no unbounded growth under sustained load)
+- [ ] Memory soak benchmarks show no unbounded growth under sustained load
 
 ### Documentation
 

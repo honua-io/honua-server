@@ -14,6 +14,9 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0006](0006-openfreemap-default-basemap.md) | OpenFreeMap as Default Basemap | Accepted | 2025-12 |
 | [0007](0007-embedded-maputnik.md) | Embedded Maputnik Style Editor | Accepted | 2025-12 |
 | [0008](0008-env-var-configuration.md) | Environment Variables as Primary Config | Accepted | 2025-12 |
+| [0009](0009-shared-filter-ast.md) | Shared Filter AST for Multi-Protocol Support | Accepted | 2025-12 |
+| [0010](0010-admin-ui-architecture.md) | Admin UI Architecture (Blazor WASM) | Accepted | 2025-12 |
+| [0011](0011-testing-strategy.md) | Testing Strategy and API Surface Coverage | Accepted | 2025-12 |
 
 ## Template
 
