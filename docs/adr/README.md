@@ -1,0 +1,34 @@
+# Architecture Decision Records
+
+This folder contains Architecture Decision Records (ADRs) for the Honua greenfield MVP.
+
+## Index
+
+| ADR | Title | Status | Date |
+|-----|-------|--------|------|
+| [0001](0001-raw-npgsql-no-orm.md) | Raw Npgsql over ORM/Dapper | Accepted | 2025-12 |
+| [0002](0002-maplibre-canonical-style.md) | MapLibre as Canonical Style Format | Accepted | 2025-12 |
+| [0003](0003-odata-full-crud.md) | OData v4 Full CRUD in MVP | Accepted | 2025-12 |
+| [0004](0004-proxy-rate-limiting.md) | Proxy-Based Rate Limiting | Accepted | 2025-12 |
+| [0005](0005-dbup-migrations.md) | DbUp for Database Migrations | Accepted | 2025-12 |
+| [0006](0006-openfreemap-default-basemap.md) | OpenFreeMap as Default Basemap | Accepted | 2025-12 |
+| [0007](0007-embedded-maputnik.md) | Embedded Maputnik Style Editor | Accepted | 2025-12 |
+| [0008](0008-env-var-configuration.md) | Environment Variables as Primary Config | Accepted | 2025-12 |
+
+## Template
+
+```markdown
+# ADR-NNNN: Title
+
+## Status
+Proposed | Accepted | Deprecated | Superseded
+
+## Context
+What is the issue that we're seeing that is motivating this decision?
+
+## Decision
+What is the change that we're proposing?
+
+## Consequences
+What becomes easier or more difficult because of this change?
+```
