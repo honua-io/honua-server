@@ -25,8 +25,8 @@ async Task RunDatabaseMigrationsAsync()
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     if (string.IsNullOrEmpty(connectionString))
     {
-        DatabaseLogger.ConnectionStringNotFound(app.Logger);
-        throw new InvalidOperationException("Database connection string 'DefaultConnection' is required");
+        DatabaseLogger.ConnectionStringNotConfigured(app.Logger);
+        return; // Skip migrations if no connection string is configured
     }
 
     DatabaseLogger.RunningMigrations(app.Logger);
@@ -67,9 +67,9 @@ internal static partial class DatabaseLogger
 {
     [LoggerMessage(
         EventId = 1001,
-        Level = Microsoft.Extensions.Logging.LogLevel.Error,
-        Message = "Database connection string 'DefaultConnection' not found")]
-    public static partial void ConnectionStringNotFound(Microsoft.Extensions.Logging.ILogger logger);
+        Level = Microsoft.Extensions.Logging.LogLevel.Information,
+        Message = "Database connection string 'DefaultConnection' not configured - skipping migrations")]
+    public static partial void ConnectionStringNotConfigured(Microsoft.Extensions.Logging.ILogger logger);
 
     [LoggerMessage(
         EventId = 1002,
