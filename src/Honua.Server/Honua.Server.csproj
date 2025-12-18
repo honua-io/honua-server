@@ -16,6 +16,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <!-- Postgres reference for AOT assembly inclusion only -->
+    <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
+    <!-- ModuleInitializer in Postgres auto-registers services with Core -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
   </ItemGroup>
 
