@@ -114,13 +114,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download Unit Test Results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: unit-test-results
           path: ./coverage/unit
 
       - name: Download Integration Test Results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: integration-test-results
           path: ./coverage/integration
