@@ -5,6 +5,8 @@ using System.Reflection;
 using DbUp;
 using Honua.Postgres; // ✅ COMPOSITION ROOT: Allowed to reference Infrastructure
 using Honua.Server.Endpoints;
+using Serilog;
+using Serilog.Enrichers.Span;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
 // This is the application layer that wires dependencies:
@@ -15,11 +17,73 @@ using Honua.Server.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Serilog for structured logging with AOT compatibility
+builder.Host.UseSerilog((context, services, config) =>
+{
+    var isDevelopment = context.HostingEnvironment.IsDevelopment();
+
+    config
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Information)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithEnvironmentName()
+        .Enrich.WithMachineName()
+        .Enrich.WithThreadId()
+        .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
+        .Enrich.WithProperty("Application", "Honua")
+        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+
+    if (isDevelopment)
+    {
+        // Development: Human-readable console output
+        config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+    }
+    else
+    {
+        // Production: Compact JSON for log aggregation
+        config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
+    }
+});
+
 // DEPENDENCY INVERSION: Register Infrastructure implementations for Core abstractions
 // IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)
 builder.Services.AddPostgreSqlServices();
 
+// Register health check services
+builder.Services.AddScoped<Honua.Server.Infrastructure.HealthCheck.IReadinessCheckService,
+    Honua.Server.Infrastructure.HealthCheck.ReadinessCheckService>();
+
 var app = builder.Build();
+
+// Configure Serilog request logging with custom enrichment
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
+        diagnosticContext.Set("UserAgent", httpContext.Request.Headers.UserAgent.ToString());
+        diagnosticContext.Set("Protocol", httpContext.Request.Protocol);
+
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+            diagnosticContext.Set("UserId", httpContext.User.FindFirst("sub")?.Value);
+    };
+
+    // Exclude health check endpoints from request logging (configured in appsettings.json)
+    options.GetLevel = (httpContext, elapsed, ex) => ex != null
+        ? Serilog.Events.LogEventLevel.Error
+        : httpContext.Request.Path.StartsWithSegments("/healthz")
+            ? Serilog.Events.LogEventLevel.Verbose
+            : Serilog.Events.LogEventLevel.Information;
+});
+
+// Log application startup
+Honua.Server.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
+    typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
+    app.Environment.EnvironmentName);
 
 // Run database migrations on startup
 await RunDatabaseMigrationsAsync();
@@ -35,89 +99,52 @@ async Task RunDatabaseMigrationsAsync()
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     if (string.IsNullOrEmpty(connectionString))
     {
-        DatabaseLogger.ConnectionStringNotConfigured(app.Logger);
-        return; // Skip migrations if no connection string is configured
-    }
-
-    DatabaseLogger.RunningMigrations(app.Logger);
-
-    var upgrader = DeployChanges.To
-        .PostgresqlDatabase(connectionString)
-        .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
-        .WithTransaction()
-        .LogToConsole()
-        .Build();
-
-    var result = upgrader.PerformUpgrade();
-
-    if (!result.Successful)
-    {
-        DatabaseLogger.MigrationFailed(app.Logger, result.Error);
-        // Don't throw - let the app start and rely on health checks to indicate readiness
+        // Skip migrations if no connection string is configured
+        Honua.Server.Infrastructure.Logging.Log.DatabaseConnectionStringNotConfigured(app.Logger);
         return;
     }
 
-    DatabaseLogger.MigrationsCompleted(app.Logger);
+    Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
 
-    if (result.Scripts.Any())
+    try
     {
-        DatabaseLogger.MigrationScriptsApplied(app.Logger, result.Scripts.Count());
-        foreach (var script in result.Scripts)
+        var upgrader = DeployChanges.To
+            .PostgresqlDatabase(connectionString)
+            .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
+            .WithTransaction()
+            .LogToConsole()
+            .Build();
+
+        var result = upgrader.PerformUpgrade();
+
+        if (!result.Successful)
         {
-            DatabaseLogger.MigrationScriptApplied(app.Logger, script.Name);
+            Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, result.Error.Message, result.Error);
+            // Don't throw - let the app start and rely on health checks to indicate readiness
+            return;
+        }
+
+        if (result.Scripts.Any())
+        {
+            Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, result.Scripts.Count());
+            // Log individual script names for debugging
+            foreach (var script in result.Scripts)
+            {
+                Honua.Server.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script.Name);
+            }
+        }
+        else
+        {
+            Honua.Server.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
         }
     }
-    else
+    catch (Exception ex)
     {
-        DatabaseLogger.NoMigrationsToApply(app.Logger);
+        Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
+        // Don't throw - let the app start and rely on health checks to indicate readiness
     }
 }
 
-// Source-generated logging for AOT compatibility
-internal static partial class DatabaseLogger
-{
-    [LoggerMessage(
-        EventId = 1001,
-        Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "Database connection string 'DefaultConnection' not configured - skipping migrations")]
-    public static partial void ConnectionStringNotConfigured(Microsoft.Extensions.Logging.ILogger logger);
-
-    [LoggerMessage(
-        EventId = 1002,
-        Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "Running database migrations...")]
-    public static partial void RunningMigrations(Microsoft.Extensions.Logging.ILogger logger);
-
-    [LoggerMessage(
-        EventId = 1003,
-        Level = Microsoft.Extensions.Logging.LogLevel.Error,
-        Message = "Database migration failed")]
-    public static partial void MigrationFailed(Microsoft.Extensions.Logging.ILogger logger, Exception exception);
-
-    [LoggerMessage(
-        EventId = 1004,
-        Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "Database migrations completed successfully")]
-    public static partial void MigrationsCompleted(Microsoft.Extensions.Logging.ILogger logger);
-
-    [LoggerMessage(
-        EventId = 1005,
-        Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "Applied {ScriptCount} migration scripts")]
-    public static partial void MigrationScriptsApplied(Microsoft.Extensions.Logging.ILogger logger, int scriptCount);
-
-    [LoggerMessage(
-        EventId = 1006,
-        Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "  - {ScriptName}")]
-    public static partial void MigrationScriptApplied(Microsoft.Extensions.Logging.ILogger logger, string scriptName);
-
-    [LoggerMessage(
-        EventId = 1007,
-        Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "No new migrations to apply")]
-    public static partial void NoMigrationsToApply(Microsoft.Extensions.Logging.ILogger logger);
-}
 
 // Make Program accessible to WebApplicationFactory
 public partial class Program { }
