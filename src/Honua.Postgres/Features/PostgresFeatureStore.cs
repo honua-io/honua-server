@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Abstractions;
 using Honua.Core.Domain.Features;
 using Npgsql;
@@ -115,8 +116,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
-        // Serialize to JSON string and pass as JSONB parameter (AOT-compatible)
-        var attributesJson = AotJsonSerializer.SerializeAttributes(feature.Attributes);
+        // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
+        var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        var attributesJson = JsonSerializer.Serialize(attributesDictionary, FeatureAttributesJsonContext.Default.DictionaryStringObject);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
 
@@ -143,8 +145,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         command.Parameters.AddWithValue(feature.Id);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
-        // Serialize to JSON string and pass as JSONB parameter (AOT-compatible)
-        var attributesJson = AotJsonSerializer.SerializeAttributes(feature.Attributes);
+        // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
+        var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        var attributesJson = JsonSerializer.Serialize(attributesDictionary, FeatureAttributesJsonContext.Default.DictionaryStringObject);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
 
@@ -255,8 +258,16 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
         var attributesJson = reader.GetString(2);
 
-        // Deserialize JSON using AOT-compatible deserializer
-        var attributes = AotJsonSerializer.DeserializeAttributes(attributesJson);
+        // Deserialize JSON using AOT-compatible source generators
+        var attributesDictionary = JsonSerializer.Deserialize(attributesJson, FeatureAttributesJsonContext.Default.DictionaryStringObject) ?? new Dictionary<string, object?>();
+
+        // Convert JsonElement values to primitive types for compatibility
+        var convertedAttributes = attributesDictionary.ToDictionary(
+            kvp => kvp.Key,
+            kvp => ConvertJsonElementToObject(kvp.Value)
+        );
+
+        var attributes = convertedAttributes.ToImmutableDictionary();
 
         return Feature.Create(id, geometry, attributes);
     }
@@ -401,5 +412,28 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
 
         return features.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Converts JsonElement to appropriate primitive type for compatibility.
+    /// </summary>
+    private static object? ConvertJsonElementToObject(object? value)
+    {
+        if (value is JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
+                                        element.TryGetDouble(out var doubleVal) ? doubleVal :
+                                        element.GetDecimal(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                _ => value
+            };
+        }
+
+        return value;
     }
 }
