@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.HealthCheck;
+
 namespace Honua.Server.Endpoints;
 
 /// <summary>
@@ -42,6 +44,7 @@ public static class HealthEndpoints
 
     /// <summary>
     /// Handle readiness probe - indicates if the service is ready to accept traffic
+    /// Includes PostgreSQL connectivity validation via abstraction
     /// </summary>
     private static async Task HandleReadinessProbe(HttpContext context)
     {
@@ -52,8 +55,47 @@ public static class HealthEndpoints
             return;
         }
 
-        context.Response.StatusCode = 200;
-        context.Response.ContentType = "text/plain; charset=utf-8";
-        await context.Response.WriteAsync("Ready");
+        var databaseHealthChecker = context.RequestServices.GetRequiredService<IDatabaseHealthChecker>();
+
+        try
+        {
+            var isDatabaseHealthy = await databaseHealthChecker.IsDatabaseHealthyAsync(context.RequestAborted);
+
+            if (isDatabaseHealthy)
+            {
+                context.Response.StatusCode = 200;
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync("Ready");
+            }
+            else
+            {
+                context.Response.StatusCode = 503; // Service Unavailable
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync("Not Ready - Database unavailable");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log the error for debugging but don't expose details in response
+            var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger(nameof(HealthEndpoints));
+            HealthLogger.DatabaseConnectionFailed(logger, ex);
+
+            context.Response.StatusCode = 503; // Service Unavailable
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync("Not Ready - Database unavailable");
+        }
     }
+}
+
+/// <summary>
+/// Source-generated logging for health endpoints with AOT compatibility
+/// </summary>
+internal static partial class HealthLogger
+{
+    [Microsoft.Extensions.Logging.LoggerMessage(
+        EventId = 2001,
+        Level = Microsoft.Extensions.Logging.LogLevel.Warning,
+        Message = "Health check database connection failed")]
+    public static partial void DatabaseConnectionFailed(Microsoft.Extensions.Logging.ILogger logger, Exception exception);
 }

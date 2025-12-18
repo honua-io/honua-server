@@ -3,11 +3,21 @@
 
 using System.Reflection;
 using DbUp;
+using Honua.Postgres; // ✅ COMPOSITION ROOT: Allowed to reference Infrastructure
 using Honua.Server.Endpoints;
+
+// CLEAN ARCHITECTURE COMPOSITION ROOT
+// This is the application layer that wires dependencies:
+// - Core (abstractions): IDatabaseHealthChecker interface
+// - Infrastructure (implementations): PostgresDatabaseHealthChecker
+// - Server (composition): Registers IDatabaseHealthChecker → PostgresDatabaseHealthChecker
+// Dependency flow: Server → (Core + Infrastructure), Infrastructure → Core
 
 var builder = WebApplication.CreateBuilder(args);
 
-// TODO: Add services
+// DEPENDENCY INVERSION: Register Infrastructure implementations for Core abstractions
+// IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)
+builder.Services.AddPostgreSqlServices();
 
 var app = builder.Build();
 
@@ -43,7 +53,8 @@ async Task RunDatabaseMigrationsAsync()
     if (!result.Successful)
     {
         DatabaseLogger.MigrationFailed(app.Logger, result.Error);
-        throw new InvalidOperationException("Database migration failed", result.Error);
+        // Don't throw - let the app start and rely on health checks to indicate readiness
+        return;
     }
 
     DatabaseLogger.MigrationsCompleted(app.Logger);
