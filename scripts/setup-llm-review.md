@@ -74,9 +74,15 @@ public class BadExample : ControllerBase  // Controller usage - VIOLATION
 ## Cost Considerations
 
 - **Model**: GPT-4 (higher quality architectural reasoning)
-- **Estimated Cost**: ~$0.01-0.05 per PR review
-- **Context Size**: Limited to ~4000 tokens to control costs
+- **Estimated Cost**: ~$0.05-0.25 per PR review (varies by file count/size)
+- **Context Strategy**: Complete .cs files for full architectural analysis
+- **File Limits**: Analyzes up to 10 changed files per PR
 - **Frequency**: Only on C# file changes, not on documentation
+
+**Cost Scaling:**
+- Small PRs (1-3 small .cs files): ~$0.05-0.10
+- Medium PRs (4-6 medium .cs files): ~$0.10-0.20
+- Large PRs (7-10 large .cs files): ~$0.20-0.25+
 
 ## Customization
 

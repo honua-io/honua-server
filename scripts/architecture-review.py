@@ -2,6 +2,12 @@
 """
 Honua Architecture Review Script
 Analyzes code changes using LLM for architectural compliance
+
+Features:
+- Complete .cs file analysis for full architectural context
+- Honua-specific criteria (dependency flow, API patterns, documentation)
+- Educational feedback explaining WHY patterns matter for geospatial/AOT
+- Three-tier assessment: APPROVED/NEEDS_ATTENTION/BLOCKING_ISSUES
 """
 
 import os
@@ -276,16 +282,27 @@ def get_changed_files(base_ref: str, head_ref: str) -> List[str]:
         return []
 
 def get_file_content_and_diff(file_path: str, base_ref: str, head_ref: str) -> Dict[str, str]:
-    """Get file content and diff for analysis"""
+    """Get file content and diff for analysis
+
+    For .cs files: Reads complete file content for full architectural context
+    For other files: Limits to 2000 chars to prevent token bloat
+    """
     content = ""
     diff = ""
 
     try:
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+                file_content = f.read()
 
-        # Get diff
+                # For .cs files, include complete content for architectural analysis
+                if file_path.endswith('.cs'):
+                    content = file_content
+                else:
+                    # For non-C# files, limit to prevent token bloat
+                    content = file_content[:2000] + ("...[truncated]" if len(file_content) > 2000 else "")
+
+        # Get diff - always full diff for architectural context
         result = subprocess.run([
             'git', 'diff', f"{base_ref}...{head_ref}", '--', file_path
         ], capture_output=True, text=True, check=True)
@@ -335,17 +352,20 @@ def main():
     for file_path in changed_files[:10]:  # Limit to prevent context overflow
         file_info = get_file_content_and_diff(file_path, f"origin/{base_ref}", head_ref)
 
+        # Use appropriate language identifier for syntax highlighting
+        language = "csharp" if file_path.endswith('.cs') else "text"
+
         context += f"""
 ### File: {file_path}
 
 #### Current Content:
-```csharp
-{file_info['content'][:2000]}  # Truncated if too long
+```{language}
+{file_info['content']}
 ```
 
 #### Changes:
 ```diff
-{file_info['diff'][:1000]}  # Truncated if too long
+{file_info['diff']}
 ```
 """
 
