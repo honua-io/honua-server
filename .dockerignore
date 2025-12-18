@@ -1,0 +1,65 @@
+# Build artifacts
+bin/
+obj/
+out/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+
+# Test results
+TestResults/
+**/coverage.*
+**/TestResults/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# JetBrains
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile*
+docker-compose*
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+scripts/
+!scripts/init-db.sql
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env*
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+
+# Database files
+*.db
+*.sqlite*
