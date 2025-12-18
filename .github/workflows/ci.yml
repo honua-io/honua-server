@@ -146,6 +146,14 @@ jobs:
           name: coverage-report
           path: ./coverage/report/
 
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/report/Cobertura.xml
+          flags: combined
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
       - name: Check Coverage Threshold
         run: |
           # Extract line coverage percentage from summary
