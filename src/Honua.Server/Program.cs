@@ -1,14 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
-//
-// APPLICATION COMPOSITION ROOT (SERVER LAYER)
-// This file orchestrates dependency injection and application startup.
-// Clean Architecture: Server layer can depend on Core + Infrastructure layers.
 
 using System.Reflection;
 using DbUp;
 using Honua.Postgres; // ✅ Server layer can depend on Infrastructure (Clean Architecture)
 using Honua.Server.Endpoints;
+
+// APPLICATION COMPOSITION ROOT (SERVER LAYER)
+// This file orchestrates dependency injection and application startup.
+// Clean Architecture: Server layer can depend on Core + Infrastructure layers.
 
 var builder = WebApplication.CreateBuilder(args);
 
