@@ -11,7 +11,7 @@ namespace Honua.Postgres.Catalog;
 /// <summary>
 /// PostgreSQL implementation of layer catalog for PostGIS metadata discovery
 /// </summary>
-public sealed class PostgresLayerCatalog : ILayerCatalog
+internal sealed class PostgresLayerCatalog : ILayerCatalog
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _layersTable;
@@ -59,7 +59,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        var layer = await ReadLayerDefinitionAsync(reader, cancellationToken);
+        var layer = ReadLayerDefinition(reader);
         reader.Close();
 
         // Get field definitions for this layer
@@ -98,7 +98,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            var layer = await ReadLayerDefinitionAsync(reader, cancellationToken);
+            var layer = ReadLayerDefinition(reader);
             layers.Add(layer);
             layerIds.Add(layer.Id);
         }
@@ -141,7 +141,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        var service = await ReadServiceDefinitionAsync(reader, cancellationToken);
+        var service = ReadServiceDefinition(reader);
         reader.Close();
 
         // Get layers for this service
@@ -178,7 +178,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            var service = await ReadServiceDefinitionAsync(reader, cancellationToken);
+            var service = ReadServiceDefinition(reader);
             services.Add(service);
             serviceNames.Add(service.Name);
         }
@@ -220,7 +220,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
         return result != null;
     }
 
-    private static Task<LayerDefinition> ReadLayerDefinitionAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)
+    private static LayerDefinition ReadLayerDefinition(NpgsqlDataReader reader)
     {
         var id = reader.GetInt32(reader.GetOrdinal("layer_id"));
         var name = reader.GetString(reader.GetOrdinal("layer_name"));
@@ -245,7 +245,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
 
         var spatialReference = new SpatialReference(srid);
 
-        return Task.FromResult(new LayerDefinition(
+        return new LayerDefinition(
             id,
             name,
             description,
@@ -255,10 +255,10 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
             extent,
             minScale,
             maxScale,
-            defaultVisibility));
+            defaultVisibility);
     }
 
-    private static Task<ServiceDefinition> ReadServiceDefinitionAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)
+    private static ServiceDefinition ReadServiceDefinition(NpgsqlDataReader reader)
     {
         var name = reader.GetString(reader.GetOrdinal("service_name"));
         var description = reader.GetString(reader.GetOrdinal("description"));
@@ -281,7 +281,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
 
         var spatialReference = new SpatialReference(srid);
 
-        return Task.FromResult(new ServiceDefinition(
+        return new ServiceDefinition(
             name,
             description,
             [], // Layers populated separately
@@ -289,7 +289,7 @@ public sealed class PostgresLayerCatalog : ILayerCatalog
             maxRecordCount,
             supportedFormats,
             capabilities,
-            extent));
+            extent);
     }
 
     private async Task<FieldDefinition[]> GetLayerFieldsAsync(int layerId, CancellationToken cancellationToken)

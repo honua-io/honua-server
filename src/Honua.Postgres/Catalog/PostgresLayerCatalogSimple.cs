@@ -10,7 +10,7 @@ namespace Honua.Postgres.Catalog;
 /// <summary>
 /// Simple PostgreSQL implementation of layer catalog for testing compilation
 /// </summary>
-public sealed class PostgresLayerCatalogSimple : ILayerCatalog
+internal sealed class PostgresLayerCatalogSimple : ILayerCatalog
 {
 #pragma warning disable IDE0052 // Remove unread private members - Will be used in full implementation
     private readonly NpgsqlDataSource _dataSource;
