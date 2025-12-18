@@ -3,8 +3,10 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.HealthCheck;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Honua.Server.Tests;
@@ -44,12 +46,16 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
     [IntegrationTest]
     [Operation("HealthCheck")]
     [Endpoint("GET /healthz/ready")]
-    public async Task ReadinessProbe_WithoutDatabase_Returns200AndReady()
+    public async Task ReadinessProbe_WithHealthyDatabase_Returns200AndReady()
     {
         // Arrange
         var factory = _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("ConnectionStrings:DefaultConnection", "");
+            builder.ConfigureServices(services =>
+            {
+                // Replace the real health checker with a healthy mock
+                services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
+            });
         });
 
         using var client = factory.CreateClient();
@@ -62,19 +68,22 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
         response.Content.Headers.ContentType?.ToString().Should().Be("text/plain; charset=utf-8");
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Be("Ready (no database configured)");
+        content.Should().Be("Ready");
     }
 
     [IntegrationTest]
     [Operation("HealthCheck")]
     [Endpoint("GET /healthz/ready")]
-    public async Task ReadinessProbe_WithInvalidDatabase_Returns503()
+    public async Task ReadinessProbe_WithUnhealthyDatabase_Returns503()
     {
-        // Arrange - Use an invalid connection string that will fail quickly
+        // Arrange
         var factory = _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("ConnectionStrings:DefaultConnection",
-                "Host=nonexistent-host-12345;Database=test;Username=test;Password=test");
+            builder.ConfigureServices(services =>
+            {
+                // Replace the real health checker with an unhealthy mock
+                services.AddScoped<IDatabaseHealthChecker>(_ => new MockUnhealthyDatabaseChecker());
+            });
         });
 
         using var client = factory.CreateClient();
@@ -149,12 +158,16 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
     [IntegrationTest]
     [Operation("HealthCheck")]
     [Endpoint("GET /healthz/ready")]
-    public async Task ReadinessProbe_WithoutDatabase_ResponseTime_IsUnder100Ms()
+    public async Task ReadinessProbe_WithHealthyDatabase_ResponseTime_IsUnder100Ms()
     {
         // Arrange
         var factory = _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("ConnectionStrings:DefaultConnection", "");
+            builder.ConfigureServices(services =>
+            {
+                // Replace with fast healthy mock
+                services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
+            });
         });
 
         using var client = factory.CreateClient();
@@ -167,7 +180,7 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
-            "readiness probe should respond within 100ms when no database is configured");
+            "readiness probe should respond within 100ms with healthy database");
     }
 
     [IntegrationTest]
@@ -181,5 +194,27 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
         // Assert
         liveResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
         readyResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+    }
+}
+
+/// <summary>
+/// Mock implementation that always returns healthy
+/// </summary>
+internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
+{
+    public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(true);
+    }
+}
+
+/// <summary>
+/// Mock implementation that always returns unhealthy
+/// </summary>
+internal sealed class MockUnhealthyDatabaseChecker : IDatabaseHealthChecker
+{
+    public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(false);
     }
 }

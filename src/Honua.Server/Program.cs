@@ -4,10 +4,12 @@
 using System.Reflection;
 using DbUp;
 using Honua.Server.Endpoints;
+using Honua.Postgres;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// TODO: Add services
+// Add PostgreSQL services including health checking
+builder.Services.AddPostgreSqlServices();
 
 var app = builder.Build();
 

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Npgsql;
+using Honua.Core.HealthCheck;
 
 namespace Honua.Server.Endpoints;
 
@@ -44,7 +44,7 @@ public static class HealthEndpoints
 
     /// <summary>
     /// Handle readiness probe - indicates if the service is ready to accept traffic
-    /// Includes PostgreSQL connectivity validation
+    /// Includes PostgreSQL connectivity validation via abstraction
     /// </summary>
     private static async Task HandleReadinessProbe(HttpContext context)
     {
@@ -55,32 +55,24 @@ public static class HealthEndpoints
             return;
         }
 
-        var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-
-        // If no connection string is configured, still return ready for local development
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            context.Response.StatusCode = 200;
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Ready (no database configured)");
-            return;
-        }
+        var databaseHealthChecker = context.RequestServices.GetRequiredService<IDatabaseHealthChecker>();
 
         try
         {
-            // Test PostgreSQL connectivity with a simple query and 5-second timeout
-            await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            var isDatabaseHealthy = await databaseHealthChecker.IsDatabaseHealthyAsync(context.RequestAborted);
 
-            // Execute a simple query to verify database is responsive with timeout
-            await using var command = new NpgsqlCommand("SELECT 1", connection);
-            command.CommandTimeout = 5; // 5-second timeout for health checks
-            await command.ExecuteScalarAsync();
-
-            context.Response.StatusCode = 200;
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Ready");
+            if (isDatabaseHealthy)
+            {
+                context.Response.StatusCode = 200;
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync("Ready");
+            }
+            else
+            {
+                context.Response.StatusCode = 503; // Service Unavailable
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync("Not Ready - Database unavailable");
+            }
         }
         catch (Exception ex)
         {
