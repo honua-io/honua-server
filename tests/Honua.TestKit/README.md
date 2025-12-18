@@ -274,7 +274,6 @@ tests/Honua.TestKit/
 - **Testcontainers**: Container management
 - **Npgsql**: PostgreSQL driver
 - **NetTopologySuite**: Spatial data handling
-- **Bogus**: Fake data generation
 
 ## Coverage Requirements
 

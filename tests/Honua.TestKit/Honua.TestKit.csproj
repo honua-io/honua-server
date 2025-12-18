@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
@@ -20,7 +21,7 @@
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
 
     <!-- Testcontainers -->
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.2.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.9.0" />
 
     <!-- xUnit -->
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -31,7 +32,6 @@
     <PackageReference Include="FluentAssertions.Json" Version="6.1.0" />
 
     <!-- Data Generation -->
-    <PackageReference Include="Bogus" Version="35.6.1" />
   </ItemGroup>
 
   <ItemGroup>

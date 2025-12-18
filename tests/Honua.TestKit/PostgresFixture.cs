@@ -21,11 +21,11 @@ public sealed class PostgresFixture : IAsyncLifetime
     public PostgresFixture()
     {
         _container = new PostgreSqlBuilder()
-            .WithImage("postgis/postgis:16-3.4")
+            .WithImage("postgis/postgis:18-3.6")
             .WithDatabase("honua_test")
             .WithUsername("test")
             .WithPassword("test")
-            .WithCommand("postgres", "-c", "max_connections=200")
+            .WithCommand("-c", "max_connections=200")
             .Build();
     }
 
