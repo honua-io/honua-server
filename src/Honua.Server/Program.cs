@@ -5,6 +5,7 @@ using System.Reflection;
 using DbUp;
 using Honua.Postgres; // ✅ COMPOSITION ROOT: Allowed to reference Infrastructure
 using Honua.Server.Endpoints;
+using Honua.Server.Infrastructure.Middleware;
 using Serilog;
 using Serilog.Enrichers.Span;
 
@@ -58,6 +59,9 @@ builder.Services.AddScoped<Honua.Server.Infrastructure.HealthCheck.IReadinessChe
     Honua.Server.Infrastructure.HealthCheck.ReadinessCheckService>();
 
 var app = builder.Build();
+
+// Add correlation ID middleware early in pipeline (before request logging)
+app.UseCorrelationId();
 
 // Configure Serilog request logging with custom enrichment
 app.UseSerilogRequestLogging(options =>

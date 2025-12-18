@@ -160,6 +160,13 @@ public static partial class Log
     public static partial void HealthCheckExecuted(
         ILogger logger, string checkName, string status, double elapsedMs);
 
+    [LoggerMessage(
+        EventId = 4030,
+        Level = LogLevel.Debug,
+        Message = "Correlation ID established: {CorrelationId} for {RequestPath}")]
+    public static partial void CorrelationIdEstablished(
+        ILogger logger, string correlationId, string requestPath);
+
     #endregion
 
     #region Errors (5000-5999)
