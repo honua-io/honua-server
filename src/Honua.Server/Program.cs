@@ -51,7 +51,7 @@ builder.Host.UseSerilog((context, services, config) =>
 
 // DEPENDENCY INVERSION: Register Infrastructure implementations for Core abstractions
 // IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)
-builder.Services.AddPostgreSqlServices();
+builder.Services.AddPostgreSqlServices(builder.Configuration);
 
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Infrastructure.HealthCheck.IReadinessCheckService,
