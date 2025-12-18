@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Bogus;
-
 namespace Honua.TestKit;
 
 /// <summary>
@@ -14,7 +12,7 @@ public sealed class TestDataBuilder
     private readonly PostgresFixture _fixture;
     private readonly List<Func<Task>> _actions = [];
     private readonly string? _schema;
-    private readonly Faker _faker = new();
+    private readonly Random _random = new();
 
     public TestDataBuilder(PostgresFixture fixture, string? schema = null)
     {
@@ -160,9 +158,9 @@ public sealed class TestDataBuilder
     {
         for (int i = 0; i < count; i++)
         {
-            var name = _faker.Address.City();
-            var lon = _faker.Random.Double(minLon, maxLon);
-            var lat = _faker.Random.Double(minLat, maxLat);
+            var name = $"Point_{i}_{Guid.NewGuid():N}";
+            var lon = _random.NextDouble() * (maxLon - minLon) + minLon;
+            var lat = _random.NextDouble() * (maxLat - minLat) + minLat;
             WithPoint(tableName, name, lon, lat);
         }
         return this;
