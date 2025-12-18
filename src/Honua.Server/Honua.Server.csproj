@@ -7,12 +7,18 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <StripSymbols>true</StripSymbols>
     <!-- Suppress trim warnings from Serilog for AOT compatibility -->
     <NoWarn>$(NoWarn);IL2104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <!-- Postgres reference for AOT assembly inclusion only -->
+    <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
+    <!-- ModuleInitializer in Postgres auto-registers services with Core -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
   </ItemGroup>
 

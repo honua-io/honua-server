@@ -1,23 +1,41 @@
 # Multi-stage Dockerfile for Honua Server
-# Supports both JIT and AOT builds
+# Native AOT build for minimal image size and fast cold start
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
-# Copy all source code
+# Install native AOT build dependencies
+RUN apk add --no-cache \
+    clang \
+    build-base \
+    zlib-dev
+
+# Copy solution and project files first for better layer caching
+COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
+COPY src/Honua.Server/*.csproj src/Honua.Server/
+
+# Restore dependencies
+RUN dotnet restore src/Honua.Server/Honua.Server.csproj
+
+# Copy source code
 COPY . .
 
-# Build application (JIT for Phase 0 - AOT requires additional native dependencies)
+# Build Native AOT application for minimal image size
 ARG CONFIGURATION=Release
 RUN dotnet publish src/Honua.Server/Honua.Server.csproj \
     --configuration $CONFIGURATION \
     --runtime linux-musl-x64 \
-    --self-contained false \
+    --self-contained true \
     --output /app \
-    -p:PublishAot=false
+    -p:PublishAot=true \
+    -p:StripSymbols=true \
+    -p:OptimizationPreference=Speed \
+    -p:IlcOptimizationPreference=Speed
 
-# Runtime stage - use Alpine for minimal size
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+# Runtime stage - use runtime-deps for AOT (no .NET runtime needed)
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
 
 # Install required packages for PostGIS connectivity
 RUN apk add --no-cache \
@@ -46,4 +64,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "Honua.Server.dll"]
+ENTRYPOINT ["./Honua.Server"]

@@ -3,7 +3,7 @@
 
 using System.Reflection;
 using DbUp;
-using Honua.Postgres; // ✅ COMPOSITION ROOT: Allowed to reference Infrastructure
+// ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Endpoints;
 using Honua.Server.Infrastructure.Middleware;
 using Serilog;
@@ -50,9 +50,10 @@ builder.Host.UseSerilog((context, services, config) =>
     }
 });
 
-// DEPENDENCY INVERSION: Register Infrastructure implementations for Core abstractions
-// IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)
-builder.Services.AddPostgreSqlServices(builder.Configuration);
+// COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
+// This is the only place where Server directly references Infrastructure
+// Rest of Server code uses only Core abstractions (IFeatureStore, IDatabaseHealthChecker)
+RegisterInfrastructureServices(builder.Services, builder.Configuration);
 
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Infrastructure.HealthCheck.IReadinessCheckService,
@@ -96,6 +97,15 @@ await RunDatabaseMigrationsAsync();
 app.MapHealthEndpoints();
 
 app.Run();
+
+// Composition Root: Register Infrastructure implementations
+// This is the only method in Server that directly references Infrastructure
+// All other code uses Core abstractions only
+static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
+{
+    // Register PostgreSQL services (the only direct Infrastructure reference)
+    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+}
 
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
