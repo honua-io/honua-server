@@ -22,9 +22,11 @@ check_pair() {
   fi
 }
 
+# Only sync instruction documents that provide project context
 check_pair "CLAUDE.md" "CODEX.md"
-check_pair ".claude/settings.json" ".codex/settings.json"
 check_pair ".claude/agents.md" ".codex/agents.md"
-check_pair ".claude/cleanup-checklist.md" ".codex/cleanup-checklist.md"
+
+# Note: settings.json and cleanup-checklist.md are allowed to differ
+# since different AI assistants may need different configurations
 
 echo "Instruction files are in sync."
