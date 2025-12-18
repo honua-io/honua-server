@@ -351,7 +351,7 @@ CRITICAL: First check PR/Issue process compliance:
 If any of these fail, mark as BLOCKING_ISSUES regardless of code quality."""
 
         response = client.chat.completions.create(
-            model="gpt-4",  # Using GPT-4 for better architectural reasoning
+            model="gpt-4-turbo",  # Using GPT-4 Turbo for larger context window (128K tokens)
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
