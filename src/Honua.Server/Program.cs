@@ -53,6 +53,10 @@ builder.Host.UseSerilog((context, services, config) =>
 // IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)
 builder.Services.AddPostgreSqlServices();
 
+// Register health check services
+builder.Services.AddScoped<Honua.Server.Infrastructure.HealthCheck.IReadinessCheckService,
+    Honua.Server.Infrastructure.HealthCheck.ReadinessCheckService>();
+
 var app = builder.Build();
 
 // Configure Serilog request logging with custom enrichment

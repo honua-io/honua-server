@@ -1,8 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.HealthCheck;
-using Honua.Server.Infrastructure.Logging;
+using Honua.Server.Infrastructure.HealthCheck;
 
 namespace Honua.Server.Endpoints;
 
@@ -45,7 +44,7 @@ public static class HealthEndpoints
 
     /// <summary>
     /// Handle readiness probe - indicates if the service is ready to accept traffic
-    /// Includes PostgreSQL connectivity validation via abstraction
+    /// Delegates health checking to dedicated service for better separation of concerns
     /// </summary>
     private static async Task HandleReadinessProbe(HttpContext context)
     {
@@ -56,36 +55,24 @@ public static class HealthEndpoints
             return;
         }
 
-        var databaseHealthChecker = context.RequestServices.GetRequiredService<IDatabaseHealthChecker>();
+        // Delegate health checking to dedicated service
+        var readinessCheckService = context.RequestServices.GetRequiredService<IReadinessCheckService>();
+        var result = await readinessCheckService.CheckReadinessAsync(context.RequestAborted);
 
-        try
-        {
-            var isDatabaseHealthy = await databaseHealthChecker.IsDatabaseHealthyAsync(context.RequestAborted);
+        // Convert health check result to HTTP response
+        await WriteHealthCheckResponse(context, result);
+    }
 
-            if (isDatabaseHealthy)
-            {
-                context.Response.StatusCode = 200;
-                context.Response.ContentType = "text/plain; charset=utf-8";
-                await context.Response.WriteAsync("Ready");
-            }
-            else
-            {
-                context.Response.StatusCode = 503; // Service Unavailable
-                context.Response.ContentType = "text/plain; charset=utf-8";
-                await context.Response.WriteAsync("Not Ready - Database unavailable");
-            }
-        }
-        catch (Exception ex)
-        {
-            // Log the error for debugging but don't expose details in response
-            var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger(nameof(HealthEndpoints));
-            Log.DatabaseConnectionFailed(logger, ex.Message, ex);
-
-            context.Response.StatusCode = 503; // Service Unavailable
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Not Ready - Database unavailable");
-        }
+    /// <summary>
+    /// Writes health check result to HTTP response
+    /// </summary>
+    /// <param name="context">HTTP context</param>
+    /// <param name="result">Health check result</param>
+    private static async Task WriteHealthCheckResponse(HttpContext context, ReadinessResult result)
+    {
+        context.Response.StatusCode = result.StatusCode;
+        context.Response.ContentType = "text/plain; charset=utf-8";
+        await context.Response.WriteAsync(result.Message);
     }
 }
 
