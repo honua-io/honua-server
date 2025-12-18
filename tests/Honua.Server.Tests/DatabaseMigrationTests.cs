@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
-using Dapper;
 using DbUp;
 using FluentAssertions;
 using Honua.TestKit;
@@ -55,37 +54,45 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await using var connection = await _postgres.GetConnectionAsync(_schemaName);
 
         // Check honua schema exists
-        var schemaExists = await connection.ExecuteScalarAsync<bool>(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'honua')");
+        await using var schemaCmd = connection.CreateCommand();
+        schemaCmd.CommandText = "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'honua')";
+        var schemaExists = (bool)(await schemaCmd.ExecuteScalarAsync())!;
         schemaExists.Should().BeTrue("honua schema should be created");
 
         // Check PostGIS extension is enabled
-        var postgisExists = await connection.ExecuteScalarAsync<bool>(
-            "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')");
+        await using var postgisCmd = connection.CreateCommand();
+        postgisCmd.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')";
+        var postgisExists = (bool)(await postgisCmd.ExecuteScalarAsync())!;
         postgisExists.Should().BeTrue("PostGIS extension should be enabled");
 
         // Verify tables exist
-        var tablesExist = await connection.ExecuteScalarAsync<int>("""
+        await using var tablesCmd = connection.CreateCommand();
+        tablesCmd.CommandText = """
             SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = 'honua'
             AND table_name IN ('services', 'layers', 'layer_fields')
-            """);
+            """;
+        var tablesExist = (int)(long)(await tablesCmd.ExecuteScalarAsync())!;
         tablesExist.Should().Be(3, "all three core tables should exist");
 
         // Verify foreign key constraints
-        var constraintsExist = await connection.ExecuteScalarAsync<int>("""
+        await using var constraintsCmd = connection.CreateCommand();
+        constraintsCmd.CommandText = """
             SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE constraint_schema = 'honua'
             AND constraint_type = 'FOREIGN KEY'
-            """);
+            """;
+        var constraintsExist = (int)(long)(await constraintsCmd.ExecuteScalarAsync())!;
         constraintsExist.Should().BeGreaterThan(0, "foreign key constraints should exist");
 
         // Verify indexes
-        var indexesExist = await connection.ExecuteScalarAsync<int>("""
+        await using var indexesCmd = connection.CreateCommand();
+        indexesCmd.CommandText = """
             SELECT COUNT(*) FROM pg_indexes
             WHERE schemaname = 'honua'
             AND indexname IN ('idx_layers_service_id', 'idx_layer_fields_layer_id')
-            """);
+            """;
+        var indexesExist = (int)(long)(await indexesCmd.ExecuteScalarAsync())!;
         indexesExist.Should().Be(2, "performance indexes should exist");
     }
 
