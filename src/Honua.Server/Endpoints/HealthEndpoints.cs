@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.HealthCheck;
+using Honua.Server.Infrastructure.Logging;
 
 namespace Honua.Server.Endpoints;
 
@@ -79,7 +80,7 @@ public static class HealthEndpoints
             // Log the error for debugging but don't expose details in response
             var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger(nameof(HealthEndpoints));
-            HealthLogger.DatabaseConnectionFailed(logger, ex);
+            Log.DatabaseConnectionFailed(logger, ex.Message, ex);
 
             context.Response.StatusCode = 503; // Service Unavailable
             context.Response.ContentType = "text/plain; charset=utf-8";
@@ -88,14 +89,3 @@ public static class HealthEndpoints
     }
 }
 
-/// <summary>
-/// Source-generated logging for health endpoints with AOT compatibility
-/// </summary>
-internal static partial class HealthLogger
-{
-    [Microsoft.Extensions.Logging.LoggerMessage(
-        EventId = 2001,
-        Level = Microsoft.Extensions.Logging.LogLevel.Warning,
-        Message = "Health check database connection failed")]
-    public static partial void DatabaseConnectionFailed(Microsoft.Extensions.Logging.ILogger logger, Exception exception);
-}
