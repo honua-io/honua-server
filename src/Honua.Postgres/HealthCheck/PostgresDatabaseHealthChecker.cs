@@ -10,6 +10,10 @@ namespace Honua.Postgres.HealthCheck;
 /// <summary>
 /// PostgreSQL implementation of database health checking
 /// </summary>
+/// <remarks>
+/// Marked as internal to prevent exposure of database-specific implementations
+/// outside the Infrastructure layer (Clean Architecture principle).
+/// </remarks>
 internal sealed class PostgresDatabaseHealthChecker : IDatabaseHealthChecker
 {
     private readonly string? _connectionString;
