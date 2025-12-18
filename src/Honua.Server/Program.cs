@@ -3,16 +3,20 @@
 
 using System.Reflection;
 using DbUp;
-using Honua.Postgres; // ✅ Server layer can depend on Infrastructure (Clean Architecture)
+using Honua.Postgres; // ✅ COMPOSITION ROOT: Allowed to reference Infrastructure
 using Honua.Server.Endpoints;
 
-// APPLICATION COMPOSITION ROOT (SERVER LAYER)
-// This file orchestrates dependency injection and application startup.
-// Clean Architecture: Server layer can depend on Core + Infrastructure layers.
+// CLEAN ARCHITECTURE COMPOSITION ROOT
+// This is the application layer that wires dependencies:
+// - Core (abstractions): IDatabaseHealthChecker interface
+// - Infrastructure (implementations): PostgresDatabaseHealthChecker
+// - Server (composition): Registers IDatabaseHealthChecker → PostgresDatabaseHealthChecker
+// Dependency flow: Server → (Core + Infrastructure), Infrastructure → Core
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add PostgreSQL services including health checking
+// DEPENDENCY INVERSION: Register Infrastructure implementations for Core abstractions
+// IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)
 builder.Services.AddPostgreSqlServices();
 
 var app = builder.Build();
