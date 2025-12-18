@@ -18,16 +18,36 @@ using Serilog.Enrichers.Span;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog for structured logging with AOT compatibility
-builder.Host.UseSerilog((context, services, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext()
-    .Enrich.WithEnvironmentName()
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
-    .Enrich.WithProperty("Application", "Honua")
-    .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"));
+builder.Host.UseSerilog((context, services, config) =>
+{
+    var isDevelopment = context.HostingEnvironment.IsDevelopment();
+
+    config
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Information)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithEnvironmentName()
+        .Enrich.WithMachineName()
+        .Enrich.WithThreadId()
+        .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
+        .Enrich.WithProperty("Application", "Honua")
+        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+
+    if (isDevelopment)
+    {
+        // Development: Human-readable console output
+        config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+    }
+    else
+    {
+        // Production: Compact JSON for log aggregation
+        config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
+    }
+});
 
 // DEPENDENCY INVERSION: Register Infrastructure implementations for Core abstractions
 // IDatabaseHealthChecker (Core abstraction) → PostgresDatabaseHealthChecker (Infrastructure impl)

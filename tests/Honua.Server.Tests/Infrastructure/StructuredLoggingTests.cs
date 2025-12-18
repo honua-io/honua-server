@@ -120,10 +120,10 @@ public sealed class StructuredLoggingTests
     public void StructuredLogging_HasSourceGeneratedMethods_ForAotCompatibility()
     {
         // This test validates that all logging methods are source-generated (not reflection-based)
-        // by ensuring they can be called without any runtime exceptions
+        // and that configuration is code-based for AOT compatibility
         var testLogger = new TestLogger();
 
-        // Act - Call various logging methods
+        // Act - Call various logging methods to verify source generation
         Log.QueryExecuted(testLogger, "test", 1, 1.0);
         Log.ApplicationStarting(testLogger, "1.0", "test");
         Log.DatabaseMigrationsStarting(testLogger);
@@ -132,6 +132,11 @@ public sealed class StructuredLoggingTests
         // Assert - All methods executed successfully without reflection exceptions
         testLogger.LogEntries.Should().HaveCount(4);
         testLogger.LogEntries.All(e => e.EventId.Id > 0).Should().BeTrue();
+
+        // Verify each method uses expected event ID ranges
+        testLogger.LogEntries.Should().Contain(e => e.EventId.Id >= 1000 && e.EventId.Id < 2000); // Query
+        testLogger.LogEntries.Should().Contain(e => e.EventId.Id >= 4000 && e.EventId.Id < 5000); // Infrastructure
+        testLogger.LogEntries.Should().Contain(e => e.EventId.Id >= 5000 && e.EventId.Id < 6000); // Errors
     }
 }
 
