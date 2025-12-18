@@ -47,7 +47,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             return null;
         }
 
-        return ReadFeature(reader);
+        return await ReadFeatureAsync(reader, cancellationToken);
     }
 
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
@@ -118,7 +118,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
         var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-        var attributesJson = JsonSerializer.Serialize(attributesDictionary, FeatureAttributesJsonContext.Default.DictionaryStringObject);
+        var attributesJson = await SerializeToJsonStringAsync(attributesDictionary, cancellationToken);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
 
@@ -129,7 +129,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             throw new InvalidOperationException("Failed to create feature: no result returned");
         }
 
-        return ReadFeature(reader);
+        return await ReadFeatureAsync(reader, cancellationToken);
     }
 
     public async Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
@@ -147,7 +147,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
         var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-        var attributesJson = JsonSerializer.Serialize(attributesDictionary, FeatureAttributesJsonContext.Default.DictionaryStringObject);
+        var attributesJson = await SerializeToJsonStringAsync(attributesDictionary, cancellationToken);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
 
@@ -158,7 +158,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             throw new InvalidOperationException($"Feature with ID {feature.Id} not found in layer {layerId}");
         }
 
-        return ReadFeature(reader);
+        return await ReadFeatureAsync(reader, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -187,62 +187,19 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         try
         {
-            var createdIds = new List<long>();
-            var errors = new List<string>();
+            var (createdIds, createErrors) = await ProcessCreatesAsync(layerId, editBatch.Creates, cancellationToken);
+            var (updatedCount, updateErrors) = await ProcessUpdatesAsync(layerId, editBatch.Updates, cancellationToken);
+            var (deletedCount, deleteErrors) = await ProcessDeletesAsync(layerId, editBatch.Deletes, cancellationToken);
 
-            // Process creates
-            foreach (var feature in editBatch.Creates)
-            {
-                try
-                {
-                    var created = await CreateAsync(layerId, feature, cancellationToken);
-                    createdIds.Add(created.Id);
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Create failed: {ex.Message}");
-                }
-            }
-
-            // Process updates
-            var updatedCount = 0;
-            foreach (var feature in editBatch.Updates)
-            {
-                try
-                {
-                    await UpdateAsync(layerId, feature, cancellationToken);
-                    updatedCount++;
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Update failed for feature {feature.Id}: {ex.Message}");
-                }
-            }
-
-            // Process deletes
-            var deletedCount = 0;
-            foreach (var featureId in editBatch.Deletes)
-            {
-                try
-                {
-                    if (await DeleteAsync(layerId, featureId, cancellationToken))
-                    {
-                        deletedCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Delete failed for feature {featureId}: {ex.Message}");
-                }
-            }
+            var allErrors = createErrors.Concat(updateErrors).Concat(deleteErrors).ToList();
 
             await transaction.CommitAsync(cancellationToken);
 
             return FeatureEditResult.Success(
-                createdIds.Count,
+                createdIds.Length,
                 updatedCount,
                 deletedCount,
-                createdIds.ToImmutableArray()
+                createdIds
             );
         }
         catch (Exception ex)
@@ -252,14 +209,97 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
     }
 
-    private static Feature ReadFeature(NpgsqlDataReader reader)
+    /// <summary>
+    /// Processes create operations within a transaction.
+    /// </summary>
+    private async Task<(ImmutableArray<long> createdIds, List<string> errors)> ProcessCreatesAsync(
+        int layerId,
+        ImmutableArray<Feature> features,
+        CancellationToken cancellationToken)
+    {
+        var createdIds = new List<long>();
+        var errors = new List<string>();
+
+        foreach (var feature in features)
+        {
+            try
+            {
+                var created = await CreateAsync(layerId, feature, cancellationToken);
+                createdIds.Add(created.Id);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Create failed: {ex.Message}");
+            }
+        }
+
+        return (createdIds.ToImmutableArray(), errors);
+    }
+
+    /// <summary>
+    /// Processes update operations within a transaction.
+    /// </summary>
+    private async Task<(int updatedCount, List<string> errors)> ProcessUpdatesAsync(
+        int layerId,
+        ImmutableArray<Feature> features,
+        CancellationToken cancellationToken)
+    {
+        var updatedCount = 0;
+        var errors = new List<string>();
+
+        foreach (var feature in features)
+        {
+            try
+            {
+                await UpdateAsync(layerId, feature, cancellationToken);
+                updatedCount++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Update failed for feature {feature.Id}: {ex.Message}");
+            }
+        }
+
+        return (updatedCount, errors);
+    }
+
+    /// <summary>
+    /// Processes delete operations within a transaction.
+    /// </summary>
+    private async Task<(int deletedCount, List<string> errors)> ProcessDeletesAsync(
+        int layerId,
+        ImmutableArray<long> featureIds,
+        CancellationToken cancellationToken)
+    {
+        var deletedCount = 0;
+        var errors = new List<string>();
+
+        foreach (var featureId in featureIds)
+        {
+            try
+            {
+                if (await DeleteAsync(layerId, featureId, cancellationToken))
+                {
+                    deletedCount++;
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Delete failed for feature {featureId}: {ex.Message}");
+            }
+        }
+
+        return (deletedCount, errors);
+    }
+
+    private static async Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
         var attributesJson = reader.GetString(2);
 
         // Deserialize JSON using AOT-compatible source generators
-        var attributesDictionary = JsonSerializer.Deserialize(attributesJson, FeatureAttributesJsonContext.Default.DictionaryStringObject) ?? new Dictionary<string, object?>();
+        var attributesDictionary = await DeserializeFromJsonStringAsync(attributesJson, cancellationToken) ?? new Dictionary<string, object?>();
 
         // Convert JsonElement values to primitive types for compatibility
         var convertedAttributes = attributesDictionary.ToDictionary(
@@ -408,10 +448,31 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            features.Add(ReadFeature(reader));
+            features.Add(await ReadFeatureAsync(reader, cancellationToken));
         }
 
         return features.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Serializes dictionary to JSON string asynchronously using AOT-compatible source generators.
+    /// </summary>
+    private static async Task<string> SerializeToJsonStringAsync(Dictionary<string, object?> dictionary, CancellationToken cancellationToken)
+    {
+        using var stream = new MemoryStream();
+        await JsonSerializer.SerializeAsync(stream, dictionary, FeatureAttributesJsonContext.Default.DictionaryStringObject, cancellationToken);
+        stream.Position = 0;
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Deserializes JSON string to dictionary asynchronously using AOT-compatible source generators.
+    /// </summary>
+    private static async Task<Dictionary<string, object?>?> DeserializeFromJsonStringAsync(string json, CancellationToken cancellationToken)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        return await JsonSerializer.DeserializeAsync(stream, FeatureAttributesJsonContext.Default.DictionaryStringObject, cancellationToken);
     }
 
     /// <summary>
