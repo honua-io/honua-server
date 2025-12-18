@@ -106,10 +106,41 @@ jobs:
           name: integration-test-results
           path: tests/TestResults/
 
+  test-architecture:
+    name: Architecture Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Run Architecture Tests
+        run: |
+          dotnet test Honua.sln \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=Architecture" \
+            --logger "trx;LogFileName=architecture-results.trx" \
+            --results-directory ./tests/TestResults
+
+      - name: Upload Architecture Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: architecture-test-results
+          path: tests/TestResults/
+
   coverage:
     name: Coverage Report
     runs-on: ubuntu-latest
-    needs: [test-unit, test-integration]
+    needs: [test-unit, test-integration, test-architecture]
     steps:
       - uses: actions/checkout@v4
 
