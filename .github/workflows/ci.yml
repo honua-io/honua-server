@@ -153,6 +153,7 @@ jobs:
           flags: combined
           name: codecov-umbrella
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Check Coverage Threshold
         run: |
