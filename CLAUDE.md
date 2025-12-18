@@ -1,3 +1,5 @@
+**NEVER ADD CLAUDE CODE ATTRIBUTION TO ANY COMMITS - DO NOT INCLUDE "Generated with Claude Code" OR CO-AUTHORED-BY LINES**
+
 # Honua Server - Project Instructions
 
 ## Project Overview
