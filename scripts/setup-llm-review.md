@@ -31,7 +31,17 @@ architecture-gate:
 
 ### 3. Test the System
 
-Create a test PR with architectural violations to verify the system works:
+Create a test PR with proper issue linking:
+
+```markdown
+## PR Title: Fix user authentication bug
+
+Closes #123
+
+This PR addresses the authentication timeout issue by implementing proper session management.
+```
+
+And create a test PR with violations to verify the system catches them:
 
 ```csharp
 // Example: Add this to a Core project file (should trigger BLOCKING_ISSUES)
@@ -49,9 +59,41 @@ public class BadExample : ControllerBase  // Controller usage - VIOLATION
 }
 ```
 
+### 4. Linking PRs to Issues
+
+The LLM review enforces proper issue tracking. Your PR must be linked to a GitHub issue using one of these formats:
+
+**In PR title or description:**
+- `Closes #123`
+- `Fixes #456`
+- `Resolves #789`
+- Simple reference: `#123`
+
+**Issue Requirements:**
+Your linked issue must have an "Acceptance Criteria" section:
+
+```markdown
+## Summary
+Description of the issue...
+
+## Acceptance Criteria
+- [ ] All gates must pass to merge
+- [ ] CI completes in < 5 minutes
+- [ ] Failed gates provide clear error messages
+```
+
+**Common Formats Supported:**
+- `## Acceptance Criteria`
+- `### Acceptance Criteria`
+- `Acceptance Criteria:`
+
 ## Review Criteria
 
 ### 🚫 BLOCKING_ISSUES (Fails PR)
+- **PR Process Violations**:
+  - PR not linked to any GitHub issue
+  - Missing acceptance criteria in linked issue
+  - Changes don't address acceptance criteria
 - **Dependency Violations**: Core depending on Infrastructure
 - **Controller Usage**: `ControllerBase` inheritance
 - **Public Database Types**: Repository/DataAccess classes public

@@ -109,6 +109,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_PR_NUMBER: ${{ github.event.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python scripts/architecture-review.py
 

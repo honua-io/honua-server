@@ -14,8 +14,124 @@ import os
 import sys
 import json
 import subprocess
+import re
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+def get_pr_info() -> Dict[str, Any]:
+    """Get PR information from GitHub API"""
+    pr_number = os.environ.get('GITHUB_PR_NUMBER')
+    repo = os.environ.get('GITHUB_REPOSITORY', 'honua/server')
+    github_token = os.environ.get('GITHUB_TOKEN')
+
+    if not pr_number or not github_token:
+        return {"error": "Missing PR number or GitHub token", "linked_issues": [], "body": ""}
+
+    try:
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'token {github_token}')
+        req.add_header('Accept', 'application/vnd.github.v3+json')
+
+        with urllib.request.urlopen(req) as response:
+            pr_data = json.loads(response.read().decode())
+
+        # Extract linked issues from PR body and title
+        linked_issues = extract_linked_issues(pr_data.get('body', ''), pr_data.get('title', ''))
+
+        return {
+            "title": pr_data.get('title', ''),
+            "body": pr_data.get('body', ''),
+            "linked_issues": linked_issues,
+            "number": pr_number
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch PR info: {str(e)}", "linked_issues": [], "body": ""}
+
+def extract_linked_issues(body: str, title: str) -> List[Dict[str, Any]]:
+    """Extract GitHub issue references from PR body and title"""
+    issue_patterns = [
+        r'(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)',  # Closes #123
+        r'(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+(?:https://github\.com/[^/]+/[^/]+/)?issues/(\d+)',  # Full URL
+        r'#(\d+)',  # Simple #123 reference
+    ]
+
+    text = f"{title} {body}".lower()
+    issue_numbers = set()
+
+    for pattern in issue_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        issue_numbers.update(matches)
+
+    issues = []
+    for issue_num in issue_numbers:
+        issue_info = get_issue_details(issue_num)
+        if issue_info:
+            issues.append(issue_info)
+
+    return issues
+
+def get_issue_details(issue_number: str) -> Optional[Dict[str, Any]]:
+    """Get issue details from GitHub API"""
+    repo = os.environ.get('GITHUB_REPOSITORY', 'honua/server')
+    github_token = os.environ.get('GITHUB_TOKEN')
+
+    if not github_token:
+        return None
+
+    try:
+        url = f"https://api.github.com/repos/{repo}/issues/{issue_number}"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'token {github_token}')
+        req.add_header('Accept', 'application/vnd.github.v3+json')
+
+        with urllib.request.urlopen(req) as response:
+            issue_data = json.loads(response.read().decode())
+
+        # Extract acceptance criteria
+        acceptance_criteria = extract_acceptance_criteria(issue_data.get('body', ''))
+
+        return {
+            "number": issue_number,
+            "title": issue_data.get('title', ''),
+            "body": issue_data.get('body', ''),
+            "acceptance_criteria": acceptance_criteria,
+            "labels": [label['name'] for label in issue_data.get('labels', [])]
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch issue {issue_number}: {str(e)}"}
+
+def extract_acceptance_criteria(issue_body: str) -> List[str]:
+    """Extract acceptance criteria from issue body"""
+    if not issue_body:
+        return []
+
+    criteria = []
+
+    # Look for "Acceptance Criteria" section
+    ac_patterns = [
+        r'## Acceptance Criteria\s*\n(.*?)(?=\n##|\n---|\Z)',
+        r'### Acceptance Criteria\s*\n(.*?)(?=\n###|\n##|\n---|\Z)',
+        r'Acceptance Criteria:?\s*\n(.*?)(?=\n##|\n---|\Z)',
+    ]
+
+    for pattern in ac_patterns:
+        match = re.search(pattern, issue_body, re.DOTALL | re.IGNORECASE)
+        if match:
+            ac_text = match.group(1).strip()
+            # Extract bullet points or checklist items
+            lines = ac_text.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and (line.startswith('- ') or line.startswith('* ') or re.match(r'^\d+\.', line) or line.startswith('[ ]') or line.startswith('[x]')):
+                    # Clean up the line
+                    clean_line = re.sub(r'^[-\*\d\.\[\]x\s]+', '', line).strip()
+                    if clean_line:
+                        criteria.append(clean_line)
+
+    return criteria
 
 def get_honua_architecture_rules() -> str:
     """Extract architecture rules from project documentation"""
@@ -23,15 +139,20 @@ def get_honua_architecture_rules() -> str:
 # Honua Architecture Rules
 
 ## Critical Violations (Blocking):
-1. **Dependency Direction Violations**:
+1. **PR Process Violations**:
+   - PR not linked to any GitHub issue
+   - Missing acceptance criteria in linked issue
+   - Changes don't address acceptance criteria
+
+2. **Dependency Direction Violations**:
    - Core MUST NOT depend on Infrastructure (Honua.Postgres, Honua.Server)
    - Postgres MUST NOT depend on Server layer
 
-2. **API Pattern Violations**:
+3. **API Pattern Violations**:
    - NO Controllers - only Minimal APIs allowed
    - NO inheritance-heavy patterns
 
-3. **Quality Gate Violations**:
+4. **Quality Gate Violations**:
    - Public types without XML documentation
    - Database types that are public (should be internal)
 
@@ -73,12 +194,42 @@ def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str 
 
 def mock_analysis(context: str) -> str:
     """Generate mock analysis for testing"""
-    return """**🏗️ Architecture Review Summary**
+    # Check if context indicates missing issue link
+    has_blocking_issue = "🚫 BLOCKING" in context
+
+    if has_blocking_issue:
+        return """**🏗️ Architecture Review Summary**
+
+**🚫 Process Violations Found:**
+- **BLOCKING**: PR not properly linked to GitHub issue
+- Missing acceptance criteria validation
 
 **✅ Good Patterns Found:**
 - Following established project structure and naming conventions
 - Proper separation of test concerns
 - Clean project organization
+
+**💡 Recommendations:**
+- Link this PR to a GitHub issue using "Closes #123" or "Fixes #456"
+- Ensure the linked issue has clear acceptance criteria
+- Verify that changes actually address the acceptance criteria
+
+**📚 Educational Notes:**
+- Issue linking ensures traceability and proper change management
+- Acceptance criteria provide clear success criteria for changes
+- This process helps maintain project quality and team alignment
+
+**Overall Assessment:** BLOCKING_ISSUES
+
+*Note: This is a mock review. Configure OPENAI_API_KEY or ANTHROPIC_API_KEY for full LLM analysis.*"""
+    else:
+        return """**🏗️ Architecture Review Summary**
+
+**✅ Good Patterns Found:**
+- Following established project structure and naming conventions
+- Proper separation of test concerns
+- Clean project organization
+- Proper GitHub issue linkage and acceptance criteria
 
 **⚠️ Architecture Concerns:**
 - No significant architectural violations detected in this changeset
@@ -93,6 +244,7 @@ def mock_analysis(context: str) -> str:
 - The changes maintain good separation of concerns
 - Test organization follows project standards
 - Architecture test infrastructure provides good foundation
+- Proper issue tracking maintains project traceability
 
 **Overall Assessment:** APPROVED
 
@@ -149,6 +301,9 @@ def analyze_with_openai(context: str, api_key: str) -> str:
 ## ASSESSMENT CRITERIA:
 
 **🚫 BLOCKING_ISSUES** (Must fix before merge):
+- PR not linked to any GitHub issue
+- Missing acceptance criteria in linked issue
+- Changes don't address acceptance criteria
 - Core depending on Infrastructure (`using Honua.Postgres` in Core)
 - Controller usage (`ControllerBase` inheritance)
 - Public repository/database types (security violation)
@@ -188,7 +343,12 @@ Provide your review using this EXACT format:
 
 **Overall Assessment:** [APPROVED/NEEDS_ATTENTION/BLOCKING_ISSUES]
 
-Be very specific about assessment level based on the criteria above."""
+CRITICAL: First check PR/Issue process compliance:
+1. Is this PR linked to a GitHub issue?
+2. Does the linked issue have acceptance criteria?
+3. Do the code changes actually address those acceptance criteria?
+
+If any of these fail, mark as BLOCKING_ISSUES regardless of code quality."""
 
         response = client.chat.completions.create(
             model="gpt-4",  # Using GPT-4 for better architectural reasoning
@@ -233,6 +393,8 @@ def extract_assessment_level(analysis_text: str) -> str:
     analysis_lower = analysis_text.lower()
 
     blocking_keywords = [
+        "no github issue", "not linked to.*issue", "missing issue",
+        "no acceptance criteria", "missing.*criteria", "changes.*don't.*address",
         "dependency violation", "controller inheritance", "controllerbase",
         "public repository", "public.*repository", "public.*dataaccess",
         "missing xml documentation", "infrastructure dependency"
@@ -339,10 +501,45 @@ def main():
 
     print(f"Found {len(changed_files)} changed files")
 
+    # Get PR and issue information
+    pr_info = get_pr_info()
+    print(f"PR Information: {pr_info.get('title', 'Unknown')}")
+
     # Build context
     context = f"""
 # Architecture Review Context
 
+## PR Information:
+- **Title**: {pr_info.get('title', 'Unknown')}
+- **Number**: {pr_info.get('number', 'Unknown')}
+- **Linked Issues**: {len(pr_info.get('linked_issues', []))} issue(s)
+
+"""
+
+    # Add issue information
+    if 'error' in pr_info:
+        context += f"**⚠️ PR Analysis Error**: {pr_info['error']}\n\n"
+    elif not pr_info.get('linked_issues'):
+        context += "**🚫 BLOCKING**: No GitHub issues linked to this PR\n\n"
+    else:
+        context += "## Linked Issues:\n"
+        for issue in pr_info['linked_issues']:
+            if 'error' in issue:
+                context += f"- Issue #{issue.get('number', '?')}: Error - {issue['error']}\n"
+            else:
+                context += f"- **Issue #{issue['number']}**: {issue['title']}\n"
+                ac_count = len(issue.get('acceptance_criteria', []))
+                if ac_count == 0:
+                    context += f"  **🚫 BLOCKING**: No acceptance criteria found\n"
+                else:
+                    context += f"  **Acceptance Criteria** ({ac_count} items):\n"
+                    for i, criteria in enumerate(issue['acceptance_criteria'][:5], 1):  # Limit to prevent bloat
+                        context += f"    {i}. {criteria}\n"
+                    if ac_count > 5:
+                        context += f"    ... and {ac_count - 5} more\n"
+        context += "\n"
+
+    context += f"""
 ## Changed Files: {len(changed_files)}
 {chr(10).join(f"- {f}" for f in changed_files)}
 
