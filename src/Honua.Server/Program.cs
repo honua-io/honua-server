@@ -3,8 +3,8 @@
 
 using System.Reflection;
 using DbUp;
-using Honua.Server.Endpoints;
 using Honua.Postgres;
+using Honua.Server.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
