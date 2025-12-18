@@ -36,6 +36,7 @@ When porting behavior, document the source:
 - **API surface coverage**: 100% - every endpoint must have integration tests
 - **AOT compatibility**: No reflection in hot paths, source-generated JSON/logging
 - **Dependency limits**: Max 5 dependencies per endpoint, max 4 per handler
+- **Code formatting**: Always run `dotnet format Honua.sln` before creating PRs to prevent CI failures
 
 ### Test-Driven Development
 
