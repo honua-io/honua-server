@@ -41,7 +41,9 @@ public sealed class PostgresConnectionTests : IAsyncLifetime
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("3.4", result.ToString());
+        var version = result.ToString();
+        Assert.NotNull(version);
+        Assert.True(version.StartsWith("3.6", StringComparison.Ordinal), $"Expected PostGIS 3.6.x version, got: {version}");
     }
 
     [Fact]

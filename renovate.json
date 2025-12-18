@@ -1,0 +1,37 @@
+{
+  "extends": [
+    "config:base",
+    ":semanticCommitTypeAll(deps)",
+    ":timezone(UTC)"
+  ],
+  "schedule": ["before 6am on monday"],
+  "assignees": ["mikemcdougall"],
+  "reviewers": ["mikemcdougall"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["Microsoft\\..*", "System\\..*"],
+      "groupName": "Microsoft packages",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "matchPackagePatterns": ["xunit.*", "FluentAssertions.*"],
+      "groupName": "Test packages",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "matchPackagePatterns": ["Npgsql.*", "NetTopologySuite.*"],
+      "groupName": "PostGIS packages",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "matchPackagePatterns": ["Testcontainers.*"],
+      "groupName": "Testcontainers packages",
+      "schedule": ["before 6am on monday"]
+    }
+  ]
+}
