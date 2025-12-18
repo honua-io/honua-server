@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features;
 [Collection("Database")]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {
-    private readonly IDatabaseFixture _fixture;
+    private readonly DatabaseFixtureAdapter _fixture;
     private readonly ITestOutputHelper _output;
     private PostgresFeatureStore _featureStore = null!;
     private string _schemaName = null!;

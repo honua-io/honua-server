@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
-using System.Text.Json;
 using Honua.Core.Abstractions;
 using Honua.Core.Domain.Features;
 using Npgsql;
@@ -116,8 +115,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
-        // Serialize to JSON string and pass as JSONB parameter
-        var attributesJson = JsonSerializer.Serialize(feature.Attributes);
+        // Serialize to JSON string and pass as JSONB parameter (AOT-compatible)
+        var attributesJson = AotJsonSerializer.SerializeAttributes(feature.Attributes);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
 
@@ -144,8 +143,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         command.Parameters.AddWithValue(feature.Id);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
-        // Serialize to JSON string and pass as JSONB parameter
-        var attributesJson = JsonSerializer.Serialize(feature.Attributes);
+        // Serialize to JSON string and pass as JSONB parameter (AOT-compatible)
+        var attributesJson = AotJsonSerializer.SerializeAttributes(feature.Attributes);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
 
@@ -256,31 +255,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
         var attributesJson = reader.GetString(2);
 
-        // Deserialize JSON and convert JsonElement values to primitive types for AOT compatibility
-        var rawAttributes = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(attributesJson)
-                           ?? new Dictionary<string, JsonElement>();
-
-        var attributes = rawAttributes.ToImmutableDictionary(
-            kvp => kvp.Key,
-            kvp => ConvertJsonElementToObject(kvp.Value)
-        );
+        // Deserialize JSON using AOT-compatible deserializer
+        var attributes = AotJsonSerializer.DeserializeAttributes(attributesJson);
 
         return Feature.Create(id, geometry, attributes);
     }
 
-    private static object? ConvertJsonElementToObject(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt32(out var intVal) ? intVal : element.GetDouble(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Undefined => null,
-            _ => element.ToString() // For objects/arrays, return as JSON string
-        };
-    }
 
     private string BuildSelectQuery(int layerId, FeatureQuery query)
     {
