@@ -1,13 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Tests.Infrastructure;
+using Honua.Server.Tests.Infrastructure;
 using Xunit;
 
-namespace Honua.Core.Tests;
+namespace Honua.Server.Tests;
 
 /// <summary>
-/// Collection definition for Core tests that share a database container.
+/// Collection definition for Server tests that share a database container.
 /// Tests in this collection will share the same database container but use
 /// schema-based isolation for parallel execution.
 /// Uses an abstracted database fixture to maintain Clean Architecture principles.

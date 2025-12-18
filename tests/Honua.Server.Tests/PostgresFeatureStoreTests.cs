@@ -3,12 +3,12 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Domain.Features;
-using Honua.Core.Tests.Infrastructure;
+using Honua.Server.Tests.Infrastructure;
 using Honua.Postgres.Features;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Honua.Core.Tests.Features;
+namespace Honua.Server.Tests;
 
 [Collection("Database")]
 public class PostgresFeatureStoreTests : IAsyncLifetime

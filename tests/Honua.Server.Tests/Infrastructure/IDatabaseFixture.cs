@@ -4,11 +4,11 @@
 using Npgsql;
 using Xunit;
 
-namespace Honua.Core.Tests.Infrastructure;
+namespace Honua.Server.Tests.Infrastructure;
 
 /// <summary>
-/// Abstraction for database test fixtures to avoid direct infrastructure dependencies in Core tests.
-/// This maintains Clean Architecture by keeping Core tests independent of specific database implementations.
+/// Abstraction for database test fixtures to avoid direct infrastructure dependencies in Server tests.
+/// This maintains Clean Architecture by keeping Server tests independent of specific database implementations.
 /// </summary>
 public interface IDatabaseFixture : IAsyncLifetime
 {

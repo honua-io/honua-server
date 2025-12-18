@@ -4,11 +4,11 @@
 using Honua.TestKit;
 using Npgsql;
 
-namespace Honua.Core.Tests.Infrastructure;
+namespace Honua.Server.Tests.Infrastructure;
 
 /// <summary>
 /// Adapter that wraps PostgresFixture to provide the abstracted IDatabaseFixture interface.
-/// This allows Core tests to use database functionality without depending directly on PostgreSQL infrastructure.
+/// This allows Server tests to use database functionality without depending directly on PostgreSQL infrastructure.
 /// </summary>
 public sealed class DatabaseFixtureAdapter : IDatabaseFixture
 {
