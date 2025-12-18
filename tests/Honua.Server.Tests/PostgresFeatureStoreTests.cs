@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Domain.Features;
-using Honua.Server.Tests.Infrastructure;
 using Honua.Postgres.Features;
+using Honua.Server.Tests.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;
 
