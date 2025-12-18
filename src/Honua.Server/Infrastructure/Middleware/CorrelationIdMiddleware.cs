@@ -73,7 +73,7 @@ public sealed class CorrelationIdMiddleware
             var clientCorrelationId = headerValue.ToString().Trim();
             // Basic validation - ensure it's reasonable length and doesn't contain control characters
             if (clientCorrelationId.Length <= 128 &&
-                !clientCorrelationId.Any(c => char.IsControl(c)))
+                !HasControlCharacters(clientCorrelationId))
             {
                 return clientCorrelationId;
             }
@@ -87,6 +87,19 @@ public sealed class CorrelationIdMiddleware
 
         // 3. Generate new correlation ID as fallback
         return Guid.NewGuid().ToString("D"); // Standard Guid format (32 digits separated by hyphens)
+    }
+
+    /// <summary>
+    /// Checks if a string contains control characters without using LINQ in async context
+    /// </summary>
+    private static bool HasControlCharacters(string input)
+    {
+        for (int i = 0; i < input.Length; i++)
+        {
+            if (char.IsControl(input[i]))
+                return true;
+        }
+        return false;
     }
 }
 
