@@ -43,7 +43,8 @@ async Task RunDatabaseMigrationsAsync()
     if (!result.Successful)
     {
         DatabaseLogger.MigrationFailed(app.Logger, result.Error);
-        throw new InvalidOperationException("Database migration failed", result.Error);
+        // Don't throw - let the app start and rely on health checks to indicate readiness
+        return;
     }
 
     DatabaseLogger.MigrationsCompleted(app.Logger);

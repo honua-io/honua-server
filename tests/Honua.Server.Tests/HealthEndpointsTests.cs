@@ -10,9 +10,11 @@ using Xunit;
 namespace Honua.Server.Tests;
 
 /// <summary>
-/// Integration tests for health check endpoints
+/// Tests for health check endpoints (/healthz/live, /healthz/ready)
+/// Validates Kubernetes-compatible health checks with PostgreSQL connectivity
 /// </summary>
-public class HealthEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
+[Protocol("Infrastructure")]
+public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
@@ -24,8 +26,9 @@ public class HealthEndpointsTests : IClassFixture<WebApplicationFactory<Program>
     }
 
     [IntegrationTest]
+    [Operation("HealthCheck")]
     [Endpoint("GET /healthz/live")]
-    public async Task LivenessProbe_ReturnsHealthy()
+    public async Task LivenessProbe_Always_Returns200AndHealthy()
     {
         // Act
         var response = await _client.GetAsync("/healthz/live");
@@ -39,43 +42,136 @@ public class HealthEndpointsTests : IClassFixture<WebApplicationFactory<Program>
     }
 
     [IntegrationTest]
+    [Operation("HealthCheck")]
     [Endpoint("GET /healthz/ready")]
-    public async Task ReadinessProbe_ReturnsHealthy()
+    public async Task ReadinessProbe_WithoutDatabase_Returns200AndReady()
     {
+        // Arrange
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:DefaultConnection", "");
+        });
+
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/healthz/ready");
+        var response = await client.GetAsync("/healthz/ready");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.ToString().Should().Be("text/plain; charset=utf-8");
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Be("Ready");
+        content.Should().Be("Ready (no database configured)");
     }
 
     [IntegrationTest]
-    [Endpoint("POST /healthz/live")]
-    public async Task LivenessProbe_PostMethod_Returns405()
+    [Operation("HealthCheck")]
+    [Endpoint("GET /healthz/ready")]
+    public async Task ReadinessProbe_WithInvalidDatabase_Returns503()
     {
+        // Arrange - Use an invalid connection string that will fail quickly
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:DefaultConnection",
+                "Host=nonexistent-host-12345;Database=test;Username=test;Password=test");
+        });
+
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.PostAsync("/healthz/live", new StringContent(""));
+        var response = await client.GetAsync("/healthz/ready");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType?.ToString().Should().Be("text/plain; charset=utf-8");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Be("Not Ready - Database unavailable");
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    [InlineData("PATCH")]
+    [Operation("HealthCheck")]
+    [Endpoint("* /healthz/live")]
+    public async Task LivenessProbe_WithNonGetMethod_Returns405(string method)
+    {
+        // Arrange
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/live");
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    [InlineData("PATCH")]
+    [Operation("HealthCheck")]
+    [Endpoint("* /healthz/ready")]
+    public async Task ReadinessProbe_WithNonGetMethod_Returns405(string method)
+    {
+        // Arrange
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/ready");
+
+        // Act
+        var response = await _client.SendAsync(request);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /healthz/ready")]
-    public async Task ReadinessProbe_PostMethod_Returns405()
+    [Operation("HealthCheck")]
+    [Endpoint("GET /healthz/live")]
+    public async Task LivenessProbe_ResponseTime_IsUnder100Ms()
     {
+        // Arrange
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
         // Act
-        var response = await _client.PostAsync("/healthz/ready", new StringContent(""));
+        var response = await _client.GetAsync("/healthz/live");
+        stopwatch.Stop();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
+            "liveness probe should respond within 100ms");
     }
 
     [IntegrationTest]
+    [Operation("HealthCheck")]
+    [Endpoint("GET /healthz/ready")]
+    public async Task ReadinessProbe_WithoutDatabase_ResponseTime_IsUnder100Ms()
+    {
+        // Arrange
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:DefaultConnection", "");
+        });
+
+        using var client = factory.CreateClient();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        // Act
+        var response = await client.GetAsync("/healthz/ready");
+        stopwatch.Stop();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
+            "readiness probe should respond within 100ms when no database is configured");
+    }
+
+    [IntegrationTest]
+    [Operation("HealthCheck")]
     public async Task HealthEndpoints_AreRegistered()
     {
         // Test that endpoints are properly registered by checking they don't return 404
