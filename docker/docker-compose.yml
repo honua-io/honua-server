@@ -1,0 +1,103 @@
+# Copyright (c) Honua. All rights reserved.
+# Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+# Development environment with PostgreSQL + PostGIS
+services:
+  # PostgreSQL with PostGIS extension
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: honua-postgres
+    environment:
+      POSTGRES_DB: honua_dev
+      POSTGRES_USER: honua
+      POSTGRES_PASSWORD: honua_dev_password
+      # Enable PostGIS extensions
+      POSTGRES_MULTIPLE_EXTENSIONS: postgis,postgis_topology,fuzzystrmatch,postgis_tiger_geocoder
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honua -d honua_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - honua-network
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: honua-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - honua-network
+
+  # Honua Server (when building locally)
+  honua:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: honua-server
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      # Database connection
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua;Password=honua_dev_password"
+      # Redis connection (optional)
+      ConnectionStrings__Redis: "redis:6379"
+      # Disable authentication for dev
+      HONUA_DEV_AUTH: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - honua-network
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: honua-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@honua.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - honua-network
+    profiles:
+      - admin
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+
+networks:
+  honua-network:
+    driver: bridge
