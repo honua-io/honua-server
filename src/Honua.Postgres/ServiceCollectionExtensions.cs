@@ -3,6 +3,7 @@
 
 using Honua.Core.Abstractions;
 using Honua.Core.HealthCheck;
+using Honua.Postgres.Catalog;
 using Honua.Postgres.Features;
 using Honua.Postgres.HealthCheck;
 using Microsoft.Extensions.Configuration;
@@ -43,6 +44,9 @@ public static class ServiceCollectionExtensions
 
         // Register feature store implementation
         services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+
+        // Register layer catalog implementation
+        services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
