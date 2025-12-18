@@ -214,3 +214,7 @@ docs/temp/
 *.local.json
 appsettings.Development.json
 !appsettings.Development.json.template
+
+# AI assistant workspace files
+.serena/
+.claude/plans/
