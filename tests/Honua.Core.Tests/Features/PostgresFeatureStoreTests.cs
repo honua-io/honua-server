@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Domain.Features;
+using Honua.Core.Tests.Infrastructure;
 using Honua.Postgres.Features;
-using Honua.TestKit;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -13,13 +13,13 @@ namespace Honua.Core.Tests.Features;
 [Collection("Database")]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {
-    private readonly PostgresFixture _fixture;
+    private readonly IDatabaseFixture _fixture;
     private readonly ITestOutputHelper _output;
     private PostgresFeatureStore _featureStore = null!;
     private string _schemaName = null!;
     private const int TestLayerId = 1;
 
-    public PostgresFeatureStoreTests(PostgresFixture fixture, ITestOutputHelper output)
+    public PostgresFeatureStoreTests(DatabaseFixtureAdapter fixture, ITestOutputHelper output)
     {
         _fixture = fixture;
         _output = output;
