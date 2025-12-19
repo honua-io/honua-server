@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 
@@ -16,34 +18,26 @@ public static class AdminEndpoints
     /// </summary>
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use explicit RequestDelegate for full AOT compatibility
-        endpoints.MapMethods("/api/admin/connections/{id}/tables", new[] { HttpMethods.Get }, HandleGetConnectionTables)
+        // Use Map with explicit HTTP method metadata to avoid MapGet reflection
+        endpoints.Map("/api/admin/connections/{id}/tables", HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")
-            .WithTags("Admin");
+            .WithTags("Admin")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
     /// <summary>
-    /// RequestDelegate for AOT-compatible endpoint handling
-    /// </summary>
-    private static async Task HandleGetConnectionTables(HttpContext context)
-    {
-        var result = await GetConnectionTables(context);
-        await result.ExecuteAsync(context);
-    }
-
-    /// <summary>
-    /// Get all spatial tables for a connection
+    /// Handle admin connection tables request
     /// Implements the API from Issue #57: GET /api/admin/connections/{id}/tables
     /// </summary>
-    private static async Task<IResult> GetConnectionTables(HttpContext context)
+    private static async Task HandleGetConnectionTables(HttpContext context)
     {
         // Ensure only GET requests
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            return Results.Problem(
-                title: "Method Not Allowed",
-                statusCode: 405,
-                detail: "Only GET requests are allowed for this endpoint");
+            context.Response.StatusCode = 405; // Method Not Allowed
+            context.Response.ContentType = "application/problem+json; charset=utf-8";
+            await context.Response.WriteAsync($$"""{"title":"Method Not Allowed","status":405,"detail":"Only GET requests are allowed for this endpoint"}""");
+            return;
         }
 
         // Extract connection ID from route
@@ -52,23 +46,22 @@ public static class AdminEndpoints
         // Validate input
         if (string.IsNullOrWhiteSpace(id))
         {
-            return Results.BadRequest("Connection ID is required");
+            context.Response.StatusCode = 400; // Bad Request
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync("Connection ID is required");
+            return;
         }
 
         var logger = context.RequestServices.GetRequiredService<ILogger<ITableDiscoveryService>>();
 
         try
         {
-            // For now, get connection string from configuration
+            // For now, use the default database connection
             // In a full implementation, this would look up the connection by ID
-            var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
-            var connectionString = configuration.GetConnectionString("honua");
+            var connectionProvider = context.RequestServices.GetRequiredService<IDatabaseConnectionProvider>();
 
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                AdminLog.ConnectionNotFound(logger, id);
-                return Results.NotFound($"Connection '{id}' not found");
-            }
+            await using var connection = await connectionProvider.OpenConnectionAsync(context.RequestAborted);
+            var connectionString = connection.ConnectionString;
 
             var tableDiscoveryService = context.RequestServices.GetRequiredService<ITableDiscoveryService>();
             var tables = await tableDiscoveryService.DiscoverPostGisTablesAsync(
@@ -83,16 +76,19 @@ public static class AdminEndpoints
             AdminLog.TableDiscoverySuccessful(logger, tables.Count, id);
 
             // Return JSON response with AOT-compatible serialization
-            return Results.Json(response, TableDiscoveryJsonContext.Default.TableDiscoveryResponse);
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await JsonSerializer.SerializeAsync(context.Response.Body, response,
+                TableDiscoveryJsonContext.Default.TableDiscoveryResponse,
+                context.RequestAborted);
         }
         catch (Exception ex)
         {
             AdminLog.TableDiscoveryFailed(logger, ex, id);
 
-            return Results.Problem(
-                title: "Table Discovery Failed",
-                statusCode: 500,
-                detail: "An error occurred while discovering tables. Please check the connection and try again.");
+            context.Response.StatusCode = 500; // Internal Server Error
+            context.Response.ContentType = "application/problem+json; charset=utf-8";
+            await context.Response.WriteAsync($$"""{"title":"Table Discovery Failed","status":500,"detail":"An error occurred while discovering tables. Please check the connection and try again."}""");
         }
     }
 }
