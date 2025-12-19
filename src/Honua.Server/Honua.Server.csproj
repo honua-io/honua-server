@@ -10,8 +10,8 @@
     <OptimizationPreference>Speed</OptimizationPreference>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <StripSymbols>true</StripSymbols>
-    <!-- Suppress trim warnings from Serilog for AOT compatibility -->
-    <NoWarn>$(NoWarn);IL2104</NoWarn>
+    <!-- Suppress trim warnings from Serilog and endpoint mapping for AOT compatibility -->
+    <NoWarn>$(NoWarn);IL2104;IL2026;IL3050</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
