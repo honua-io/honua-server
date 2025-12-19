@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Domain.Features;
-using Honua.Postgres.Features;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Postgres.Features.FeatureStore;
 using Honua.Server.Tests.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;

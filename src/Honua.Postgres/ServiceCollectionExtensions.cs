@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Abstractions;
-using Honua.Core.HealthCheck;
-using Honua.Postgres.Features;
-using Honua.Postgres.HealthCheck;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Postgres.Features.Catalog;
+using Honua.Postgres.Features.FeatureStore;
+using Honua.Postgres.Features.HealthCheck;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -43,6 +45,9 @@ public static class ServiceCollectionExtensions
 
         // Register feature store implementation
         services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+
+        // Register layer catalog implementation
+        services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();

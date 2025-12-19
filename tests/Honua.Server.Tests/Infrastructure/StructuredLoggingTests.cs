@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Infrastructure.Logging;
+using Honua.Server.Features.Infrastructure.Logging;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 using Xunit;

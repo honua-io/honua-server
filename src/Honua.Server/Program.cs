@@ -4,8 +4,8 @@
 using System.Reflection;
 using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
-using Honua.Server.Endpoints;
-using Honua.Server.Infrastructure.Middleware;
+using Honua.Server.Features.HealthCheck;
+using Honua.Server.Features.Infrastructure.Middleware;
 using Serilog;
 using Serilog.Enrichers.Span;
 
@@ -56,8 +56,8 @@ builder.Host.UseSerilog((context, services, config) =>
 RegisterInfrastructureServices(builder.Services, builder.Configuration);
 
 // Register health check services
-builder.Services.AddScoped<Honua.Server.Infrastructure.HealthCheck.IReadinessCheckService,
-    Honua.Server.Infrastructure.HealthCheck.ReadinessCheckService>();
+builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
+    Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 
 var app = builder.Build();
 
@@ -86,7 +86,7 @@ app.UseSerilogRequestLogging(options =>
 });
 
 // Log application startup
-Honua.Server.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
+Honua.Server.Features.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
     typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
     app.Environment.EnvironmentName);
 
@@ -114,11 +114,11 @@ async Task RunDatabaseMigrationsAsync()
     if (string.IsNullOrEmpty(connectionString))
     {
         // Skip migrations if no connection string is configured
-        Honua.Server.Infrastructure.Logging.Log.DatabaseConnectionStringNotConfigured(app.Logger);
+        Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringNotConfigured(app.Logger);
         return;
     }
 
-    Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
+    Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
 
     try
     {
@@ -133,28 +133,28 @@ async Task RunDatabaseMigrationsAsync()
 
         if (!result.Successful)
         {
-            Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, result.Error.Message, result.Error);
+            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, result.Error.Message, result.Error);
             // Don't throw - let the app start and rely on health checks to indicate readiness
             return;
         }
 
         if (result.Scripts.Any())
         {
-            Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, result.Scripts.Count());
+            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, result.Scripts.Count());
             // Log individual script names for debugging
             foreach (var script in result.Scripts)
             {
-                Honua.Server.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script.Name);
+                Honua.Server.Features.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script.Name);
             }
         }
         else
         {
-            Honua.Server.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
+            Honua.Server.Features.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
         }
     }
     catch (Exception ex)
     {
-        Honua.Server.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
+        Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
         // Don't throw - let the app start and rely on health checks to indicate readiness
     }
 }
