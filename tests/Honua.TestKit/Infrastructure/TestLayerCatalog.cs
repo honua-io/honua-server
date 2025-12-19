@@ -14,8 +14,8 @@ namespace Honua.TestKit.Infrastructure;
 /// </summary>
 public sealed class TestLayerCatalog : ILayerCatalog
 {
-    private static readonly string[] SupportedFormats = new[] { "JSON", "GeoJSON" };
-    private static readonly string[] Capabilities = new[] { "Query", "Extract" };
+    private static readonly string[] _supportedFormats = new[] { "JSON", "GeoJSON" };
+    private static readonly string[] _capabilities = new[] { "Query", "Extract" };
 
     private readonly ServiceDefinition _testService;
     private readonly LayerDefinition _testLayer;
@@ -52,8 +52,8 @@ public sealed class TestLayerCatalog : ILayerCatalog
             Layers: new[] { _testLayer },
             SpatialReference: spatialRef,
             MaxRecordCount: 1000,
-            SupportedFormats: SupportedFormats,
-            Capabilities: Capabilities,
+            SupportedFormats: _supportedFormats,
+            Capabilities: _capabilities,
             ServiceExtent: extent);
     }
 
