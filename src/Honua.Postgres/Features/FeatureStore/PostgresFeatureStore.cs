@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 
 namespace Honua.Postgres.Features.FeatureStore;
@@ -20,12 +21,12 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// </remarks>
 internal sealed class PostgresFeatureStore : IFeatureStore
 {
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _tableName;
 
-    public PostgresFeatureStore(NpgsqlDataSource dataSource, string? schemaName = null)
+    public PostgresFeatureStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _tableName = string.IsNullOrEmpty(schemaName) ? "features" : $"{schemaName}.features";
     }
 
@@ -36,7 +37,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
 
@@ -81,7 +83,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     {
         var sql = BuildExtentQuery(layerId, query ?? new FeatureQuery());
 
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         AddQueryParameters(command, query ?? new FeatureQuery(), layerId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -112,7 +115,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             VALUES ($1, $2, $3)
             RETURNING objectid, geometry, attributes";
 
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
@@ -140,7 +144,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             WHERE layer_id = $1 AND objectid = $2
             RETURNING objectid, geometry, attributes";
 
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Id);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
@@ -167,7 +172,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             DELETE FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
 
@@ -182,7 +188,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
@@ -431,7 +437,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private async Task<long> ExecuteCountQuery(string sql, FeatureQuery query, int layerId, CancellationToken cancellationToken)
     {
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         AddQueryParameters(command, query, layerId);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -440,7 +447,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private async Task<ImmutableArray<Feature>> ExecuteSelectQuery(string sql, FeatureQuery query, int layerId, CancellationToken cancellationToken)
     {
-        await using var command = _dataSource.CreateCommand(sql);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
         AddQueryParameters(command, query, layerId);
 
         var features = new List<Feature>();

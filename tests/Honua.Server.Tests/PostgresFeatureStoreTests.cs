@@ -30,7 +30,8 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(PostgresFeatureStoreTests));
 
         // Create feature store with the isolated schema
-        _featureStore = new PostgresFeatureStore(_fixture.DataSource, _schemaName);
+        var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
+        _featureStore = new PostgresFeatureStore(connectionProvider, _schemaName);
 
         // Create test table structure
         await _fixture.ExecuteAsync("""

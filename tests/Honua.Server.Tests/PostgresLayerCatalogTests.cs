@@ -29,7 +29,8 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(PostgresLayerCatalogTests));
 
         // Create layer catalog with the isolated schema
-        _layerCatalog = new PostgresLayerCatalog(_fixture.DataSource, _schemaName);
+        var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
+        _layerCatalog = new PostgresLayerCatalog(connectionProvider, _schemaName);
 
         // Create catalog table structure
         await _fixture.ExecuteAsync("""
