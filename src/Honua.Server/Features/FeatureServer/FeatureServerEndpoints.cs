@@ -15,26 +15,29 @@ namespace Honua.Server.Features.FeatureServer;
 public static class FeatureServerEndpoints
 {
     /// <summary>
-    /// Maps FeatureServer REST API endpoints for layer metadata
+    /// Maps FeatureServer REST API endpoints for layer metadata using AOT-compatible routing
     /// </summary>
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/rest/services")
-            .WithTags("FeatureServer");
-
-        // Service metadata endpoint
-        group.MapGet("/{serviceId}/FeatureServer", GetServiceMetadataAsync)
+        // Use Map with explicit HTTP method metadata to avoid MapGet reflection
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer", GetServiceMetadataAsync)
+            .WithDisplayName("Get FeatureServer Service Metadata")
             .WithName("GetServiceMetadata")
             .WithSummary("Get FeatureServer service metadata")
             .WithDescription("Returns metadata for a FeatureServer service including all layers")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<FeatureServerResponse>(200, "application/json")
             .Produces(404);
 
         // Layer metadata endpoint
-        group.MapGet("/{serviceId}/FeatureServer/{layerId:int}", GetLayerMetadataAsync)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", GetLayerMetadataAsync)
+            .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
             .WithSummary("Get FeatureServer layer metadata")
-            .WithDescription("Returns detailed metadata for a specific layer")
+            .WithDescription("Returns detailed layer metadata for a specific layer")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<LayerResponse>(200, "application/json")
             .Produces(404);
 
