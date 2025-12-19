@@ -52,7 +52,7 @@ public static class AdminEndpoints
             return;
         }
 
-        var logger = context.RequestServices.GetRequiredService<ILogger<ITableDiscoveryService>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AdminEndpoints>>();
 
         try
         {
