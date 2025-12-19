@@ -16,8 +16,19 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// PostgreSQL implementation of feature storage and retrieval
 /// </summary>
 /// <remarks>
-/// Marked as internal to prevent exposure of database-specific implementations
-/// outside the Infrastructure layer (Clean Architecture principle).
+/// <para>Marked as internal to prevent exposure of database-specific implementations
+/// outside the Infrastructure layer (Clean Architecture principle).</para>
+///
+/// <para><strong>SECURITY WARNING</strong>: This class contains a known SQL injection
+/// vulnerability in WHERE clause handling (AppendWhereClause method). The current
+/// implementation uses string concatenation with basic validation, which is not secure.
+/// Enhanced validation reduces attack surface but does not eliminate the risk.</para>
+///
+/// <para>Required fix: Implement proper parameterized WHERE clause parsing that:
+/// 1. Parses WHERE expressions into AST (field names, operators, values)
+/// 2. Validates field names against layer schema
+/// 3. Parameterizes all literal values using PostgreSQL placeholders ($n)
+/// 4. Reconstructs SQL with safe parameter substitution</para>
 /// </remarks>
 internal sealed class PostgresFeatureStore : IFeatureStore
 {
@@ -373,24 +384,69 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     {
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            // Basic SQL injection prevention - reject dangerous patterns
             var whereClause = query.Where.Trim();
 
-            // Check for obvious SQL injection patterns
+            // SECURITY CRITICAL: This method has a SQL injection vulnerability
+            // TODO: Replace with proper parameterized WHERE clause parsing
+            // Issue: String concatenation allows injection despite basic validation
+            //
+            // Proper fix requires:
+            // 1. Parse WHERE clause into AST (field names, operators, values)
+            // 2. Validate field names against layer schema
+            // 3. Parameterize all values using PostgreSQL parameters
+            // 4. Reconstruct SQL with proper placeholders ($n)
+
+            // Enhanced validation - reject dangerous patterns and suspicious constructs
             var dangerousPatterns = new[]
             {
-                ";", "--", "/*", "*/", "DROP", "DELETE", "INSERT", "UPDATE",
-                "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE"
+                ";", "--", "/*", "*/", "xp_", "sp_", "DROP", "DELETE", "INSERT",
+                "UPDATE", "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "SCRIPT",
+                "UNION", "SELECT", "FROM", "INTO", "MERGE", "WITH", "DECLARE",
+                "CAST(", "CONVERT(", "EXEC(", "EXECUTE(", "\\", "\\x", "0x",
+                "CHAR(", "ASCII(", "NCHAR(", "UNICODE(", "@@", "INFORMATION_SCHEMA"
             };
 
             foreach (var pattern in dangerousPatterns)
             {
                 if (whereClause.Contains(pattern, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new ArgumentException($"WHERE clause contains potentially dangerous pattern: {pattern}");
+                    throw new ArgumentException(
+                        $"WHERE clause rejected: contains potentially dangerous pattern '{pattern}'. " +
+                        "Use simple field comparisons only (e.g., 'name = \\'value\\'' or 'age > 18').",
+                        nameof(query));
                 }
             }
 
+            // Additional validation: Must contain at least one field comparison
+            if (!System.Text.RegularExpressions.Regex.IsMatch(whereClause,
+                @"^\s*\w+\s*(=|!=|<>|>|<|>=|<=|LIKE|NOT\s+LIKE|IN|NOT\s+IN)\s*",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                throw new ArgumentException(
+                    "WHERE clause must start with a valid field comparison (e.g., 'fieldname = value').",
+                    nameof(query));
+            }
+
+            // Reject nested queries and complex expressions
+            if (whereClause.Contains('(') || whereClause.Contains(')'))
+            {
+                // Allow only basic parentheses for simple grouping like: (field1 = 'a' AND field2 = 'b')
+                var parenCount = whereClause.Count(c => c == '(');
+                var closeParenCount = whereClause.Count(c => c == ')');
+
+                if (parenCount != closeParenCount || parenCount > 2)
+                {
+                    throw new ArgumentException(
+                        "WHERE clause contains unsupported parentheses complexity. Use simple field comparisons only.",
+                        nameof(query));
+                }
+            }
+
+            // Log warning for security audit
+            // TODO: Add structured logging here when logger is available
+
+            // STILL VULNERABLE: This is string concatenation and not secure
+            // This temporary approach only reduces attack surface
             sql.Append(CultureInfo.InvariantCulture, $" AND ({whereClause})");
         }
     }
