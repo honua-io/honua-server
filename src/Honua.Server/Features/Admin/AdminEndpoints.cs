@@ -16,8 +16,11 @@ public static class AdminEndpoints
     /// </summary>
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use direct route mapping for AOT compatibility
-        endpoints.MapGet("/api/admin/connections/{id}/tables", GetConnectionTables)
+        // Use lambda for AOT compatibility - explicit HttpContext parameter extraction
+        endpoints.MapGet("/api/admin/connections/{id}/tables", async (HttpContext context) =>
+        {
+            return await GetConnectionTables(context);
+        })
             .WithDisplayName("Get Connection Tables")
             .WithTags("Admin");
     }
@@ -26,9 +29,7 @@ public static class AdminEndpoints
     /// Get all spatial tables for a connection
     /// Implements the API from Issue #57: GET /api/admin/connections/{id}/tables
     /// </summary>
-    private static async Task<IResult> GetConnectionTables(
-        string id,
-        HttpContext context)
+    private static async Task<IResult> GetConnectionTables(HttpContext context)
     {
         // Ensure only GET requests
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -38,6 +39,9 @@ public static class AdminEndpoints
                 statusCode: 405,
                 detail: "Only GET requests are allowed for this endpoint");
         }
+
+        // Extract connection ID from route
+        var id = context.GetRouteValue("id")?.ToString();
 
         // Validate input
         if (string.IsNullOrWhiteSpace(id))
