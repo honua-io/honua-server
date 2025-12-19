@@ -167,6 +167,13 @@ public static partial class Log
     public static partial void CorrelationIdEstablished(
         ILogger logger, string correlationId, string requestPath);
 
+    [LoggerMessage(
+        EventId = 4040,
+        Level = LogLevel.Warning,
+        Message = "Database connection retry attempt {Attempt}: {ErrorMessage}")]
+    public static partial void ConnectionRetry(
+        ILogger logger, int attempt, string errorMessage);
+
     #endregion
 
     #region Errors (5000-5999)
