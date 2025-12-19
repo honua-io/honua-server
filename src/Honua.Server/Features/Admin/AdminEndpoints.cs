@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics.CodeAnalysis;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 
@@ -15,15 +14,12 @@ public static class AdminEndpoints
     /// <summary>
     /// Configure admin endpoints using AOT-compatible routing
     /// </summary>
-    [RequiresUnreferencedCode()]
-    [RequiresDynamicCode()]
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Use direct route mapping for AOT compatibility
-        endpoints.Map("/api/admin/connections/{id}/tables", (Delegate)GetConnectionTables)
+        endpoints.MapGet("/api/admin/connections/{id}/tables", GetConnectionTables)
             .WithDisplayName("Get Connection Tables")
-            .WithTags("Admin")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithTags("Admin");
     }
 
     /// <summary>
