@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Xunit;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.TestKit;
 
@@ -46,6 +48,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                     // Replace connection string with test container
                     services.RemoveAll<NpgsqlDataSource>();
                     services.AddNpgsqlDataSource(_postgres.ConnectionString);
+
+                    // Replace database connection provider with test implementation
+                    services.RemoveAll<IDatabaseConnectionProvider>();
+                    services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
+                    {
+                        var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
+                        return new TestDatabaseConnectionProvider(dataSource);
+                    });
 
                     // Apply custom service configurations
                     foreach (var configure in _serviceConfigurations)
