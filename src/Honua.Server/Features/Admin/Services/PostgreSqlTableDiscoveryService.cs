@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.Server.Features.Admin.Models;
 using Npgsql;
 
@@ -86,6 +87,100 @@ public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
 
                 // Get all columns
                 var columns = await GetTableColumnsAsync(connection, schema, tableName, cancellationToken);
+
+                var tableInfo = new TableInfo
+                {
+                    Schema = schema,
+                    Table = tableName,
+                    GeometryColumn = geometryColumn,
+                    GeometryType = geometryType,
+                    Srid = srid,
+                    EstimatedRows = rowCount,
+                    Columns = columns
+                };
+
+                discoveredTables[qualifiedName] = tableInfo;
+            }
+
+            tables.AddRange(discoveredTables.Values);
+
+            Honua.Server.Features.Admin.AdminLog.PostGisTablesDiscovered(_logger, tables.Count);
+        }
+        catch (Exception ex)
+        {
+            Honua.Server.Features.Admin.AdminLog.PostGisDiscoveryError(_logger, ex);
+            throw;
+        }
+
+        return tables;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+
+        var tables = new List<TableInfo>();
+
+        try
+        {
+            // Use the existing connection - no need to open/close it
+            var npgsqlConnection = connection as NpgsqlConnection
+                ?? throw new ArgumentException("Connection must be an NpgsqlConnection", nameof(connection));
+
+            // Query both geometry_columns and geography_columns for spatial tables
+            const string sql = """
+                SELECT DISTINCT
+                    f_table_schema as schema,
+                    f_table_name as table_name,
+                    f_geometry_column as geometry_column,
+                    type as geometry_type,
+                    srid,
+                    'geometry' as column_type
+                FROM geometry_columns
+                WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
+
+                UNION ALL
+
+                SELECT DISTINCT
+                    f_table_schema as schema,
+                    f_table_name as table_name,
+                    f_geography_column as geometry_column,
+                    type as geometry_type,
+                    srid,
+                    'geography' as column_type
+                FROM geography_columns
+                WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
+
+                ORDER BY schema, table_name
+                """;
+
+            await using var command = new NpgsqlCommand(sql, npgsqlConnection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            var discoveredTables = new Dictionary<string, TableInfo>();
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var schema = reader.GetString(0);
+                var tableName = reader.GetString(1);
+                var geometryColumn = reader.GetString(2);
+                var geometryType = reader.GetString(3);
+                var srid = reader.GetInt32(4);
+
+                var qualifiedName = $"{schema}.{tableName}";
+
+                // If we already processed this table, skip (could happen if table has multiple geometry columns)
+                if (discoveredTables.ContainsKey(qualifiedName))
+                    continue;
+
+                // Get estimated row count
+                var rowCount = await GetEstimatedRowCountAsync(npgsqlConnection, schema, tableName, cancellationToken);
+
+                // Get all columns
+                var columns = await GetTableColumnsAsync(npgsqlConnection, schema, tableName, cancellationToken);
 
                 var tableInfo = new TableInfo
                 {
