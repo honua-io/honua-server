@@ -420,8 +420,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             }
         }
 
-        // Simple regex to match: fieldname operator 'value' or fieldname operator number
-        var regexPattern = @"(\w+)\s*(=|!=|<>|>|<|>=|<=|LIKE|NOT\s+LIKE)\s*('([^']*)'|(\d+(?:\.\d+)?))";
+        // Regex to match: fieldname operator 'value' or fieldname operator number
+        // Also supports PostgreSQL JSON operators: attributes->>'key' = 'value'
+        var regexPattern = @"(\w+(?:->>'[^']+')?)\s*(=|!=|<>|>|<|>=|<=|LIKE|NOT\s+LIKE)\s*('([^']*)'|(\d+(?:\.\d+)?))";
         var regex = new System.Text.RegularExpressions.Regex(regexPattern,
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -433,8 +434,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             var quotedValue = match.Groups[4].Value; // String value inside quotes
             var numericValue = match.Groups[5].Value; // Numeric value
 
-            // Validate field name (basic alphanumeric + underscore)
-            if (!System.Text.RegularExpressions.Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$"))
+            // Validate field name (alphanumeric + underscore, or JSON path operators)
+            var fieldNamePattern = @"^[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')$|^[a-zA-Z_][a-zA-Z0-9_]*$";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(fieldName, fieldNamePattern))
             {
                 throw new ArgumentException($"Invalid field name: {fieldName}");
             }
