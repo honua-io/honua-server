@@ -3,11 +3,13 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Xunit;
 
 namespace Honua.Server.Tests;
@@ -24,7 +26,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        // Replace the real ILayerCatalog with test implementation
+        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
+        await _fixture.InitializeAsync();
+    }
+
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]

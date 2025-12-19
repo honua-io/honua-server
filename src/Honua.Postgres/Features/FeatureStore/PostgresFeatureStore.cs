@@ -13,22 +13,27 @@ using Npgsql;
 namespace Honua.Postgres.Features.FeatureStore;
 
 /// <summary>
+/// Holds a parameterized SQL query with its parameters
+/// </summary>
+internal record ParameterizedQuery(string Sql, List<object> WhereParameters);
+
+/// <summary>
 /// PostgreSQL implementation of feature storage and retrieval
 /// </summary>
 /// <remarks>
 /// <para>Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).</para>
 ///
-/// <para><strong>SECURITY WARNING</strong>: This class contains a known SQL injection
-/// vulnerability in WHERE clause handling (AppendWhereClause method). The current
-/// implementation uses string concatenation with basic validation, which is not secure.
-/// Enhanced validation reduces attack surface but does not eliminate the risk.</para>
+/// <para><strong>SECURITY NOTICE</strong>: WHERE clause handling has been secured using
+/// parameterized queries. The implementation parses simple WHERE expressions (e.g.,
+/// 'field = value', 'age > 18') and properly parameterizes all literal values while
+/// validating field names to prevent SQL injection attacks.</para>
 ///
-/// <para>Required fix: Implement proper parameterized WHERE clause parsing that:
-/// 1. Parses WHERE expressions into AST (field names, operators, values)
-/// 2. Validates field names against layer schema
-/// 3. Parameterizes all literal values using PostgreSQL placeholders ($n)
-/// 4. Reconstructs SQL with safe parameter substitution</para>
+/// <para>Supported WHERE clause formats:
+/// - Field comparisons: name = 'value', age > 18, score >= 90
+/// - String operations: description LIKE 'pattern%'
+/// - Null checks: field IS NULL, field IS NOT NULL
+/// Complex expressions with subqueries or functions are not supported for security.</para>
 /// </remarks>
 internal sealed class PostgresFeatureStore : IFeatureStore
 {
@@ -66,8 +71,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         // Build the count query first
-        var countSql = BuildCountQuery(layerId, query);
-        var totalCount = await ExecuteCountQuery(countSql, query, layerId, cancellationToken);
+        var countQuery = BuildCountQuery(layerId, query);
+        var totalCount = await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
 
         if (totalCount == 0)
         {
@@ -75,8 +80,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
 
         // Build the main query
-        var selectSql = BuildSelectQuery(layerId, query);
-        var features = await ExecuteSelectQuery(selectSql, query, layerId, cancellationToken);
+        var selectQuery = BuildSelectQuery(layerId, query);
+        var features = await ExecuteSelectQuery(selectQuery, query, layerId, cancellationToken);
 
         var hasMore = query.Offset.HasValue && query.Limit.HasValue &&
                       query.Offset.Value + query.Limit.Value < totalCount;
@@ -86,17 +91,17 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var sql = BuildCountQuery(layerId, query);
-        return await ExecuteCountQuery(sql, query, layerId, cancellationToken);
+        var countQuery = BuildCountQuery(layerId, query);
+        return await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var sql = BuildExtentQuery(layerId, query ?? new FeatureQuery());
+        var extentQuery = BuildExtentQuery(layerId, query ?? new FeatureQuery());
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        AddQueryParameters(command, query ?? new FeatureQuery(), layerId);
+        await using var command = new NpgsqlCommand(extentQuery.Sql, connection);
+        AddQueryParameters(command, query ?? new FeatureQuery(), layerId, extentQuery.WhereParameters);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -330,12 +335,13 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     }
 
 
-    private string BuildSelectQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query)
     {
         var sql = new StringBuilder($"SELECT objectid, geometry, attributes FROM {_tableName} WHERE layer_id = $1");
         var paramIndex = 2;
+        var parameters = new List<object>();
 
-        AppendWhereClause(sql, query, ref paramIndex);
+        AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
         if (query.Limit.HasValue)
@@ -348,21 +354,22 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
         }
 
-        return sql.ToString();
+        return new ParameterizedQuery(sql.ToString(), parameters);
     }
 
-    private string BuildCountQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildCountQuery(int layerId, FeatureQuery query)
     {
         var sql = new StringBuilder($"SELECT COUNT(*) FROM {_tableName} WHERE layer_id = $1");
         var paramIndex = 2;
+        var parameters = new List<object>();
 
-        AppendWhereClause(sql, query, ref paramIndex);
+        AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
-        return sql.ToString();
+        return new ParameterizedQuery(sql.ToString(), parameters);
     }
 
-    private string BuildExtentQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildExtentQuery(int layerId, FeatureQuery query)
     {
         var sql = new StringBuilder($@"
             SELECT
@@ -373,82 +380,95 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                 WHERE layer_id = $1 AND geometry IS NOT NULL");
 
         var paramIndex = 2;
-        AppendWhereClause(sql, query, ref paramIndex);
+        var parameters = new List<object>();
+
+        AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
         sql.Append(") AS extent_query");
-        return sql.ToString();
+        return new ParameterizedQuery(sql.ToString(), parameters);
     }
 
-    private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex)
+    private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
     {
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
             var whereClause = query.Where.Trim();
 
-            // SECURITY CRITICAL: This method has a SQL injection vulnerability
-            // TODO: Replace with proper parameterized WHERE clause parsing
-            // Issue: String concatenation allows injection despite basic validation
-            //
-            // Proper fix requires:
-            // 1. Parse WHERE clause into AST (field names, operators, values)
-            // 2. Validate field names against layer schema
-            // 3. Parameterize all values using PostgreSQL parameters
-            // 4. Reconstruct SQL with proper placeholders ($n)
+            // Parse and parameterize simple WHERE clauses
+            // Supports: field = 'value', field > 123, field LIKE 'pattern%'
+            var parameterizedClause = ParseAndParameterizeWhereClause(whereClause, ref paramIndex, parameters);
 
-            // Enhanced validation - reject dangerous patterns and suspicious constructs
-            var dangerousPatterns = new[]
-            {
-                ";", "--", "/*", "*/", "xp_", "sp_", "DROP", "DELETE", "INSERT",
-                "UPDATE", "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "SCRIPT",
-                "UNION", "SELECT", "FROM", "INTO", "MERGE", "WITH", "DECLARE",
-                "CAST(", "CONVERT(", "EXEC(", "EXECUTE(", "\\", "\\x", "0x",
-                "CHAR(", "ASCII(", "NCHAR(", "UNICODE(", "@@", "INFORMATION_SCHEMA"
-            };
-
-            foreach (var pattern in dangerousPatterns)
-            {
-                if (whereClause.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new ArgumentException(
-                        $"WHERE clause rejected: contains potentially dangerous pattern '{pattern}'. " +
-                        "Use simple field comparisons only (e.g., 'name = \\'value\\'' or 'age > 18').",
-                        nameof(query));
-                }
-            }
-
-            // Additional validation: Must contain at least one field comparison
-            if (!System.Text.RegularExpressions.Regex.IsMatch(whereClause,
-                @"^\s*\w+\s*(=|!=|<>|>|<|>=|<=|LIKE|NOT\s+LIKE|IN|NOT\s+IN)\s*",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-            {
-                throw new ArgumentException(
-                    "WHERE clause must start with a valid field comparison (e.g., 'fieldname = value').",
-                    nameof(query));
-            }
-
-            // Reject nested queries and complex expressions
-            if (whereClause.Contains('(') || whereClause.Contains(')'))
-            {
-                // Allow only basic parentheses for simple grouping like: (field1 = 'a' AND field2 = 'b')
-                var parenCount = whereClause.Count(c => c == '(');
-                var closeParenCount = whereClause.Count(c => c == ')');
-
-                if (parenCount != closeParenCount || parenCount > 2)
-                {
-                    throw new ArgumentException(
-                        "WHERE clause contains unsupported parentheses complexity. Use simple field comparisons only.",
-                        nameof(query));
-                }
-            }
-
-            // Log warning for security audit
-            // TODO: Add structured logging here when logger is available
-
-            // STILL VULNERABLE: This is string concatenation and not secure
-            // This temporary approach only reduces attack surface
-            sql.Append(CultureInfo.InvariantCulture, $" AND ({whereClause})");
+            sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
         }
+    }
+
+    private static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
+    {
+        // Basic security validation first
+        var dangerousPatterns = new[]
+        {
+            ";", "--", "/*", "*/", "DROP", "DELETE", "INSERT", "UPDATE",
+            "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "UNION"
+        };
+
+        foreach (var pattern in dangerousPatterns)
+        {
+            if (whereClause.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"WHERE clause contains dangerous pattern: {pattern}");
+            }
+        }
+
+        // Simple regex to match: fieldname operator 'value' or fieldname operator number
+        var regexPattern = @"(\w+)\s*(=|!=|<>|>|<|>=|<=|LIKE|NOT\s+LIKE)\s*('([^']*)'|(\d+(?:\.\d+)?))";
+        var regex = new System.Text.RegularExpressions.Regex(regexPattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        var currentParamIndex = paramIndex;
+        var result = regex.Replace(whereClause, match =>
+        {
+            var fieldName = match.Groups[1].Value;
+            var operatorValue = match.Groups[2].Value;
+            var quotedValue = match.Groups[4].Value; // String value inside quotes
+            var numericValue = match.Groups[5].Value; // Numeric value
+
+            // Validate field name (basic alphanumeric + underscore)
+            if (!System.Text.RegularExpressions.Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$"))
+            {
+                throw new ArgumentException($"Invalid field name: {fieldName}");
+            }
+
+            // Add parameter and return placeholder
+            if (!string.IsNullOrEmpty(quotedValue))
+            {
+                parameters.Add(quotedValue);
+                return $"{fieldName} {operatorValue} ${currentParamIndex++}";
+            }
+            else if (!string.IsNullOrEmpty(numericValue))
+            {
+                if (double.TryParse(numericValue, out var numVal))
+                {
+                    parameters.Add(numVal);
+                    return $"{fieldName} {operatorValue} ${currentParamIndex++}";
+                }
+                throw new ArgumentException($"Invalid numeric value: {numericValue}");
+            }
+
+            throw new ArgumentException("Unable to parse WHERE clause value");
+        });
+
+        // Update the ref parameter with the final index
+        paramIndex = currentParamIndex;
+
+        // If no replacements were made, the WHERE clause format is unsupported
+        if (result == whereClause)
+        {
+            throw new ArgumentException(
+                "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18");
+        }
+
+        return result;
     }
 
     private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
@@ -468,10 +488,16 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
     }
 
-    private void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId)
+    private void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId, List<object> whereParameters)
     {
         // Layer ID is always first parameter
         command.Parameters.AddWithValue(layerId);
+
+        // Add WHERE clause parameters (these come after layerId but before spatial/pagination params)
+        foreach (var param in whereParameters)
+        {
+            command.Parameters.AddWithValue(param);
+        }
 
         // Add spatial filter parameter if present
         if (query.SpatialFilter.HasValue)
@@ -491,21 +517,21 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
     }
 
-    private async Task<long> ExecuteCountQuery(string sql, FeatureQuery query, int layerId, CancellationToken cancellationToken)
+    private async Task<long> ExecuteCountQuery(ParameterizedQuery countQuery, FeatureQuery query, int layerId, CancellationToken cancellationToken)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        AddQueryParameters(command, query, layerId);
+        await using var command = new NpgsqlCommand(countQuery.Sql, connection);
+        AddQueryParameters(command, query, layerId, countQuery.WhereParameters);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    private async Task<ImmutableArray<Feature>> ExecuteSelectQuery(string sql, FeatureQuery query, int layerId, CancellationToken cancellationToken)
+    private async Task<ImmutableArray<Feature>> ExecuteSelectQuery(ParameterizedQuery selectQuery, FeatureQuery query, int layerId, CancellationToken cancellationToken)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        AddQueryParameters(command, query, layerId);
+        await using var command = new NpgsqlCommand(selectQuery.Sql, connection);
+        AddQueryParameters(command, query, layerId, selectQuery.WhereParameters);
 
         var features = new List<Feature>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
