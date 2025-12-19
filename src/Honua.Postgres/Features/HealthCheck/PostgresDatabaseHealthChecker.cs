@@ -36,12 +36,12 @@ internal sealed class PostgresDatabaseHealthChecker : IDatabaseHealthChecker
         try
         {
             await using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // Execute a simple query to verify database is responsive with timeout
             await using var command = new NpgsqlCommand("SELECT 1", connection);
             command.CommandTimeout = 5; // 5-second timeout for health checks
-            await command.ExecuteScalarAsync(cancellationToken);
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
             return true;
         }

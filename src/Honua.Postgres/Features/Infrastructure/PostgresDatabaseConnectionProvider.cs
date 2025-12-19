@@ -47,7 +47,7 @@ internal sealed class PostgresDatabaseConnectionProvider : IDatabaseConnectionPr
                 _logger.LogWarning("Database connection retry attempt {Attempt}: {ErrorMessage}", attempt, ex.Message);
 #pragma warning restore CA1848
             },
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return connection;
     }

@@ -52,7 +52,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             WHERE l.layer_id = @layerId
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@layerId", layerId);
 
@@ -90,7 +90,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             ORDER BY l.layer_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -134,7 +134,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             WHERE LOWER(s.service_name) = LOWER(@serviceName)
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@serviceName", serviceName);
 
@@ -170,7 +170,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             ORDER BY s.service_name
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -200,7 +200,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     {
         var sql = $"SELECT 1 FROM {_layersTable} WHERE layer_id = @layerId";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@layerId", layerId);
 
@@ -213,7 +213,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     {
         var sql = $"SELECT 1 FROM {_servicesTable} WHERE LOWER(service_name) = LOWER(@serviceName)";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@serviceName", serviceName);
 
@@ -308,7 +308,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             ORDER BY f.field_order
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@layerId", layerId);
 
@@ -352,7 +352,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             ORDER BY f.layer_id, f.field_order
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@layerIds", layerIds);
 
@@ -394,7 +394,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             ORDER BY sl.layer_order, l.layer_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@serviceName", serviceName);
 

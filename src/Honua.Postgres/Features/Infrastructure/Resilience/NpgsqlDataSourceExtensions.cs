@@ -25,6 +25,6 @@ internal static class NpgsqlDataSourceExtensions
         var retryPolicy = ResiliencePolicies.GetConnectionRetryPolicy(onRetry);
 
         return await retryPolicy.ExecuteAsync(async () =>
-            await dataSource.OpenConnectionAsync(cancellationToken));
+            await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
     }
 }
