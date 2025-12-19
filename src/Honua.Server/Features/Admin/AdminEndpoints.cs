@@ -16,13 +16,19 @@ public static class AdminEndpoints
     /// </summary>
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use lambda for AOT compatibility - explicit HttpContext parameter extraction
-        endpoints.MapGet("/api/admin/connections/{id}/tables", async (HttpContext context) =>
-        {
-            return await GetConnectionTables(context);
-        })
+        // Use explicit RequestDelegate for full AOT compatibility
+        endpoints.MapMethods("/api/admin/connections/{id}/tables", new[] { HttpMethods.Get }, HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")
             .WithTags("Admin");
+    }
+
+    /// <summary>
+    /// RequestDelegate for AOT-compatible endpoint handling
+    /// </summary>
+    private static async Task HandleGetConnectionTables(HttpContext context)
+    {
+        var result = await GetConnectionTables(context);
+        await result.ExecuteAsync(context);
     }
 
     /// <summary>
