@@ -59,4 +59,24 @@ public static partial class FeatureServerLog
         Level = LogLevel.Error,
         Message = "Layer metadata request failed for {ServiceId}/FeatureServer/{LayerId}: {ErrorMessage}")]
     public static partial void LayerMetadataFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception? exception = null);
+
+    // Query events (2200-2299)
+
+    [LoggerMessage(
+        EventId = 2201,
+        Level = LogLevel.Information,
+        Message = "Query requested: {ServiceId}/FeatureServer/{LayerId}/query with WHERE: {WhereClause}")]
+    public static partial void QueryRequested(ILogger logger, string serviceId, int layerId, string? whereClause);
+
+    [LoggerMessage(
+        EventId = 2202,
+        Level = LogLevel.Information,
+        Message = "Query completed: {ServiceId}/FeatureServer/{LayerId} returned {FeatureCount} of {TotalCount} features")]
+    public static partial void QueryCompleted(ILogger logger, string serviceId, int layerId, int featureCount, long totalCount);
+
+    [LoggerMessage(
+        EventId = 2203,
+        Level = LogLevel.Error,
+        Message = "Query failed for {ServiceId}/FeatureServer/{LayerId}: {ErrorMessage}")]
+    public static partial void QueryFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception? exception = null);
 }

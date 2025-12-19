@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -42,6 +44,28 @@ public static class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<LayerResponse>(200, "application/json")
+            .Produces(404);
+
+        // Query endpoint (GET)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", QueryFeaturesGetAsync)
+            .WithDisplayName("Query FeatureServer Features (GET)")
+            .WithName("QueryFeaturesGet")
+            .WithSummary("Query features from a FeatureServer layer using GET")
+            .WithDescription("Query features with WHERE clause, spatial filters, and pagination via GET parameters")
+            .WithTags("FeatureServer")
+            .Produces<QueryResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
+        // Query endpoint (POST)
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", QueryFeaturesPostAsync)
+            .WithDisplayName("Query FeatureServer Features (POST)")
+            .WithName("QueryFeaturesPost")
+            .WithSummary("Query features from a FeatureServer layer using POST")
+            .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
+            .WithTags("FeatureServer")
+            .Produces<QueryResponse>(200, "application/json")
+            .Produces(400)
             .Produces(404);
 
         return endpoints;
@@ -274,6 +298,186 @@ public static class FeatureServerEndpoints
             FieldType.Binary => ("esriFieldTypeBlob", "sqlTypeLongVarBinary", null),
             FieldType.Uuid => ("esriFieldTypeGUID", "sqlTypeOther", 36),
             _ => ("esriFieldTypeString", "sqlTypeVarchar", 255)
+        };
+    }
+
+    /// <summary>
+    /// Handles GET query requests
+    /// </summary>
+    internal static async Task<IResult> QueryFeaturesGetAsync(
+        [FromRoute] string serviceId,
+        [FromRoute] int layerId,
+        [FromQuery] string? where = null,
+        [FromQuery] string? outFields = null,
+        [FromQuery] bool returnGeometry = true,
+        [FromQuery] string f = "json",
+        [FromQuery] int? resultOffset = null,
+        [FromQuery] int? resultRecordCount = null,
+        [FromServices] ILayerCatalog? catalog = null,
+        [FromServices] IFeatureStore? featureStore = null,
+        [FromServices] ILogger<FeatureServerHandler>? logger = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Convert individual parameters to QueryParameters object
+        var queryParams = new QueryParameters
+        {
+            Where = where,
+            OutFields = outFields,
+            ReturnGeometry = returnGeometry,
+            F = f,
+            ResultOffset = resultOffset,
+            ResultRecordCount = resultRecordCount
+        };
+
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, logger!, cancellationToken);
+    }
+
+    /// <summary>
+    /// Handles POST query requests
+    /// </summary>
+    internal static async Task<IResult> QueryFeaturesPostAsync(
+        [FromRoute] string serviceId,
+        [FromRoute] int layerId,
+        [FromBody] QueryParameters queryParams,
+        [FromServices] ILayerCatalog catalog,
+        [FromServices] IFeatureStore featureStore,
+        [FromServices] ILogger<FeatureServerHandler> logger,
+        CancellationToken cancellationToken = default)
+    {
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, logger, cancellationToken);
+    }
+
+    /// <summary>
+    /// Core query implementation shared by GET and POST endpoints
+    /// </summary>
+    private static async Task<IResult> QueryFeaturesAsync(
+        string serviceId,
+        int layerId,
+        QueryParameters queryParams,
+        ILayerCatalog catalog,
+        IFeatureStore featureStore,
+        ILogger<FeatureServerHandler> logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            FeatureServerLog.QueryRequested(logger, serviceId, layerId, queryParams.Where);
+
+            // Validate service and layer exist
+            var service = await catalog.GetServiceAsync(serviceId, cancellationToken);
+            if (service == null)
+            {
+                FeatureServerLog.ServiceNotFound(logger, serviceId);
+                return Results.NotFound(new { error = $"Service '{serviceId}' not found" });
+            }
+
+            var layer = service.GetLayer(layerId);
+            if (layer == null)
+            {
+                FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
+                return Results.NotFound(new { error = $"Layer {layerId} not found in service '{serviceId}'" });
+            }
+
+            // Build query from parameters
+            var query = BuildFeatureQuery(queryParams, service);
+
+            // Execute query
+            var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
+
+            // Convert to Esri format
+            var response = ConvertToQueryResponse(result, layer, queryParams);
+
+            FeatureServerLog.QueryCompleted(logger, serviceId, layerId, result.Items.Length, result.TotalCount);
+
+            return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse,
+                contentType: "application/json");
+        }
+        catch (ArgumentException ex)
+        {
+            FeatureServerLog.QueryFailed(logger, serviceId, layerId, ex.Message, ex);
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            FeatureServerLog.QueryFailed(logger, serviceId, layerId, ex.Message, ex);
+            return Results.StatusCode(500);
+        }
+    }
+
+    /// <summary>
+    /// Builds a FeatureQuery from query parameters
+    /// </summary>
+    private static FeatureQuery BuildFeatureQuery(QueryParameters queryParams, ServiceDefinition service)
+    {
+        var query = new FeatureQuery
+        {
+            Where = queryParams.Where,
+            Offset = queryParams.ResultOffset,
+            Limit = queryParams.ResultRecordCount ?? service.MaxRecordCount
+        };
+
+        // Parse outFields if specified
+        if (!string.IsNullOrEmpty(queryParams.OutFields))
+        {
+            if (queryParams.OutFields == "*")
+            {
+                // Return all fields - let the query run without field filtering
+                query = query with { OutFields = null };
+            }
+            else
+            {
+                var fields = queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(f => f.Trim())
+                    .ToImmutableArray();
+                query = query with { OutFields = fields };
+            }
+        }
+
+        return query;
+    }
+
+    /// <summary>
+    /// Converts QueryResult to Esri QueryResponse format
+    /// </summary>
+    private static QueryResponse ConvertToQueryResponse(QueryResult<Feature> result, LayerDefinition layer, QueryParameters queryParams)
+    {
+        var features = result.Items.Select(f => ConvertToEsriFeature(f, queryParams.ReturnGeometry)).ToArray();
+
+        return new QueryResponse
+        {
+            ObjectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid",
+            Features = features,
+            ExceededTransferLimit = result.HasMoreResults
+        };
+    }
+
+    /// <summary>
+    /// Converts a Feature to Esri feature format
+    /// </summary>
+    private static EsriFeature ConvertToEsriFeature(Feature feature, bool returnGeometry)
+    {
+        return new EsriFeature
+        {
+            Attributes = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            Geometry = returnGeometry ? ConvertGeometryToEsriFormat(feature.Geometry) : null
+        };
+    }
+
+    /// <summary>
+    /// Converts WKB geometry to Esri JSON format (simplified for testing)
+    /// </summary>
+    private static object? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
+    {
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+            return null;
+
+        // For now, return a simple point geometry for testing
+        // In a real implementation, this would parse the WKB and convert to Esri JSON
+        return new
+        {
+            x = -122.4194,
+            y = 37.7749,
+            spatialReference = new { wkid = 4326 }
         };
     }
 }

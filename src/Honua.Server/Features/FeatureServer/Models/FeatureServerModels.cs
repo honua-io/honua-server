@@ -487,6 +487,89 @@ public sealed class EsriFieldInfo
 }
 
 /// <summary>
+/// Query response for FeatureServer query endpoint
+/// </summary>
+public sealed class QueryResponse
+{
+    /// <summary>
+    /// Object ID field name for the layer
+    /// </summary>
+    public string ObjectIdFieldName { get; init; } = "objectid";
+
+    /// <summary>
+    /// Unique value field name (optional)
+    /// </summary>
+    public string? UniqueIdField { get; init; }
+
+    /// <summary>
+    /// Global ID field name (optional)
+    /// </summary>
+    public string? GlobalIdFieldName { get; init; }
+
+    /// <summary>
+    /// Features returned by the query
+    /// </summary>
+    public EsriFeature[] Features { get; init; } = Array.Empty<EsriFeature>();
+
+    /// <summary>
+    /// Whether the transfer limit was exceeded
+    /// </summary>
+    public bool ExceededTransferLimit { get; init; }
+}
+
+/// <summary>
+/// Esri feature representation
+/// </summary>
+public sealed class EsriFeature
+{
+    /// <summary>
+    /// Feature attributes as key-value pairs
+    /// </summary>
+    public required Dictionary<string, object?> Attributes { get; init; }
+
+    /// <summary>
+    /// Feature geometry (optional if returnGeometry=false)
+    /// </summary>
+    public object? Geometry { get; init; }
+}
+
+/// <summary>
+/// Query parameters for feature queries
+/// </summary>
+public sealed class QueryParameters
+{
+    /// <summary>
+    /// WHERE clause for attribute queries
+    /// </summary>
+    public string? Where { get; init; }
+
+    /// <summary>
+    /// Fields to return (comma-separated list)
+    /// </summary>
+    public string? OutFields { get; init; }
+
+    /// <summary>
+    /// Whether to return geometry
+    /// </summary>
+    public bool ReturnGeometry { get; init; } = true;
+
+    /// <summary>
+    /// Output format (json, geojson)
+    /// </summary>
+    public string F { get; init; } = "json";
+
+    /// <summary>
+    /// Number of records to offset for pagination
+    /// </summary>
+    public int? ResultOffset { get; init; }
+
+    /// <summary>
+    /// Maximum number of records to return
+    /// </summary>
+    public int? ResultRecordCount { get; init; }
+}
+
+/// <summary>
 /// JSON source generation context for FeatureServer models (AOT compatibility)
 /// </summary>
 [JsonSerializable(typeof(FeatureServerResponse))]
@@ -495,6 +578,9 @@ public sealed class EsriFieldInfo
 [JsonSerializable(typeof(SpatialReferenceInfo))]
 [JsonSerializable(typeof(ExtentInfo))]
 [JsonSerializable(typeof(EsriFieldInfo))]
+[JsonSerializable(typeof(QueryResponse))]
+[JsonSerializable(typeof(EsriFeature))]
+[JsonSerializable(typeof(QueryParameters))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

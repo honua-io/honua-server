@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -30,6 +32,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         // Replace the real ILayerCatalog with test implementation
         _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
+        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
@@ -275,5 +278,163 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // Validate at least basic capabilities are present
         var capabilities = layerResponse.Capabilities.Split(',');
         capabilities.Should().Contain("Query");
+    }
+
+    // Query endpoint tests (Issue #6)
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithValidWhereClause_ReturnsFilteredFeatures()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test Feature'");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrEmpty();
+
+        // Deserialize and validate response structure
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.ObjectIdFieldName.Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithPostRequest_ReturnsFilteredFeatures()
+    {
+        // Arrange
+        var queryParams = new QueryParameters
+        {
+            Where = "name='Test Feature'",
+            ReturnGeometry = true,
+            F = "json"
+        };
+
+        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().NotBeNullOrEmpty();
+
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithSqlInjectionAttempt_Returns400()
+    {
+        // Act - Attempt SQL injection
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test'; DROP TABLE users; --");
+
+        // Assert
+        response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("dangerous pattern");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithInvalidWhereClause_Returns400()
+    {
+        // Act - Invalid WHERE clause format
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=invalid syntax here");
+
+        // Assert
+        response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("WHERE clause format not supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithNonExistentService_Returns404()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}/query");
+
+        // Assert
+        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Service 'nonexistent' not found");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithNonExistentLayer_Returns404()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999/query");
+
+        // Assert
+        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Layer 999 not found in service");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithOutFields_ReturnsOnlySpecifiedFields()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?outFields=objectid,name");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithReturnGeometryFalse_ReturnsNoGeometry()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnGeometry=false");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+
+        // All features should have null geometry
+        queryResponse.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
     }
 }
