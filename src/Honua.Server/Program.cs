@@ -6,6 +6,7 @@ using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.ServiceDefaults;
 using Serilog;
 using Serilog.Enrichers.Span;
 
@@ -17,6 +18,15 @@ using Serilog.Enrichers.Span;
 // Dependency flow: Server → (Core + Infrastructure), Infrastructure → Core
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add Aspire service defaults (OTel, health, resilience)
+builder.AddServiceDefaults();
+
+// Add Npgsql with connection from Aspire
+builder.AddNpgsqlDataSource("honua");
+
+// Add Redis if configured
+builder.AddRedisDistributedCache("redis");
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -95,6 +105,9 @@ await RunDatabaseMigrationsAsync();
 
 // Configure health endpoints
 app.MapHealthEndpoints();
+
+// Map health endpoints for Aspire dashboard
+app.MapDefaultEndpoints();
 
 app.Run();
 

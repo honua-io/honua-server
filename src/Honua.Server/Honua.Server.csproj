@@ -20,6 +20,7 @@
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
     <!-- ModuleInitializer in Postgres auto-registers services with Core -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>
