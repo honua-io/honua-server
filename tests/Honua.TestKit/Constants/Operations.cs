@@ -29,6 +29,9 @@ public static class Operations
     public const string GetLayerInfo = "GetLayerInfo";
     public const string GetServiceInfo = "GetServiceInfo";
 
+    // Admin Operations
+    public const string TableDiscovery = "TableDiscovery";
+
     // Health Operations
     public const string LivenessCheck = "LivenessCheck";
     public const string ReadinessCheck = "ReadinessCheck";

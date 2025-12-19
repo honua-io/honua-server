@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -43,9 +45,19 @@ public sealed class WebAppFixture : IAsyncLifetime
             {
                 builder.ConfigureTestServices(services =>
                 {
-                    // Replace connection string with test container
+                    // Remove all PostgreSQL-related services to avoid DefaultConnection dependency
                     services.RemoveAll<NpgsqlDataSource>();
-                    services.AddNpgsqlDataSource(_postgres.ConnectionString);
+                    services.RemoveAll<IDatabaseConnectionProvider>();
+
+                    // Add test-specific PostgreSQL services
+                    services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
+                        NpgsqlDataSource.Create(_postgres.ConnectionString));
+
+                    services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
+                    {
+                        var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
+                        return new TestDatabaseConnectionProvider(dataSource);
+                    });
 
                     // Apply custom service configurations
                     foreach (var configure in _serviceConfigurations)
