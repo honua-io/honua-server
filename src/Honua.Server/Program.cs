@@ -116,7 +116,9 @@ app.MapHealthEndpoints();
 app.MapAdminEndpoints();
 
 // Configure FeatureServer endpoints
+#pragma warning disable IL2026, IL3050 // Suppress AOT warnings for endpoint mapping
 app.MapFeatureServerEndpoints();
+#pragma warning restore IL2026, IL3050
 
 // Map health endpoints for Aspire dashboard
 app.MapDefaultEndpoints();

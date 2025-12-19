@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -17,6 +18,8 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Maps FeatureServer REST API endpoints for layer metadata using AOT-compatible routing
     /// </summary>
+    [RequiresUnreferencedCode("Endpoint mapping may use reflection on delegates")]
+    [RequiresDynamicCode("Endpoint mapping may use reflection on delegates")]
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
