@@ -1,0 +1,60 @@
+name: Feature
+description: New feature or enhancement
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: phase
+    attributes:
+      label: MVP Phase
+      description: Which phase does this belong to?
+      options:
+        - Phase 0 - Foundation
+        - Phase 1 - FeatureServer Query
+        - Phase 2 - FeatureServer Editing
+        - Phase 3 - OGC API Features
+        - Phase 3.25 - Vector Tiles (MVT)
+        - Phase 3.5 - OData v4
+        - Phase 4 - Admin UI + File Import
+        - Phase 4.5 - Deployment Templates
+        - Phase 5 - Authentication + Polish
+        - Backlog (post-MVP)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What should be implemented?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Tests written and passing
+    validations:
+      required: true
+
+  - type: textarea
+    id: legacy-reference
+    attributes:
+      label: Legacy Reference
+      description: Relevant files in ../Honua.Server/ for behavior reference (not copy-paste)
+      placeholder: |
+        - src/platform/core/Query/...
+        - tests/integration/Query/...
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test Plan
+      description: What tests are needed?
+      placeholder: |
+        - [ ] Integration test: ...
+        - [ ] Edge case: ...

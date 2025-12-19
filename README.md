@@ -1,5 +1,13 @@
 # Honua Server MVP
 
+[![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/honua-io/honua-server/branch/trunk/graph/badge.svg)](https://codecov.io/gh/honua-io/honua-server)
+[![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
+[![License](https://img.shields.io/badge/License-Elastic_License_2.0-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-10.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
+
 Honua MVP serves and edits PostGIS data over multiple protocols with a small, fast footprint:
 - **GeoServices REST FeatureServer** — ArcGIS-compatible queries + full editing (applyEdits, attachments, related records).
 - **OGC API Features** — Modern REST/JSON for GIS apps with transaction support.
@@ -8,16 +16,30 @@ Honua MVP serves and edits PostGIS data over multiple protocols with a small, fa
 
 Includes **file import** (GeoJSON, Shapefile, GeoPackage, CSV, KML) and an **Esri Service Import Wizard** for easy migration. Everything else (images, multi-DB, AI, advanced admin) is deferred to keep the surface area tight. See `docs/ROADMAP.md` for what comes next.
 
-## Quick Start
+## Status
 
-**Local Development (with Aspire):**
+This repo is in planning/Phase 0. The MVP scope below is planned and not yet implemented.
+
+Current endpoints:
+- `/healthz/live`
+- `/healthz/ready`
+
+## Quick Start (Phase 0)
+
+```bash
+dotnet run --project src/Honua.Server
+```
+
+## Planned Quick Start (post-Phase 0)
+
+**Local Development (with Aspire, planned):**
 ```bash
 cd src/Honua.AppHost
 dotnet run
 # Opens Aspire dashboard with Honua + PostgreSQL + Redis
 ```
 
-**Docker:**
+**Docker (planned):**
 ```bash
 docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres" \
@@ -25,13 +47,13 @@ docker run -p 8080:8080 \
   ghcr.io/honuaio/honua-server:latest
 ```
 
-- Admin UI: `http://localhost:8080/admin`
-- FeatureServer: `http://localhost:8080/rest/services/{service}/FeatureServer/{layer}/query`
-- OGC API Features landing: `http://localhost:8080/ogc/features`
-- OData v4: `http://localhost:8080/odata/v4/Layers('{layer}')/Features`
-- Health: `http://localhost:8080/healthz/live`
+Planned endpoints:
+- Admin UI: `/admin`
+- FeatureServer: `/rest/services/{service}/FeatureServer/{layer}/query`
+- OGC API Features landing: `/ogc/features`
+- OData v4: `/odata/v4/Layers('{layer}')/Features`
 
-## What's In (MVP)
+## Planned MVP Scope
 - PostGIS-only data source.
 - Full FeatureServer: query, applyEdits, add/update/delete, attachments, related records.
 - OGC API Features: collections/items, filters, bbox/geometry, POST/PUT/DELETE transactions.
@@ -48,12 +70,12 @@ docker run -p 8080:8080 \
 - **Deployment templates**: Helm chart for Kubernetes, Terraform modules for AWS/Azure/GCP.
 - **.NET Aspire**: Local dev orchestration with dashboard (traces, logs, metrics, health).
 
-## What's Deferred
+## Deferred (post-MVP)
 - **Beta:** Query caching, GeometryServer basics, MapServer export, OData `$expand`/`$apply`, OGC API Styles.
 - **GA:** OData `/$batch`, legacy OGC (WFS/WMS), layer-level RBAC, audit logging.
 - **Later:** Additional databases (SQL Server, MySQL, SQLite, DuckDB, warehouses, NoSQL, Oracle), additional file formats (FileGDB, MapInfo TAB — requires GDAL), additional outputs (KML export, Shapefile export, PNG/JPEG), object storage, AI features, CLI/agent tooling.
 
-## Minimal Config (env)
+## Planned Minimal Config (env)
 
 ```bash
 ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres"
