@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.HealthCheck;
-using Honua.Server.Infrastructure.HealthCheck;
+using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Server.Features.HealthCheck;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 

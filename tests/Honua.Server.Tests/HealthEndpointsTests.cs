@@ -3,7 +3,7 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Core.HealthCheck;
+using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;

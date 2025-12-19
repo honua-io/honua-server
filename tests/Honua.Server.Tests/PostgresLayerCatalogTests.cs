@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Domain.Catalog;
-using Honua.Postgres.Catalog;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Postgres.Features.Catalog;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Xunit;
