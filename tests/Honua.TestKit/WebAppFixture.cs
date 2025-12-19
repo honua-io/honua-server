@@ -45,12 +45,14 @@ public sealed class WebAppFixture : IAsyncLifetime
             {
                 builder.ConfigureTestServices(services =>
                 {
-                    // Replace connection string with test container
+                    // Remove all PostgreSQL-related services to avoid DefaultConnection dependency
                     services.RemoveAll<NpgsqlDataSource>();
-                    services.AddNpgsqlDataSource(_postgres.ConnectionString);
-
-                    // Replace database connection provider with test implementation
                     services.RemoveAll<IDatabaseConnectionProvider>();
+
+                    // Add test-specific PostgreSQL services
+                    services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
+                        NpgsqlDataSource.Create(_postgres.ConnectionString));
+
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
                     {
                         var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();

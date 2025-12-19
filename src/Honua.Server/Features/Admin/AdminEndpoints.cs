@@ -56,8 +56,8 @@ public static class AdminEndpoints
 
         try
         {
-            // For now, use the default database connection
-            // In a full implementation, this would look up the connection by ID
+            // For this initial implementation, use the default database connection for all connection IDs
+            // In a full implementation, this would look up the connection by ID and validate it exists
             var connectionProvider = context.RequestServices.GetRequiredService<IDatabaseConnectionProvider>();
 
             await using var connection = await connectionProvider.OpenConnectionAsync(context.RequestAborted);
