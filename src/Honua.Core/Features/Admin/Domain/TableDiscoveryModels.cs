@@ -1,102 +1,87 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json.Serialization;
-
-namespace Honua.Server.Features.Admin.Models;
+namespace Honua.Core.Features.Admin.Domain;
 
 /// <summary>
-/// Information about a discovered table with spatial data
+/// Information about a discovered table with spatial data.
 /// </summary>
 public sealed class TableInfo
 {
     /// <summary>
-    /// Database schema name (e.g., "public")
+    /// Database schema name (e.g., "public").
     /// </summary>
     public required string Schema { get; init; }
 
     /// <summary>
-    /// Table name
+    /// Table name.
     /// </summary>
     public required string Table { get; init; }
 
     /// <summary>
-    /// Name of the geometry column
+    /// Name of the geometry column.
     /// </summary>
     public string? GeometryColumn { get; init; }
 
     /// <summary>
-    /// Geometry type (e.g., POINT, POLYGON, MULTIPOLYGON)
+    /// Geometry type (e.g., POINT, POLYGON, MULTIPOLYGON).
     /// </summary>
     public string? GeometryType { get; init; }
 
     /// <summary>
-    /// Spatial Reference Identifier (SRID)
+    /// Spatial Reference Identifier (SRID).
     /// </summary>
     public int? Srid { get; init; }
 
     /// <summary>
-    /// Estimated row count
+    /// Estimated row count.
     /// </summary>
     public long? EstimatedRows { get; init; }
 
     /// <summary>
-    /// All columns in the table
+    /// All columns in the table.
     /// </summary>
     public List<ColumnInfo> Columns { get; init; } = new();
 }
 
 /// <summary>
-/// Information about a table column
+/// Information about a table column.
 /// </summary>
 public sealed class ColumnInfo
 {
     /// <summary>
-    /// Column name
+    /// Column name.
     /// </summary>
     public required string Name { get; init; }
 
     /// <summary>
-    /// Column data type
+    /// Column data type.
     /// </summary>
     public required string DataType { get; init; }
 
     /// <summary>
-    /// Whether the column allows null values
+    /// Whether the column allows null values.
     /// </summary>
     public bool IsNullable { get; init; }
 
     /// <summary>
-    /// Whether this is a primary key column
+    /// Whether this is a primary key column.
     /// </summary>
     public bool IsPrimaryKey { get; init; }
 
     /// <summary>
-    /// Maximum length for character types
+    /// Maximum length for character types.
     /// </summary>
     public int? MaxLength { get; init; }
 }
 
 /// <summary>
-/// Response from table discovery endpoint
+/// Response from table discovery endpoint.
 /// </summary>
 public sealed class TableDiscoveryResponse
 {
     /// <summary>
-    /// List of discovered tables
+    /// List of discovered tables.
     /// </summary>
     public List<TableInfo> Tables { get; init; } = new();
-}
-
-/// <summary>
-/// Response model with JSON source generation for AOT compatibility
-/// </summary>
-[JsonSerializable(typeof(TableDiscoveryResponse))]
-[JsonSerializable(typeof(TableInfo))]
-[JsonSerializable(typeof(ColumnInfo))]
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-public partial class TableDiscoveryJsonContext : JsonSerializerContext
-{
 }
