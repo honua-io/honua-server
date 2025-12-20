@@ -567,6 +567,21 @@ public sealed class QueryParameters
     /// Maximum number of records to return
     /// </summary>
     public int? ResultRecordCount { get; init; }
+
+    /// <summary>
+    /// Filter geometry in Esri JSON format for spatial queries
+    /// </summary>
+    public string? Geometry { get; init; }
+
+    /// <summary>
+    /// Type of filter geometry (esriGeometryPoint, esriGeometryPolygon, esriGeometryEnvelope)
+    /// </summary>
+    public string? GeometryType { get; init; }
+
+    /// <summary>
+    /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelContains, esriSpatialRelWithin)
+    /// </summary>
+    public string? SpatialRel { get; init; }
 }
 
 /// <summary>
