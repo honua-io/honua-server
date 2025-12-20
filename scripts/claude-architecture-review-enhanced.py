@@ -241,11 +241,23 @@ def detect_performance_antipatterns(file_path: str, content: str) -> List[Tuple[
 
     for line_num, line in enumerate(lines, 1):
         # Check for sync-over-async patterns
-        if (".Result" in line or ".Wait()" in line):
-            violations.append((
-                "WARNING",
-                f"Sync-over-async pattern at {file_path}:{line_num} - '{line.strip()}' (Use await)"
-            ))
+        # Look for actual method calls, not property names that contain "Result"
+        import re
+
+        # Match .Result when preceded by identifier/parentheses (actual property access on async results)
+        # But not when it's part of a larger identifier like "ResultOffset"
+        result_pattern = r'\w+\.Result\b'  # word.Result followed by word boundary
+        wait_pattern = r'\.Wait\s*\('      # .Wait( method calls
+
+        if (re.search(result_pattern, line) or re.search(wait_pattern, line)):
+            # Additional check: exclude common false positives
+            if not any(false_positive in line for false_positive in [
+                "ResultOffset", "ResultRecordCount", "ResultType", "ResultCode"
+            ]):
+                violations.append((
+                    "WARNING",
+                    f"Sync-over-async pattern at {file_path}:{line_num} - '{line.strip()}' (Use await)"
+                ))
 
     return violations
 
