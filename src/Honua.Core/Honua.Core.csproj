@@ -7,4 +7,13 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- NetTopologySuite geospatial file format support -->
+    <PackageReference Include="NetTopologySuite.IO.GeoPackage" Version="2.0.0" />
+    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" />
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
+    <PackageReference Include="NetTopologySuite.IO.GPX" Version="1.1.1" />
+    <PackageReference Include="NetTopologySuite.IO.TinyWKB" Version="2.0.2" />
+  </ItemGroup>
+
 </Project>

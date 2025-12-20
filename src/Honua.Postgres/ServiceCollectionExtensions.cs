@@ -5,11 +5,13 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.HealthCheck;
+using Honua.Postgres.Features.Import;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +63,18 @@ public static class ServiceCollectionExtensions
 
         // Register database connection provider with resilience policies
         services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
+
+        // Register file import service with NetTopologySuite support
+        services.AddScoped<IFileImportService>(serviceProvider =>
+        {
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
+            }
+
+            return new FileImportService(connectionString);
+        });
 
         return services;
     }
