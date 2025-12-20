@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Configuration;
 
@@ -34,6 +35,7 @@ public static class LimitsOptionsValidator
         ValidateTileLimits(limits.Tiles, errors);
         ValidateEditLimits(limits.Edits, errors);
         ValidateAttachmentLimits(limits.Attachments, errors);
+        ValidateConnectionLimits(limits.Connections, errors);
 
         return errors;
     }
@@ -41,6 +43,8 @@ public static class LimitsOptionsValidator
     /// <summary>
     /// Validates an object using its DataAnnotations attributes.
     /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode",
+        Justification = "DataAnnotations validation is only used at startup for configuration validation")]
     private static void ValidateDataAnnotations(object obj, List<string> errors, string propertyPath)
     {
         var context = new ValidationContext(obj);
@@ -72,6 +76,12 @@ public static class LimitsOptionsValidator
         {
             errors.Add("Query.MaxBboxAreaSqKm must be positive when specified");
         }
+
+        // Validate QueryTimeout range (5 seconds to 2 minutes)
+        if (query.QueryTimeout < TimeSpan.FromSeconds(5) || query.QueryTimeout > TimeSpan.FromMinutes(2))
+        {
+            errors.Add("Query.QueryTimeout must be between 5 seconds and 2 minutes");
+        }
     }
 
     /// <summary>
@@ -94,6 +104,12 @@ public static class LimitsOptionsValidator
         if (tiles.MaxTileZoom > 24)
         {
             errors.Add("Tiles.MaxTileZoom must not exceed 24 (maximum supported zoom level)");
+        }
+
+        // Validate TileTimeout range (1 second to 1 minute)
+        if (tiles.TileTimeout < TimeSpan.FromSeconds(1) || tiles.TileTimeout > TimeSpan.FromMinutes(1))
+        {
+            errors.Add("Tiles.TileTimeout must be between 1 second and 1 minute");
         }
     }
 
@@ -189,5 +205,17 @@ public static class LimitsOptionsValidator
 
         // Simplified validation - must start with letter and contain only alphanumeric, hyphens, and underscores
         return token.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_') && char.IsLetter(token[0]);
+    }
+
+    /// <summary>
+    /// Validates connection limits for logical consistency.
+    /// </summary>
+    private static void ValidateConnectionLimits(ConnectionLimits connections, List<string> errors)
+    {
+        // Validate RequestTimeout range (10 seconds to 10 minutes)
+        if (connections.RequestTimeout < TimeSpan.FromSeconds(10) || connections.RequestTimeout > TimeSpan.FromMinutes(10))
+        {
+            errors.Add("Connections.RequestTimeout must be between 10 seconds and 10 minutes");
+        }
     }
 }

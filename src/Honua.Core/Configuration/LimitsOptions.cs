@@ -86,7 +86,6 @@ public sealed class QueryLimits
     /// Maximum time allowed for a single query operation.
     /// Range: 5 seconds to 2 minutes.
     /// </summary>
-    [Range(typeof(TimeSpan), "00:00:05", "00:02:00", ErrorMessage = "QueryTimeout must be between 5 seconds and 2 minutes")]
     public TimeSpan QueryTimeout { get; init; } = TimeSpan.FromSeconds(30);
 }
 
@@ -218,7 +217,6 @@ public sealed class TileLimits
     /// Maximum time allowed for tile generation.
     /// Range: 1 second to 1 minute.
     /// </summary>
-    [Range(typeof(TimeSpan), "00:00:01", "00:01:00", ErrorMessage = "TileTimeout must be between 1 second and 1 minute")]
     public TimeSpan TileTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
@@ -253,6 +251,5 @@ public sealed class ConnectionLimits
     /// Overall timeout for HTTP requests including database operations.
     /// Range: 10 seconds to 10 minutes.
     /// </summary>
-    [Range(typeof(TimeSpan), "00:00:10", "00:10:00", ErrorMessage = "RequestTimeout must be between 10 seconds and 10 minutes")]
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(120);
 }
