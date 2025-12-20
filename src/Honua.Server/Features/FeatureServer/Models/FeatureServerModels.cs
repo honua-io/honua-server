@@ -617,6 +617,93 @@ public sealed class QueryParameters
 }
 
 /// <summary>
+/// GeoJSON FeatureSet response for query endpoint
+/// </summary>
+public sealed class GeoJsonFeatureSet
+{
+    /// <summary>
+    /// GeoJSON type - always "FeatureCollection"
+    /// </summary>
+    public string Type { get; init; } = "FeatureCollection";
+
+    /// <summary>
+    /// Array of GeoJSON features
+    /// </summary>
+    public GeoJsonFeature[] Features { get; init; } = Array.Empty<GeoJsonFeature>();
+
+    /// <summary>
+    /// Additional properties (metadata)
+    /// </summary>
+    public Dictionary<string, object?>? Properties { get; init; }
+}
+
+/// <summary>
+/// GeoJSON Feature representation
+/// </summary>
+public sealed class GeoJsonFeature
+{
+    /// <summary>
+    /// GeoJSON type - always "Feature"
+    /// </summary>
+    public string Type { get; init; } = "Feature";
+
+    /// <summary>
+    /// Feature properties (attributes)
+    /// </summary>
+    public required Dictionary<string, object?> Properties { get; init; }
+
+    /// <summary>
+    /// Feature geometry (optional if returnGeometry=false)
+    /// </summary>
+    public GeoJsonGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// Feature ID (typically the objectid)
+    /// </summary>
+    public object? Id { get; init; }
+}
+
+/// <summary>
+/// GeoJSON Geometry representation
+/// </summary>
+public sealed class GeoJsonGeometry
+{
+    /// <summary>
+    /// Geometry type (Point, LineString, Polygon, etc.)
+    /// </summary>
+    public required string Type { get; init; }
+
+    /// <summary>
+    /// Coordinate array - format depends on geometry type
+    /// For Point: [x, y] or [x, y, z]
+    /// For LineString: [[x, y], [x, y], ...]
+    /// For Polygon: [[[x, y], [x, y], ...], ...]
+    /// </summary>
+    public required object Coordinates { get; init; }
+
+    /// <summary>
+    /// Coordinate Reference System (optional)
+    /// </summary>
+    public GeoJsonCrs? Crs { get; init; }
+}
+
+/// <summary>
+/// GeoJSON Coordinate Reference System
+/// </summary>
+public sealed class GeoJsonCrs
+{
+    /// <summary>
+    /// CRS type - typically "name"
+    /// </summary>
+    public string Type { get; init; } = "name";
+
+    /// <summary>
+    /// CRS properties
+    /// </summary>
+    public required Dictionary<string, object> Properties { get; init; }
+}
+
+/// <summary>
 /// JSON source generation context for FeatureServer models (AOT compatibility)
 /// </summary>
 [JsonSerializable(typeof(FeatureServerResponse))]
@@ -630,6 +717,22 @@ public sealed class QueryParameters
 [JsonSerializable(typeof(EsriGeometry))]
 [JsonSerializable(typeof(EsriSpatialReference))]
 [JsonSerializable(typeof(QueryParameters))]
+[JsonSerializable(typeof(GeoJsonFeatureSet))]
+[JsonSerializable(typeof(GeoJsonFeature))]
+[JsonSerializable(typeof(GeoJsonGeometry))]
+[JsonSerializable(typeof(GeoJsonCrs))]
+[JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(double[][]))]
+[JsonSerializable(typeof(double[][][]))]
+[JsonSerializable(typeof(Dictionary<string, object>))]
+[JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

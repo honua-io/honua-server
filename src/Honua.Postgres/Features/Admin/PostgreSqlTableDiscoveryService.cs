@@ -2,20 +2,23 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
-using Honua.Server.Features.Admin.Models;
+using System.Globalization;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Server.Features.Admin.Services;
+namespace Honua.Postgres.Features.Admin;
 
 /// <summary>
-/// PostgreSQL implementation of table discovery service
+/// PostgreSQL implementation of table discovery service.
 /// </summary>
-public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
+internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
 {
     private readonly ILogger<PostgreSqlTableDiscoveryService> _logger;
 
     /// <summary>
-    /// Initialize the PostgreSQL table discovery service
+    /// Initialize the PostgreSQL table discovery service.
     /// </summary>
     public PostgreSqlTableDiscoveryService(ILogger<PostgreSqlTableDiscoveryService> logger)
     {
@@ -104,11 +107,11 @@ public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
 
             tables.AddRange(discoveredTables.Values);
 
-            Honua.Server.Features.Admin.AdminLog.PostGisTablesDiscovered(_logger, tables.Count);
+            TableDiscoveryLog.PostGisTablesDiscovered(_logger, tables.Count);
         }
         catch (Exception ex)
         {
-            Honua.Server.Features.Admin.AdminLog.PostGisDiscoveryError(_logger, ex);
+            TableDiscoveryLog.PostGisDiscoveryError(_logger, ex);
             throw;
         }
 
@@ -198,11 +201,11 @@ public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
 
             tables.AddRange(discoveredTables.Values);
 
-            Honua.Server.Features.Admin.AdminLog.PostGisTablesDiscovered(_logger, tables.Count);
+            TableDiscoveryLog.PostGisTablesDiscovered(_logger, tables.Count);
         }
         catch (Exception ex)
         {
-            Honua.Server.Features.Admin.AdminLog.PostGisDiscoveryError(_logger, ex);
+            TableDiscoveryLog.PostGisDiscoveryError(_logger, ex);
             throw;
         }
 
@@ -210,7 +213,7 @@ public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
     }
 
     /// <summary>
-    /// Get estimated row count for a table using PostgreSQL statistics
+    /// Get estimated row count for a table using PostgreSQL statistics.
     /// </summary>
     private static async Task<long?> GetEstimatedRowCountAsync(
         NpgsqlConnection connection,
@@ -232,7 +235,7 @@ public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
             command.Parameters.AddWithValue("tableName", tableName);
 
             var result = await command.ExecuteScalarAsync(cancellationToken);
-            return result != DBNull.Value ? Convert.ToInt64(result) : null;
+            return result != DBNull.Value ? Convert.ToInt64(result, CultureInfo.InvariantCulture) : null;
         }
         catch
         {
@@ -241,7 +244,7 @@ public sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
     }
 
     /// <summary>
-    /// Get all non-geometry columns for a table
+    /// Get all non-geometry columns for a table.
     /// </summary>
     private static async Task<List<ColumnInfo>> GetTableColumnsAsync(
         NpgsqlConnection connection,

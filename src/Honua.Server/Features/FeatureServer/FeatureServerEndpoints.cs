@@ -313,6 +313,12 @@ public static class FeatureServerEndpoints
     internal static async Task<IResult> QueryFeaturesGetAsync(
         [FromRoute] string serviceId,
         [FromRoute] int layerId,
+        [FromServices] ILayerCatalog catalog,
+        [FromServices] IFeatureStore featureStore,
+        [FromServices] IGeometryConverter geometryConverter,
+        [FromServices] IQueryFormatter queryFormatter,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ILogger<FeatureServerHandler> logger,
         [FromQuery] string? where = null,
         [FromQuery] string? outFields = null,
         [FromQuery] bool returnGeometry = true,
@@ -322,11 +328,6 @@ public static class FeatureServerEndpoints
         [FromQuery] string? geometry = null,
         [FromQuery] string? geometryType = null,
         [FromQuery] string? spatialRel = null,
-        [FromServices] ILayerCatalog? catalog = null,
-        [FromServices] IFeatureStore? featureStore = null,
-        [FromServices] IGeometryConverter? geometryConverter = null,
-        [FromServices] IOptions<LimitsOptions>? limitsOptions = null,
-        [FromServices] ILogger<FeatureServerHandler>? logger = null,
         CancellationToken cancellationToken = default)
     {
         // Convert individual parameters to QueryParameters object
@@ -343,7 +344,7 @@ public static class FeatureServerEndpoints
             SpatialRel = spatialRel
         };
 
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, geometryConverter!, limitsOptions!, logger!, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, queryFormatter, limitsOptions, logger, cancellationToken);
     }
 
     /// <summary>
@@ -356,11 +357,12 @@ public static class FeatureServerEndpoints
         [FromServices] ILayerCatalog catalog,
         [FromServices] IFeatureStore featureStore,
         [FromServices] IGeometryConverter geometryConverter,
+        [FromServices] IQueryFormatter queryFormatter,
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         [FromServices] ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken = default)
     {
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, limitsOptions, logger, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, queryFormatter, limitsOptions, logger, cancellationToken);
     }
 
     /// <summary>
@@ -373,6 +375,7 @@ public static class FeatureServerEndpoints
         ILayerCatalog catalog,
         IFeatureStore featureStore,
         IGeometryConverter geometryConverter,
+        IQueryFormatter queryFormatter,
         IOptions<LimitsOptions> limitsOptions,
         ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken)
@@ -418,13 +421,27 @@ public static class FeatureServerEndpoints
             // Execute query
             var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
 
-            // Convert to Esri format
-            var response = ConvertToQueryResponse(result, layer, queryParams);
+            // Format response using QueryFormatter
+            var outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
+                validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(f => f.Trim())
+                    .ToArray();
+
+            var (formattedResponse, contentType) = queryFormatter.FormatQueryResult(
+                result,
+                layer,
+                validatedParams.F ?? "json",
+                validatedParams.ReturnGeometry,
+                outFields);
 
             FeatureServerLog.QueryCompleted(logger, serviceId, layerId, result.Items.Length, result.TotalCount);
 
-            return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse,
-                contentType: "application/json");
+            // Return response with appropriate content type and JSON context
+            return validatedParams.F?.ToLowerInvariant() switch
+            {
+                "geojson" => Results.Json(formattedResponse, FeatureServerJsonContext.Default.GeoJsonFeatureSet, contentType: contentType),
+                _ => Results.Json(formattedResponse, FeatureServerJsonContext.Default.QueryResponse, contentType: contentType)
+            };
         }
         catch (ArgumentException ex)
         {
@@ -518,63 +535,6 @@ public static class FeatureServerEndpoints
         return geometryConverter.ConvertEsriJsonToWkb(esriJsonGeometry);
     }
 
-    /// <summary>
-    /// Converts QueryResult to Esri QueryResponse format
-    /// </summary>
-    private static QueryResponse ConvertToQueryResponse(QueryResult<Feature> result, LayerDefinition layer, QueryParameters queryParams)
-    {
-        var features = result.Items.Select(f => ConvertToEsriFeature(f, queryParams.ReturnGeometry)).ToArray();
-
-        return new QueryResponse
-        {
-            ObjectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid",
-            Features = features,
-            ExceededTransferLimit = result.HasMoreResults
-        };
-    }
-
-    /// <summary>
-    /// Converts a Feature to Esri feature format
-    /// </summary>
-    private static EsriFeature ConvertToEsriFeature(Feature feature, bool returnGeometry)
-    {
-        return new EsriFeature
-        {
-            Attributes = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-            Geometry = returnGeometry ? ConvertGeometryToEsriFormat(feature.Geometry) : null
-        };
-    }
-
-    /// <summary>
-    /// Converts WKB geometry to Esri JSON format (simplified for testing)
-    /// </summary>
-    private static EsriGeometry? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
-    {
-        if (wkbGeometry == null || wkbGeometry.Length == 0)
-            return null;
-
-        // Parse point coordinates from WKB (simplified implementation for testing)
-        if (wkbGeometry.Length >= 21) // Point WKB has 21 bytes
-        {
-            var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-            var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
-
-            return new EsriGeometry
-            {
-                X = x,
-                Y = y,
-                SpatialReference = new EsriSpatialReference { Wkid = 4326 }
-            };
-        }
-
-        // Default fallback geometry for testing
-        return new EsriGeometry
-        {
-            X = -122.4194,
-            Y = 37.7749,
-            SpatialReference = new EsriSpatialReference { Wkid = 4326 }
-        };
-    }
 
     /// <summary>
     /// Applies query limits enforcement and returns validated parameters or null if limits exceeded.

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -37,6 +38,21 @@ internal record ParameterizedQuery(string Sql, List<object> WhereParameters);
 /// </remarks>
 internal sealed class PostgresFeatureStore : IFeatureStore
 {
+    private const string UnsupportedWhereClauseMessage =
+        "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
+
+    private static readonly Regex _comparisonRegex = new(
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex _nullCheckRegex = new(
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IS\s+(?<not>NOT\s+)?NULL$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex _trueLiteralRegex = new(
+        @"^(?:1\s*=\s*1|TRUE)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _tableName;
 
@@ -126,13 +142,26 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await CreateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
+    }
+
+    private async Task<Feature> CreateWithConnectionAsync(
+        int layerId,
+        Feature feature,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         var sql = $@"
             INSERT INTO {_tableName} (layer_id, geometry, attributes)
             VALUES ($1, $2, $3)
             RETURNING objectid, geometry, attributes";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            Transaction = transaction
+        };
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
@@ -154,14 +183,27 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await UpdateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
+    }
+
+    private async Task<Feature> UpdateWithConnectionAsync(
+        int layerId,
+        Feature feature,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         var sql = $@"
             UPDATE {_tableName}
             SET geometry = $3, attributes = $4
             WHERE layer_id = $1 AND objectid = $2
             RETURNING objectid, geometry, attributes";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            Transaction = transaction
+        };
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Id);
         command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
@@ -184,12 +226,25 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await DeleteWithConnectionAsync(layerId, featureId, connection, transaction: null, cancellationToken);
+    }
+
+    private async Task<bool> DeleteWithConnectionAsync(
+        int layerId,
+        long featureId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         var sql = $@"
             DELETE FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            Transaction = transaction
+        };
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
 
@@ -209,11 +264,31 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         try
         {
-            var (createdIds, createErrors) = await ProcessCreatesAsync(layerId, editBatch.Creates, cancellationToken);
-            var (updatedCount, updateErrors) = await ProcessUpdatesAsync(layerId, editBatch.Updates, cancellationToken);
-            var (deletedCount, deleteErrors) = await ProcessDeletesAsync(layerId, editBatch.Deletes, cancellationToken);
+            var (createdIds, createErrors) = await ProcessCreatesAsync(
+                layerId,
+                editBatch.Creates,
+                connection,
+                transaction,
+                cancellationToken);
+            var (updatedCount, updateErrors) = await ProcessUpdatesAsync(
+                layerId,
+                editBatch.Updates,
+                connection,
+                transaction,
+                cancellationToken);
+            var (deletedCount, deleteErrors) = await ProcessDeletesAsync(
+                layerId,
+                editBatch.Deletes,
+                connection,
+                transaction,
+                cancellationToken);
 
             var allErrors = createErrors.Concat(updateErrors).Concat(deleteErrors).ToList();
+            if (allErrors.Count != 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FeatureEditResult.Failure(allErrors.ToArray());
+            }
 
             await transaction.CommitAsync(cancellationToken);
 
@@ -237,6 +312,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     private async Task<(ImmutableArray<long> createdIds, List<string> errors)> ProcessCreatesAsync(
         int layerId,
         ImmutableArray<Feature> features,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
         var createdIds = new List<long>();
@@ -246,7 +323,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         {
             try
             {
-                var created = await CreateAsync(layerId, feature, cancellationToken);
+                var created = await CreateWithConnectionAsync(
+                    layerId,
+                    feature,
+                    connection,
+                    transaction,
+                    cancellationToken);
                 createdIds.Add(created.Id);
             }
             catch (Exception ex)
@@ -264,6 +346,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     private async Task<(int updatedCount, List<string> errors)> ProcessUpdatesAsync(
         int layerId,
         ImmutableArray<Feature> features,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
         var updatedCount = 0;
@@ -273,7 +357,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         {
             try
             {
-                await UpdateAsync(layerId, feature, cancellationToken);
+                await UpdateWithConnectionAsync(
+                    layerId,
+                    feature,
+                    connection,
+                    transaction,
+                    cancellationToken);
                 updatedCount++;
             }
             catch (Exception ex)
@@ -291,6 +380,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     private async Task<(int deletedCount, List<string> errors)> ProcessDeletesAsync(
         int layerId,
         ImmutableArray<long> featureIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
         var deletedCount = 0;
@@ -300,7 +391,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         {
             try
             {
-                if (await DeleteAsync(layerId, featureId, cancellationToken))
+                if (await DeleteWithConnectionAsync(
+                    layerId,
+                    featureId,
+                    connection,
+                    transaction,
+                    cancellationToken))
                 {
                     deletedCount++;
                 }
@@ -405,72 +501,206 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
     {
-        // Basic security validation first
-        var dangerousPatterns = new[]
+        var dangerousPattern = FindDangerousPattern(whereClause);
+        if (dangerousPattern != null)
         {
-            ";", "--", "/*", "*/", "DROP", "DELETE", "INSERT", "UPDATE",
-            "CREATE", "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "UNION"
-        };
-
-        foreach (var pattern in dangerousPatterns)
-        {
-            if (whereClause.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException($"WHERE clause contains dangerous pattern: {pattern}");
-            }
+            throw new ArgumentException($"WHERE clause contains dangerous pattern: {dangerousPattern}");
         }
 
-        // Regex to match: fieldname operator 'value' or fieldname operator number
-        // Also supports PostgreSQL JSON operators: attributes->>'key' = 'value'
-        var regexPattern = @"(\w+(?:->>'[^']+')?)\s*(=|!=|<>|>|<|>=|<=|LIKE|NOT\s+LIKE)\s*('([^']*)'|(\d+(?:\.\d+)?))";
-        var regex = new System.Text.RegularExpressions.Regex(regexPattern,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-        var currentParamIndex = paramIndex;
-        var result = regex.Replace(whereClause, match =>
+        var expressions = SplitOnAnd(whereClause);
+        if (expressions.Count == 0)
         {
-            var fieldName = match.Groups[1].Value;
-            var operatorValue = match.Groups[2].Value;
-            var quotedValue = match.Groups[4].Value; // String value inside quotes
-            var numericValue = match.Groups[5].Value; // Numeric value
+            throw new ArgumentException(UnsupportedWhereClauseMessage);
+        }
 
-            // Validate field name (alphanumeric + underscore, or JSON path operators)
-            var fieldNamePattern = @"^[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')$|^[a-zA-Z_][a-zA-Z0-9_]*$";
-            if (!System.Text.RegularExpressions.Regex.IsMatch(fieldName, fieldNamePattern))
+        var parameterizedExpressions = new List<string>(expressions.Count);
+
+        foreach (var expression in expressions)
+        {
+            var trimmedExpression = expression.Trim();
+            if (trimmedExpression.Length == 0)
             {
-                throw new ArgumentException($"Invalid field name: {fieldName}");
+                throw new ArgumentException(UnsupportedWhereClauseMessage);
             }
 
-            // Add parameter and return placeholder
-            if (!string.IsNullOrEmpty(quotedValue))
+            if (_trueLiteralRegex.IsMatch(trimmedExpression))
             {
-                parameters.Add(quotedValue);
-                return $"{fieldName} {operatorValue} ${currentParamIndex++}";
+                parameterizedExpressions.Add("TRUE");
+                continue;
             }
-            else if (!string.IsNullOrEmpty(numericValue))
+
+            var nullMatch = _nullCheckRegex.Match(trimmedExpression);
+            if (nullMatch.Success)
             {
-                if (double.TryParse(numericValue, out var numVal))
+                var fieldName = nullMatch.Groups["field"].Value;
+                var notToken = nullMatch.Groups["not"].Value;
+                var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
+                parameterizedExpressions.Add($"{fieldName} IS {notClause}NULL");
+                continue;
+            }
+
+            var comparisonMatch = _comparisonRegex.Match(trimmedExpression);
+            if (comparisonMatch.Success)
+            {
+                var fieldName = comparisonMatch.Groups["field"].Value;
+                var operatorValue = NormalizeOperator(comparisonMatch.Groups["op"].Value);
+                var valueToken = comparisonMatch.Groups["value"].Value;
+
+                parameters.Add(ParseValueToken(valueToken));
+                parameterizedExpressions.Add($"{fieldName} {operatorValue} ${paramIndex++}");
+                continue;
+            }
+
+            throw new ArgumentException(UnsupportedWhereClauseMessage);
+        }
+
+        return string.Join(" AND ", parameterizedExpressions);
+    }
+
+    private static string NormalizeOperator(string operatorValue)
+    {
+        var normalized = Regex.Replace(operatorValue, @"\s+", " ", RegexOptions.CultureInvariant).Trim();
+        return normalized.ToUpperInvariant();
+    }
+
+    private static object ParseValueToken(string valueToken)
+    {
+        if (valueToken.StartsWith('\''))
+        {
+            return UnescapeSqlString(valueToken);
+        }
+
+        if (double.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var numericValue))
+        {
+            return numericValue;
+        }
+
+        throw new ArgumentException($"Invalid numeric value: {valueToken}");
+    }
+
+    private static string UnescapeSqlString(string valueToken)
+    {
+        if (valueToken.Length < 2 || valueToken[0] != '\'' || valueToken[^1] != '\'')
+        {
+            throw new ArgumentException(UnsupportedWhereClauseMessage);
+        }
+
+        var innerValue = valueToken.Substring(1, valueToken.Length - 2);
+        return innerValue.Replace("''", "'", StringComparison.Ordinal);
+    }
+
+    private static List<string> SplitOnAnd(string whereClause)
+    {
+        var expressions = new List<string>();
+        var current = new StringBuilder();
+        var inString = false;
+
+        for (var i = 0; i < whereClause.Length; i++)
+        {
+            var c = whereClause[i];
+
+            if (c == '\'')
+            {
+                current.Append(c);
+
+                if (inString && i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
                 {
-                    parameters.Add(numVal);
-                    return $"{fieldName} {operatorValue} ${currentParamIndex++}";
+                    current.Append(whereClause[i + 1]);
+                    i++;
+                    continue;
                 }
-                throw new ArgumentException($"Invalid numeric value: {numericValue}");
+
+                inString = !inString;
+                continue;
             }
 
-            throw new ArgumentException("Unable to parse WHERE clause value");
-        });
+            if (!inString && IsAndTokenAt(whereClause, i))
+            {
+                expressions.Add(current.ToString());
+                current.Clear();
+                i += 2;
+                continue;
+            }
 
-        // Update the ref parameter with the final index
-        paramIndex = currentParamIndex;
-
-        // If no replacements were made, the WHERE clause format is unsupported
-        if (result == whereClause)
-        {
-            throw new ArgumentException(
-                "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18");
+            current.Append(c);
         }
 
-        return result;
+        if (inString)
+        {
+            throw new ArgumentException(UnsupportedWhereClauseMessage);
+        }
+
+        expressions.Add(current.ToString());
+        return expressions;
+    }
+
+    private static bool IsAndTokenAt(string whereClause, int index)
+    {
+        if (index + 2 >= whereClause.Length)
+        {
+            return false;
+        }
+
+        if (!whereClause.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var before = index == 0 ? ' ' : whereClause[index - 1];
+        var after = index + 3 < whereClause.Length ? whereClause[index + 3] : ' ';
+
+        return !IsIdentifierChar(before) && !IsIdentifierChar(after);
+    }
+
+    private static bool IsIdentifierChar(char value) =>
+        char.IsLetterOrDigit(value) || value == '_';
+
+    private static string? FindDangerousPattern(string whereClause)
+    {
+        var patterns = new[] { ";", "--", "/*", "*/" };
+        foreach (var pattern in patterns)
+        {
+            if (ContainsOutsideQuotes(whereClause, pattern))
+            {
+                return pattern;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool ContainsOutsideQuotes(string input, string pattern)
+    {
+        var inString = false;
+
+        for (var i = 0; i < input.Length; i++)
+        {
+            var c = input[i];
+
+            if (c == '\'')
+            {
+                if (inString && i + 1 < input.Length && input[i + 1] == '\'')
+                {
+                    i++;
+                    continue;
+                }
+
+                inString = !inString;
+                continue;
+            }
+
+            if (!inString && input.AsSpan(i).StartsWith(pattern, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (inString)
+        {
+            throw new ArgumentException(UnsupportedWhereClauseMessage);
+        }
+
+        return false;
     }
 
     private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
