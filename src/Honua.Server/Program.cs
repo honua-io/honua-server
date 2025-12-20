@@ -81,6 +81,8 @@ builder.Services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryServi
 // Register FeatureServer services
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometryConverter,
     Honua.Server.Features.FeatureServer.Services.GeometryConverter>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFormatter,
+    Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
 
 var app = builder.Build();
 
