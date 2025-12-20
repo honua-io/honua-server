@@ -49,9 +49,18 @@ RUN addgroup -g 1001 -S honua && \
 WORKDIR /app
 COPY --from=build /app .
 
-# Change ownership to non-root user
-RUN chown -R honua:honua /app
+# Create directories that need to be writable at runtime
+RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
+    chown -R honua:honua /app /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
+    chmod 755 /app/Honua.Server
+
+# Switch to non-root user
 USER honua
+
+# Security labels for enhanced container security
+LABEL security.non-root="true"
+LABEL security.capabilities.drop="ALL"
+LABEL security.read-only-root="true"
 
 # Configure ASP.NET Core
 ENV ASPNETCORE_ENVIRONMENT=Production

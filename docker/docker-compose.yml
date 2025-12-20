@@ -73,6 +73,19 @@ services:
       start_period: 40s
     networks:
       - honua-network
+    # Security hardening
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Writable volumes for runtime data
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - honua_logs:/tmp/honua-logs
+      - honua_cache:/tmp/honua-cache
+      - dotnet_diagnostics:/tmp/dotnet-diagnostics
 
   # pgAdmin for database management (optional)
   pgadmin:
@@ -97,6 +110,9 @@ volumes:
   postgres_data:
   redis_data:
   pgadmin_data:
+  honua_logs:
+  honua_cache:
+  dotnet_diagnostics:
 
 networks:
   honua-network:
