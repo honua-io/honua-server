@@ -999,4 +999,196 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
         idValue.Should().BeGreaterThan(0);
     }
+
+    #region Geometry Type Support Tests (Issue #94)
+
+    /// <summary>
+    /// Tests spatial queries with LineString geometry
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithLineStringGeometry_ReturnsValidResponse()
+    {
+        // Arrange - LineString geometry in GeoServices REST JSON format
+        var json = """
+            {
+                "geometry": "{\"paths\":[[[-122.5,37.7],[-122.4,37.8],[-122.3,37.9]]]}",
+                "geometryType": "esriGeometryPolyline",
+                "spatialRel": "esriSpatialRelIntersects",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests spatial queries with MultiPoint geometry
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithMultiPointGeometry_ReturnsValidResponse()
+    {
+        // Arrange - MultiPoint geometry
+        var json = """
+            {
+                "geometry": "{\"points\":[[-122.4,37.8],[-122.3,37.9]]}",
+                "geometryType": "esriGeometryMultipoint",
+                "spatialRel": "esriSpatialRelIntersects",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests spatial queries with Envelope geometry (bounding box)
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithEnvelopeGeometry_ReturnsValidResponse()
+    {
+        // Arrange - Envelope geometry (bounding box)
+        var json = """
+            {
+                "geometry": "{\"xmin\":-123.0,\"ymin\":37.0,\"xmax\":-122.0,\"ymax\":38.0}",
+                "geometryType": "esriGeometryEnvelope",
+                "spatialRel": "esriSpatialRelIntersects",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests spatial queries with MultiPolygon geometry (polygon with multiple rings)
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithMultiPolygonGeometry_ReturnsValidResponse()
+    {
+        // Arrange - MultiPolygon geometry (two separate polygons)
+        var json = """
+            {
+                "geometry": "{\"rings\":[[[-123.0,37.0],[-122.5,37.0],[-122.5,37.5],[-123.0,37.5],[-123.0,37.0]],[[-122.3,37.6],[-121.8,37.6],[-121.8,38.1],[-122.3,38.1],[-122.3,37.6]]]}",
+                "geometryType": "esriGeometryPolygon",
+                "spatialRel": "esriSpatialRelContains",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests error handling for invalid geometry formats in new geometry types
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithInvalidLineStringGeometry_Returns400()
+    {
+        // Arrange - Invalid LineString geometry (missing paths)
+        var json = """
+            {
+                "geometry": "{\"invalidProperty\":[]}",
+                "geometryType": "esriGeometryPolyline",
+                "spatialRel": "esriSpatialRelIntersects",
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be400BadRequest();
+    }
+
+    /// <summary>
+    /// Tests error handling for empty geometry arrays
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithEmptyMultiPointGeometry_Returns400()
+    {
+        // Arrange - Empty MultiPoint geometry
+        var json = """
+            {
+                "geometry": "{\"points\":[]}",
+                "geometryType": "esriGeometryMultipoint",
+                "spatialRel": "esriSpatialRelIntersects",
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be400BadRequest();
+    }
+
+    #endregion
 }
