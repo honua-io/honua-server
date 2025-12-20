@@ -41,15 +41,15 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
 
-    private static readonly Regex ComparisonRegex = new(
+    private static readonly Regex _comparisonRegex = new(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private static readonly Regex NullCheckRegex = new(
+    private static readonly Regex _nullCheckRegex = new(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IS\s+(?<not>NOT\s+)?NULL$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private static readonly Regex TrueLiteralRegex = new(
+    private static readonly Regex _trueLiteralRegex = new(
         @"^(?:1\s*=\s*1|TRUE)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
@@ -523,13 +523,13 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                 throw new ArgumentException(UnsupportedWhereClauseMessage);
             }
 
-            if (TrueLiteralRegex.IsMatch(trimmedExpression))
+            if (_trueLiteralRegex.IsMatch(trimmedExpression))
             {
                 parameterizedExpressions.Add("TRUE");
                 continue;
             }
 
-            var nullMatch = NullCheckRegex.Match(trimmedExpression);
+            var nullMatch = _nullCheckRegex.Match(trimmedExpression);
             if (nullMatch.Success)
             {
                 var fieldName = nullMatch.Groups["field"].Value;
@@ -539,7 +539,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                 continue;
             }
 
-            var comparisonMatch = ComparisonRegex.Match(trimmedExpression);
+            var comparisonMatch = _comparisonRegex.Match(trimmedExpression);
             if (comparisonMatch.Success)
             {
                 var fieldName = comparisonMatch.Groups["field"].Value;
