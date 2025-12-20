@@ -16,7 +16,7 @@ public class TestFeatureStore : IFeatureStore
 
     public TestFeatureStore()
     {
-        // Initialize with test data
+        // Initialize with test data - more features for testing paging functionality
         _layerFeatures[0] = new List<Feature>
         {
             Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
@@ -28,7 +28,22 @@ public class TestFeatureStore : IFeatureStore
                 .Add("objectid", 2)
                 .Add("name", "Another Feature")
                 .Add("description", "Another test feature")
-                .Add("category", "sample"))
+                .Add("category", "sample")),
+            Feature.Create(3, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 3)
+                .Add("name", "Third Feature")
+                .Add("description", "Third test feature")
+                .Add("category", "test")),
+            Feature.Create(4, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 4)
+                .Add("name", "Fourth Feature")
+                .Add("description", "Fourth test feature")
+                .Add("category", "sample")),
+            Feature.Create(5, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 5)
+                .Add("name", "Fifth Feature")
+                .Add("description", "Fifth test feature")
+                .Add("category", "test"))
         };
     }
 
@@ -60,6 +75,9 @@ public class TestFeatureStore : IFeatureStore
         var totalCount = allFilteredFeatures.Count;
 
         // Apply pagination
+        var offset = query.Offset ?? 0;
+        var afterOffsetCount = Math.Max(0, totalCount - offset);
+
         if (query.Offset.HasValue)
         {
             allFilteredFeatures = allFilteredFeatures.Skip(query.Offset.Value).ToList();
@@ -76,11 +94,23 @@ public class TestFeatureStore : IFeatureStore
             allFilteredFeatures = allFilteredFeatures.Select(f => FilterFields(f, query.OutFields.Value)).ToList();
         }
 
+        // Calculate if more results are available
+        var hasMoreResults = false;
+        if (query.Limit.HasValue)
+        {
+            // With limit: more results if we would have returned more without the limit
+            hasMoreResults = afterOffsetCount > query.Limit.Value;
+        }
+        else if (query.Offset.HasValue)
+        {
+            // With only offset: more results if offset didn't skip everything
+            hasMoreResults = false; // All remaining results after offset are returned
+        }
+
         return Task.FromResult(QueryResult<Feature>.Create(
             totalCount,
             allFilteredFeatures.ToImmutableArray(),
-            query.Offset.HasValue && query.Limit.HasValue &&
-                     (query.Offset.Value + query.Limit.Value) < totalCount));
+            hasMoreResults));
     }
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)

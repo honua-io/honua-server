@@ -437,4 +437,166 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // All features should have null geometry
         queryResponse.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
     }
+
+    // Query paging tests (Issue #8)
+
+    /// <summary>
+    /// Tests that the resultOffset parameter correctly skips the specified number of records
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithResultOffset_SkipsCorrectNumberOfRecords()
+    {
+        // Act - Skip first 2 records
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultOffset=2");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+
+        // With offset=2, should get features 3, 4, 5 from TestFeatureStore (features with IDs 3, 4, 5)
+        queryResponse.Features.Should().HaveCount(3);
+        queryResponse.ExceededTransferLimit.Should().BeFalse("because all remaining features after offset are returned");
+    }
+
+    /// <summary>
+    /// Tests that the resultRecordCount parameter correctly limits the number of returned features
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithResultRecordCount_LimitsReturnedFeatures()
+    {
+        // Act - Limit to 3 records
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=3");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(3);
+        queryResponse.ExceededTransferLimit.Should().BeTrue("because 5 features exist but only 3 were requested");
+    }
+
+    /// <summary>
+    /// Tests that combining resultOffset and resultRecordCount parameters returns the correct page of results
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithOffsetAndCount_ReturnsCorrectPage()
+    {
+        // Act - Skip 1 record and limit to 2 records
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultOffset=1&resultRecordCount=2");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(2);
+        queryResponse.ExceededTransferLimit.Should().BeTrue("because offset=1 leaves 4 features, but only 2 were requested");
+    }
+
+    /// <summary>
+    /// Tests that the exceededTransferLimit flag is correctly set when more results are available than requested
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithExceededLimit_SetsExceededTransferLimitFlag()
+    {
+        // Act - Request only 1 record when TestFeatureStore has 5 features
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=1");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(1);
+        queryResponse.ExceededTransferLimit.Should().BeTrue("because there are 5 total features but only 1 was requested");
+    }
+
+    /// <summary>
+    /// Tests that the exceededTransferLimit flag is correctly set to false when all results are returned
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithAllResults_ExceededTransferLimitIsFalse()
+    {
+        // Act - Request all 5 records that exist in TestFeatureStore
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=5");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(5);
+        queryResponse.ExceededTransferLimit.Should().BeFalse("because all available features were returned");
+    }
+
+    /// <summary>
+    /// Tests that POST query requests correctly handle paging parameters (resultOffset and resultRecordCount)
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_PostWithPagingParameters_ReturnsCorrectPage()
+    {
+        // Arrange
+        var queryParams = new QueryParameters
+        {
+            Where = "1=1",
+            ResultOffset = 1,
+            ResultRecordCount = 2,
+            ReturnGeometry = true,
+            F = "json"
+        };
+
+        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(2);
+        queryResponse.ExceededTransferLimit.Should().BeTrue("because offset=1 leaves 4 features, but only 2 were requested");
+    }
 }
