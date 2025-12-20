@@ -75,6 +75,9 @@ public class TestFeatureStore : IFeatureStore
         var totalCount = allFilteredFeatures.Count;
 
         // Apply pagination
+        var offset = query.Offset ?? 0;
+        var afterOffsetCount = Math.Max(0, totalCount - offset);
+
         if (query.Offset.HasValue)
         {
             allFilteredFeatures = allFilteredFeatures.Skip(query.Offset.Value).ToList();
@@ -91,11 +94,23 @@ public class TestFeatureStore : IFeatureStore
             allFilteredFeatures = allFilteredFeatures.Select(f => FilterFields(f, query.OutFields.Value)).ToList();
         }
 
+        // Calculate if more results are available
+        var hasMoreResults = false;
+        if (query.Limit.HasValue)
+        {
+            // With limit: more results if we would have returned more without the limit
+            hasMoreResults = afterOffsetCount > query.Limit.Value;
+        }
+        else if (query.Offset.HasValue)
+        {
+            // With only offset: more results if offset didn't skip everything
+            hasMoreResults = false; // All remaining results after offset are returned
+        }
+
         return Task.FromResult(QueryResult<Feature>.Create(
             totalCount,
             allFilteredFeatures.ToImmutableArray(),
-            query.Offset.HasValue && query.Limit.HasValue &&
-                     (query.Offset.Value + query.Limit.Value) < totalCount));
+            hasMoreResults));
     }
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
