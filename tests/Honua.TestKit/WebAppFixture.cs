@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Import;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -48,6 +50,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     // Remove all PostgreSQL-related services to avoid DefaultConnection dependency
                     services.RemoveAll<NpgsqlDataSource>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
+                    services.RemoveAll<IFileImportService>();
 
                     // Add test-specific PostgreSQL services
                     services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
@@ -58,6 +61,10 @@ public sealed class WebAppFixture : IAsyncLifetime
                         var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
                         return new TestDatabaseConnectionProvider(dataSource);
                     });
+
+                    // Add test-specific import service with test connection string
+                    services.AddScoped<IFileImportService>(serviceProvider =>
+                        new FileImportService(_postgres.ConnectionString));
 
                     // Apply custom service configurations
                     foreach (var configure in _serviceConfigurations)
