@@ -313,6 +313,12 @@ public static class FeatureServerEndpoints
     internal static async Task<IResult> QueryFeaturesGetAsync(
         [FromRoute] string serviceId,
         [FromRoute] int layerId,
+        [FromServices] ILayerCatalog catalog,
+        [FromServices] IFeatureStore featureStore,
+        [FromServices] IGeometryConverter geometryConverter,
+        [FromServices] IQueryFormatter queryFormatter,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
+        [FromServices] ILogger<FeatureServerHandler> logger,
         [FromQuery] string? where = null,
         [FromQuery] string? outFields = null,
         [FromQuery] bool returnGeometry = true,
@@ -322,12 +328,6 @@ public static class FeatureServerEndpoints
         [FromQuery] string? geometry = null,
         [FromQuery] string? geometryType = null,
         [FromQuery] string? spatialRel = null,
-        [FromServices] ILayerCatalog? catalog = null,
-        [FromServices] IFeatureStore? featureStore = null,
-        [FromServices] IGeometryConverter? geometryConverter = null,
-        [FromServices] IQueryFormatter? queryFormatter = null,
-        [FromServices] IOptions<LimitsOptions>? limitsOptions = null,
-        [FromServices] ILogger<FeatureServerHandler>? logger = null,
         CancellationToken cancellationToken = default)
     {
         // Convert individual parameters to QueryParameters object
@@ -344,7 +344,7 @@ public static class FeatureServerEndpoints
             SpatialRel = spatialRel
         };
 
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, geometryConverter!, queryFormatter!, limitsOptions!, logger!, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, queryFormatter, limitsOptions, logger, cancellationToken);
     }
 
     /// <summary>
