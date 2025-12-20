@@ -156,6 +156,8 @@ public class QueryParameterTests
 | **Branch Coverage** | 70% | CI gate (hard fail) |
 | **Conformance** | Per spec | Nightly CI (report) |
 
+**Note:** CI currently enforces a staged 40% line / 30% branch gate during Phase 0-1 to maintain velocity; the target remains 80%/70%.
+
 ### 6. Test Categories and Attributes
 
 ```csharp

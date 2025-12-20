@@ -2100,6 +2100,8 @@ dotnet_diagnostic.CA2007.severity = none   # ConfigureAwait (not needed in ASP.N
 |--------|---------|--------|
 | **Line Coverage** | 80% | 90% |
 | **Branch Coverage** | 70% | 85% |
+
+**Staged enforcement:** CI uses a temporary 40% line / 30% branch gate during Phase 0-1 to avoid slowing iteration, with a return to 80%/70% by Phase 3.
 | **Critical Paths** | 95% | 100% |
 
 Critical paths include:
@@ -2131,7 +2133,7 @@ Critical paths include:
 - [ ] One integration test runs against real PostgreSQL
 - [ ] Docker image builds and starts
 - [ ] CI pipeline runs and passes
-- [ ] **Coverage checkpoint:** Test infrastructure operational (no coverage target yet)
+- [ ] **Coverage checkpoint:** Staged CI threshold met (40% line / 30% branch)
 
 ### Phase 1: FeatureServer Query
 

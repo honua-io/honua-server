@@ -530,7 +530,39 @@ public sealed class EsriFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
-    public object? Geometry { get; init; }
+    public EsriGeometry? Geometry { get; init; }
+}
+
+/// <summary>
+/// Esri geometry representation (point)
+/// </summary>
+public sealed class EsriGeometry
+{
+    /// <summary>
+    /// X coordinate (longitude)
+    /// </summary>
+    public double X { get; init; }
+
+    /// <summary>
+    /// Y coordinate (latitude)
+    /// </summary>
+    public double Y { get; init; }
+
+    /// <summary>
+    /// Spatial reference information
+    /// </summary>
+    public EsriSpatialReference? SpatialReference { get; init; }
+}
+
+/// <summary>
+/// Esri spatial reference representation
+/// </summary>
+public sealed class EsriSpatialReference
+{
+    /// <summary>
+    /// Well-known ID for the spatial reference
+    /// </summary>
+    public int Wkid { get; init; }
 }
 
 /// <summary>
@@ -567,6 +599,21 @@ public sealed class QueryParameters
     /// Maximum number of records to return
     /// </summary>
     public int? ResultRecordCount { get; init; }
+
+    /// <summary>
+    /// Filter geometry in Esri JSON format for spatial queries
+    /// </summary>
+    public string? Geometry { get; init; }
+
+    /// <summary>
+    /// Type of filter geometry (esriGeometryPoint, esriGeometryPolygon, esriGeometryEnvelope)
+    /// </summary>
+    public string? GeometryType { get; init; }
+
+    /// <summary>
+    /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelContains, esriSpatialRelWithin)
+    /// </summary>
+    public string? SpatialRel { get; init; }
 }
 
 /// <summary>
@@ -580,10 +627,12 @@ public sealed class QueryParameters
 [JsonSerializable(typeof(EsriFieldInfo))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(EsriFeature))]
+[JsonSerializable(typeof(EsriGeometry))]
+[JsonSerializable(typeof(EsriSpatialReference))]
 [JsonSerializable(typeof(QueryParameters))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-public partial class FeatureServerJsonContext : JsonSerializerContext
+public sealed partial class FeatureServerJsonContext : JsonSerializerContext
 {
 }

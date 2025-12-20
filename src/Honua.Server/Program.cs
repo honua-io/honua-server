@@ -75,6 +75,10 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 // Register admin services
 builder.Services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
+// Register FeatureServer services
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometryConverter,
+    Honua.Server.Features.FeatureServer.Services.GeometryConverter>();
+
 var app = builder.Build();
 
 // Add correlation ID middleware early in pipeline (before request logging)

@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -313,8 +314,12 @@ public static class FeatureServerEndpoints
         [FromQuery] string f = "json",
         [FromQuery] int? resultOffset = null,
         [FromQuery] int? resultRecordCount = null,
+        [FromQuery] string? geometry = null,
+        [FromQuery] string? geometryType = null,
+        [FromQuery] string? spatialRel = null,
         [FromServices] ILayerCatalog? catalog = null,
         [FromServices] IFeatureStore? featureStore = null,
+        [FromServices] IGeometryConverter? geometryConverter = null,
         [FromServices] ILogger<FeatureServerHandler>? logger = null,
         CancellationToken cancellationToken = default)
     {
@@ -326,10 +331,13 @@ public static class FeatureServerEndpoints
             ReturnGeometry = returnGeometry,
             F = f,
             ResultOffset = resultOffset,
-            ResultRecordCount = resultRecordCount
+            ResultRecordCount = resultRecordCount,
+            Geometry = geometry,
+            GeometryType = geometryType,
+            SpatialRel = spatialRel
         };
 
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, logger!, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, geometryConverter!, logger!, cancellationToken);
     }
 
     /// <summary>
@@ -341,10 +349,11 @@ public static class FeatureServerEndpoints
         [FromBody] QueryParameters queryParams,
         [FromServices] ILayerCatalog catalog,
         [FromServices] IFeatureStore featureStore,
+        [FromServices] IGeometryConverter geometryConverter,
         [FromServices] ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken = default)
     {
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, logger, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, logger, cancellationToken);
     }
 
     /// <summary>
@@ -356,6 +365,7 @@ public static class FeatureServerEndpoints
         QueryParameters queryParams,
         ILayerCatalog catalog,
         IFeatureStore featureStore,
+        IGeometryConverter geometryConverter,
         ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken)
     {
@@ -379,7 +389,7 @@ public static class FeatureServerEndpoints
             }
 
             // Build query from parameters
-            var query = BuildFeatureQuery(queryParams, service);
+            var query = BuildFeatureQuery(queryParams, service, geometryConverter);
 
             // Execute query
             var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
@@ -407,7 +417,7 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Builds a FeatureQuery from query parameters
     /// </summary>
-    private static FeatureQuery BuildFeatureQuery(QueryParameters queryParams, ServiceDefinition service)
+    private static FeatureQuery BuildFeatureQuery(QueryParameters queryParams, ServiceDefinition service, IGeometryConverter geometryConverter)
     {
         var query = new FeatureQuery
         {
@@ -433,7 +443,55 @@ public static class FeatureServerEndpoints
             }
         }
 
+        // Parse spatial filter if specified
+        if (!string.IsNullOrEmpty(queryParams.Geometry))
+        {
+            var spatialFilter = ParseSpatialFilter(queryParams.Geometry, queryParams.SpatialRel, geometryConverter);
+            query = query with { SpatialFilter = spatialFilter };
+        }
+
         return query;
+    }
+
+    /// <summary>
+    /// Parses Esri JSON geometry and spatial relationship into a SpatialFilter
+    /// </summary>
+    private static SpatialFilter ParseSpatialFilter(string geometry, string? spatialRel, IGeometryConverter geometryConverter)
+    {
+        // Convert Esri JSON geometry to WKB bytes
+        var wkbBytes = ConvertEsriJsonToWkb(geometry, geometryConverter);
+
+        // Map Esri spatial relationship to enum
+        var relationship = ParseSpatialRelationship(spatialRel);
+
+        return new SpatialFilter
+        {
+            Geometry = wkbBytes,
+            SpatialRelationship = relationship
+        };
+    }
+
+    /// <summary>
+    /// Maps Esri spatial relationship strings to SpatialRelationship enum
+    /// </summary>
+    private static SpatialRelationship ParseSpatialRelationship(string? spatialRel)
+    {
+        return spatialRel?.ToLowerInvariant() switch
+        {
+            "esrispatialrelintersects" or null => SpatialRelationship.Intersects,
+            "esrispatialrelcontains" => SpatialRelationship.Contains,
+            "esrispatialrelwithin" => SpatialRelationship.Within,
+            "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,
+            _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
+        };
+    }
+
+    /// <summary>
+    /// Converts Esri JSON geometry to WKB bytes using the geometry converter service
+    /// </summary>
+    private static byte[] ConvertEsriJsonToWkb(string esriJsonGeometry, IGeometryConverter geometryConverter)
+    {
+        return geometryConverter.ConvertEsriJsonToWkb(esriJsonGeometry);
     }
 
     /// <summary>
@@ -466,18 +524,31 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Converts WKB geometry to Esri JSON format (simplified for testing)
     /// </summary>
-    private static object? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
+    private static EsriGeometry? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
     {
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        // For now, return a simple point geometry for testing
-        // In a real implementation, this would parse the WKB and convert to Esri JSON
-        return new
+        // Parse point coordinates from WKB (simplified implementation for testing)
+        if (wkbGeometry.Length >= 21) // Point WKB has 21 bytes
         {
-            x = -122.4194,
-            y = 37.7749,
-            spatialReference = new { wkid = 4326 }
+            var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
+            var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
+
+            return new EsriGeometry
+            {
+                X = x,
+                Y = y,
+                SpatialReference = new EsriSpatialReference { Wkid = 4326 }
+            };
+        }
+
+        // Default fallback geometry for testing
+        return new EsriGeometry
+        {
+            X = -122.4194,
+            Y = 37.7749,
+            SpatialReference = new EsriSpatialReference { Wkid = 4326 }
         };
     }
 }

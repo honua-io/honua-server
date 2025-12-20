@@ -311,14 +311,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_WithPostRequest_ReturnsFilteredFeatures()
     {
         // Arrange
-        var queryParams = new QueryParameters
-        {
-            Where = "name='Test Feature'",
-            ReturnGeometry = true,
-            F = "json"
-        };
-
-        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var json = """
+            {
+                "where": "name='Test Feature'",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
@@ -572,16 +571,15 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_PostWithPagingParameters_ReturnsCorrectPage()
     {
         // Arrange
-        var queryParams = new QueryParameters
-        {
-            Where = "1=1",
-            ResultOffset = 1,
-            ResultRecordCount = 2,
-            ReturnGeometry = true,
-            F = "json"
-        };
-
-        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var json = """
+            {
+                "where": "1=1",
+                "resultOffset": 1,
+                "resultRecordCount": 2,
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
@@ -598,5 +596,162 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse!.Features.Should().NotBeNull();
         queryResponse.Features.Should().HaveCount(2);
         queryResponse.ExceededTransferLimit.Should().BeTrue("because offset=1 leaves 4 features, but only 2 were requested");
+    }
+
+    /// <summary>
+    /// Tests that spatial queries with point geometry and default spatial relationship (intersects) work correctly
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithPointGeometryIntersects_ReturnsFilteredFeatures()
+    {
+        // Arrange - Point geometry in Esri JSON format
+        var pointGeometry = @"{""x"":-122.4194,""y"":37.7749}"; // San Francisco coordinates
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel=esriSpatialRelIntersects&f=json");
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        // Spatial filtering should work even with our simple test data
+        queryResponse.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests spatial queries with polygon geometry using contains relationship
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_PostWithPolygonGeometryContains_ReturnsContainedFeatures()
+    {
+        // Arrange - Polygon geometry around San Francisco Bay Area
+        var json = """
+            {
+                "geometry": "{\"rings\":[[[-123.0,37.0],[-122.0,37.0],[-122.0,38.0],[-123.0,38.0],[-123.0,37.0]]]}",
+                "spatialRel": "esriSpatialRelContains",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests that spatial relationship mapping works correctly for all supported relationships
+    /// </summary>
+    [Theory]
+    [InlineData("esriSpatialRelIntersects")]
+    [InlineData("esriSpatialRelContains")]
+    [InlineData("esriSpatialRelWithin")]
+    [InlineData("esriSpatialRelEnvelopeIntersects")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_SpatialRelMapping_ReturnsValidResponse(string spatialRel)
+    {
+        // Arrange
+        var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel={spatialRel}&f=json");
+
+        // Assert - Should not throw an exception for valid spatial relationships
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Tests error handling for invalid geometry in spatial queries
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithInvalidGeometry_Returns400()
+    {
+        // Arrange - Invalid JSON geometry
+        var invalidGeometry = @"{""invalid"":""geometry""}";
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(invalidGeometry)}&f=json");
+
+        // Assert
+        response.Be400BadRequest();
+    }
+
+    /// <summary>
+    /// Tests error handling for unsupported spatial relationships
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithUnsupportedSpatialRel_Returns400()
+    {
+        // Arrange
+        var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
+        var unsupportedSpatialRel = "esriSpatialRelOverlaps"; // Not yet supported
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel={unsupportedSpatialRel}&f=json");
+
+        // Assert
+        response.Be400BadRequest();
+    }
+
+    /// <summary>
+    /// Tests that spatial queries can be combined with WHERE clauses
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithSpatialAndAttributeFilters_ReturnsFilteredFeatures()
+    {
+        // Arrange
+        var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
+        var whereClause = "name='Test Feature'";
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&where={Uri.EscapeDataString(whereClause)}&f=json");
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
     }
 }

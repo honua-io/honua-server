@@ -10,6 +10,9 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
 
+/// <summary>
+/// Integration tests for PostgresLayerCatalog using real PostgreSQL database.
+/// </summary>
 [Collection("Database")]
 public class PostgresLayerCatalogTests : IAsyncLifetime
 {

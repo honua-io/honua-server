@@ -134,49 +134,71 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
     return criteria
 
 def get_honua_architecture_rules() -> str:
-    """Extract architecture rules from project documentation"""
-    rules = """
-# Honua Architecture Rules
+    """Extract architecture rules from project documentation (CLAUDE.md)"""
+    try:
+        claude_md_path = Path("CLAUDE.md")
+        if claude_md_path.exists():
+            with open(claude_md_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Extract Critical Rules section (same as CI workflow and Claude script)
+            import re
+            match = re.search(r'## Critical Rules.*?(?=## Phase-Based Development)', content, re.DOTALL)
+            if match:
+                rules_section = match.group(0)
+
+                # Add additional AI-specific context for more thorough analysis
+                enhanced_rules = f"""# Architecture Rules from CLAUDE.md
+
+{rules_section}
+
+## AI Review Specific Guidance:
+
+### Critical Analysis Points:
+1. **PR Process Compliance** (BLOCKING):
+   - Every PR MUST link to a GitHub issue
+   - Linked issue MUST have acceptance criteria
+   - Code changes MUST address the acceptance criteria
+
+2. **Dependency Analysis** (BLOCKING):
+   - Check all `using` statements for direction violations
+   - Core layer MUST NOT reference Infrastructure layers
+   - Look for circular dependencies
+
+3. **API Pattern Enforcement** (BLOCKING):
+   - Scan for ControllerBase inheritance (forbidden)
+   - Verify Minimal API patterns are used
+   - Check for proper encapsulation (internal vs public)
+
+4. **Code Quality Gates** (BLOCKING):
+   - All public types MUST have XML documentation
+   - Repository/DataAccess types MUST be internal
+   - No reflection in hot paths (AOT compatibility)
+
+### Review Output Format:
+Always include specific file:line references and concrete code examples in recommendations."""
+
+                return enhanced_rules
+
+        # Fallback with essential rules if CLAUDE.md not accessible
+        return """# Honua Architecture Rules (Fallback - CLAUDE.md not found)
 
 ## Critical Violations (Blocking):
-1. **PR Process Violations**:
-   - PR not linked to any GitHub issue
-   - Missing acceptance criteria in linked issue
-   - Changes don't address acceptance criteria
+1. **PR Process**: Not linked to GitHub issue OR missing acceptance criteria
+2. **Dependencies**: Core depending on Infrastructure (Honua.Postgres, Honua.Server)
+3. **API Patterns**: Controller usage (use Minimal APIs only)
+4. **Encapsulation**: Public repository/database types (should be internal)
+5. **Documentation**: Missing XML docs on public APIs
 
-2. **Dependency Direction Violations**:
-   - Core MUST NOT depend on Infrastructure (Honua.Postgres, Honua.Server)
-   - Postgres MUST NOT depend on Server layer
+## Good Patterns:
+- Vertical slice organization
+- Minimal API endpoints
+- Clean dependency direction (Core <- Infrastructure)
+- Comprehensive documentation
+- Composition over inheritance"""
 
-3. **API Pattern Violations**:
-   - NO Controllers - only Minimal APIs allowed
-   - NO inheritance-heavy patterns
-
-4. **Quality Gate Violations**:
-   - Public types without XML documentation
-   - Database types that are public (should be internal)
-
-## Warning-Level Concerns:
-1. **Organizational Issues**:
-   - Layer-based instead of vertical slice organization
-   - Violation of composition over inheritance
-
-2. **Performance Issues**:
-   - Synchronous operations in async context
-   - Inefficient query patterns
-
-3. **Dependency Complexity**:
-   - >5 dependencies per endpoint
-   - >4 dependencies per handler
-
-## Good Patterns to Reinforce:
-1. **Vertical Slices**: Features organized together, not by technical layer
-2. **Clean Dependencies**: Core -> Infrastructure direction only
-3. **Minimal APIs**: Simple, focused endpoints
-4. **Clean Code**: Single responsibility, proper encapsulation
-5. **Documentation**: All public APIs documented
-"""
-    return rules
+    except Exception as e:
+        return f"# Architecture Rules (Error: {e})\n\nUsing minimal fallback rules for safety."
 
 def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str = "mock") -> str:
     """Analyze code using LLM API"""

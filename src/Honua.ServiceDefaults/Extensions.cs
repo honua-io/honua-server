@@ -9,6 +9,9 @@ using OpenTelemetry.Trace;
 
 namespace Honua.ServiceDefaults;
 
+/// <summary>
+/// Service default configuration extensions for application setup.
+/// </summary>
 public static class Extensions
 {
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)

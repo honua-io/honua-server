@@ -10,6 +10,9 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
 
+/// <summary>
+/// Integration tests for PostgresFeatureStore using real PostgreSQL database.
+/// </summary>
 [Collection("Database")]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {

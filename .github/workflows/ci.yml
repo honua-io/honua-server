@@ -71,6 +71,8 @@ jobs:
     name: Integration Tests (Testcontainers + PostGIS)
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      needs_integration: ${{ steps.changes.outputs.integration }}
     services:
       # Testcontainers will manage containers, but we need Docker available
       docker:
@@ -78,6 +80,23 @@ jobs:
         options: --privileged
     steps:
       - uses: actions/checkout@v4
+
+      - name: Detect Integration Test Scope
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            integration:
+              - 'src/**'
+              - 'tests/**'
+              - 'docker/**'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - '**/*.csproj'
+              - 'Directory.Build.props'
+              - 'Honua.sln'
+              - '.github/workflows/**'
+              - 'scripts/**'
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -88,6 +107,7 @@ jobs:
         run: dotnet restore Honua.sln
 
       - name: Run Integration Tests
+        if: steps.changes.outputs.integration == 'true'
         run: |
           dotnet test Honua.sln \
             --no-restore \
@@ -101,7 +121,7 @@ jobs:
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
-        if: always()
+        if: steps.changes.outputs.integration == 'true'
         with:
           name: integration-test-results
           path: tests/TestResults/
@@ -152,6 +172,7 @@ jobs:
 
       - name: Download Integration Test Results
         uses: actions/download-artifact@v4
+        if: needs.test-integration.outputs.needs_integration == 'true'
         with:
           name: integration-test-results
           path: ./coverage/integration
@@ -193,16 +214,14 @@ jobs:
           BRANCH_COVERAGE=$(grep -oP 'Branch coverage: \K[\d.]+' ./coverage/report/Summary.txt || echo "0")
           echo "Branch coverage: ${BRANCH_COVERAGE}%"
 
-          # Phase 0: Lower thresholds for infrastructure setup phase
-          # TODO: Restore to 80%/70% once we have more implementation
-          # Temporarily reduced to 30% for Issue #3 - PostgresFeatureStore has excellent coverage
-          # but overall project coverage low due to greenfield nature
-          if (( $(echo "$COVERAGE < 30" | bc -l) )); then
-            echo "::error::Coverage ${COVERAGE}% is below 30% threshold"
+          # Phase 0-1: Staged thresholds to keep velocity while increasing coverage
+          # TODO: Restore to 80%/70% once core FeatureServer endpoints are complete
+          if (( $(echo "$COVERAGE < 40" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below 40% threshold"
             exit 1
           fi
-          if (( $(echo "$BRANCH_COVERAGE < 25" | bc -l) )); then
-            echo "::error::Branch coverage ${BRANCH_COVERAGE}% is below 25% threshold"
+          if (( $(echo "$BRANCH_COVERAGE < 30" | bc -l) )); then
+            echo "::error::Branch coverage ${BRANCH_COVERAGE}% is below 30% threshold"
             exit 1
           fi
 

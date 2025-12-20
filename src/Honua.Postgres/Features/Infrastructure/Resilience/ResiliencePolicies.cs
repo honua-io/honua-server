@@ -9,7 +9,7 @@ namespace Honua.Postgres.Features.Infrastructure.Resilience;
 /// <summary>
 /// Resilience policies for database operations with PostgreSQL
 /// </summary>
-public static class ResiliencePolicies
+internal static class ResiliencePolicies
 {
     /// <summary>
     /// Retry policy for transient connection errors ONLY.

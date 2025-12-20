@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Xunit;
 
 namespace Honua.Architecture.Tests;
 
@@ -9,6 +10,7 @@ namespace Honua.Architecture.Tests;
 /// Basic architecture tests to validate project structure
 /// Reference: MVP_PLAN.md Architecture Guardrails
 /// </summary>
+[Trait("Category", "Architecture")]
 public class BasicArchitectureTests
 {
     [ArchitectureTest]
