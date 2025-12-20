@@ -19,6 +19,10 @@ public static class EndpointRegistry
 
         new("GET", "/api/admin/connections/{id}/tables"),
 
+        new("GET", "/api/import/formats"),
+        new("POST", "/api/import/preview"),
+        new("POST", "/api/import/upload"),
+
         new("GET", "/rest/services/{serviceId}/FeatureServer"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),

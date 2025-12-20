@@ -29,6 +29,7 @@ public class ImportEndpointTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("GET /api/import/formats")]
     public async Task GetSupportedFormats_ReturnsAllSupportedExtensions()
     {
         // Act
@@ -47,6 +48,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/import/preview")]
     public async Task PreviewFile_WithValidGeoJson_ReturnsPreview()
     {
         // Arrange
@@ -133,6 +135,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/import/upload")]
     public async Task ImportFile_WithValidRequest_ReturnsImportResult()
     {
         // Arrange
