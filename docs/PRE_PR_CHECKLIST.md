@@ -140,8 +140,8 @@ Must match the main commit and include GitHub issue number
 - Breaking changes (if any)
 
 ## Coverage Thresholds
-- **Line Coverage**: Currently 30% (will increase to 80%)
-- **Branch Coverage**: Currently 25% (will increase to 70%)
+- **Line Coverage**: Currently 40% (will increase to 80%)
+- **Branch Coverage**: Currently 30% (will increase to 70%)
 
 ## Common Failure Reasons
 

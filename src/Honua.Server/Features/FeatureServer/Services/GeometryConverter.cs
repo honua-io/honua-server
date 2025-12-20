@@ -19,14 +19,14 @@ internal sealed class GeometryConverter : IGeometryConverter
     public byte[] ConvertEsriJsonToWkb(string esriJsonGeometry)
     {
         // TODO: Implement full Esri JSON to WKB conversion using PostGIS
-        // For MVP, we'll create a simple point geometry for testing
+        // For MVP, we'll support basic point and polygon geometries for testing
 
         try
         {
-            // Parse basic Esri JSON point geometry format
             using var jsonDoc = JsonDocument.Parse(esriJsonGeometry);
             var root = jsonDoc.RootElement;
 
+            // Handle POINT geometry format
             if (root.TryGetProperty("x", out var xElement) && root.TryGetProperty("y", out var yElement))
             {
                 var x = xElement.GetDouble();
@@ -43,11 +43,70 @@ internal sealed class GeometryConverter : IGeometryConverter
                 return wkbBytes;
             }
 
-            throw new ArgumentException("Invalid Esri JSON geometry format");
+            // Handle POLYGON geometry format
+            if (root.TryGetProperty("rings", out var ringsElement) && ringsElement.ValueKind == JsonValueKind.Array)
+            {
+                return ConvertEsriPolygonToWkb(ringsElement);
+            }
+
+            throw new ArgumentException("Invalid Esri JSON geometry format. Supported types: Point (x, y), Polygon (rings)");
         }
         catch (JsonException)
         {
             throw new ArgumentException("Invalid JSON format in geometry parameter");
         }
+    }
+
+    /// <summary>
+    /// Converts Esri JSON polygon rings to WKB format
+    /// </summary>
+    private static byte[] ConvertEsriPolygonToWkb(JsonElement ringsElement)
+    {
+        var rings = new List<List<(double x, double y)>>();
+
+        foreach (var ring in ringsElement.EnumerateArray())
+        {
+            if (ring.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var points = new List<(double x, double y)>();
+            foreach (var point in ring.EnumerateArray())
+            {
+                if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2)
+                {
+                    var x = point[0].GetDouble();
+                    var y = point[1].GetDouble();
+                    points.Add((x, y));
+                }
+            }
+            if (points.Count > 0)
+                rings.Add(points);
+        }
+
+        if (rings.Count == 0)
+            throw new ArgumentException("No valid rings found in polygon geometry");
+
+        // Create WKB for POLYGON geometry
+        // WKB format: [endian][type][numRings][ring1][ring2]...
+        // Each ring: [numPoints][point1][point2]...
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+
+        writer.Write((byte)1); // Little-endian
+        writer.Write((uint)3); // POLYGON type
+
+        writer.Write((uint)rings.Count); // Number of rings
+
+        foreach (var ring in rings)
+        {
+            writer.Write((uint)ring.Count); // Number of points in ring
+            foreach (var (x, y) in ring)
+            {
+                writer.Write(x); // X coordinate
+                writer.Write(y); // Y coordinate
+            }
+        }
+
+        return stream.ToArray();
     }
 }

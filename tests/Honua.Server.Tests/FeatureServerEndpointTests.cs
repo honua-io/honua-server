@@ -635,16 +635,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_PostWithPolygonGeometryContains_ReturnsContainedFeatures()
     {
         // Arrange - Polygon geometry around San Francisco Bay Area
-        var polygonGeometry = @"{""rings"":[[[" +
-                              @"-123.0,37.0," +
-                              @"-122.0,37.0," +
-                              @"-122.0,38.0," +
-                              @"-123.0,38.0," +
-                              @"-123.0,37.0]]]}";
-
-        var json = $$"""
+        var json = """
             {
-                "geometry": "{{polygonGeometry}}",
+                "geometry": "{\"rings\":[[[-123.0,37.0],[-122.0,37.0],[-122.0,38.0],[-123.0,38.0],[-123.0,37.0]]]}",
                 "spatialRel": "esriSpatialRelContains",
                 "returnGeometry": true,
                 "f": "json"

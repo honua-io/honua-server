@@ -530,13 +530,45 @@ public sealed class EsriFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
-    public object? Geometry { get; init; }
+    public EsriGeometry? Geometry { get; init; }
+}
+
+/// <summary>
+/// Esri geometry representation (point)
+/// </summary>
+public sealed class EsriGeometry
+{
+    /// <summary>
+    /// X coordinate (longitude)
+    /// </summary>
+    public double X { get; init; }
+
+    /// <summary>
+    /// Y coordinate (latitude)
+    /// </summary>
+    public double Y { get; init; }
+
+    /// <summary>
+    /// Spatial reference information
+    /// </summary>
+    public EsriSpatialReference? SpatialReference { get; init; }
+}
+
+/// <summary>
+/// Esri spatial reference representation
+/// </summary>
+public sealed class EsriSpatialReference
+{
+    /// <summary>
+    /// Well-known ID for the spatial reference
+    /// </summary>
+    public int Wkid { get; init; }
 }
 
 /// <summary>
 /// Query parameters for feature queries
 /// </summary>
-internal sealed class QueryParameters
+public sealed class QueryParameters
 {
     /// <summary>
     /// WHERE clause for attribute queries
@@ -595,9 +627,12 @@ internal sealed class QueryParameters
 [JsonSerializable(typeof(EsriFieldInfo))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(EsriFeature))]
+[JsonSerializable(typeof(EsriGeometry))]
+[JsonSerializable(typeof(EsriSpatialReference))]
+[JsonSerializable(typeof(QueryParameters))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-public partial class FeatureServerJsonContext : JsonSerializerContext
+public sealed partial class FeatureServerJsonContext : JsonSerializerContext
 {
 }

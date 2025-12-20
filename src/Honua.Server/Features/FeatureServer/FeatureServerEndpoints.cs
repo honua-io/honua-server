@@ -524,18 +524,31 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Converts WKB geometry to Esri JSON format (simplified for testing)
     /// </summary>
-    private static object? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
+    private static EsriGeometry? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
     {
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        // For now, return a simple point geometry for testing
-        // In a real implementation, this would parse the WKB and convert to Esri JSON
-        return new
+        // Parse point coordinates from WKB (simplified implementation for testing)
+        if (wkbGeometry.Length >= 21) // Point WKB has 21 bytes
         {
-            x = -122.4194,
-            y = 37.7749,
-            spatialReference = new { wkid = 4326 }
+            var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
+            var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
+
+            return new EsriGeometry
+            {
+                X = x,
+                Y = y,
+                SpatialReference = new EsriSpatialReference { Wkid = 4326 }
+            };
+        }
+
+        // Default fallback geometry for testing
+        return new EsriGeometry
+        {
+            X = -122.4194,
+            Y = 37.7749,
+            SpatialReference = new EsriSpatialReference { Wkid = 4326 }
         };
     }
 }

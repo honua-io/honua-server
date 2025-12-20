@@ -15,6 +15,7 @@ CI runs in dependency order. Fix failures from top to bottom:
 3. **Integration Tests** (parallel with unit tests)
    - May fail due to environment differences
    - Uses Testcontainers + PostGIS
+   - Skipped when only docs/config changes are detected
 
 4. **Architecture Tests** (parallel with other tests)
    - Enforces project rules
@@ -95,7 +96,7 @@ dotnet test --filter "Category=Architecture"
 
 #### Line Coverage Below Threshold
 ```bash
-# Current: 30%, target: 80%
+# Current: 40% line / 30% branch, target: 80%/70%
 # Add tests for uncovered code paths
 
 dotnet test --collect:"XPlat Code Coverage"

@@ -32,7 +32,7 @@ When porting behavior, document the source:
 ### Quality Standards
 
 - **Warnings as errors**: All builds must pass with `TreatWarningsAsErrors=true`
-- **Coverage gates**: 80%+ line coverage, 70%+ branch coverage
+- **Coverage gates**: Target 80%+ line coverage, 70%+ branch coverage; CI enforces staged thresholds (40%/30%) during Phase 0-1
 - **API surface coverage**: 100% - every endpoint must have integration tests
 - **AOT compatibility**: No reflection in hot paths, source-generated JSON/logging
 - **Dependency limits**: Max 5 dependencies per endpoint, max 4 per handler
