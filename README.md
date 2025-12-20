@@ -75,12 +75,48 @@ Planned endpoints:
 - **GA:** OData `/$batch`, legacy OGC (WFS/WMS), layer-level RBAC, audit logging.
 - **Later:** Additional databases (SQL Server, MySQL, SQLite, DuckDB, warehouses, NoSQL, Oracle), additional file formats (FileGDB, MapInfo TAB — requires GDAL), additional outputs (KML export, Shapefile export, PNG/JPEG), object storage, AI features, CLI/agent tooling.
 
-## Planned Minimal Config (env)
+## Configuration
+
+### Minimal Config (env)
 
 ```bash
 ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres"
 HONUA_ADMIN_PASSWORD="change-me"
 ```
+
+### Advanced Configuration
+
+**Resource Limits** (Issue #63 - shared across all protocols):
+```bash
+# Query limits (affects all protocols: FeatureServer, OGC API, OData, MVT)
+Limits__Query__MaxRecordCount=2000        # Max features per query
+Limits__Query__DefaultRecordCount=1000    # Default when not specified
+Limits__Query__MaxOffset=100000           # Max paging offset
+Limits__Query__QueryTimeout=00:00:30      # Query execution timeout
+
+# Geometry limits
+Limits__Geometry__MaxVertices=10000       # Max vertices per geometry
+Limits__Geometry__MaxPolygons=100         # Max polygons per geometry
+Limits__Geometry__MaxCoordinateValue=180  # Max coordinate value
+
+# Edit limits (FeatureServer applyEdits, OGC API transactions, OData CRUD)
+Limits__Edits__MaxPayloadSize=10485760    # 10MB max request payload
+Limits__Edits__MaxFeaturesPerRequest=1000 # Max features per edit operation
+Limits__Edits__MaxAttachmentSize=52428800 # 50MB max attachment size
+
+# Connection limits
+Limits__Connections__MaxConcurrent=100    # Max concurrent requests
+Limits__Connections__RequestTimeout=00:01:00  # Request timeout
+
+# Optional: CORS, basemap provider, attachment types
+Cors__AllowedOrigins__0="http://localhost:3000"
+Basemap__Provider="openfreemap"
+Limits__Attachments__AllowedMimeTypes="image/*,application/pdf"
+```
+
+**Validation**: Invalid configuration will cause startup failure with detailed error messages. All limits are validated for logical consistency (e.g., DefaultRecordCount ≤ MaxRecordCount).
+
+See `docs/adr/0008-env-var-configuration.md` for complete environment variable reference.
 
 ## Roadmap
 

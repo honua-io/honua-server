@@ -68,6 +68,9 @@ builder.Host.UseSerilog((context, services, config) =>
 // Rest of Server code uses only Core abstractions (IFeatureStore, IDatabaseHealthChecker)
 RegisterInfrastructureServices(builder.Services, builder.Configuration);
 
+// Configure limits with validation
+ConfigureLimits(builder.Services, builder.Configuration);
+
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
@@ -83,6 +86,9 @@ var app = builder.Build();
 
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
+
+// Add limits enforcement middleware (after correlation ID, before request logging)
+app.UseLimitsEnforcement();
 
 // Configure Serilog request logging with custom enrichment
 app.UseSerilogRequestLogging(options =>
@@ -136,6 +142,25 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
 {
     // Register PostgreSQL services (the only direct Infrastructure reference)
     Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+}
+
+// Configure limits with validation
+static void ConfigureLimits(IServiceCollection services, IConfiguration configuration)
+{
+    // Bind configuration with validation
+    services.Configure<Honua.Core.Configuration.LimitsOptions>(options =>
+    {
+        configuration.GetSection(Honua.Core.Configuration.LimitsOptions.SectionName).Bind(options);
+
+        // Validate configuration during startup
+        var validationErrors = Honua.Core.Configuration.LimitsOptionsValidator.Validate(options);
+        if (validationErrors.Count != 0)
+        {
+            var errorMessage = "Invalid limits configuration:" + Environment.NewLine +
+                              string.Join(Environment.NewLine, validationErrors);
+            throw new InvalidOperationException(errorMessage);
+        }
+    });
 }
 
 // Database migration helper

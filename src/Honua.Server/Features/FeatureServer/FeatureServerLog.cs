@@ -79,4 +79,10 @@ public static partial class FeatureServerLog
         Level = LogLevel.Error,
         Message = "Query failed for {ServiceId}/FeatureServer/{LayerId}: {ErrorMessage}")]
     public static partial void QueryFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception? exception = null);
+
+    [LoggerMessage(
+        EventId = 2204,
+        Level = LogLevel.Warning,
+        Message = "Query limit exceeded: {Parameter} value {ActualValue} exceeds limit {LimitValue}")]
+    public static partial void QueryLimitExceeded(ILogger logger, string parameter, int actualValue, int limitValue);
 }

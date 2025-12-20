@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -78,6 +80,7 @@ public static class FeatureServerEndpoints
     internal static async Task<IResult> GetServiceMetadataAsync(
         [FromRoute] string serviceId,
         [FromServices] ILayerCatalog catalog,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         [FromServices] ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken = default)
     {
@@ -92,7 +95,7 @@ public static class FeatureServerEndpoints
                 return Results.NotFound(new { error = $"Service '{serviceId}' not found" });
             }
 
-            var response = MapServiceToResponse(service);
+            var response = MapServiceToResponse(service, limitsOptions.Value.Query);
 
             FeatureServerLog.ServiceMetadataReturned(logger, serviceId, response.Layers.Length);
 
@@ -113,6 +116,7 @@ public static class FeatureServerEndpoints
         [FromRoute] string serviceId,
         [FromRoute] int layerId,
         [FromServices] ILayerCatalog catalog,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         [FromServices] ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken = default)
     {
@@ -136,7 +140,7 @@ public static class FeatureServerEndpoints
                 return Results.NotFound(new { error = $"Layer {layerId} not found in service '{serviceId}'" });
             }
 
-            var response = MapLayerToResponse(layer);
+            var response = MapLayerToResponse(layer, limitsOptions.Value.Query);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layerId, layer.Name);
 
@@ -153,7 +157,7 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Maps ServiceDefinition to FeatureServerResponse
     /// </summary>
-    private static FeatureServerResponse MapServiceToResponse(ServiceDefinition service)
+    private static FeatureServerResponse MapServiceToResponse(ServiceDefinition service, QueryLimits queryLimits)
     {
         return new FeatureServerResponse
         {
@@ -163,7 +167,7 @@ public static class FeatureServerEndpoints
             SpatialReference = MapSpatialReference(service.SpatialReference),
             InitialExtent = service.EffectiveExtent.HasValue ? MapExtent(service.EffectiveExtent.Value) : null,
             FullExtent = service.EffectiveExtent.HasValue ? MapExtent(service.EffectiveExtent.Value) : null,
-            MaxRecordCount = service.MaxRecordCount,
+            MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = service.SupportedFormats,
             Capabilities = string.Join(",", service.Capabilities),
             Fields = service.AllFields.Select(MapFieldInfo).ToArray()
@@ -173,7 +177,7 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Maps LayerDefinition to LayerResponse
     /// </summary>
-    private static LayerResponse MapLayerToResponse(LayerDefinition layer)
+    private static LayerResponse MapLayerToResponse(LayerDefinition layer, QueryLimits queryLimits)
     {
         var displayField = layer.AttributeFields.FirstOrDefault()?.Name;
         var objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
@@ -190,6 +194,7 @@ public static class FeatureServerEndpoints
             MinScale = layer.MinScale,
             MaxScale = layer.MaxScale,
             DefaultVisibility = layer.DefaultVisibility,
+            MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
             HasAttachments = false // TODO: Support attachments in future phase
@@ -320,6 +325,7 @@ public static class FeatureServerEndpoints
         [FromServices] ILayerCatalog? catalog = null,
         [FromServices] IFeatureStore? featureStore = null,
         [FromServices] IGeometryConverter? geometryConverter = null,
+        [FromServices] IOptions<LimitsOptions>? limitsOptions = null,
         [FromServices] ILogger<FeatureServerHandler>? logger = null,
         CancellationToken cancellationToken = default)
     {
@@ -337,7 +343,7 @@ public static class FeatureServerEndpoints
             SpatialRel = spatialRel
         };
 
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, geometryConverter!, logger!, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, geometryConverter!, limitsOptions!, logger!, cancellationToken);
     }
 
     /// <summary>
@@ -350,10 +356,11 @@ public static class FeatureServerEndpoints
         [FromServices] ILayerCatalog catalog,
         [FromServices] IFeatureStore featureStore,
         [FromServices] IGeometryConverter geometryConverter,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         [FromServices] ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken = default)
     {
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, logger, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, limitsOptions, logger, cancellationToken);
     }
 
     /// <summary>
@@ -366,6 +373,7 @@ public static class FeatureServerEndpoints
         ILayerCatalog catalog,
         IFeatureStore featureStore,
         IGeometryConverter geometryConverter,
+        IOptions<LimitsOptions> limitsOptions,
         ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken)
     {
@@ -388,8 +396,24 @@ public static class FeatureServerEndpoints
                 return Results.NotFound(new { error = $"Layer {layerId} not found in service '{serviceId}'" });
             }
 
-            // Build query from parameters
-            var query = BuildFeatureQuery(queryParams, service, geometryConverter);
+            // Apply limits enforcement
+            var limits = limitsOptions.Value.Query;
+            var validatedParams = ApplyQueryLimits(queryParams, limits, logger);
+            if (validatedParams == null)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "Query parameters exceed configured limits",
+                    details = new[]
+                    {
+                        $"Maximum record count: {limits.MaxRecordCount}",
+                        $"Maximum offset: {limits.MaxOffset}"
+                    }
+                });
+            }
+
+            // Build query from validated parameters
+            var query = BuildFeatureQuery(validatedParams, service, geometryConverter);
 
             // Execute query
             var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
@@ -549,6 +573,42 @@ public static class FeatureServerEndpoints
             X = -122.4194,
             Y = 37.7749,
             SpatialReference = new EsriSpatialReference { Wkid = 4326 }
+        };
+    }
+
+    /// <summary>
+    /// Applies query limits enforcement and returns validated parameters or null if limits exceeded.
+    /// </summary>
+    private static QueryParameters? ApplyQueryLimits(QueryParameters queryParams, QueryLimits limits, ILogger logger)
+    {
+        // Validate and apply record count limits
+        var recordCount = queryParams.ResultRecordCount ?? limits.DefaultRecordCount;
+        if (recordCount > limits.MaxRecordCount)
+        {
+            FeatureServerLog.QueryLimitExceeded(logger, "ResultRecordCount", recordCount, limits.MaxRecordCount);
+            return null;
+        }
+
+        // Validate offset limits
+        var offset = queryParams.ResultOffset ?? 0;
+        if (offset > limits.MaxOffset)
+        {
+            FeatureServerLog.QueryLimitExceeded(logger, "ResultOffset", offset, limits.MaxOffset);
+            return null;
+        }
+
+        // Return validated parameters with applied defaults
+        return new QueryParameters
+        {
+            Where = queryParams.Where,
+            OutFields = queryParams.OutFields,
+            ReturnGeometry = queryParams.ReturnGeometry,
+            F = queryParams.F,
+            ResultOffset = offset,
+            ResultRecordCount = recordCount,
+            Geometry = queryParams.Geometry,
+            GeometryType = queryParams.GeometryType,
+            SpatialRel = queryParams.SpatialRel
         };
     }
 }
