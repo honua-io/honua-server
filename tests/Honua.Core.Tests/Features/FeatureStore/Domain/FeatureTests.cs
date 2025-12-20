@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Xunit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 /// </summary>
 public class FeatureTests
 {
-    [Fact]
+    [UnitTest]
     public void Create_WithAttributes_ShouldCreateValidFeature()
     {
         // Arrange
@@ -32,7 +32,7 @@ public class FeatureTests
         feature.Attributes.Should().BeEquivalentTo(expectedAttributes);
     }
 
-    [Fact]
+    [UnitTest]
     public void Create_WithoutAttributes_ShouldCreateFeatureWithEmptyAttributes()
     {
         // Arrange
@@ -49,7 +49,7 @@ public class FeatureTests
         feature.Attributes.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void Create_WithNullGeometry_ShouldCreateValidFeature()
     {
         // Arrange
@@ -66,7 +66,7 @@ public class FeatureTests
         feature.Attributes.Should().BeEquivalentTo(expectedAttributes);
     }
 
-    [Fact]
+    [UnitTest]
     public void Feature_WithSameData_ShouldHaveEqualIds()
     {
         // Arrange
