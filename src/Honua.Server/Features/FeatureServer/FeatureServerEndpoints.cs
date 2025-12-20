@@ -2,7 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -10,7 +11,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
-using Microsoft.AspNetCore.Mvc;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -23,53 +24,49 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Maps FeatureServer REST API endpoints for layer metadata using AOT-compatible routing
     /// </summary>
-    [RequiresUnreferencedCode("Endpoint mapping may use reflection on delegates")]
-    [RequiresDynamicCode("Endpoint mapping may use reflection on delegates")]
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use Map with explicit HTTP method metadata to avoid MapGet reflection
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer", GetServiceMetadataAsync)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer", HandleGetServiceMetadata)
             .WithDisplayName("Get FeatureServer Service Metadata")
             .WithName("GetServiceMetadata")
             .WithSummary("Get FeatureServer service metadata")
             .WithDescription("Returns metadata for a FeatureServer service including all layers")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .Produces<FeatureServerResponse>(200, "application/json")
-            .Produces(404);
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // .Produces<FeatureServerResponse>(200, "application/json")
+        // .Produces(404);
 
-        // Layer metadata endpoint
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", GetLayerMetadataAsync)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", HandleGetLayerMetadata)
             .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
             .WithSummary("Get FeatureServer layer metadata")
             .WithDescription("Returns detailed layer metadata for a specific layer")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .Produces<LayerResponse>(200, "application/json")
-            .Produces(404);
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // .Produces<LayerResponse>(200, "application/json")
+        // .Produces(404);
 
-        // Query endpoint (GET)
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", QueryFeaturesGetAsync)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via GET parameters")
             .WithTags("FeatureServer")
-            .Produces<QueryResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // .Produces<QueryResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
 
-        // Query endpoint (POST)
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", QueryFeaturesPostAsync)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
             .WithTags("FeatureServer")
-            .Produces<QueryResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        // .Produces<QueryResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
 
         return endpoints;
     }
@@ -77,12 +74,44 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Handles service metadata requests
     /// </summary>
-    internal static async Task<IResult> GetServiceMetadataAsync(
-        [FromRoute] string serviceId,
-        [FromServices] ILayerCatalog catalog,
-        [FromServices] IOptions<LimitsOptions> limitsOptions,
-        [FromServices] ILogger<FeatureServerHandler> logger,
-        CancellationToken cancellationToken = default)
+    private static async Task HandleGetServiceMetadata(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var serviceId = context.GetRouteValue("serviceId")?.ToString();
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            await WriteErrorAsync(context, "Service ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+
+        var result = await GetServiceMetadataAsync(
+            serviceId,
+            catalog,
+            limitsOptions.Value.Query,
+            logger,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Handles service metadata requests
+    /// </summary>
+    private static async Task<IResult> GetServiceMetadataAsync(
+        string serviceId,
+        ILayerCatalog catalog,
+        QueryLimits limits,
+        ILogger<FeatureServerHandler> logger,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -92,10 +121,10 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return Results.NotFound(new { error = $"Service '{serviceId}' not found" });
+                return ErrorResult($"Service '{serviceId}' not found", StatusCodes.Status404NotFound);
             }
 
-            var response = MapServiceToResponse(service, limitsOptions.Value.Query);
+            var response = MapServiceToResponse(service, limits);
 
             FeatureServerLog.ServiceMetadataReturned(logger, serviceId, response.Layers.Length);
 
@@ -112,13 +141,52 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Handles layer metadata requests
     /// </summary>
-    internal static async Task<IResult> GetLayerMetadataAsync(
-        [FromRoute] string serviceId,
-        [FromRoute] int layerId,
-        [FromServices] ILayerCatalog catalog,
-        [FromServices] IOptions<LimitsOptions> limitsOptions,
-        [FromServices] ILogger<FeatureServerHandler> logger,
-        CancellationToken cancellationToken = default)
+    private static async Task HandleGetLayerMetadata(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var serviceId = context.GetRouteValue("serviceId")?.ToString();
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            await WriteErrorAsync(context, "Service ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!TryGetRouteInt(context, "layerId", out var layerId))
+        {
+            await WriteErrorAsync(context, "Layer ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+
+        var result = await GetLayerMetadataAsync(
+            serviceId,
+            layerId,
+            catalog,
+            limitsOptions.Value.Query,
+            logger,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Handles layer metadata requests
+    /// </summary>
+    private static async Task<IResult> GetLayerMetadataAsync(
+        string serviceId,
+        int layerId,
+        ILayerCatalog catalog,
+        QueryLimits limits,
+        ILogger<FeatureServerHandler> logger,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -129,7 +197,7 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return Results.NotFound(new { error = $"Service '{serviceId}' not found" });
+                return ErrorResult($"Service '{serviceId}' not found", StatusCodes.Status404NotFound);
             }
 
             // Find the layer in the service
@@ -137,10 +205,10 @@ public static class FeatureServerEndpoints
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
-                return Results.NotFound(new { error = $"Layer {layerId} not found in service '{serviceId}'" });
+                return ErrorResult($"Layer {layerId} not found in service '{serviceId}'", StatusCodes.Status404NotFound);
             }
 
-            var response = MapLayerToResponse(layer, limitsOptions.Value.Query);
+            var response = MapLayerToResponse(layer, limits);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layerId, layer.Name);
 
@@ -310,59 +378,121 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Handles GET query requests
     /// </summary>
-    internal static async Task<IResult> QueryFeaturesGetAsync(
-        [FromRoute] string serviceId,
-        [FromRoute] int layerId,
-        [FromServices] ILayerCatalog catalog,
-        [FromServices] IFeatureStore featureStore,
-        [FromServices] IGeometryConverter geometryConverter,
-        [FromServices] IQueryFormatter queryFormatter,
-        [FromServices] IOptions<LimitsOptions> limitsOptions,
-        [FromServices] ILogger<FeatureServerHandler> logger,
-        [FromQuery] string? where = null,
-        [FromQuery] string? outFields = null,
-        [FromQuery] bool returnGeometry = true,
-        [FromQuery] string f = "json",
-        [FromQuery] int? resultOffset = null,
-        [FromQuery] int? resultRecordCount = null,
-        [FromQuery] string? geometry = null,
-        [FromQuery] string? geometryType = null,
-        [FromQuery] string? spatialRel = null,
-        CancellationToken cancellationToken = default)
+    private static async Task HandleQueryFeaturesGet(HttpContext context)
     {
-        // Convert individual parameters to QueryParameters object
-        var queryParams = new QueryParameters
+        if (!HttpMethods.IsGet(context.Request.Method))
         {
-            Where = where,
-            OutFields = outFields,
-            ReturnGeometry = returnGeometry,
-            F = f,
-            ResultOffset = resultOffset,
-            ResultRecordCount = resultRecordCount,
-            Geometry = geometry,
-            GeometryType = geometryType,
-            SpatialRel = spatialRel
-        };
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
 
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, queryFormatter, limitsOptions, logger, cancellationToken);
+        var routeValues = context.Request.RouteValues;
+        var serviceId = routeValues["serviceId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            await WriteErrorAsync(context, "Service ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!TryGetRouteInt(context, "layerId", out var layerId))
+        {
+            await WriteErrorAsync(context, "Layer ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!TryBuildQueryParameters(context.Request.Query, out var queryParams, out var error))
+        {
+            await WriteErrorAsync(context, error ?? "Invalid query parameters", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var featureStore = context.RequestServices.GetRequiredService<IFeatureStore>();
+        var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
+        var queryFormatter = context.RequestServices.GetRequiredService<IQueryFormatter>();
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+
+        var result = await QueryFeaturesAsync(
+            serviceId,
+            layerId,
+            queryParams,
+            catalog,
+            featureStore,
+            geometryConverter,
+            queryFormatter,
+            limitsOptions.Value.Query,
+            logger,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
     }
 
     /// <summary>
     /// Handles POST query requests
     /// </summary>
-    internal static async Task<IResult> QueryFeaturesPostAsync(
-        [FromRoute] string serviceId,
-        [FromRoute] int layerId,
-        [FromBody] QueryParameters queryParams,
-        [FromServices] ILayerCatalog catalog,
-        [FromServices] IFeatureStore featureStore,
-        [FromServices] IGeometryConverter geometryConverter,
-        [FromServices] IQueryFormatter queryFormatter,
-        [FromServices] IOptions<LimitsOptions> limitsOptions,
-        [FromServices] ILogger<FeatureServerHandler> logger,
-        CancellationToken cancellationToken = default)
+    private static async Task HandleQueryFeaturesPost(HttpContext context)
     {
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, queryFormatter, limitsOptions, logger, cancellationToken);
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var routeValues = context.Request.RouteValues;
+        var serviceId = routeValues["serviceId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            await WriteErrorAsync(context, "Service ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (!TryGetRouteInt(context, "layerId", out var layerId))
+        {
+            await WriteErrorAsync(context, "Layer ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        QueryParameters? queryParams;
+        try
+        {
+            queryParams = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                FeatureServerJsonContext.Default.QueryParameters,
+                context.RequestAborted);
+        }
+        catch (JsonException)
+        {
+            await WriteErrorAsync(context, "Invalid JSON payload", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (queryParams is null)
+        {
+            await WriteErrorAsync(context, "Request body is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var featureStore = context.RequestServices.GetRequiredService<IFeatureStore>();
+        var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
+        var queryFormatter = context.RequestServices.GetRequiredService<IQueryFormatter>();
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+
+        var result = await QueryFeaturesAsync(
+            serviceId,
+            layerId,
+            queryParams,
+            catalog,
+            featureStore,
+            geometryConverter,
+            queryFormatter,
+            limitsOptions.Value.Query,
+            logger,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
     }
 
     /// <summary>
@@ -376,7 +506,7 @@ public static class FeatureServerEndpoints
         IFeatureStore featureStore,
         IGeometryConverter geometryConverter,
         IQueryFormatter queryFormatter,
-        IOptions<LimitsOptions> limitsOptions,
+        QueryLimits limits,
         ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken)
     {
@@ -389,30 +519,36 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return Results.NotFound(new { error = $"Service '{serviceId}' not found" });
+                return ErrorResult($"Service '{serviceId}' not found", StatusCodes.Status404NotFound);
             }
 
             var layer = service.GetLayer(layerId);
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
-                return Results.NotFound(new { error = $"Layer {layerId} not found in service '{serviceId}'" });
+                return ErrorResult($"Layer {layerId} not found in service '{serviceId}'", StatusCodes.Status404NotFound);
+            }
+
+            if (queryParams.ResultRecordCount is < 1)
+            {
+                FeatureServerLog.QueryParameterInvalid(logger, "ResultRecordCount", queryParams.ResultRecordCount.Value);
+                return ErrorResult("Invalid query parameters", StatusCodes.Status400BadRequest,
+                    [$"{nameof(QueryParameters.ResultRecordCount)} must be greater than 0"]);
+            }
+
+            if (queryParams.ResultOffset is < 0)
+            {
+                FeatureServerLog.QueryParameterInvalid(logger, "ResultOffset", queryParams.ResultOffset.Value);
+                return ErrorResult("Invalid query parameters", StatusCodes.Status400BadRequest,
+                    [$"{nameof(QueryParameters.ResultOffset)} must be 0 or greater"]);
             }
 
             // Apply limits enforcement
-            var limits = limitsOptions.Value.Query;
             var validatedParams = ApplyQueryLimits(queryParams, limits, logger);
             if (validatedParams == null)
             {
-                return Results.BadRequest(new
-                {
-                    error = "Query parameters exceed configured limits",
-                    details = new[]
-                    {
-                        $"Maximum record count: {limits.MaxRecordCount}",
-                        $"Maximum offset: {limits.MaxOffset}"
-                    }
-                });
+                return ErrorResult("Query parameters exceed configured limits", StatusCodes.Status400BadRequest,
+                    [$"Maximum record count: {limits.MaxRecordCount}", $"Maximum offset: {limits.MaxOffset}"]);
             }
 
             // Build query from validated parameters
@@ -446,13 +582,146 @@ public static class FeatureServerEndpoints
         catch (ArgumentException ex)
         {
             FeatureServerLog.QueryFailed(logger, serviceId, layerId, ex.Message, ex);
-            return Results.BadRequest(new { error = ex.Message });
+            return ErrorResult(ex.Message, StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(logger, serviceId, layerId, ex.Message, ex);
             return Results.StatusCode(500);
         }
+    }
+
+    private static bool TryBuildQueryParameters(IQueryCollection query, out QueryParameters queryParams, out string? error)
+    {
+        error = null;
+
+        var where = TryGetQueryValue(query, "where");
+        var outFields = TryGetQueryValue(query, "outFields");
+        var geometry = TryGetQueryValue(query, "geometry");
+        var geometryType = TryGetQueryValue(query, "geometryType");
+        var spatialRel = TryGetQueryValue(query, "spatialRel");
+        var format = TryGetQueryValue(query, "f") ?? "json";
+
+        if (!TryParseQueryBool(query, "returnGeometry", true, out var returnGeometry, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryInt(query, "resultOffset", out var resultOffset, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryInt(query, "resultRecordCount", out var resultRecordCount, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        queryParams = new QueryParameters
+        {
+            Where = where,
+            OutFields = outFields,
+            ReturnGeometry = returnGeometry,
+            F = format,
+            ResultOffset = resultOffset,
+            ResultRecordCount = resultRecordCount,
+            Geometry = geometry,
+            GeometryType = geometryType,
+            SpatialRel = spatialRel
+        };
+
+        return true;
+    }
+
+    private static string? TryGetQueryValue(IQueryCollection query, string key)
+    {
+        if (!query.TryGetValue(key, out var values))
+        {
+            return null;
+        }
+
+        var value = values.ToString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static bool TryParseQueryInt(IQueryCollection query, string key, out int? value, out string? error)
+    {
+        value = null;
+        error = null;
+
+        var raw = TryGetQueryValue(query, key);
+        if (raw is null)
+        {
+            return true;
+        }
+
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            error = $"{key} must be an integer.";
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool TryParseQueryBool(IQueryCollection query, string key, bool defaultValue, out bool value, out string? error)
+    {
+        value = defaultValue;
+        error = null;
+
+        var raw = TryGetQueryValue(query, key);
+        if (raw is null)
+        {
+            return true;
+        }
+
+        if (!bool.TryParse(raw, out var parsed))
+        {
+            error = $"{key} must be a boolean.";
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool TryGetRouteInt(HttpContext context, string key, out int value)
+    {
+        value = default;
+
+        if (!context.Request.RouteValues.TryGetValue(key, out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        if (raw is int intValue)
+        {
+            value = intValue;
+            return true;
+        }
+
+        return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static Task WriteErrorAsync(HttpContext context, string message, int statusCode, string[]? details = null)
+    {
+        var result = ErrorResult(message, statusCode, details);
+        return result.ExecuteAsync(context);
+    }
+
+    private static IResult ErrorResult(string message, int statusCode, string[]? details = null)
+    {
+        var error = new ApiErrorResponse
+        {
+            Error = message,
+            Details = details
+        };
+
+        return Results.Json(error, FeatureServerJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
     }
 
     /// <summary>
@@ -571,4 +840,5 @@ public static class FeatureServerEndpoints
             SpatialRel = queryParams.SpatialRel
         };
     }
+
 }

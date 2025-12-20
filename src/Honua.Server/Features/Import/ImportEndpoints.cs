@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Microsoft.AspNetCore.Mvc;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Import;
 
@@ -21,33 +21,41 @@ public static class ImportEndpoints
             .WithTags("Import");
 
         // Get supported file formats
-        group.MapGet("/formats", GetSupportedFormats)
+        group.Map("/formats", HandleGetSupportedFormats)
             .WithName("GetSupportedFileFormats")
             .WithSummary("Get supported geospatial file formats")
-            .Produces<FileFormatsResponse>();
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // .Produces<FileFormatsResponse>();
 
         // Preview file before import
-        group.MapPost("/preview", PreviewFile)
+        group.Map("/preview", HandlePreviewFile)
             .WithName("PreviewFile")
             .WithSummary("Preview geospatial file contents")
-            .Produces<FilePreview>()
-            .Produces<ProblemDetails>(400)
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // .Produces<FilePreview>()
             .DisableAntiforgery(); // For file uploads
 
         // Import geospatial file
-        group.MapPost("/upload", ImportFile)
+        group.Map("/upload", HandleImportFile)
             .WithName("ImportFile")
             .WithSummary("Import geospatial file to PostgreSQL")
-            .Produces<ImportResult>()
-            .Produces<ProblemDetails>(400)
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // .Produces<ImportResult>()
             .DisableAntiforgery(); // For file uploads
     }
 
     /// <summary>
     /// Get supported file formats and extensions
     /// </summary>
-    private static IResult GetSupportedFormats(IFileImportService importService)
+    private static async Task HandleGetSupportedFormats(HttpContext context)
     {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var extensions = importService.GetSupportedExtensions();
         var formatDescriptions = new Dictionary<string, string>
         {
@@ -70,79 +78,106 @@ public static class ImportEndpoints
                 .ToDictionary(kv => kv.Key, kv => kv.Value)
         };
 
-        return Results.Ok(response);
+        var result = Results.Json(response, ImportJsonContext.Default.FileFormatsResponse);
+        await result.ExecuteAsync(context);
     }
 
     /// <summary>
     /// Preview file contents without importing
     /// </summary>
-    private static async Task<IResult> PreviewFile(
-        IFormFile file,
-        IFileImportService importService,
-        CancellationToken cancellationToken)
+    private static async Task HandlePreviewFile(HttpContext context)
     {
-        if (file.Length == 0)
+        if (!HttpMethods.IsPost(context.Request.Method))
         {
-            return Results.BadRequest("File is empty");
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var cancellationToken = context.RequestAborted;
+        var form = await context.Request.ReadFormAsync(cancellationToken);
+        var file = GetFormFile(form, "file", "File");
+
+        if (file == null || file.Length == 0)
+        {
+            await WriteErrorAsync(context, "File is empty", StatusCodes.Status400BadRequest);
+            return;
         }
 
         // Check file size (10MB limit for preview)
         const long maxPreviewSize = 10 * 1024 * 1024;
         if (file.Length > maxPreviewSize)
         {
-            return Results.BadRequest($"File too large for preview. Maximum size: {maxPreviewSize / 1024 / 1024}MB");
+            await WriteErrorAsync(context,
+                $"File too large for preview. Maximum size: {maxPreviewSize / 1024 / 1024}MB",
+                StatusCodes.Status400BadRequest);
+            return;
         }
 
+        var importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var format = importService.DetectFormat(file.FileName);
         if (format == null)
         {
-            return Results.BadRequest($"Unsupported file format: {Path.GetExtension(file.FileName)}");
+            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(file.FileName)}",
+                StatusCodes.Status400BadRequest);
+            return;
         }
 
         try
         {
             using var stream = file.OpenReadStream();
             var preview = await importService.PreviewFileAsync(stream, file.FileName, cancellationToken);
-            return Results.Ok(preview);
+            var result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
+            await result.ExecuteAsync(context);
         }
         catch (Exception ex)
         {
-            return Results.BadRequest($"Failed to preview file: {ex.Message}");
+            await WriteErrorAsync(context, $"Failed to preview file: {ex.Message}", StatusCodes.Status400BadRequest);
         }
     }
 
     /// <summary>
     /// Import geospatial file to PostgreSQL
     /// </summary>
-    private static async Task<IResult> ImportFile(
-        HttpContext context,
-        IFileImportService importService,
-        CancellationToken cancellationToken)
+    private static async Task HandleImportFile(HttpContext context)
     {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var cancellationToken = context.RequestAborted;
         var form = await context.Request.ReadFormAsync(cancellationToken);
 
-        var file = form.Files["File"];
-        if (file?.Length == 0 || file == null)
+        var file = GetFormFile(form, "File", "file");
+        if (file == null || file.Length == 0)
         {
-            return Results.BadRequest("File is required");
+            await WriteErrorAsync(context, "File is required", StatusCodes.Status400BadRequest);
+            return;
         }
 
         var tableName = form["TableName"].ToString();
         if (string.IsNullOrWhiteSpace(tableName))
         {
-            return Results.BadRequest("Table name is required");
+            await WriteErrorAsync(context, "Table name is required", StatusCodes.Status400BadRequest);
+            return;
         }
 
         // Validate table name (basic SQL injection prevention)
         if (!IsValidTableName(tableName))
         {
-            return Results.BadRequest("Invalid table name. Use only letters, numbers, and underscores.");
+            await WriteErrorAsync(context, "Invalid table name. Use only letters, numbers, and underscores.",
+                StatusCodes.Status400BadRequest);
+            return;
         }
 
+        var importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var format = importService.DetectFormat(file.FileName);
         if (format == null)
         {
-            return Results.BadRequest($"Unsupported file format: {Path.GetExtension(file.FileName)}");
+            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(file.FileName)}",
+                StatusCodes.Status400BadRequest);
+            return;
         }
 
         try
@@ -165,11 +200,12 @@ public static class ImportEndpoints
             };
 
             var result = await importService.ImportFileAsync(importRequest, cancellationToken);
-            return Results.Ok(result);
+            var response = Results.Json(result, ImportJsonContext.Default.ImportResult);
+            await response.ExecuteAsync(context);
         }
         catch (Exception ex)
         {
-            return Results.BadRequest($"Import failed: {ex.Message}");
+            await WriteErrorAsync(context, $"Import failed: {ex.Message}", StatusCodes.Status400BadRequest);
         }
     }
 
@@ -185,6 +221,18 @@ public static class ImportEndpoints
         return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
                (char.IsLetter(tableName[0]) || tableName[0] == '_');
     }
+
+    private static IFormFile? GetFormFile(IFormCollection form, string primaryName, string fallbackName)
+    {
+        return form.Files.GetFile(primaryName) ?? form.Files.GetFile(fallbackName);
+    }
+
+    private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
+    {
+        var error = new ApiErrorResponse { Error = message };
+        var result = Results.Json(error, ImportJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
+        return result.ExecuteAsync(context);
+    }
 }
 
 /// <summary>
@@ -195,4 +243,3 @@ internal sealed record FileFormatsResponse
     public required string[] SupportedExtensions { get; init; }
     public required Dictionary<string, string> FormatDescriptions { get; init; }
 }
-

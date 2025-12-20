@@ -18,6 +18,7 @@ public static class EndpointRegistry
         new("GET", "/healthz/ready"),
 
         new("GET", "/api/admin/connections/{id}/tables"),
+        new("GET", "/api/admin/connections/{*path}"),
 
         new("GET", "/api/import/formats"),
         new("POST", "/api/import/preview"),
