@@ -174,6 +174,41 @@ public static partial class Log
     public static partial void ConnectionRetry(
         ILogger logger, int attempt, string errorMessage);
 
+    [LoggerMessage(
+        EventId = 4050,
+        Level = LogLevel.Debug,
+        Message = "Request processing started: {Method} {Path}, ContentLength={ContentLength}, Timeout={TimeoutSeconds}s")]
+    public static partial void RequestProcessingStarted(
+        ILogger logger, string method, string path, long contentLength, double timeoutSeconds);
+
+    [LoggerMessage(
+        EventId = 4051,
+        Level = LogLevel.Warning,
+        Message = "Request timed out: {Path} exceeded {TimeoutSeconds}s limit")]
+    public static partial void RequestTimedOut(
+        ILogger logger, string path, double timeoutSeconds);
+
+    [LoggerMessage(
+        EventId = 4052,
+        Level = LogLevel.Warning,
+        Message = "Payload size exceeded: {Path} has {ActualSize:N0} bytes, limit is {MaxSize:N0} bytes")]
+    public static partial void PayloadSizeExceeded(
+        ILogger logger, string path, long actualSize, long maxSize);
+
+    [LoggerMessage(
+        EventId = 4053,
+        Level = LogLevel.Debug,
+        Message = "Payload size validation skipped: {Path} (Content-Length header not provided)")]
+    public static partial void PayloadSizeValidationSkipped(
+        ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 4054,
+        Level = LogLevel.Warning,
+        Message = "Request processing error: {Path} failed with {ExceptionType}: {ErrorMessage}")]
+    public static partial void RequestProcessingError(
+        ILogger logger, string path, string exceptionType, string errorMessage, Exception exception);
+
     #endregion
 
     #region Errors (5000-5999)
