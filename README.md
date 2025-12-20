@@ -9,12 +9,12 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
 Honua MVP serves and edits PostGIS data over multiple protocols with a small, fast footprint:
-- **GeoServices REST FeatureServer** — ArcGIS-compatible queries + full editing (applyEdits, attachments, related records).
+- **GeoServices REST FeatureServer** — GeoServices REST compatible queries + full editing (applyEdits, attachments, related records).
 - **OGC API Features** — Modern REST/JSON for GIS apps with transaction support.
 - **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
 - **Vector Tiles (MVT)** — PostGIS-native tile generation.
 
-Includes **file import** (GeoJSON, Shapefile, GeoPackage, CSV, KML) and an **Esri Service Import Wizard** for easy migration. Everything else (images, multi-DB, AI, advanced admin) is deferred to keep the surface area tight. See `docs/ROADMAP.md` for what comes next.
+Includes **file import** (GeoJSON, Shapefile, GeoPackage, CSV, KML) and a **GeoServices Import Wizard** for easy migration. Everything else (images, multi-DB, AI, advanced admin) is deferred to keep the surface area tight. See `docs/ROADMAP.md` for what comes next.
 
 ## Status
 
@@ -61,8 +61,8 @@ Planned endpoints:
 - **Vector Tiles (MVT)**: PostGIS `ST_AsMVT`, TileJSON metadata.
 - **File Import**: GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ — no GDAL required.
 - **CRS Support**: PostGIS-based reprojection, any EPSG code, auto-detect from source files.
-- Outputs: GeoJSON, Esri JSON, MVT.
-- **Esri Service Import Wizard**: paste ArcGIS Server URL, import layers, publish to Honua.
+- Outputs: GeoJSON, GeoServices JSON, MVT.
+- **GeoServices Import Wizard**: paste GeoServices REST server URL, import layers, publish to Honua.
 - **Visual Style Editor**: embedded Maputnik for MapLibre-based styling (Simple, UniqueValue, ClassBreaks).
 - Minimal admin: connect PostGIS, publish a layer/service, enable/disable, view health, map preview.
 - **OIDC Authentication**: Azure AD, Google, generic OIDC provider support.

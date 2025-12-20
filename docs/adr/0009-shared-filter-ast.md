@@ -10,7 +10,7 @@ Honua supports multiple query protocols, each with its own filter syntax:
 
 | Protocol | Filter Syntax | Example |
 |----------|--------------|---------|
-| **FeatureServer REST** | Esri WHERE clause | `population > 1000 AND state = 'CA'` |
+| **FeatureServer REST** | GeoServices REST WHERE clause | `population > 1000 AND state = 'CA'` |
 | **OGC API Features** | CQL2-Text | `population > 1000 AND state = 'CA'` |
 | **OData v4** | $filter | `population gt 1000 and state eq 'CA'` |
 

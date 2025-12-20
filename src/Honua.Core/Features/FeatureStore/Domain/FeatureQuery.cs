@@ -11,7 +11,7 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 public readonly record struct FeatureQuery
 {
     /// <summary>
-    /// WHERE clause filter expression (Esri SQL syntax)
+    /// WHERE clause filter expression (GeoServices REST SQL syntax)
     /// </summary>
     public string? Where { get; init; }
 

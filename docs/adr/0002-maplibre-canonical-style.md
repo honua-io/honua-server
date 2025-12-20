@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 Honua serves layers via multiple protocols (FeatureServer, OGC API Features, OData). Each protocol has different styling expectations:
-- Esri clients expect `drawingInfo` with renderer definitions
+- GeoServices REST clients expect `drawingInfo` with renderer definitions
 - MapLibre/Mapbox clients expect Style Spec v8 JSON
 - OGC API Styles (future) expects OGC Styles
 
@@ -37,7 +37,7 @@ ALTER TABLE honua.layers ADD COLUMN esri_drawing_info JSONB; -- Cache
 ### Negative
 - Esri-specific advanced renderer features may not round-trip perfectly
 - Must implement and maintain MapLibre → Esri converter
-- Importing Esri services requires Esri → MapLibre conversion
+- Importing GeoServices REST services requires Esri → MapLibre conversion
 
 ### Mitigation
 - Cache Esri `drawingInfo` in layer table to avoid repeated conversion
