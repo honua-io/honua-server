@@ -54,7 +54,7 @@ public sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as Esri JSON
     /// </summary>
-    private (QueryResponse response, string contentType) FormatAsEsriJson(
+    private (object response, string contentType) FormatAsEsriJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
@@ -75,7 +75,7 @@ public sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as GeoJSON
     /// </summary>
-    private (GeoJsonFeatureSet response, string contentType) FormatAsGeoJson(
+    private (object response, string contentType) FormatAsGeoJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
@@ -119,11 +119,27 @@ public sealed class QueryFormatter : IQueryFormatter
         var properties = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
 
         // Extract the ID from attributes if available
+        // Normalize numeric values to ensure type consistency
         object? id = null;
         if (properties.TryGetValue("objectid", out var objectId))
-            id = objectId;
+        {
+            // Normalize numeric types to avoid JsonElement vs primitive mismatches
+            id = objectId switch
+            {
+                System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.Number =>
+                    jsonElement.TryGetInt64(out var longVal) ? longVal : (object)jsonElement.GetDouble(),
+                _ => objectId
+            };
+        }
         else if (properties.TryGetValue("id", out var idValue))
-            id = idValue;
+        {
+            id = idValue switch
+            {
+                System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.Number =>
+                    jsonElement.TryGetInt64(out var longVal) ? longVal : (object)jsonElement.GetDouble(),
+                _ => idValue
+            };
+        }
 
         return new GeoJsonFeature
         {
@@ -163,28 +179,28 @@ public sealed class QueryFormatter : IQueryFormatter
     /// </summary>
     private static EsriGeometry? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
     {
-        if (wkbGeometry == null || wkbGeometry.Length == 0)
+        if (wkbGeometry == null || wkbGeometry.Length < 21)
             return null;
 
-        // Parse point coordinates from WKB (simplified implementation for testing)
-        if (wkbGeometry.Length >= 21) // Point WKB has 21 bytes
+        // Only support little-endian WKB point geometries for now
+        if (wkbGeometry[0] != 1)
         {
-            var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-            var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
-
-            return new EsriGeometry
-            {
-                X = x,
-                Y = y,
-                SpatialReference = new EsriSpatialReference { Wkid = 4326 }
-            };
+            return null;
         }
 
-        // Default fallback geometry for testing
+        var geometryType = BitConverter.ToUInt32(wkbGeometry, 1);
+        if (geometryType != 1)
+        {
+            return null;
+        }
+
+        var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
+        var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
+
         return new EsriGeometry
         {
-            X = -122.4194,
-            Y = 37.7749,
+            X = x,
+            Y = y,
             SpatialReference = new EsriSpatialReference { Wkid = 4326 }
         };
     }
@@ -194,34 +210,28 @@ public sealed class QueryFormatter : IQueryFormatter
     /// </summary>
     private static GeoJsonGeometry? ConvertGeometryToGeoJsonFormat(byte[]? wkbGeometry)
     {
-        if (wkbGeometry == null || wkbGeometry.Length == 0)
+        if (wkbGeometry == null || wkbGeometry.Length < 21)
             return null;
 
-        // Parse point coordinates from WKB (simplified implementation for testing)
-        if (wkbGeometry.Length >= 21) // Point WKB has 21 bytes
+        // Only support little-endian WKB point geometries for now
+        if (wkbGeometry[0] != 1)
         {
-            var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-            var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
-
-            return new GeoJsonGeometry
-            {
-                Type = "Point",
-                Coordinates = new[] { x, y },
-                Crs = new GeoJsonCrs
-                {
-                    Properties = new Dictionary<string, object>
-                    {
-                        ["name"] = "EPSG:4326"
-                    }
-                }
-            };
+            return null;
         }
 
-        // Default fallback geometry for testing
+        var geometryType = BitConverter.ToUInt32(wkbGeometry, 1);
+        if (geometryType != 1)
+        {
+            return null;
+        }
+
+        var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
+        var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
+
         return new GeoJsonGeometry
         {
             Type = "Point",
-            Coordinates = new[] { -122.4194, 37.7749 },
+            Coordinates = new[] { x, y },
             Crs = new GeoJsonCrs
             {
                 Properties = new Dictionary<string, object>

@@ -421,15 +421,23 @@ public static class FeatureServerEndpoints
             // Execute query
             var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
 
-            // Format response based on requested format
-            var outFieldsArray = ParseOutFields(queryParams.OutFields);
+            // Format response using QueryFormatter
+            var outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
+                validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(f => f.Trim())
+                    .ToArray();
+
             var (formattedResponse, contentType) = queryFormatter.FormatQueryResult(
-                result, layer, queryParams.F, queryParams.ReturnGeometry, outFieldsArray);
+                result,
+                layer,
+                validatedParams.F ?? "json",
+                validatedParams.ReturnGeometry,
+                outFields);
 
             FeatureServerLog.QueryCompleted(logger, serviceId, layerId, result.Items.Length, result.TotalCount);
 
             // Return response with appropriate content type and JSON context
-            return queryParams.F.ToLowerInvariant() switch
+            return validatedParams.F?.ToLowerInvariant() switch
             {
                 "geojson" => Results.Json(formattedResponse, FeatureServerJsonContext.Default.GeoJsonFeatureSet, contentType: contentType),
                 _ => Results.Json(formattedResponse, FeatureServerJsonContext.Default.QueryResponse, contentType: contentType)
@@ -445,19 +453,6 @@ public static class FeatureServerEndpoints
             FeatureServerLog.QueryFailed(logger, serviceId, layerId, ex.Message, ex);
             return Results.StatusCode(500);
         }
-    }
-
-    /// <summary>
-    /// Parses outFields parameter into an array
-    /// </summary>
-    private static string[]? ParseOutFields(string? outFields)
-    {
-        if (string.IsNullOrEmpty(outFields) || outFields == "*")
-            return null;
-
-        return outFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(f => f.Trim())
-            .ToArray();
     }
 
     /// <summary>

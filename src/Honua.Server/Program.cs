@@ -5,7 +5,6 @@ using System.Reflection;
 using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Features.Admin;
-using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Infrastructure.Middleware;
@@ -74,9 +73,6 @@ ConfigureLimits(builder.Services, builder.Configuration);
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
-
-// Register admin services
-builder.Services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
 // Register FeatureServer services
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometryConverter,
