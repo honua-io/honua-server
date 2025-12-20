@@ -536,7 +536,7 @@ public sealed class EsriFeature
 /// <summary>
 /// Query parameters for feature queries
 /// </summary>
-public sealed class QueryParameters
+internal sealed class QueryParameters
 {
     /// <summary>
     /// WHERE clause for attribute queries
@@ -595,7 +595,6 @@ public sealed class QueryParameters
 [JsonSerializable(typeof(EsriFieldInfo))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(EsriFeature))]
-[JsonSerializable(typeof(QueryParameters))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

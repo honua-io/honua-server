@@ -3,12 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -319,6 +319,7 @@ public static class FeatureServerEndpoints
         [FromQuery] string? spatialRel = null,
         [FromServices] ILayerCatalog? catalog = null,
         [FromServices] IFeatureStore? featureStore = null,
+        [FromServices] IGeometryConverter? geometryConverter = null,
         [FromServices] ILogger<FeatureServerHandler>? logger = null,
         CancellationToken cancellationToken = default)
     {
@@ -336,7 +337,7 @@ public static class FeatureServerEndpoints
             SpatialRel = spatialRel
         };
 
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, logger!, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog!, featureStore!, geometryConverter!, logger!, cancellationToken);
     }
 
     /// <summary>
@@ -348,10 +349,11 @@ public static class FeatureServerEndpoints
         [FromBody] QueryParameters queryParams,
         [FromServices] ILayerCatalog catalog,
         [FromServices] IFeatureStore featureStore,
+        [FromServices] IGeometryConverter geometryConverter,
         [FromServices] ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken = default)
     {
-        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, logger, cancellationToken);
+        return await QueryFeaturesAsync(serviceId, layerId, queryParams, catalog, featureStore, geometryConverter, logger, cancellationToken);
     }
 
     /// <summary>
@@ -363,6 +365,7 @@ public static class FeatureServerEndpoints
         QueryParameters queryParams,
         ILayerCatalog catalog,
         IFeatureStore featureStore,
+        IGeometryConverter geometryConverter,
         ILogger<FeatureServerHandler> logger,
         CancellationToken cancellationToken)
     {
@@ -386,7 +389,7 @@ public static class FeatureServerEndpoints
             }
 
             // Build query from parameters
-            var query = BuildFeatureQuery(queryParams, service);
+            var query = BuildFeatureQuery(queryParams, service, geometryConverter);
 
             // Execute query
             var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
@@ -414,7 +417,7 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Builds a FeatureQuery from query parameters
     /// </summary>
-    private static FeatureQuery BuildFeatureQuery(QueryParameters queryParams, ServiceDefinition service)
+    private static FeatureQuery BuildFeatureQuery(QueryParameters queryParams, ServiceDefinition service, IGeometryConverter geometryConverter)
     {
         var query = new FeatureQuery
         {
@@ -443,7 +446,7 @@ public static class FeatureServerEndpoints
         // Parse spatial filter if specified
         if (!string.IsNullOrEmpty(queryParams.Geometry))
         {
-            var spatialFilter = ParseSpatialFilter(queryParams.Geometry, queryParams.SpatialRel);
+            var spatialFilter = ParseSpatialFilter(queryParams.Geometry, queryParams.SpatialRel, geometryConverter);
             query = query with { SpatialFilter = spatialFilter };
         }
 
@@ -453,10 +456,10 @@ public static class FeatureServerEndpoints
     /// <summary>
     /// Parses Esri JSON geometry and spatial relationship into a SpatialFilter
     /// </summary>
-    private static SpatialFilter ParseSpatialFilter(string geometry, string? spatialRel)
+    private static SpatialFilter ParseSpatialFilter(string geometry, string? spatialRel, IGeometryConverter geometryConverter)
     {
         // Convert Esri JSON geometry to WKB bytes
-        var wkbBytes = ConvertEsriJsonToWkb(geometry);
+        var wkbBytes = ConvertEsriJsonToWkb(geometry, geometryConverter);
 
         // Map Esri spatial relationship to enum
         var relationship = ParseSpatialRelationship(spatialRel);
@@ -484,41 +487,11 @@ public static class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Converts Esri JSON geometry to WKB bytes using PostGIS
+    /// Converts Esri JSON geometry to WKB bytes using the geometry converter service
     /// </summary>
-    private static byte[] ConvertEsriJsonToWkb(string esriJsonGeometry)
+    private static byte[] ConvertEsriJsonToWkb(string esriJsonGeometry, IGeometryConverter geometryConverter)
     {
-        // TODO: Implement full Esri JSON to WKB conversion using PostGIS
-        // For MVP, we'll create a simple point geometry for testing
-
-        try
-        {
-            // Parse basic Esri JSON point geometry format
-            using var jsonDoc = JsonDocument.Parse(esriJsonGeometry);
-            var root = jsonDoc.RootElement;
-
-            if (root.TryGetProperty("x", out var xElement) && root.TryGetProperty("y", out var yElement))
-            {
-                var x = xElement.GetDouble();
-                var y = yElement.GetDouble();
-
-                // Create WKB for a POINT geometry (little-endian format)
-                // WKB format: [endian][type][x][y]
-                var wkbBytes = new byte[21]; // 1 + 4 + 8 + 8 bytes
-                wkbBytes[0] = 1; // Little-endian
-                BitConverter.GetBytes((uint)1).CopyTo(wkbBytes, 1); // POINT type
-                BitConverter.GetBytes(x).CopyTo(wkbBytes, 5); // X coordinate
-                BitConverter.GetBytes(y).CopyTo(wkbBytes, 13); // Y coordinate
-
-                return wkbBytes;
-            }
-
-            throw new ArgumentException("Invalid Esri JSON geometry format");
-        }
-        catch (JsonException)
-        {
-            throw new ArgumentException("Invalid JSON format in geometry parameter");
-        }
+        return geometryConverter.ConvertEsriJsonToWkb(esriJsonGeometry);
     }
 
     /// <summary>

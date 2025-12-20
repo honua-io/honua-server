@@ -311,14 +311,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_WithPostRequest_ReturnsFilteredFeatures()
     {
         // Arrange
-        var queryParams = new QueryParameters
-        {
-            Where = "name='Test Feature'",
-            ReturnGeometry = true,
-            F = "json"
-        };
-
-        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var json = """
+            {
+                "where": "name='Test Feature'",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
@@ -572,16 +571,15 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_PostWithPagingParameters_ReturnsCorrectPage()
     {
         // Arrange
-        var queryParams = new QueryParameters
-        {
-            Where = "1=1",
-            ResultOffset = 1,
-            ResultRecordCount = 2,
-            ReturnGeometry = true,
-            F = "json"
-        };
-
-        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var json = """
+            {
+                "where": "1=1",
+                "resultOffset": 1,
+                "resultRecordCount": 2,
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
@@ -644,15 +642,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                               @"-123.0,38.0," +
                               @"-123.0,37.0]]]}";
 
-        var queryParams = new QueryParameters
-        {
-            Geometry = polygonGeometry,
-            SpatialRel = "esriSpatialRelContains",
-            ReturnGeometry = true,
-            F = "json"
-        };
-
-        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var json = $$"""
+            {
+                "geometry": "{{polygonGeometry}}",
+                "spatialRel": "esriSpatialRelContains",
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
