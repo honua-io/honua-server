@@ -188,9 +188,9 @@ public static class ImportEndpoints
 }
 
 /// <summary>
-/// Response containing supported file formats
+/// Response containing supported file formats and their descriptions for the import API
 /// </summary>
-public record FileFormatsResponse
+internal record FileFormatsResponse
 {
     public required string[] SupportedExtensions { get; init; }
     public required Dictionary<string, string> FormatDescriptions { get; init; }
