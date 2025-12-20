@@ -48,12 +48,18 @@ WORKDIR /app
 # Copy the published app
 COPY --from=build /app .
 
-# Set ownership and permissions
-RUN chown -R honua:honua /app && \
+# Create directories that need to be writable at runtime
+RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
+    chown -R honua:honua /app /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
     chmod +x /app/Honua.Server
 
 # Switch to non-root user
 USER honua
+
+# Security labels for enhanced container security
+LABEL security.non-root="true"
+LABEL security.capabilities.drop="ALL"
+LABEL security.read-only-root="true"
 
 # Configure health checks
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

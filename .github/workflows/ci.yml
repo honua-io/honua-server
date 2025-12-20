@@ -516,6 +516,120 @@ jobs:
           fi
         working-directory: src/Honua.Server
 
+  container-security:
+    name: Container Security Verification
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Container Image
+        run: docker build -t honua-security-test .
+
+      - name: Verify Non-Root Execution
+        run: |
+          echo "Testing non-root user execution..."
+          USER_INFO=$(docker run --rm honua-security-test id)
+          echo "Container user info: $USER_INFO"
+
+          # Verify user is not root (uid=0)
+          if echo "$USER_INFO" | grep -q "uid=0(root)"; then
+            echo "::error::Container is running as root user - security violation!"
+            exit 1
+          fi
+
+          # Verify expected honua user (uid=1001)
+          if ! echo "$USER_INFO" | grep -q "uid=1001(honua)"; then
+            echo "::error::Container is not running as expected honua user (uid=1001)"
+            exit 1
+          fi
+
+          echo "✅ Non-root verification passed: Container runs as honua user"
+
+      - name: Verify Read-Only Filesystem Compatibility
+        run: |
+          echo "Testing read-only filesystem behavior..."
+
+          # Test that read-only root filesystem fails writes to protected paths
+          if docker run --rm --read-only honua-security-test touch /test 2>/dev/null; then
+            echo "::error::Container allows writes to read-only filesystem - security violation!"
+            exit 1
+          fi
+          echo "✅ Read-only filesystem verification passed: Root filesystem is protected"
+
+          # Test that writable paths work correctly
+          docker run --rm --read-only \
+            --tmpfs /tmp:noexec,nosuid,size=100m \
+            honua-security-test touch /tmp/test || {
+            echo "::error::Container cannot write to designated writable paths"
+            exit 1
+          }
+          echo "✅ Writable paths verification passed: Temporary directories work correctly"
+
+      - name: Verify Security Labels
+        run: |
+          echo "Verifying security metadata labels..."
+
+          # Check for security labels in the image
+          LABELS=$(docker inspect honua-security-test | jq -r '.[0].Config.Labels')
+          echo "Container labels: $LABELS"
+
+          # Verify security labels are present
+          docker inspect honua-security-test | jq -e '.[0].Config.Labels["security.non-root"]' | grep -q "true" || {
+            echo "::error::Missing security.non-root label"
+            exit 1
+          }
+
+          docker inspect honua-security-test | jq -e '.[0].Config.Labels["security.capabilities.drop"]' | grep -q "ALL" || {
+            echo "::error::Missing security.capabilities.drop label"
+            exit 1
+          }
+
+          docker inspect honua-security-test | jq -e '.[0].Config.Labels["security.read-only-root"]' | grep -q "true" || {
+            echo "::error::Missing security.read-only-root label"
+            exit 1
+          }
+
+          echo "✅ Security labels verification passed: All required labels present"
+
+      - name: Test Container Startup with Security Options
+        run: |
+          echo "Testing container startup with full security hardening..."
+
+          # Create temporary docker-compose for testing
+          cat > docker-compose.security-test.yml << EOF
+          services:
+            honua-test:
+              image: honua-security-test
+              read_only: true
+              cap_drop:
+                - ALL
+              security_opt:
+                - no-new-privileges:true
+              tmpfs:
+                - /tmp:noexec,nosuid,size=100m
+              environment:
+                ASPNETCORE_URLS: http://+:8080
+          EOF
+
+          # Test container startup with security hardening
+          docker-compose -f docker-compose.security-test.yml up -d honua-test
+
+          # Wait for startup
+          sleep 10
+
+          # Check if container is running
+          if ! docker-compose -f docker-compose.security-test.yml ps honua-test | grep -q "Up"; then
+            echo "::error::Container failed to start with security hardening"
+            docker-compose -f docker-compose.security-test.yml logs honua-test
+            exit 1
+          fi
+
+          echo "✅ Security hardening compatibility verified: Container starts successfully with all security options"
+
+          # Cleanup
+          docker-compose -f docker-compose.security-test.yml down
+
   # Architecture gate job that blocks merge if LLM review finds blocking issues
   architecture-gate:
     name: Architecture Gate
