@@ -15,6 +15,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
     <!-- Postgres reference for AOT assembly inclusion only -->
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
