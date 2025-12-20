@@ -279,22 +279,32 @@ internal sealed class FileImportService : IFileImportService
                 properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
             }
 
-            var sql = $@"
-                INSERT INTO {tableName} (geometry, properties)
-                VALUES (@geometry, @properties::jsonb)";
+            // Handle geometry transformation in SQL with proper parameterization
+            string sql;
+            using var command = new NpgsqlCommand();
+            command.Connection = connection;
 
-            using var command = new NpgsqlCommand(sql, connection);
-
-            // Handle geometry if present, otherwise insert null
             if (feature.Geometry != null)
             {
+                sql = $@"
+                    INSERT INTO {QuoteIdentifier(tableName)} (geometry, properties)
+                    VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
+
                 var wkb = wkbWriter.Write(feature.Geometry);
-                command.Parameters.AddWithValue("@geometry", $"ST_Transform(ST_GeomFromWKB(@wkb, {sourceSrid}), {targetSrid})");
+                command.Parameters.AddWithValue("@wkb", wkb);
+                command.Parameters.AddWithValue("@sourceSrid", sourceSrid);
+                command.Parameters.AddWithValue("@targetSrid", targetSrid);
             }
             else
             {
+                sql = $@"
+                    INSERT INTO {QuoteIdentifier(tableName)} (geometry, properties)
+                    VALUES (@geometry, @properties::jsonb)";
+
                 command.Parameters.AddWithValue("@geometry", DBNull.Value);
             }
+
+            command.CommandText = sql;
 
             command.Parameters.AddWithValue("@properties", JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject));
 
@@ -310,20 +320,30 @@ internal sealed class FileImportService : IFileImportService
     /// </summary>
     private static async Task CreateTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
+        var quotedTableName = QuoteIdentifier(tableName);
         var createTableSql = $@"
-            DROP TABLE IF EXISTS {tableName};
+            DROP TABLE IF EXISTS {quotedTableName};
 
-            CREATE TABLE {tableName} (
+            CREATE TABLE {quotedTableName} (
                 id SERIAL PRIMARY KEY,
                 geometry GEOMETRY,
                 properties JSONB,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
 
-            CREATE INDEX IF NOT EXISTS idx_{tableName}_geometry ON {tableName} USING GIST (geometry);
-            CREATE INDEX IF NOT EXISTS idx_{tableName}_properties ON {tableName} USING GIN (properties);";
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_geometry")} ON {quotedTableName} USING GIST (geometry);
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_properties")} ON {quotedTableName} USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Safely quotes a PostgreSQL identifier to prevent SQL injection
+    /// </summary>
+    private static string QuoteIdentifier(string identifier)
+    {
+        // PostgreSQL identifier quoting: double quotes around identifier and escape any existing double quotes
+        return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
 }
