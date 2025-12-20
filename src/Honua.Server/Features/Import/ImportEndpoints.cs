@@ -190,7 +190,7 @@ public static class ImportEndpoints
 /// <summary>
 /// Response containing supported file formats and their descriptions for the import API
 /// </summary>
-internal record FileFormatsResponse
+internal sealed record FileFormatsResponse
 {
     public required string[] SupportedExtensions { get; init; }
     public required Dictionary<string, string> FormatDescriptions { get; init; }
