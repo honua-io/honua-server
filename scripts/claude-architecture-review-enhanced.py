@@ -45,6 +45,26 @@ def get_changed_files(base_ref: str = "main") -> List[str]:
     except subprocess.CalledProcessError:
         return []
 
+def get_all_cs_files() -> List[str]:
+    """Get all tracked C# files in the repo"""
+    try:
+        result = subprocess.run(
+            ['git', 'ls-files', '*.cs'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        files = [f for f in result.stdout.strip().split('\n') if f.strip()]
+        return files
+    except subprocess.CalledProcessError:
+        # Fallback to walking the workspace
+        cs_files: List[str] = []
+        for root, _, filenames in os.walk("."):
+            for name in filenames:
+                if name.endswith(".cs"):
+                    cs_files.append(os.path.join(root, name))
+        return cs_files
+
 def get_file_content_and_diff(file_path: str, base_ref: str = "main") -> Dict[str, str]:
     """Get file content and diff for review"""
     content = ""
@@ -54,11 +74,6 @@ def get_file_content_and_diff(file_path: str, base_ref: str = "main") -> Dict[st
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-
-        result = subprocess.run([
-            'git', 'diff', f"{base_ref}...HEAD", '--', file_path
-        ], capture_output=True, text=True, check=True)
-        diff = result.stdout
 
     except Exception as e:
         print(f"Warning: Could not process {file_path}: {e}")
@@ -139,19 +154,34 @@ def detect_documentation_violations(file_path: str, content: str) -> List[Tuple[
     violations = []
     lines = content.split('\n')
 
-    for line_num, line in enumerate(lines, 1):
-        # Check for public types without XML docs
-        if (re.search(r'public (class|interface|enum)', line) and
-            line_num > 1):  # Skip first line edge case
+    for idx, line in enumerate(lines):
+        type_match = re.search(r'public\s+(class|interface|enum|struct|record)\s+(\w+)', line)
+        if not type_match:
+            continue
 
-            prev_line = lines[line_num - 2] if line_num > 1 else ""
-            if not prev_line.strip().startswith("///"):
-                type_match = re.search(r'public (?:class|interface|enum) (\w+)', line)
-                type_name = type_match.group(1) if type_match else "unknown"
-                violations.append((
-                    "BLOCKING",
-                    f"Missing XML documentation for public type '{type_name}' at {file_path}:{line_num}"
-                ))
+        line_num = idx + 1
+        type_name = type_match.group(2)
+
+        # Walk backward to find the first non-blank, non-attribute line
+        has_doc = False
+        check_idx = idx - 1
+        while check_idx >= 0:
+            prior = lines[check_idx].strip()
+            if prior == "":
+                check_idx -= 1
+                continue
+            if prior.startswith("["):
+                check_idx -= 1
+                continue
+            if prior.startswith("///"):
+                has_doc = True
+            break
+
+        if not has_doc:
+            violations.append((
+                "BLOCKING",
+                f"Missing XML documentation for public type '{type_name}' at {file_path}:{line_num}"
+            ))
 
     return violations
 
@@ -160,30 +190,47 @@ def detect_complexity_violations(file_path: str, content: str) -> List[Tuple[str
     violations = []
     lines = content.split('\n')
 
-    for line_num, line in enumerate(lines, 1):
-        # Check constructor parameter counts
-        if ("public class" in line or "internal class" in line) and "{" in line:
-            # Look ahead for constructor
-            for check_line_num in range(line_num, min(line_num + 20, len(lines))):
-                check_line = lines[check_line_num]
-                if re.search(r'public \w+\(', check_line):
-                    # Count parameters by looking for commas between parentheses
-                    constructor_match = re.search(r'\(([^)]*)\)', check_line)
-                    if constructor_match:
-                        params = constructor_match.group(1)
-                        if params.strip():
-                            param_count = len([p for p in params.split(',') if p.strip()])
+    for idx, line in enumerate(lines):
+        class_match = re.search(r'\b(public|internal)\s+class\s+(\w+)(.*)', line)
+        if not class_match:
+            continue
 
-                            # Check if it's an endpoint or handler
-                            class_line = lines[line_num - 1]
-                            if ("Endpoint" in class_line or "Handler" in class_line):
-                                limit = 5 if "Endpoint" in class_line else 4
-                                if param_count > limit:
-                                    violations.append((
-                                        "WARNING",
-                                        f"Too many dependencies ({param_count}>{limit}) at {file_path}:{check_line_num}"
-                                    ))
+        class_name = class_match.group(2)
+        remainder = class_match.group(3)
+
+        is_endpoint = "Endpoint" in class_name or "Endpoints" in class_name
+        is_handler = "Handler" in class_name
+        limit = 5 if is_endpoint else 4 if is_handler else None
+        if limit is None:
+            continue
+
+        param_str = None
+        param_line_num = idx + 1
+
+        # Primary constructor on class declaration
+        if "(" in remainder and ")" in remainder:
+            paren_match = re.search(r'\(([^)]*)\)', remainder)
+            if paren_match:
+                param_str = paren_match.group(1)
+        else:
+            # Look ahead for a constructor
+            for look_ahead in range(idx + 1, min(idx + 20, len(lines))):
+                ctor_line = lines[look_ahead]
+                ctor_match = re.search(rf'\bpublic\s+{re.escape(class_name)}\s*\(([^)]*)\)', ctor_line)
+                if ctor_match:
+                    param_str = ctor_match.group(1)
+                    param_line_num = look_ahead + 1
                     break
+
+        if param_str is None:
+            continue
+
+        param_count = len([p for p in param_str.split(',') if p.strip()])
+        if param_count > limit:
+            violations.append((
+                "WARNING",
+                f"Too many dependencies ({param_count}>{limit}) at {file_path}:{param_line_num}"
+            ))
 
     return violations
 
@@ -220,8 +267,11 @@ def detect_organizational_issues(file_path: str) -> List[Tuple[str, str]]:
 
     return violations
 
-def check_positive_patterns(file_path: str, content: str) -> List[str]:
+def check_positive_patterns(file_path: str, content: str, is_changed: bool) -> List[str]:
     """Identify positive architectural patterns"""
+    if not is_changed:
+        return []
+
     patterns = []
 
     # Check for proper async usage
@@ -246,7 +296,7 @@ def check_positive_patterns(file_path: str, content: str) -> List[str]:
 
     return patterns
 
-def analyze_file_architecture(file_path: str, content: str) -> Dict[str, Any]:
+def analyze_file_architecture(file_path: str, content: str, is_changed: bool) -> Dict[str, Any]:
     """Comprehensive analysis of a single file"""
     analysis = {
         "blocking_violations": [],
@@ -274,7 +324,7 @@ def analyze_file_architecture(file_path: str, content: str) -> Dict[str, Any]:
                 analysis["warning_violations"].append(violation)
 
     # Check for positive patterns
-    analysis["positive_patterns"] = check_positive_patterns(file_path, content)
+    analysis["positive_patterns"] = check_positive_patterns(file_path, content, is_changed)
 
     return analysis
 
@@ -283,21 +333,25 @@ def enhanced_architecture_review() -> Dict[str, Any]:
     print("🔍 Running Enhanced Claude Architecture Review...")
 
     changed_files = get_changed_files()
+    changed_set = set(changed_files)
+    all_files = get_all_cs_files()
 
-    if not changed_files:
+    if not all_files:
         return {
-            "status": "no_changes",
-            "message": "No C# files changed - architecture review skipped"
+            "status": "no_files",
+            "message": "No C# files found for architecture review"
         }
 
-    print(f"📁 Found {len(changed_files)} changed C# files")
+    print(f"📁 Found {len(all_files)} C# files ({len(changed_files)} changed vs base)")
 
     all_blocking = []
     all_warnings = []
     all_positive = []
 
-    for file_path in changed_files:
-        print(f"  🔍 Analyzing {file_path}...")
+    for file_path in all_files:
+        is_changed = file_path in changed_set
+        label = "changed" if is_changed else "base"
+        print(f"  🔍 Analyzing {file_path} ({label})...")
 
         file_info = get_file_content_and_diff(file_path)
         content = file_info["content"]
@@ -306,11 +360,13 @@ def enhanced_architecture_review() -> Dict[str, Any]:
             continue
 
         # Analyze this file
-        analysis = analyze_file_architecture(file_path, content)
+        analysis = analyze_file_architecture(file_path, content, is_changed)
 
-        all_blocking.extend(analysis["blocking_violations"])
-        all_warnings.extend(analysis["warning_violations"])
-        all_positive.extend(analysis["positive_patterns"])
+        tag = "[CHANGED]" if is_changed else "[BASE]"
+
+        all_blocking.extend([f"{tag} {v}" for v in analysis["blocking_violations"]])
+        all_warnings.extend([f"{tag} {v}" for v in analysis["warning_violations"]])
+        all_positive.extend([f"{tag} {v}" for v in analysis["positive_patterns"]])
 
     # Determine overall assessment
     if all_blocking:
@@ -326,7 +382,8 @@ def enhanced_architecture_review() -> Dict[str, Any]:
         "blocking_violations": all_blocking,
         "warning_violations": all_warnings,
         "positive_patterns": all_positive,
-        "files_reviewed": len(changed_files)
+        "files_reviewed": len(all_files),
+        "changed_files": len(changed_files)
     }
 
 def print_enhanced_results(results: Dict[str, Any]) -> bool:
@@ -334,12 +391,15 @@ def print_enhanced_results(results: Dict[str, Any]) -> bool:
     if results["status"] == "no_changes":
         print(f"✅ {results['message']}")
         return True
+    if results["status"] == "no_files":
+        print(f"⚠️  {results['message']}")
+        return False
 
     print("\n" + "="*70)
     print("🏗️  ENHANCED CLAUDE ARCHITECTURE REVIEW")
     print("="*70)
 
-    print(f"\n📊 Files Reviewed: {results['files_reviewed']}")
+    print(f"\n📊 Files Reviewed: {results['files_reviewed']} (changed: {results.get('changed_files', 0)})")
     print(f"🎯 Assessment: {results['assessment']}")
 
     if results["positive_patterns"]:
