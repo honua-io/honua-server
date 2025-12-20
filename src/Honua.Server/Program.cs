@@ -84,8 +84,13 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFo
 
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
+// Configure security headers
+ConfigureSecurityHeaders(builder.Services);
 
 var app = builder.Build();
+
+// Add security headers middleware (first in pipeline for all requests)
+app.UseSecurityHeaders();
 
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
@@ -168,6 +173,38 @@ static void ConfigureLimits(IServiceCollection services, IConfiguration configur
             throw new InvalidOperationException(errorMessage);
         }
     });
+}
+
+// Configure security headers policy
+static void ConfigureSecurityHeaders(IServiceCollection services)
+{
+    services.AddSecurityHeaderPolicies()
+        .SetDefaultPolicy(policy =>
+        {
+            // Add required security headers per MVP Plan
+            policy.AddStrictTransportSecurityMaxAgeIncludeSubDomains(maxAgeInSeconds: 63072000) // 2 years
+                .AddContentTypeOptionsNoSniff() // X-Content-Type-Options: nosniff
+                .AddFrameOptionsDeny() // X-Frame-Options: DENY
+                .AddReferrerPolicyStrictOriginWhenCrossOrigin() // Referrer-Policy: strict-origin-when-cross-origin
+                .RemoveServerHeader() // Remove Server header for security
+                .AddContentSecurityPolicy(builder =>
+                {
+                    // Strict CSP for API - only self for API responses
+                    builder.AddDefaultSrc().Self();
+                    builder.AddFrameAncestors().None(); // frame-ancestors 'none'
+                    builder.AddObjectSrc().None();
+                    builder.AddScriptSrc().Self();
+                    builder.AddStyleSrc().Self().UnsafeInline(); // Allow inline styles for minimal API responses
+                    builder.AddImgSrc().Self().Data(); // Allow data: URIs for inline images
+                    builder.AddConnectSrc().Self();
+                    builder.AddFontSrc().Self();
+                    builder.AddMediaSrc().Self();
+                    builder.AddFormAction().Self();
+                })
+                .AddCrossOriginOpenerPolicy(builder => builder.SameOrigin()) // COOP: same-origin
+                .AddCrossOriginEmbedderPolicy(builder => builder.RequireCorp()) // COEP: require-corp
+                .AddPermissionsPolicyWithDefaultSecureDirectives(); // Permissions-Policy with secure defaults
+        });
 }
 
 // Database migration helper
