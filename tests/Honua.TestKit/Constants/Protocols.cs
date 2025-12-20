@@ -10,7 +10,7 @@ namespace Honua.TestKit.Constants;
 public static class Protocols
 {
     /// <summary>
-    /// ArcGIS GeoServices REST API (Feature Server).
+    /// GeoServices REST API (Feature Server).
     /// </summary>
     public const string FeatureServer = "FeatureServer";
 

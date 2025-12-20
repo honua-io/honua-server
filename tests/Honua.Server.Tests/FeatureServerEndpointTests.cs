@@ -202,7 +202,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
-    public async Task GetServiceMetadata_ResponseValidatesAgainstEsriSchema()
+    public async Task GetServiceMetadata_ResponseValidatesAgainstGeoServicesSchema()
     {
         // Act
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer");
@@ -214,10 +214,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var serviceResponse = JsonSerializer.Deserialize<FeatureServerResponse>(
             content, FeatureServerJsonContext.Default.FeatureServerResponse);
 
-        // Validate Esri JSON schema compliance
+        // Validate GeoServices REST JSON schema compliance
         serviceResponse.Should().NotBeNull();
 
-        // Required Esri service properties
+        // Required GeoServices REST service properties
         serviceResponse!.CurrentVersion.Should().NotBeNullOrEmpty();
         serviceResponse.ServiceName.Should().NotBeNullOrEmpty();
         serviceResponse.ServiceDescription.Should().NotBeNullOrEmpty();
@@ -239,7 +239,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
-    public async Task GetLayerMetadata_ResponseValidatesAgainstEsriSchema()
+    public async Task GetLayerMetadata_ResponseValidatesAgainstGeoServicesSchema()
     {
         // Act
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
@@ -251,10 +251,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var layerResponse = JsonSerializer.Deserialize<LayerResponse>(
             content, FeatureServerJsonContext.Default.LayerResponse);
 
-        // Validate Esri JSON schema compliance for layer metadata
+        // Validate GeoServices REST JSON schema compliance for layer metadata
         layerResponse.Should().NotBeNull();
 
-        // Required Esri layer properties
+        // Required GeoServices REST layer properties
         layerResponse!.CurrentVersion.Should().NotBeNullOrEmpty();
         layerResponse.Id.Should().BeGreaterOrEqualTo(0);
         layerResponse.Name.Should().NotBeNullOrEmpty();
@@ -607,7 +607,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithPointGeometryIntersects_ReturnsFilteredFeatures()
     {
-        // Arrange - Point geometry in Esri JSON format
+        // Arrange - Point geometry in GeoServices REST JSON format
         var pointGeometry = @"{""x"":-122.4194,""y"":37.7749}"; // San Francisco coordinates
 
         // Act
@@ -759,12 +759,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     // Output format tests (Issue #9)
 
     /// <summary>
-    /// Tests that f=json returns Esri JSON format with correct content type
+    /// Tests that f=json returns GeoServices REST JSON format with correct content type
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task QueryFeatures_WithFormatJson_ReturnsEsriJsonFormat()
+    public async Task QueryFeatures_WithFormatJson_ReturnsGeoServicesJsonFormat()
     {
         // Act
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json");
@@ -833,7 +833,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithOutFieldsParam_FiltersAttributesInBothFormats()
     {
-        // Test Esri JSON format
+        // Test GeoServices REST JSON format
         var esriResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=objectid,name");
         esriResponse.Should().BeSuccessful();
 
@@ -874,7 +874,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithReturnGeometryFalse_OmitsGeometryInBothFormats()
     {
-        // Test Esri JSON format
+        // Test GeoServices REST JSON format
         var esriResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&returnGeometry=false");
         esriResponse.Should().BeSuccessful();
 
@@ -935,12 +935,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Tests that invalid format parameter defaults to Esri JSON
+    /// Tests that invalid format parameter defaults to GeoServices REST JSON
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task QueryFeatures_WithInvalidFormat_DefaultsToEsriJson()
+    public async Task QueryFeatures_WithInvalidFormat_DefaultsToGeoServicesJson()
     {
         // Act
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=invalid");

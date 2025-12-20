@@ -21,19 +21,19 @@ C4Context
 
     System(honua, "Honua Feature Server", "Multi-protocol geospatial feature server")
 
-    System_Ext(arcgis, "ArcGIS Pro/Online", "Esri GIS platform")
+    System_Ext(geoservices_client, "GeoServices REST Client", "GIS platform supporting GeoServices REST")
     System_Ext(qgis, "QGIS", "Open source GIS")
     System_Ext(maplibre, "MapLibre GL", "Web mapping library")
     System_Ext(excel, "Excel/Power BI", "Microsoft BI tools")
     System_Ext(postgis, "PostgreSQL + PostGIS", "Geospatial database")
 
-    Rel(gisUser, arcgis, "Uses")
+    Rel(gisUser, geoservices_client, "Uses")
     Rel(gisUser, qgis, "Uses")
     Rel(developer, maplibre, "Builds with")
     Rel(analyst, excel, "Analyzes in")
     Rel(admin, honua, "Manages via Admin UI")
 
-    Rel(arcgis, honua, "FeatureServer REST", "HTTPS")
+    Rel(geoservices_client, honua, "FeatureServer REST", "HTTPS")
     Rel(qgis, honua, "OGC API Features", "HTTPS")
     Rel(maplibre, honua, "Vector Tiles (MVT)", "HTTPS")
     Rel(excel, honua, "OData v4", "HTTPS")
@@ -46,7 +46,7 @@ C4Context
 ```mermaid
 graph TB
     subgraph Clients
-        ArcGIS[ArcGIS Pro/Online]
+        GeoServicesClient[GeoServices REST Client]
         QGIS[QGIS]
         MapLibre[MapLibre GL]
         Excel[Excel/Power BI]
@@ -62,7 +62,7 @@ graph TB
         PostGIS[(PostgreSQL + PostGIS)]
     end
 
-    ArcGIS -->|FeatureServer REST| API
+    GeoServicesClient -->|FeatureServer REST| API
     QGIS -->|OGC API Features| API
     MapLibre -->|MVT Tiles| API
     Excel -->|OData v4| API
@@ -245,7 +245,7 @@ Shows how a query request flows through the system.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as ArcGIS/QGIS
+    participant Client as GeoServices/OGC Client
     participant EP as QueryEndpoint
     participant Parser as QueryParser
     participant Handler as QueryHandler
@@ -333,7 +333,7 @@ Shows how filters from different protocols converge on a shared AST.
 ```mermaid
 graph LR
     subgraph "Protocol Parsers"
-        ESRI[Esri WHERE<br/><i>population > 1000</i>]
+        GEOSERVICES[GeoServices WHERE<br/><i>population > 1000</i>]
         CQL[CQL2-Text<br/><i>population > 1000</i>]
         ODATA[OData $filter<br/><i>population gt 1000</i>]
     end

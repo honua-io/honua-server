@@ -479,7 +479,7 @@ public sealed record IdsResponse : QueryResponse
 
 Both protocols require metadata endpoints for service discovery.
 
-### Esri GeoServices REST Catalog
+### GeoServices REST Catalog
 
 ```csharp
 // Features/Metadata/CatalogEndpoint.cs
@@ -1858,7 +1858,7 @@ OData enables Excel, Power BI, and other BI tools to query geospatial data direc
 | Excel user queries layer | Export CSV, import manually | Direct `=OData.Feed()` connection |
 | Power BI dashboard | Custom REST connector | Native OData source, auto-schema |
 | Tableau analytics | Manual data prep | Live OData connection |
-| Migration from ArcGIS | "Where's OData?" | Familiar workflow |
+| Migration from GeoServices servers | "Where's OData?" | Familiar workflow |
 
 **OData is table stakes for enterprise GIS** — many organizations use Power BI/Excel for reporting and expect direct connectivity.
 
@@ -2934,7 +2934,7 @@ src/Honua.Admin/
 │   │   └── LayerPreview.razor         # MapLibre preview
 │   ├── Import/
 │   │   ├── FileImport.razor           # Upload GeoJSON/Shapefile/etc.
-│   │   ├── EsriImport.razor           # Esri service import wizard
+│   │   ├── GeoServicesImport.razor    # GeoServices REST import wizard
 │   │   └── ImportPreview.razor        # Preview before import
 │   └── Health/
 │       └── HealthDashboard.razor      # Service health
@@ -3330,7 +3330,7 @@ window.maplibreInterop = {
 │  Admin preview → Use maplibre_style directly                    │
 │                                                                 │
 │  Edit in Maputnik → Update maplibre_style → Invalidate cache    │
-│  Import from Esri → Store both, maplibre is derived             │
+│  Import from GeoServices → Store both, maplibre is derived      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -3342,12 +3342,12 @@ window.maplibreInterop = {
 - Editable in Maputnik/QGIS/GeoStyler
 - JSON, not XML
 
-**Esri compatibility:**
+**GeoServices REST format compatibility:**
 - Convert MapLibre → Esri drawingInfo on first request, cache it
-- When importing from Esri service, store original AND derive MapLibre
+- When importing from GeoServices server, store original AND derive MapLibre
 - Cache invalidated when style is edited
 
-### Esri Renderer Support
+### GeoServices REST Renderer Support
 
 | Renderer | MVP | MapLibre Mapping |
 |----------|-----|------------------|
@@ -3378,7 +3378,7 @@ ALTER TABLE honua.layers ADD COLUMN style_version INT DEFAULT 1;
 1. If `esri_drawing_info` is NULL → convert from `maplibre_style`, cache it
 2. Return cached `esri_drawing_info`
 
-**On Esri import:**
+**On GeoServices REST import:**
 1. Store original in `esri_drawing_info`
 2. Convert to MapLibre, store in `maplibre_style`
 3. MapLibre becomes canonical for future edits
@@ -3856,7 +3856,7 @@ public static class StyleEndpoint
 | **OGC API Styles** | ❌ | REST API for style management — planned for Beta |
 | **CartoCSS** | ❌ | Mapbox legacy — no plans |
 
-**Primary standard is Mapbox/MapLibre Style Specification v8** — the de facto standard for web maps. Esri JSON is supported for ArcGIS compatibility, converted server-side.
+**Primary standard is Mapbox/MapLibre Style Specification v8** — the de facto standard for web maps. Esri JSON is supported for GeoServices REST protocol compatibility, converted server-side.
 
 ### Embedded Style Editor (Maputnik)
 
@@ -4098,7 +4098,7 @@ app.MapGet("/api/styles/{layerId}", async (
 
 ### MVP Workflow
 
-1. **Import from Esri**: Renderer JSON preserved, converted to MapLibre (canonical)
+1. **Import from GeoServices REST**: Renderer JSON preserved, converted to MapLibre (canonical)
 2. **New layer (no style)**: Apply sensible defaults by geometry type
 3. **Edit style**: Open embedded Maputnik, edit visually, save
 4. **FeatureServer response**: Return cached Esri JSON (convert from MapLibre if stale)
@@ -4578,7 +4578,7 @@ Week 3-4
 ├── Query with spatial predicates
 ├── Query with pagination
 ├── Statistics queries
-├── GeoJSON + Esri JSON output
+├── GeoJSON + GeoServices JSON output
 └── 80%+ coverage on Query slice
 ```
 
@@ -4615,7 +4615,7 @@ Week 7-10
 | **Lines per class** | 500-1000 | 50-200 |
 | **Test setup** | Mock 22 things | Mock 2-3 things |
 | **Add new endpoint** | Modify controller | Add new folder |
-| **Output formats** | 10 | 3 (GeoJSON, Esri JSON, MVT) |
+| **Output formats** | 10 | 3 (GeoJSON, GeoServices JSON, MVT) |
 | **Database support** | 8+ | 1 (PostgreSQL) |
 
 ---
@@ -4936,7 +4936,7 @@ app.UseStatusCodePages();
 
 Each protocol has its own error response format. The global exception handler detects the protocol from the request path and formats errors accordingly.
 
-**Esri GeoServices REST** — Returns `{ "error": { "code", "message", "details" } }`:
+**GeoServices REST** — Returns `{ "error": { "code", "message", "details" } }`:
 
 ```json
 {
