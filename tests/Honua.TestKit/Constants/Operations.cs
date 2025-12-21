@@ -18,6 +18,7 @@ public static class Operations
     public const string BulkCreate = "BulkCreate";
     public const string BulkUpdate = "BulkUpdate";
     public const string BulkDelete = "BulkDelete";
+    public const string ApplyEdits = "ApplyEdits";
 
     // Spatial Operations
     public const string SpatialQuery = "SpatialQuery";

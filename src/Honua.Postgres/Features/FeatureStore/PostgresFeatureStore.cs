@@ -264,52 +264,91 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         try
         {
-            var (createdIds, createErrors) = await ProcessCreatesAsync(
+            // Process creates with detailed tracking
+            var (createdIds, createResults) = await ProcessCreatesWithResultsAsync(
                 layerId,
                 editBatch.Creates,
                 connection,
                 transaction,
                 cancellationToken);
-            var (updatedCount, updateErrors) = await ProcessUpdatesAsync(
+
+            // Process updates with detailed tracking
+            var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
                 layerId,
                 editBatch.Updates,
                 connection,
                 transaction,
                 cancellationToken);
-            var (deletedCount, deleteErrors) = await ProcessDeletesAsync(
+
+            // Process deletes with detailed tracking
+            var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
                 layerId,
                 editBatch.Deletes,
                 connection,
                 transaction,
                 cancellationToken);
 
-            var allErrors = createErrors.Concat(updateErrors).Concat(deleteErrors).ToList();
-            if (allErrors.Count != 0)
+            // Check for any errors across all operations
+            var hasErrors = System.Linq.Enumerable.Any(createResults, r => !r.IsSuccess) ||
+                           System.Linq.Enumerable.Any(updateResults, r => !r.IsSuccess) ||
+                           System.Linq.Enumerable.Any(deleteResults, r => !r.IsSuccess);
+
+            // Handle rollback behavior based on Esri specification
+            if (hasErrors && editBatch.RollbackOnFailure)
             {
+                // Esri behavior: rollback entire transaction on any failure
                 await transaction.RollbackAsync(cancellationToken);
-                return FeatureEditResult.Failure(allErrors.ToArray());
+                return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
-
-            await transaction.CommitAsync(cancellationToken);
-
-            return FeatureEditResult.Success(
-                createdIds.Length,
-                updatedCount,
-                deletedCount,
-                createdIds
-            );
+            else if (hasErrors && !editBatch.RollbackOnFailure)
+            {
+                // Esri default behavior: commit successful operations, ignore failures
+                // Individual operations that failed are already tracked in the results
+                // Note: This implementation processes operations sequentially within the transaction,
+                // so we commit what succeeded and the failed operations are already excluded
+                await transaction.CommitAsync(cancellationToken);
+                return FeatureEditResult.Success(
+                    System.Linq.Enumerable.Count(createResults, r => r.IsSuccess),
+                    System.Linq.Enumerable.Count(updateResults, r => r.IsSuccess),
+                    System.Linq.Enumerable.Count(deleteResults, r => r.IsSuccess),
+                    createdIds,
+                    createResults,
+                    updateResults,
+                    deleteResults,
+                    wasRolledBack: false);
+            }
+            else
+            {
+                // No errors - commit all operations
+                await transaction.CommitAsync(cancellationToken);
+                return FeatureEditResult.Success(
+                    createdIds.Length,
+                    updatedCount,
+                    deletedCount,
+                    createdIds,
+                    createResults,
+                    updateResults,
+                    deleteResults,
+                    wasRolledBack: false);
+            }
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync(cancellationToken);
-            return FeatureEditResult.Failure($"Transaction failed: {ex.Message}");
+
+            // Create failure results for all attempted operations
+            var createResults = System.Linq.Enumerable.Select(editBatch.Creates, (_, i) =>
+                EditOperationResult.Failure($"Transaction failed: {ex.Message}")).ToImmutableArray();
+            var updateResults = System.Linq.Enumerable.Select(editBatch.Updates, f =>
+                EditOperationResult.Failure($"Transaction failed: {ex.Message}", objectId: f.Id)).ToImmutableArray();
+            var deleteResults = System.Linq.Enumerable.Select(editBatch.Deletes, id =>
+                EditOperationResult.Failure($"Transaction failed: {ex.Message}", objectId: id)).ToImmutableArray();
+
+            return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
         }
     }
 
-    /// <summary>
-    /// Processes create operations within a transaction.
-    /// </summary>
-    private async Task<(ImmutableArray<long> createdIds, List<string> errors)> ProcessCreatesAsync(
+    private async Task<(ImmutableArray<long> createdIds, ImmutableArray<EditOperationResult> results)> ProcessCreatesWithResultsAsync(
         int layerId,
         ImmutableArray<Feature> features,
         NpgsqlConnection connection,
@@ -317,7 +356,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         CancellationToken cancellationToken)
     {
         var createdIds = new List<long>();
-        var errors = new List<string>();
+        var results = new List<EditOperationResult>();
 
         foreach (var feature in features)
         {
@@ -329,21 +368,20 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                     connection,
                     transaction,
                     cancellationToken);
+
                 createdIds.Add(created.Id);
+                results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
             catch (Exception ex)
             {
-                errors.Add($"Create failed: {ex.Message}");
+                results.Add(EditOperationResult.Failure($"Create failed: {ex.Message}"));
             }
         }
 
-        return (createdIds.ToImmutableArray(), errors);
+        return (createdIds.ToImmutableArray(), results.ToImmutableArray());
     }
 
-    /// <summary>
-    /// Processes update operations within a transaction.
-    /// </summary>
-    private async Task<(int updatedCount, List<string> errors)> ProcessUpdatesAsync(
+    private async Task<(int updatedCount, ImmutableArray<EditOperationResult> results)> ProcessUpdatesWithResultsAsync(
         int layerId,
         ImmutableArray<Feature> features,
         NpgsqlConnection connection,
@@ -351,7 +389,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         CancellationToken cancellationToken)
     {
         var updatedCount = 0;
-        var errors = new List<string>();
+        var results = new List<EditOperationResult>();
 
         foreach (var feature in features)
         {
@@ -363,21 +401,20 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                     connection,
                     transaction,
                     cancellationToken);
+
                 updatedCount++;
+                results.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
             catch (Exception ex)
             {
-                errors.Add($"Update failed for feature {feature.Id}: {ex.Message}");
+                results.Add(EditOperationResult.Failure($"Update failed for feature {feature.Id}: {ex.Message}", objectId: feature.Id));
             }
         }
 
-        return (updatedCount, errors);
+        return (updatedCount, results.ToImmutableArray());
     }
 
-    /// <summary>
-    /// Processes delete operations within a transaction.
-    /// </summary>
-    private async Task<(int deletedCount, List<string> errors)> ProcessDeletesAsync(
+    private async Task<(int deletedCount, ImmutableArray<EditOperationResult> results)> ProcessDeletesWithResultsAsync(
         int layerId,
         ImmutableArray<long> featureIds,
         NpgsqlConnection connection,
@@ -385,7 +422,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         CancellationToken cancellationToken)
     {
         var deletedCount = 0;
-        var errors = new List<string>();
+        var results = new List<EditOperationResult>();
 
         foreach (var featureId in featureIds)
         {
@@ -399,15 +436,20 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                     cancellationToken))
                 {
                     deletedCount++;
+                    results.Add(EditOperationResult.Success(featureId));
+                }
+                else
+                {
+                    results.Add(EditOperationResult.Failure($"Feature {featureId} not found", objectId: featureId));
                 }
             }
             catch (Exception ex)
             {
-                errors.Add($"Delete failed for feature {featureId}: {ex.Message}");
+                results.Add(EditOperationResult.Failure($"Delete failed for feature {featureId}: {ex.Message}", objectId: featureId));
             }
         }
 
-        return (deletedCount, errors);
+        return (deletedCount, results.ToImmutableArray());
     }
 
     private static async Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
