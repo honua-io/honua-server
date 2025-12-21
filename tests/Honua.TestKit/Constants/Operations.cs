@@ -45,4 +45,11 @@ public static class Operations
     public const string WhereClause = "WhereClause";
     public const string CqlFilter = "CqlFilter";
     public const string ODataFilter = "ODataFilter";
+
+    // Attachment Operations
+    public const string QueryAttachments = "QueryAttachments";
+    public const string AddAttachment = "AddAttachment";
+    public const string UpdateAttachment = "UpdateAttachment";
+    public const string DeleteAttachments = "DeleteAttachments";
+    public const string DownloadAttachment = "DownloadAttachment";
 }

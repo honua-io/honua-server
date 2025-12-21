@@ -152,6 +152,9 @@ app.MapAdminEndpoints();
 // Configure FeatureServer endpoints
 app.MapFeatureServerEndpoints();
 
+// Configure FeatureServer attachment endpoints
+app.MapAttachmentEndpoints();
+
 // Configure file import endpoints
 app.MapImportEndpoints();
 
