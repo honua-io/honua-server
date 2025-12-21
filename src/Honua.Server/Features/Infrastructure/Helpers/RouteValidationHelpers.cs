@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
 
@@ -77,15 +78,19 @@ internal static class RouteValidationHelpers
         int statusCode = StatusCodes.Status400BadRequest,
         string[]? details = null)
     {
-        var error = new Infrastructure.Models.ApiErrorResponse
+        var errorResponse = new ApiErrorResponse
         {
-            Error = message,
-            Details = details
+            Error = new EsriError
+            {
+                Code = statusCode,
+                Message = message,
+                Details = details
+            }
         };
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";
 
-        await context.Response.WriteAsJsonAsync(error);
+        await context.Response.WriteAsJsonAsync(errorResponse);
     }
 }
