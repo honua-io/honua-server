@@ -2,12 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Admin;
+using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.HealthCheck;
@@ -51,6 +53,9 @@ internal static class ServiceCollectionExtensions
 
         // Register feature store implementation
         services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+
+        // Register attachment store implementation
+        services.AddScoped<IAttachmentStore, PostgresAttachmentStore>();
 
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
