@@ -20,7 +20,8 @@ public class TestAttachmentStore : IAttachmentStore
             return Task.FromResult<Attachment?>(null);
 
         var attachment = attachments.FirstOrDefault(a => a.Id == attachmentId);
-        return Task.FromResult<Attachment?>(attachment);
+        // Since Attachment is a struct, FirstOrDefault returns default value (Id = 0) when not found
+        return Task.FromResult<Attachment?>(attachment.Id == 0 ? null : attachment);
     }
 
     public Task<Attachment[]> ListAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
