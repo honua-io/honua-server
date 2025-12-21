@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
-using Microsoft.AspNetCore.ResponseCompression;
 using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Features.Admin;
@@ -12,6 +11,7 @@ using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
 using Serilog.Enrichers.Span;
 
