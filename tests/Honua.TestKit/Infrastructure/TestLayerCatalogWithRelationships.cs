@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -14,9 +15,55 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
 {
     private readonly TestLayerCatalog _baseCatalog = new();
     private readonly Dictionary<(int layerId, int relationshipId), Relationship> _relationships = new();
+    private readonly Dictionary<int, LayerDefinition> _relatedLayers = new();
 
     public TestLayerCatalogWithRelationships()
     {
+        // Create related layer definitions for relationship testing
+        var relatedFields = new[]
+        {
+            new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
+            new FieldDefinition("name", FieldType.String, 255, true, null, "Name field"),
+            new FieldDefinition("related_id", FieldType.Integer, null, true, null, "Foreign key to origin layer")
+        };
+
+        var secondaryFields = new[]
+        {
+            new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
+            new FieldDefinition("name", FieldType.String, 255, true, null, "Name field"),
+            new FieldDefinition("secondary_id", FieldType.Integer, null, true, null, "Foreign key to origin layer"),
+            new FieldDefinition("type", FieldType.String, 100, true, null, "Type field")
+        };
+
+        var spatialRef = new SpatialReference(4326);
+        var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
+
+        // Create related layer 1
+        _relatedLayers[1] = new LayerDefinition(
+            Id: 1,
+            Name: "Related Test Layer 1",
+            Description: "Related layer for relationship testing",
+            GeometryType: GeometryType.Point,
+            SpatialReference: spatialRef,
+            Fields: relatedFields,
+            Extent: extent,
+            MinScale: null,
+            MaxScale: null,
+            DefaultVisibility: true);
+
+        // Create related layer 2
+        _relatedLayers[2] = new LayerDefinition(
+            Id: 2,
+            Name: "Secondary Related Layer",
+            Description: "Secondary related layer for relationship testing",
+            GeometryType: GeometryType.Point,
+            SpatialReference: spatialRef,
+            Fields: secondaryFields,
+            Extent: extent,
+            MinScale: null,
+            MaxScale: null,
+            DefaultVisibility: true);
+
         // Set up test relationships for the test layers
         var testRelationship = Relationship.Create(
             relationshipId: 1,
@@ -42,12 +89,26 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
         _relationships[(0, 2)] = secondTestRelationship;
     }
 
-    // Delegate all existing catalog methods to the base implementation
-    public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-        => _baseCatalog.GetLayerAsync(layerId, cancellationToken);
+    // Override layer methods to provide related layers in addition to base catalog layers
+    public async Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        // Check if it's a related layer first
+        if (_relatedLayers.TryGetValue(layerId, out var relatedLayer))
+        {
+            return relatedLayer;
+        }
 
-    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-        => _baseCatalog.ListLayersAsync(cancellationToken);
+        // Fall back to base catalog for layer 0
+        return await _baseCatalog.GetLayerAsync(layerId, cancellationToken);
+    }
+
+    public async Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
+    {
+        var baseLayers = await _baseCatalog.ListLayersAsync(cancellationToken);
+        var allLayers = new List<LayerDefinition>(baseLayers);
+        allLayers.AddRange(_relatedLayers.Values);
+        return allLayers.ToArray();
+    }
 
     public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         => _baseCatalog.GetServiceAsync(serviceName, cancellationToken);
@@ -55,8 +116,17 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
     public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
         => _baseCatalog.ListServicesAsync(cancellationToken);
 
-    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-        => _baseCatalog.LayerExistsAsync(layerId, cancellationToken);
+    public async Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        // Check if it's a related layer first
+        if (_relatedLayers.ContainsKey(layerId))
+        {
+            return true;
+        }
+
+        // Fall back to base catalog for layer 0
+        return await _baseCatalog.LayerExistsAsync(layerId, cancellationToken);
+    }
 
     public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         => _baseCatalog.ServiceExistsAsync(serviceName, cancellationToken);

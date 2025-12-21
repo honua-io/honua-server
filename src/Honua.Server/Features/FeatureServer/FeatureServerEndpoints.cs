@@ -80,7 +80,7 @@ public static class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecords)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsGet)
             .WithDisplayName("Query Related Records (GET)")
             .WithName("QueryRelatedRecordsGet")
             .WithSummary("Query features related to source features through a relationship using GET")
@@ -91,7 +91,7 @@ public static class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecords)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsPost)
             .WithDisplayName("Query Related Records (POST)")
             .WithName("QueryRelatedRecordsPost")
             .WithSummary("Query features related to source features through a relationship using POST")
@@ -638,10 +638,13 @@ public static class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Handles query related records requests
+    /// Handles GET query related records requests
     /// </summary>
-    private static async Task HandleQueryRelatedRecords(HttpContext context)
+    private static async Task HandleQueryRelatedRecordsGet(HttpContext context)
     {
+        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
+            return;
+
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
@@ -654,7 +657,45 @@ public static class FeatureServerEndpoints
             return;
         }
 
-        // Parse required parameters
+        // Parse required parameters from query string
+        if (!TryBuildRelatedRecordsParameters(context, out QueryRelatedRecordsParameters? relatedParams, out string? error))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid related records parameters");
+            return;
+        }
+
+        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+
+        IResult result = await handler.HandleQueryRelatedRecordsAsync(
+            serviceId,
+            layerId,
+            relatedParams,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Handles POST query related records requests
+    /// </summary>
+    private static async Task HandleQueryRelatedRecordsPost(HttpContext context)
+    {
+        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
+            return;
+
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return;
+        }
+
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
+            return;
+        }
+
+        // Parse required parameters from POST body or query string
         if (!TryBuildRelatedRecordsParameters(context, out QueryRelatedRecordsParameters? relatedParams, out string? error))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid related records parameters");
