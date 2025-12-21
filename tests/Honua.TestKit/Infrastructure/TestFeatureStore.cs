@@ -189,7 +189,7 @@ public class TestFeatureStore : IFeatureStore
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
         var createdIds = new List<long>();
-        var errors = new List<string>();
+        var createResults = new List<EditOperationResult>();
 
         // Process creates
         var createdCount = 0;
@@ -200,23 +200,39 @@ public class TestFeatureStore : IFeatureStore
                 var created = await CreateAsync(layerId, feature, cancellationToken);
                 createdIds.Add(created.Id);
                 createdCount++;
+                createResults.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
             catch (Exception ex)
             {
-                errors.Add($"Failed to create feature {feature.Id}: {ex.Message}");
+                createResults.Add(EditOperationResult.Failure($"Failed to create feature {feature.Id}: {ex.Message}"));
             }
         }
 
-        if (errors.Count > 0)
+        // Check if any operations failed
+        var hasErrors = createResults.Any(r => !r.IsSuccess);
+
+        if (hasErrors && editBatch.RollbackOnFailure)
         {
-            return FeatureEditResult.Failure(errors.ToArray());
+            // Rollback all operations
+            return FeatureEditResult.Rollback(createResults.ToImmutableArray());
+        }
+        else if (hasErrors && !editBatch.RollbackOnFailure)
+        {
+            // Return partial success - count only successful operations
+            return FeatureEditResult.Success(
+                createdCount: createResults.Count(r => r.IsSuccess),
+                updatedCount: 0,
+                deletedCount: 0,
+                createdIds: createdIds.ToImmutableArray(),
+                createResults: createResults.ToImmutableArray());
         }
 
         return FeatureEditResult.Success(
             createdCount: createdCount,
             updatedCount: 0,
             deletedCount: 0,
-            createdIds: createdIds.ToImmutableArray());
+            createdIds: createdIds.ToImmutableArray(),
+            createResults: createResults.ToImmutableArray());
     }
 
     private static IEnumerable<Feature> ApplyWhereFilter(IEnumerable<Feature> features, string whereClause)
