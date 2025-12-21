@@ -91,4 +91,22 @@ public static partial class FeatureServerLog
         Level = LogLevel.Warning,
         Message = "Query parameter invalid: {Parameter} value {ActualValue}")]
     public static partial void QueryParameterInvalid(ILogger logger, string parameter, int actualValue);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "ApplyEdits requested for service '{ServiceId}' layer {LayerId} with {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes")]
+    public static partial void ApplyEditsRequested(ILogger logger, string serviceId, int layerId, int addCount, int updateCount, int deleteCount);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "ApplyEdits completed for service '{ServiceId}' layer {LayerId} with success: {Success}")]
+    public static partial void ApplyEditsCompleted(ILogger logger, string serviceId, int layerId, bool success);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "ApplyEdits failed for service '{ServiceId}' layer {LayerId}: {ErrorMessage}")]
+    public static partial void ApplyEditsFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to add feature {Index}: {ErrorMessage}")]
+    public static partial void FeatureAddFailed(ILogger logger, int index, string errorMessage, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to update feature {Index}: {ErrorMessage}")]
+    public static partial void FeatureUpdateFailed(ILogger logger, int index, string errorMessage, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to delete feature {Index}: {ErrorMessage}")]
+    public static partial void FeatureDeleteFailed(ILogger logger, int index, string errorMessage, Exception exception);
 }
