@@ -3,6 +3,8 @@
 
 using System.Reflection;
 using DbUp;
+using DbUp.Engine;
+
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.FeatureServer;
@@ -22,7 +24,7 @@ using Serilog.Enrichers.Span;
 // - Server (composition): Registers IDatabaseHealthChecker → PostgresDatabaseHealthChecker
 // Dependency flow: Server → (Core + Infrastructure), Infrastructure → Core
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Add Aspire service defaults (OTel, health, resilience)
 builder.AddServiceDefaults();
@@ -36,9 +38,9 @@ builder.AddRedisDistributedCache("redis");
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
 {
-    var isDevelopment = context.HostingEnvironment.IsDevelopment();
+    bool isDevelopment = context.HostingEnvironment.IsDevelopment();
 
-    config
+    _ = config
         .MinimumLevel.Information()
         .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
@@ -56,12 +58,12 @@ builder.Host.UseSerilog((context, services, config) =>
     if (isDevelopment)
     {
         // Development: Human-readable console output
-        config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        _ = config.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
     }
     else
     {
         // Production: Compact JSON for log aggregation
-        config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
+        _ = config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
     }
 });
 
@@ -94,7 +96,7 @@ ConfigureOutputCaching(builder.Services);
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 // Add security headers middleware (first in pipeline for all requests)
 app.UseSecurityHeaders();
@@ -163,25 +165,23 @@ app.Run();
 // Composition Root: Register Infrastructure implementations
 // This is the only method in Server that directly references Infrastructure
 // All other code uses Core abstractions only
-static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
-{
+static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration) =>
     // Register PostgreSQL services (the only direct Infrastructure reference)
-    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
-}
+    _ = Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
 
 // Configure limits with validation
 static void ConfigureLimits(IServiceCollection services, IConfiguration configuration)
 {
     // Bind configuration with validation
-    services.Configure<Honua.Core.Configuration.LimitsOptions>(options =>
+    _ = services.Configure<Honua.Core.Configuration.LimitsOptions>(options =>
     {
         configuration.GetSection(Honua.Core.Configuration.LimitsOptions.SectionName).Bind(options);
 
         // Validate configuration during startup
-        var validationErrors = Honua.Core.Configuration.LimitsOptionsValidator.Validate(options);
+        List<string> validationErrors = Honua.Core.Configuration.LimitsOptionsValidator.Validate(options);
         if (validationErrors.Count != 0)
         {
-            var errorMessage = "Invalid limits configuration:" + Environment.NewLine +
+            string errorMessage = "Invalid limits configuration:" + Environment.NewLine +
                               string.Join(Environment.NewLine, validationErrors);
             throw new InvalidOperationException(errorMessage);
         }
@@ -191,11 +191,10 @@ static void ConfigureLimits(IServiceCollection services, IConfiguration configur
 // Configure security headers policy
 static void ConfigureSecurityHeaders(IServiceCollection services)
 {
-    services.AddSecurityHeaderPolicies()
+    _ = services.AddSecurityHeaderPolicies()
         .SetDefaultPolicy(policy =>
-        {
             // Add required security headers per MVP Plan
-            policy.AddStrictTransportSecurityMaxAgeIncludeSubDomains(maxAgeInSeconds: 63072000) // 2 years
+            _ = policy.AddStrictTransportSecurityMaxAgeIncludeSubDomains(maxAgeInSeconds: 63072000) // 2 years
                 .AddContentTypeOptionsNoSniff() // X-Content-Type-Options: nosniff
                 .AddFrameOptionsDeny() // X-Frame-Options: DENY
                 .AddReferrerPolicyStrictOriginWhenCrossOrigin() // Referrer-Policy: strict-origin-when-cross-origin
@@ -203,21 +202,20 @@ static void ConfigureSecurityHeaders(IServiceCollection services)
                 .AddContentSecurityPolicy(builder =>
                 {
                     // Strict CSP for API - only self for API responses
-                    builder.AddDefaultSrc().Self();
-                    builder.AddFrameAncestors().None(); // frame-ancestors 'none'
-                    builder.AddObjectSrc().None();
-                    builder.AddScriptSrc().Self();
-                    builder.AddStyleSrc().Self().UnsafeInline(); // Allow inline styles for minimal API responses
-                    builder.AddImgSrc().Self().Data(); // Allow data: URIs for inline images
-                    builder.AddConnectSrc().Self();
-                    builder.AddFontSrc().Self();
-                    builder.AddMediaSrc().Self();
-                    builder.AddFormAction().Self();
+                    _ = builder.AddDefaultSrc().Self();
+                    _ = builder.AddFrameAncestors().None(); // frame-ancestors 'none'
+                    _ = builder.AddObjectSrc().None();
+                    _ = builder.AddScriptSrc().Self();
+                    _ = builder.AddStyleSrc().Self().UnsafeInline(); // Allow inline styles for minimal API responses
+                    _ = builder.AddImgSrc().Self().Data(); // Allow data: URIs for inline images
+                    _ = builder.AddConnectSrc().Self();
+                    _ = builder.AddFontSrc().Self();
+                    _ = builder.AddMediaSrc().Self();
+                    _ = builder.AddFormAction().Self();
                 })
                 .AddCrossOriginOpenerPolicy(builder => builder.SameOrigin()) // COOP: same-origin
                 .AddCrossOriginEmbedderPolicy(builder => builder.RequireCorp()) // COEP: require-corp
-                .AddPermissionsPolicyWithDefaultSecureDirectives(); // Permissions-Policy with secure defaults
-        });
+                .AddPermissionsPolicyWithDefaultSecureDirectives());
 }
 
 // Configure response compression for GeoJSON and JSON responses
@@ -229,7 +227,7 @@ static void ConfigureResponseCompression(IServiceCollection services)
         "application/json"         // Standard JSON responses
     ];
 
-    services.AddResponseCompression(options =>
+    _ = services.AddResponseCompression(options =>
     {
         // Enable compression for HTTPS requests
         options.EnableForHttps = true;
@@ -243,22 +241,16 @@ static void ConfigureResponseCompression(IServiceCollection services)
     });
 
     // Configure Brotli compression for fastest performance (low latency)
-    services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options =>
-    {
-        options.Level = System.IO.Compression.CompressionLevel.Fastest;
-    });
+    _ = services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options => options.Level = System.IO.Compression.CompressionLevel.Fastest);
 
     // Configure Gzip compression for fastest performance (fallback)
-    services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(options =>
-    {
-        options.Level = System.IO.Compression.CompressionLevel.Fastest;
-    });
+    _ = services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(options => options.Level = System.IO.Compression.CompressionLevel.Fastest);
 }
 
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
 {
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     if (string.IsNullOrEmpty(connectionString))
     {
         // Skip migrations if no connection string is configured
@@ -270,14 +262,14 @@ async Task RunDatabaseMigrationsAsync()
 
     try
     {
-        var upgrader = DeployChanges.To
+        UpgradeEngine upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
             .WithTransaction()
             .LogToConsole()
             .Build();
 
-        var result = upgrader.PerformUpgrade();
+        DatabaseUpgradeResult result = upgrader.PerformUpgrade();
 
         if (!result.Successful)
         {
@@ -290,7 +282,7 @@ async Task RunDatabaseMigrationsAsync()
         {
             Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, result.Scripts.Count());
             // Log individual script names for debugging
-            foreach (var script in result.Scripts)
+            foreach (SqlScript? script in result.Scripts)
             {
                 Honua.Server.Features.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script.Name);
             }
@@ -310,24 +302,24 @@ async Task RunDatabaseMigrationsAsync()
 // Configure output caching for metadata endpoints
 static void ConfigureOutputCaching(IServiceCollection services)
 {
-    services.AddOutputCache(options =>
+    _ = services.AddOutputCache(options =>
     {
         // Service metadata caching policy
         options.AddPolicy("ServiceMetadata", policy =>
         {
-            policy.Expire(TimeSpan.FromMinutes(5));
-            policy.SetVaryByRouteValue("serviceId");
-            policy.SetVaryByQuery("f"); // Support for format parameter if used
-            policy.Tag("service-metadata", "metadata");
+            _ = policy.Expire(TimeSpan.FromMinutes(5));
+            _ = policy.SetVaryByRouteValue("serviceId");
+            _ = policy.SetVaryByQuery("f"); // Support for format parameter if used
+            _ = policy.Tag("service-metadata", "metadata");
         });
 
         // Layer metadata caching policy
         options.AddPolicy("LayerMetadata", policy =>
         {
-            policy.Expire(TimeSpan.FromMinutes(5));
-            policy.SetVaryByRouteValue("serviceId", "layerId");
-            policy.SetVaryByQuery("f"); // Support for format parameter if used
-            policy.Tag("layer-metadata", "metadata");
+            _ = policy.Expire(TimeSpan.FromMinutes(5));
+            _ = policy.SetVaryByRouteValue("serviceId", "layerId");
+            _ = policy.SetVaryByQuery("f"); // Support for format parameter if used
+            _ = policy.Tag("layer-metadata", "metadata");
         });
 
         // Note: No default base policy - endpoints must explicitly opt into caching for security

@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -36,14 +37,12 @@ internal record ParameterizedQuery(string Sql, List<object> WhereParameters);
 /// - Null checks: field IS NULL, field IS NOT NULL
 /// Complex expressions with subqueries or functions are not supported for security.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStore : IFeatureStore
+internal sealed partial class PostgresFeatureStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null) : IFeatureStore
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
 
-    private static readonly Regex _comparisonRegex = new(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex _comparisonRegex = MyRegex();
 
     private static readonly Regex _nullCheckRegex = new(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IS\s+(?<not>NOT\s+)?NULL$",
@@ -53,42 +52,31 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         @"^(?:1\s*=\s*1|TRUE)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
-    private readonly string _tableName;
-
-    public PostgresFeatureStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
-    {
-        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _tableName = string.IsNullOrEmpty(schemaName) ? "features" : $"{schemaName}.features";
-    }
+    private readonly IDatabaseConnectionProvider _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+    private readonly string _tableName = string.IsNullOrEmpty(schemaName) ? "features" : $"{schemaName}.features";
 
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        var sql = $@"
+        string sql = $@"
             SELECT objectid, geometry, attributes
             FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(featureId);
+        _ = command.Parameters.AddWithValue(layerId);
+        _ = command.Parameters.AddWithValue(featureId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return await ReadFeatureAsync(reader, cancellationToken);
+        return !await reader.ReadAsync(cancellationToken) ? null : await ReadFeatureAsync(reader, cancellationToken);
     }
 
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         // Build the count query first
-        var countQuery = BuildCountQuery(layerId, query);
-        var totalCount = await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
+        ParameterizedQuery countQuery = BuildCountQuery(layerId, query);
+        long totalCount = await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
 
         if (totalCount == 0)
         {
@@ -96,10 +84,10 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
 
         // Build the main query
-        var selectQuery = BuildSelectQuery(layerId, query);
-        var features = await ExecuteSelectQuery(selectQuery, query, layerId, cancellationToken);
+        ParameterizedQuery selectQuery = BuildSelectQuery(layerId, query);
+        ImmutableArray<Feature> features = await ExecuteSelectQuery(selectQuery, query, layerId, cancellationToken);
 
-        var hasMore = query.Offset.HasValue && query.Limit.HasValue &&
+        bool hasMore = query.Offset.HasValue && query.Limit.HasValue &&
                       query.Offset.Value + query.Limit.Value < totalCount;
 
         return QueryResult<Feature>.Create(totalCount, features, hasMore);
@@ -107,31 +95,25 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var countQuery = BuildCountQuery(layerId, query);
+        ParameterizedQuery countQuery = BuildCountQuery(layerId, query);
         return await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var extentQuery = BuildExtentQuery(layerId, query ?? new FeatureQuery());
+        ParameterizedQuery extentQuery = BuildExtentQuery(layerId, query ?? new FeatureQuery());
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(extentQuery.Sql, connection);
         AddQueryParameters(command, query ?? new FeatureQuery(), layerId, extentQuery.WhereParameters);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
-        {
-            return null;
-        }
-
-        return FeatureExtent.Create(
+        return !await reader.ReadAsync(cancellationToken)
+            ? null
+            : reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3)
+            ? null
+            : FeatureExtent.Create(
             reader.GetDouble(0), // minx
             reader.GetDouble(1), // miny
             reader.GetDouble(2), // maxx
@@ -153,7 +135,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        var sql = $@"
+        string sql = $@"
             INSERT INTO {_tableName} (layer_id, geometry, attributes)
             VALUES ($1, $2, $3)
             RETURNING objectid, geometry, attributes";
@@ -162,23 +144,20 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         {
             Transaction = transaction
         };
-        command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
+        _ = command.Parameters.AddWithValue(layerId);
+        _ = command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
         // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
         var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-        var attributesJson = await SerializeToJsonStringAsync(attributesDictionary, cancellationToken);
+        string attributesJson = await SerializeToJsonStringAsync(attributesDictionary, cancellationToken);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
-        command.Parameters.Add(attributesParam);
+        _ = command.Parameters.Add(attributesParam);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException("Failed to create feature: no result returned");
-        }
-
-        return await ReadFeatureAsync(reader, cancellationToken);
+        return !await reader.ReadAsync(cancellationToken)
+            ? throw new InvalidOperationException("Failed to create feature: no result returned")
+            : await ReadFeatureAsync(reader, cancellationToken);
     }
 
     public async Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
@@ -194,7 +173,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        var sql = $@"
+        string sql = $@"
             UPDATE {_tableName}
             SET geometry = $3, attributes = $4
             WHERE layer_id = $1 AND objectid = $2
@@ -204,24 +183,21 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         {
             Transaction = transaction
         };
-        command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(feature.Id);
-        command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
+        _ = command.Parameters.AddWithValue(layerId);
+        _ = command.Parameters.AddWithValue(feature.Id);
+        _ = command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
 
         // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
         var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-        var attributesJson = await SerializeToJsonStringAsync(attributesDictionary, cancellationToken);
+        string attributesJson = await SerializeToJsonStringAsync(attributesDictionary, cancellationToken);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
-        command.Parameters.Add(attributesParam);
+        _ = command.Parameters.Add(attributesParam);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException($"Feature with ID {feature.Id} not found in layer {layerId}");
-        }
-
-        return await ReadFeatureAsync(reader, cancellationToken);
+        return !await reader.ReadAsync(cancellationToken)
+            ? throw new InvalidOperationException($"Feature with ID {feature.Id} not found in layer {layerId}")
+            : await ReadFeatureAsync(reader, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -237,7 +213,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        var sql = $@"
+        string sql = $@"
             DELETE FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
@@ -245,10 +221,10 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         {
             Transaction = transaction
         };
-        command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(featureId);
+        _ = command.Parameters.AddWithValue(layerId);
+        _ = command.Parameters.AddWithValue(featureId);
 
-        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+        int rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
         return rowsAffected > 0;
     }
 
@@ -260,23 +236,23 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var (createdIds, createErrors) = await ProcessCreatesAsync(
+            (ImmutableArray<long> createdIds, List<string>? createErrors) = await ProcessCreatesAsync(
                 layerId,
                 editBatch.Creates,
                 connection,
                 transaction,
                 cancellationToken);
-            var (updatedCount, updateErrors) = await ProcessUpdatesAsync(
+            (int updatedCount, List<string>? updateErrors) = await ProcessUpdatesAsync(
                 layerId,
                 editBatch.Updates,
                 connection,
                 transaction,
                 cancellationToken);
-            var (deletedCount, deleteErrors) = await ProcessDeletesAsync(
+            (int deletedCount, List<string>? deleteErrors) = await ProcessDeletesAsync(
                 layerId,
                 editBatch.Deletes,
                 connection,
@@ -287,7 +263,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             if (allErrors.Count != 0)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return FeatureEditResult.Failure(allErrors.ToArray());
+                return FeatureEditResult.Failure([.. allErrors]);
             }
 
             await transaction.CommitAsync(cancellationToken);
@@ -319,11 +295,11 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var createdIds = new List<long>();
         var errors = new List<string>();
 
-        foreach (var feature in features)
+        foreach (Feature feature in features)
         {
             try
             {
-                var created = await CreateWithConnectionAsync(
+                Feature created = await CreateWithConnectionAsync(
                     layerId,
                     feature,
                     connection,
@@ -350,14 +326,14 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        var updatedCount = 0;
+        int updatedCount = 0;
         var errors = new List<string>();
 
-        foreach (var feature in features)
+        foreach (Feature feature in features)
         {
             try
             {
-                await UpdateWithConnectionAsync(
+                _ = await UpdateWithConnectionAsync(
                     layerId,
                     feature,
                     connection,
@@ -384,10 +360,10 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        var deletedCount = 0;
+        int deletedCount = 0;
         var errors = new List<string>();
 
-        foreach (var featureId in featureIds)
+        foreach (long featureId in featureIds)
         {
             try
             {
@@ -412,12 +388,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private static async Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
     {
-        var id = reader.GetInt64(0);
-        var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
-        var attributesJson = reader.GetString(2);
+        long id = reader.GetInt64(0);
+        byte[]? geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
+        string attributesJson = reader.GetString(2);
 
         // Deserialize JSON using AOT-compatible source generators
-        var attributesDictionary = await DeserializeFromJsonStringAsync(attributesJson, cancellationToken) ?? new Dictionary<string, object?>();
+        Dictionary<string, object?> attributesDictionary = await DeserializeFromJsonStringAsync(attributesJson, cancellationToken) ?? [];
 
         // Convert JsonElement values to primitive types for compatibility
         var convertedAttributes = attributesDictionary.ToDictionary(
@@ -438,7 +414,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     private ParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query)
     {
         var sql = new StringBuilder($"SELECT objectid, geometry, attributes FROM {_tableName} WHERE layer_id = $1");
-        var paramIndex = 2;
+        int paramIndex = 2;
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
@@ -446,12 +422,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         if (query.Limit.HasValue)
         {
-            sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+            _ = sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
         }
 
         if (query.Offset.HasValue)
         {
-            sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
+            _ = sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
         }
 
         return new ParameterizedQuery(sql.ToString(), parameters);
@@ -460,7 +436,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     private ParameterizedQuery BuildCountQuery(int layerId, FeatureQuery query)
     {
         var sql = new StringBuilder($"SELECT COUNT(*) FROM {_tableName} WHERE layer_id = $1");
-        var paramIndex = 2;
+        int paramIndex = 2;
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
@@ -479,13 +455,13 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                 FROM {_tableName}
                 WHERE layer_id = $1 AND geometry IS NOT NULL");
 
-        var paramIndex = 2;
+        int paramIndex = 2;
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
-        sql.Append(") AS extent_query");
+        _ = sql.Append(") AS extent_query");
         return new ParameterizedQuery(sql.ToString(), parameters);
     }
 
@@ -493,25 +469,25 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     {
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            var whereClause = query.Where.Trim();
+            string whereClause = query.Where.Trim();
 
             // Parse and parameterize simple WHERE clauses
             // Supports: field = 'value', field > 123, field LIKE 'pattern%'
-            var parameterizedClause = ParseAndParameterizeWhereClause(whereClause, ref paramIndex, parameters);
+            string parameterizedClause = ParseAndParameterizeWhereClause(whereClause, ref paramIndex, parameters);
 
-            sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
+            _ = sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
         }
     }
 
     private static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
     {
-        var dangerousPattern = FindDangerousPattern(whereClause);
+        string? dangerousPattern = FindDangerousPattern(whereClause);
         if (dangerousPattern != null)
         {
             throw new ArgumentException($"WHERE clause contains dangerous pattern: {dangerousPattern}");
         }
 
-        var expressions = SplitOnAnd(whereClause);
+        List<string> expressions = SplitOnAnd(whereClause);
         if (expressions.Count == 0)
         {
             throw new ArgumentException(UnsupportedWhereClauseMessage);
@@ -519,9 +495,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         var parameterizedExpressions = new List<string>(expressions.Count);
 
-        foreach (var expression in expressions)
+        foreach (string expression in expressions)
         {
-            var trimmedExpression = expression.Trim();
+            string trimmedExpression = expression.Trim();
             if (trimmedExpression.Length == 0)
             {
                 throw new ArgumentException(UnsupportedWhereClauseMessage);
@@ -533,22 +509,22 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                 continue;
             }
 
-            var nullMatch = _nullCheckRegex.Match(trimmedExpression);
+            Match nullMatch = _nullCheckRegex.Match(trimmedExpression);
             if (nullMatch.Success)
             {
-                var fieldName = nullMatch.Groups["field"].Value;
-                var notToken = nullMatch.Groups["not"].Value;
-                var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
+                string fieldName = nullMatch.Groups["field"].Value;
+                string notToken = nullMatch.Groups["not"].Value;
+                string notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
                 parameterizedExpressions.Add($"{fieldName} IS {notClause}NULL");
                 continue;
             }
 
-            var comparisonMatch = _comparisonRegex.Match(trimmedExpression);
+            Match comparisonMatch = _comparisonRegex.Match(trimmedExpression);
             if (comparisonMatch.Success)
             {
-                var fieldName = comparisonMatch.Groups["field"].Value;
-                var operatorValue = NormalizeOperator(comparisonMatch.Groups["op"].Value);
-                var valueToken = comparisonMatch.Groups["value"].Value;
+                string fieldName = comparisonMatch.Groups["field"].Value;
+                string operatorValue = NormalizeOperator(comparisonMatch.Groups["op"].Value);
+                string valueToken = comparisonMatch.Groups["value"].Value;
 
                 parameters.Add(ParseValueToken(valueToken));
                 parameterizedExpressions.Add($"{fieldName} {operatorValue} ${paramIndex++}");
@@ -563,23 +539,17 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private static string NormalizeOperator(string operatorValue)
     {
-        var normalized = Regex.Replace(operatorValue, @"\s+", " ", RegexOptions.CultureInvariant).Trim();
+        string normalized = Regex.Replace(operatorValue, @"\s+", " ", RegexOptions.CultureInvariant).Trim();
         return normalized.ToUpperInvariant();
     }
 
     private static object ParseValueToken(string valueToken)
     {
-        if (valueToken.StartsWith('\''))
-        {
-            return UnescapeSqlString(valueToken);
-        }
-
-        if (double.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var numericValue))
-        {
-            return numericValue;
-        }
-
-        throw new ArgumentException($"Invalid numeric value: {valueToken}");
+        return valueToken.StartsWith('\'')
+            ? UnescapeSqlString(valueToken)
+            : double.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out double numericValue)
+            ? (object)numericValue
+            : throw new ArgumentException($"Invalid numeric value: {valueToken}");
     }
 
     private static string UnescapeSqlString(string valueToken)
@@ -589,7 +559,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             throw new ArgumentException(UnsupportedWhereClauseMessage);
         }
 
-        var innerValue = valueToken.Substring(1, valueToken.Length - 2);
+        string innerValue = valueToken[1..^1];
         return innerValue.Replace("''", "'", StringComparison.Ordinal);
     }
 
@@ -597,19 +567,19 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     {
         var expressions = new List<string>();
         var current = new StringBuilder();
-        var inString = false;
+        bool inString = false;
 
-        for (var i = 0; i < whereClause.Length; i++)
+        for (int i = 0; i < whereClause.Length; i++)
         {
-            var c = whereClause[i];
+            char c = whereClause[i];
 
             if (c == '\'')
             {
-                current.Append(c);
+                _ = current.Append(c);
 
                 if (inString && i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
                 {
-                    current.Append(whereClause[i + 1]);
+                    _ = current.Append(whereClause[i + 1]);
                     i++;
                     continue;
                 }
@@ -621,12 +591,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             if (!inString && IsAndTokenAt(whereClause, i))
             {
                 expressions.Add(current.ToString());
-                current.Clear();
+                _ = current.Clear();
                 i += 2;
                 continue;
             }
 
-            current.Append(c);
+            _ = current.Append(c);
         }
 
         if (inString)
@@ -650,8 +620,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             return false;
         }
 
-        var before = index == 0 ? ' ' : whereClause[index - 1];
-        var after = index + 3 < whereClause.Length ? whereClause[index + 3] : ' ';
+        char before = index == 0 ? ' ' : whereClause[index - 1];
+        char after = index + 3 < whereClause.Length ? whereClause[index + 3] : ' ';
 
         return !IsIdentifierChar(before) && !IsIdentifierChar(after);
     }
@@ -661,8 +631,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private static string? FindDangerousPattern(string whereClause)
     {
-        var patterns = new[] { ";", "--", "/*", "*/" };
-        foreach (var pattern in patterns)
+        string[] patterns = [";", "--", "/*", "*/"];
+        foreach (string? pattern in patterns)
         {
             if (ContainsOutsideQuotes(whereClause, pattern))
             {
@@ -675,11 +645,11 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private static bool ContainsOutsideQuotes(string input, string pattern)
     {
-        var inString = false;
+        bool inString = false;
 
-        for (var i = 0; i < input.Length; i++)
+        for (int i = 0; i < input.Length; i++)
         {
-            var c = input[i];
+            char c = input[i];
 
             if (c == '\'')
             {
@@ -699,19 +669,14 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             }
         }
 
-        if (inString)
-        {
-            throw new ArgumentException(UnsupportedWhereClauseMessage);
-        }
-
-        return false;
+        return inString ? throw new ArgumentException(UnsupportedWhereClauseMessage) : false;
     }
 
     private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
     {
         if (query.SpatialFilter.HasValue)
         {
-            var spatialFunction = query.SpatialFilter.Value.SpatialRelationship switch
+            string spatialFunction = query.SpatialFilter.Value.SpatialRelationship switch
             {
                 SpatialRelationship.Intersects => "ST_Intersects",
                 SpatialRelationship.Within => "ST_Within",
@@ -720,36 +685,36 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                 _ => "ST_Intersects"
             };
 
-            sql.Append(CultureInfo.InvariantCulture, $" AND {spatialFunction}(geometry, ST_GeomFromWKB(${paramIndex++}))");
+            _ = sql.Append(CultureInfo.InvariantCulture, $" AND {spatialFunction}(geometry, ST_GeomFromWKB(${paramIndex++}))");
         }
     }
 
-    private void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId, List<object> whereParameters)
+    private static void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId, List<object> whereParameters)
     {
         // Layer ID is always first parameter
-        command.Parameters.AddWithValue(layerId);
+        _ = command.Parameters.AddWithValue(layerId);
 
         // Add WHERE clause parameters (these come after layerId but before spatial/pagination params)
-        foreach (var param in whereParameters)
+        foreach (object param in whereParameters)
         {
-            command.Parameters.AddWithValue(param);
+            _ = command.Parameters.AddWithValue(param);
         }
 
         // Add spatial filter parameter if present
         if (query.SpatialFilter.HasValue)
         {
-            command.Parameters.AddWithValue(query.SpatialFilter.Value.Geometry);
+            _ = command.Parameters.AddWithValue(query.SpatialFilter.Value.Geometry);
         }
 
         // Add pagination parameters
         if (query.Limit.HasValue)
         {
-            command.Parameters.AddWithValue(query.Limit.Value);
+            _ = command.Parameters.AddWithValue(query.Limit.Value);
         }
 
         if (query.Offset.HasValue)
         {
-            command.Parameters.AddWithValue(query.Offset.Value);
+            _ = command.Parameters.AddWithValue(query.Offset.Value);
         }
     }
 
@@ -759,7 +724,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         await using var command = new NpgsqlCommand(countQuery.Sql, connection);
         AddQueryParameters(command, query, layerId, countQuery.WhereParameters);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
@@ -770,14 +735,14 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         AddQueryParameters(command, query, layerId, selectQuery.WhereParameters);
 
         var features = new List<Feature>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))
         {
             features.Add(await ReadFeatureAsync(reader, cancellationToken));
         }
 
-        return features.ToImmutableArray();
+        return [.. features];
     }
 
     /// <summary>
@@ -806,21 +771,63 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     /// </summary>
     private static object? ConvertJsonElementToObject(object? value)
     {
-        if (value is JsonElement element)
-        {
-            return element.ValueKind switch
+        return value is JsonElement element
+            ? element.ValueKind switch
             {
                 JsonValueKind.String => element.GetString(),
-                JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                                        element.TryGetDouble(out var doubleVal) ? doubleVal :
+                JsonValueKind.Number => element.TryGetInt64(out long longVal) ? longVal :
+                                        element.TryGetDouble(out double doubleVal) ? doubleVal :
                                         element.GetDecimal(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
                 JsonValueKind.Null => null,
                 _ => value
-            };
+            }
+            : value;
+    }
+
+    public async Task<QueryResult<Feature>> QueryRelatedAsync(
+        int layerId,
+        RelatedQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        Relationship relationship = query.Relationship;
+        int[] objectIds = query.ObjectIds;
+
+        if (objectIds.Length == 0)
+        {
+            return QueryResult<Feature>.Empty();
         }
 
-        return value;
+        // Build a feature query for the related layer with foreign key constraints
+        string whereClause = BuildRelationshipWhereClause(objectIds, relationship, query.Where);
+
+        var featureQuery = new FeatureQuery
+        {
+            Where = whereClause,
+            OutFields = query.OutFields,
+            Limit = query.Limit
+        };
+
+        // Create a temporary PostgresFeatureStore instance for the related layer
+        // This approach allows us to reuse all existing query infrastructure
+        string relatedLayerTableName = $"features_layer_{relationship.RelatedLayerId}";
+        var relatedFeatureStore = new PostgresFeatureStore(_connectionProvider, relatedLayerTableName);
+
+        return await relatedFeatureStore.QueryAsync(relationship.RelatedLayerId, featureQuery, cancellationToken);
     }
+
+    /// <summary>
+    /// Builds a WHERE clause for relationship queries that joins on foreign key
+    /// </summary>
+    private static string BuildRelationshipWhereClause(int[] objectIds, Relationship relationship, string? additionalWhere)
+    {
+        string inClause = string.Join(", ", objectIds);
+        string relationshipWhere = $"{relationship.DestinationForeignKeyField} IN ({inClause})";
+
+        return !string.IsNullOrEmpty(additionalWhere) ? $"({relationshipWhere}) AND ({additionalWhere})" : relationshipWhere;
+    }
+
+    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex MyRegex();
 }

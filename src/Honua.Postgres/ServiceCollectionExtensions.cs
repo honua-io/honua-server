@@ -33,9 +33,9 @@ internal static class ServiceCollectionExtensions
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Register NpgsqlDataSource as specified in Issue #3
-        services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
+        _ = services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            string? connectionString = configuration.GetConnectionString("DefaultConnection");
             if (string.IsNullOrEmpty(connectionString))
             {
                 throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
@@ -50,30 +50,27 @@ internal static class ServiceCollectionExtensions
         });
 
         // Register feature store implementation
-        services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+        _ = services.AddScoped<IFeatureStore, PostgresFeatureStore>();
 
         // Register layer catalog implementation
-        services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
+        _ = services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
 
         // Register table discovery implementation
-        services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
+        _ = services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
         // Register health checker
-        services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
+        _ = services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
 
         // Register database connection provider with resilience policies
-        services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
+        _ = services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
 
         // Register file import service with NetTopologySuite support
-        services.AddScoped<IFileImportService>(serviceProvider =>
+        _ = services.AddScoped<IFileImportService>(serviceProvider =>
         {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
-            }
-
-            return new FileImportService(connectionString);
+            string? connectionString = configuration.GetConnectionString("DefaultConnection");
+            return string.IsNullOrEmpty(connectionString)
+                ? throw new InvalidOperationException("DefaultConnection connection string is required for file import services")
+                : (IFileImportService)new FileImportService(connectionString);
         });
 
         return services;

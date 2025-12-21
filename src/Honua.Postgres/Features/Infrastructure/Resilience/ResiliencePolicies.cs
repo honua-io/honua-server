@@ -22,15 +22,12 @@ internal static class ResiliencePolicies
     public static IAsyncPolicy GetConnectionRetryPolicy(Action<Exception, TimeSpan, int>? onRetry = null)
     {
         return Policy
-            .Handle<NpgsqlException>(ex => IsConnectionError(ex))
+            .Handle<NpgsqlException>(IsConnectionError)
             .Or<TimeoutException>()
             .WaitAndRetryAsync(
                 retryCount: 3,
                 sleepDurationProvider: attempt => TimeSpan.FromMilliseconds(100 * Math.Pow(2, attempt)),
-                onRetry: (exception, timespan, attempt, context) =>
-                {
-                    onRetry?.Invoke(exception, timespan, attempt);
-                });
+                onRetry: (exception, timespan, attempt, context) => onRetry?.Invoke(exception, timespan, attempt));
     }
 
     /// <summary>

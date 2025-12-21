@@ -10,16 +10,12 @@ namespace Honua.Postgres.Features.Catalog;
 /// <summary>
 /// Simple PostgreSQL implementation of layer catalog for testing compilation
 /// </summary>
-internal sealed class PostgresLayerCatalogSimple : ILayerCatalog
+internal sealed class PostgresLayerCatalogSimple(NpgsqlDataSource dataSource) : ILayerCatalog
 {
 #pragma warning disable IDE0052 // Remove unread private members - Will be used in full implementation
-    private readonly NpgsqlDataSource _dataSource;
-#pragma warning restore IDE0052
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
 
-    public PostgresLayerCatalogSimple(NpgsqlDataSource dataSource)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-    }
+#pragma warning restore IDE0052
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
@@ -31,28 +27,21 @@ internal sealed class PostgresLayerCatalogSimple : ILayerCatalog
             SpatialReference.WGS84));
     }
 
-    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult<LayerDefinition[]>([]);
-    }
+    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default) => Task.FromResult<LayerDefinition[]>([]);
 
-    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult<ServiceDefinition?>(null);
-    }
+    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default) => Task.FromResult<ServiceDefinition?>(null);
 
-    public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult<ServiceDefinition[]>([]);
-    }
+    public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default) => Task.FromResult<ServiceDefinition[]>([]);
 
-    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(false);
-    }
+    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
-    public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(false);
-    }
+    public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+    public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default) =>
+        // Simple stub implementation - no relationships supported
+        Task.FromResult<Relationship?>(null);
+
+    public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default) =>
+        // Simple stub implementation - no relationships supported
+        Task.FromResult<Relationship[]>([]);
 }

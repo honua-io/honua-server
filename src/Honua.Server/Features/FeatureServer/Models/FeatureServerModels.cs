@@ -34,7 +34,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Tables available in this service (typically empty for basic implementation)
     /// </summary>
-    public object[] Tables { get; init; } = Array.Empty<object>();
+    public object[] Tables { get; init; } = [];
 
     /// <summary>
     /// Default spatial reference system for the service
@@ -59,7 +59,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Supported query formats
     /// </summary>
-    public string[] SupportedQueryFormats { get; init; } = new[] { "JSON", "GeoJSON" };
+    public string[] SupportedQueryFormats { get; init; } = ["JSON", "GeoJSON"];
 
     /// <summary>
     /// Service capabilities
@@ -104,12 +104,12 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Fields common across all layers
     /// </summary>
-    public EsriFieldInfo[] Fields { get; init; } = Array.Empty<EsriFieldInfo>();
+    public EsriFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
     /// Relationships between layers (typically empty for basic implementation)
     /// </summary>
-    public object[] Relationships { get; init; } = Array.Empty<object>();
+    public object[] Relationships { get; init; } = [];
 }
 
 /// <summary>
@@ -250,7 +250,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Relationships to other layers
     /// </summary>
-    public object[] Relationships { get; init; } = Array.Empty<object>();
+    public object[] Relationships { get; init; } = [];
 
     /// <summary>
     /// Whether the layer has static data
@@ -295,7 +295,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Supported query formats
     /// </summary>
-    public string[] SupportedQueryFormats { get; init; } = new[] { "JSON", "GeoJSON" };
+    public string[] SupportedQueryFormats { get; init; } = ["JSON", "GeoJSON"];
 
     /// <summary>
     /// Layer ownership information
@@ -510,7 +510,7 @@ public sealed class QueryResponse
     /// <summary>
     /// Features returned by the query
     /// </summary>
-    public EsriFeature[] Features { get; init; } = Array.Empty<EsriFeature>();
+    public EsriFeature[] Features { get; init; } = [];
 
     /// <summary>
     /// Whether the transfer limit was exceeded
@@ -630,7 +630,7 @@ public sealed class GeoJsonFeatureSet
     /// <summary>
     /// Array of GeoJSON features
     /// </summary>
-    public GeoJsonFeature[] Features { get; init; } = Array.Empty<GeoJsonFeature>();
+    public GeoJsonFeature[] Features { get; init; } = [];
 
     /// <summary>
     /// Additional properties (metadata)
@@ -705,6 +705,110 @@ public sealed class GeoJsonCrs
 }
 
 /// <summary>
+/// Request parameters for queryRelatedRecords endpoint
+/// </summary>
+public sealed class QueryRelatedRecordsParameters
+{
+    /// <summary>
+    /// Array of object IDs for source features
+    /// </summary>
+    public required long[] ObjectIds { get; init; }
+
+    /// <summary>
+    /// ID of the relationship to traverse
+    /// </summary>
+    public required int RelationshipId { get; init; }
+
+    /// <summary>
+    /// Comma-separated list of field names to return (default: all fields)
+    /// </summary>
+    public string? OutFields { get; init; }
+
+    /// <summary>
+    /// SQL WHERE clause to filter related features
+    /// </summary>
+    public string? Where { get; init; }
+
+    /// <summary>
+    /// Whether to return geometry information
+    /// </summary>
+    public bool ReturnGeometry { get; init; } = true;
+
+    /// <summary>
+    /// Response format (json, geojson)
+    /// </summary>
+    public string F { get; init; } = "json";
+
+    /// <summary>
+    /// Starting offset for pagination
+    /// </summary>
+    public int? ResultOffset { get; init; }
+
+    /// <summary>
+    /// Maximum number of related records to return
+    /// </summary>
+    public int? ResultRecordCount { get; init; }
+}
+
+/// <summary>
+/// Response model for queryRelatedRecords endpoint
+/// </summary>
+public sealed class QueryRelatedRecordsResponse
+{
+    /// <summary>
+    /// Array of related record groups, one per source object ID
+    /// </summary>
+    public required RelatedRecordGroup[] RelatedRecordGroups { get; init; }
+}
+
+/// <summary>
+/// Related records grouped by source object ID
+/// </summary>
+public sealed class RelatedRecordGroup
+{
+    /// <summary>
+    /// Object ID of the source feature
+    /// </summary>
+    public required long ObjectId { get; init; }
+
+    /// <summary>
+    /// Related records for this source feature (null if no related records)
+    /// </summary>
+    public RelatedRecords? RelatedRecords { get; init; }
+}
+
+/// <summary>
+/// Related records result set
+/// </summary>
+public sealed class RelatedRecords
+{
+    /// <summary>
+    /// Object ID field name
+    /// </summary>
+    public string ObjectIdFieldName { get; init; } = "objectid";
+
+    /// <summary>
+    /// Global ID field name (if used)
+    /// </summary>
+    public string? GlobalIdFieldName { get; init; }
+
+    /// <summary>
+    /// Array of field definitions
+    /// </summary>
+    public EsriFieldInfo[] Fields { get; init; } = [];
+
+    /// <summary>
+    /// Spatial reference system for geometries
+    /// </summary>
+    public EsriSpatialReference? SpatialReference { get; init; }
+
+    /// <summary>
+    /// Array of related features
+    /// </summary>
+    public EsriFeature[] Features { get; init; } = [];
+}
+
+/// <summary>
 /// JSON source generation context for FeatureServer models (AOT compatibility)
 /// </summary>
 [JsonSerializable(typeof(FeatureServerResponse))]
@@ -722,6 +826,10 @@ public sealed class GeoJsonCrs
 [JsonSerializable(typeof(GeoJsonFeature))]
 [JsonSerializable(typeof(GeoJsonGeometry))]
 [JsonSerializable(typeof(GeoJsonCrs))]
+[JsonSerializable(typeof(QueryRelatedRecordsParameters))]
+[JsonSerializable(typeof(QueryRelatedRecordsResponse))]
+[JsonSerializable(typeof(RelatedRecordGroup))]
+[JsonSerializable(typeof(RelatedRecords))]
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(double[][][]))]

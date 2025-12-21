@@ -344,4 +344,10 @@ public class TestFeatureStore : IFeatureStore
             (-123.0, 37.0)
         };
     }
+
+    public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
+    {
+        // Basic implementation returns empty result - tests that need related features should use TestFeatureStoreWithRelationships
+        return Task.FromResult(QueryResult<Feature>.Empty());
+    }
 }
