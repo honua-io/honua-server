@@ -14,10 +14,8 @@ public static class EndpointRegistry
     /// </summary>
     public static IReadOnlyList<EndpointDefinition> All { get; } =
     [
-        new("GET", "/healthz"),
         new("GET", "/healthz/live"),
         new("GET", "/healthz/ready"),
-        new("GET", "/alive"),
 
         new("GET", "/api/admin/connections/{id}/tables"),
         new("GET", "/api/admin/connections/{*path}"),

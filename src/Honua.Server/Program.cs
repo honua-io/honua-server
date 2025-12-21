@@ -330,11 +330,7 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.Tag("layer-metadata", "metadata");
         });
 
-        // Default policy for other endpoints that might benefit
-        options.AddBasePolicy(policy =>
-        {
-            policy.NoCache(); // Explicit no-cache by default for security
-        });
+        // Note: No default base policy - endpoints must explicitly opt into caching for security
     });
 }
 
