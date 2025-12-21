@@ -3,8 +3,8 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure;
