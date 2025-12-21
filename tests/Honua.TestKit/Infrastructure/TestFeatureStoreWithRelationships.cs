@@ -100,8 +100,8 @@ public sealed class TestFeatureStoreWithRelationships : IFeatureStore
         {
             var relatedToObject = relatedFeatures.Where(f =>
             {
-                // Check if the foreign key field matches the object ID
-                if (f.Attributes.TryGetValue(query.Relationship.OriginForeignKeyField, out var foreignKeyValue))
+                // Check if the destination foreign key field matches the object ID
+                if (f.Attributes.TryGetValue(query.Relationship.DestinationForeignKeyField, out var foreignKeyValue))
                 {
                     return foreignKeyValue?.ToString() == objectId.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 }

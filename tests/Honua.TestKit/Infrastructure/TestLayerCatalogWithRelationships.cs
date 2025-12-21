@@ -23,8 +23,8 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
             name: "Test Relationship",
             relatedLayerId: 1,
             relationshipType: "esriRelRoleOrigin",
-            originForeignKeyField: "related_id",
-            destinationForeignKeyField: "objectid",
+            originForeignKeyField: "objectid",
+            destinationForeignKeyField: "related_id",
             description: "Test relationship between layer 0 and layer 1");
 
         _relationships[(0, 1)] = testRelationship;
@@ -35,8 +35,8 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
             name: "Secondary Relationship",
             relatedLayerId: 2,
             relationshipType: "esriRelRoleOrigin",
-            originForeignKeyField: "secondary_id",
-            destinationForeignKeyField: "objectid",
+            originForeignKeyField: "objectid",
+            destinationForeignKeyField: "secondary_id",
             description: "Secondary test relationship");
 
         _relationships[(0, 2)] = secondTestRelationship;
