@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Migration: 003_CreateRelationshipsTable.sql
+-- Migration: 002_CreateRelationshipsTable.sql
 -- Description: Creates the relationships table to support queryRelatedRecords functionality
 -- Dependencies: Requires honua.layers table from 001_CreateHonuaSchema.sql
 
