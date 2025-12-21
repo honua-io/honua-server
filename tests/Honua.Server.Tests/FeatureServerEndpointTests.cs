@@ -84,7 +84,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
-        jsonDoc.RootElement.GetProperty("error").GetString().Should().Contain("Service 'nonexistent' not found");
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("code").GetInt32().Should().Be(404);
+        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
     }
 
     [IntegrationTest]
@@ -147,7 +149,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
-        jsonDoc.RootElement.GetProperty("error").GetString().Should().Contain("Service 'nonexistent' not found");
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("code").GetInt32().Should().Be(404);
+        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
     }
 
     [IntegrationTest]
@@ -382,7 +386,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
-        jsonDoc.RootElement.GetProperty("error").GetString().Should().Contain("Service 'nonexistent' not found");
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("code").GetInt32().Should().Be(404);
+        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
     }
 
     [IntegrationTest]

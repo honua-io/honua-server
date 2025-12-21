@@ -726,6 +726,7 @@ public sealed class GeoJsonCrs
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(double[][][]))]
 [JsonSerializable(typeof(ApiErrorResponse))]
+[JsonSerializable(typeof(EsriError))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(object))]

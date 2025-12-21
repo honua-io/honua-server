@@ -229,7 +229,14 @@ public static class ImportEndpoints
 
     private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
     {
-        var error = new ApiErrorResponse { Error = message };
+        var error = new ApiErrorResponse
+        {
+            Error = new EsriError
+            {
+                Code = EsriErrorCodes.FromHttpStatusCode(statusCode),
+                Message = message
+            }
+        };
         var result = Results.Json(error, ImportJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
         return result.ExecuteAsync(context);
     }
