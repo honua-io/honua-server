@@ -195,6 +195,38 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
         liveResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
         readyResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Operation("HealthCheck")]
+    [Endpoint("GET /healthz")]
+    public async Task HealthCheck_Generic_ReturnsHealthStatus()
+    {
+        // Act
+        var response = await _client.GetAsync("/healthz");
+
+        // Assert - ASP.NET Core health checks return 200 for healthy, 503 for unhealthy
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrEmpty("health check should return JSON response");
+    }
+
+    [IntegrationTest]
+    [Operation("HealthCheck")]
+    [Endpoint("GET /alive")]
+    public async Task LivenessCheck_Aspire_ReturnsHealthStatus()
+    {
+        // Act
+        var response = await _client.GetAsync("/alive");
+
+        // Assert - ASP.NET Core health checks return 200 for healthy, 503 for unhealthy
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrEmpty("liveness check should return JSON response");
+    }
 }
 
 /// <summary>

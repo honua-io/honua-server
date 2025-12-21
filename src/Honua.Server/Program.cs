@@ -81,6 +81,7 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometr
     Honua.Server.Features.FeatureServer.Services.GeometryConverter>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFormatter,
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
