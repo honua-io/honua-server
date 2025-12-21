@@ -103,23 +103,7 @@ internal sealed class FeatureServerHandler
             var query = BuildFeatureQuery(validatedParams, service);
 
             // Execute query
-            FeatureResult result;
-            try
-            {
-                result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
-            }
-            catch (ArgumentException ex)
-            {
-                throw new InvalidOperationException($"Invalid query: {ex.Message}");
-            }
-            catch (FormatException ex)
-            {
-                throw new InvalidOperationException($"Invalid query format: {ex.Message}");
-            }
-            catch (Exception ex) when (ex.Message.Contains("syntax") || ex.Message.Contains("SQL") || ex.Message.Contains("parse"))
-            {
-                throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
-            }
+            var result = await ExecuteQueryWithValidation(layerId, query, cancellationToken);
 
             // Format response using QueryFormatter
             var outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
@@ -284,6 +268,29 @@ internal sealed class FeatureServerHandler
     private byte[] ConvertEsriJsonToWkb(string esriJsonGeometry)
     {
         return _geometryConverter.ConvertEsriJsonToWkb(esriJsonGeometry);
+    }
+
+    /// <summary>
+    /// Executes a query with validation error handling
+    /// </summary>
+    private async Task<QueryResult<Feature>> ExecuteQueryWithValidation(int layerId, FeatureQuery query, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _featureStore.QueryAsync(layerId, query, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException($"Invalid query: {ex.Message}");
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+        }
+        catch (Exception ex) when (ex.Message.Contains("syntax") || ex.Message.Contains("SQL") || ex.Message.Contains("parse"))
+        {
+            throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+        }
     }
 
 }
