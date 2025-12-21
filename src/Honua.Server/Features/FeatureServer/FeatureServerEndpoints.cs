@@ -81,12 +81,23 @@ public static class FeatureServerEndpoints
         // .Produces(404);
 
         _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecords)
-            .WithDisplayName("Query Related Records")
-            .WithName("QueryRelatedRecords")
-            .WithSummary("Query features related to source features through a relationship")
-            .WithDescription("Returns features from a related layer based on relationship definitions")
+            .WithDisplayName("Query Related Records (GET)")
+            .WithName("QueryRelatedRecordsGet")
+            .WithSummary("Query features related to source features through a relationship using GET")
+            .WithDescription("Returns features from a related layer based on relationship definitions via GET parameters")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // .Produces<QueryRelatedRecordsResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
+
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecords)
+            .WithDisplayName("Query Related Records (POST)")
+            .WithName("QueryRelatedRecordsPost")
+            .WithSummary("Query features related to source features through a relationship using POST")
+            .WithDescription("Returns features from a related layer based on relationship definitions via POST body")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         // .Produces<QueryRelatedRecordsResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);

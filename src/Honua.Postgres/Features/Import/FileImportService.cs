@@ -316,7 +316,16 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
     /// </summary>
     private static async Task CreateTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
+        // Validate table name to prevent SQL injection
+        if (!IsValidTableName(tableName))
+        {
+            throw new ArgumentException($"Invalid table name: {tableName}. Table names must contain only letters, digits, and underscores.", nameof(tableName));
+        }
+
         string quotedTableName = QuoteIdentifier(tableName);
+        string geometryIndexName = QuoteIdentifier($"idx_{tableName}_geometry");
+        string propertiesIndexName = QuoteIdentifier($"idx_{tableName}_properties");
+
         string createTableSql = $@"
             DROP TABLE IF EXISTS {quotedTableName};
 
@@ -327,8 +336,8 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
 
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_geometry")} ON {quotedTableName} USING GIST (geometry);
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_properties")} ON {quotedTableName} USING GIN (properties);";
+            CREATE INDEX IF NOT EXISTS {geometryIndexName} ON {quotedTableName} USING GIST (geometry);
+            CREATE INDEX IF NOT EXISTS {propertiesIndexName} ON {quotedTableName} USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         _ = await command.ExecuteNonQueryAsync(cancellationToken);
@@ -340,4 +349,19 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
     private static string QuoteIdentifier(string identifier) =>
         // PostgreSQL identifier quoting: double quotes around identifier and escape any existing double quotes
         $"\"{identifier.Replace("\"", "\"\"")}\"";
+
+    /// <summary>
+    /// Validates that a table name contains only safe characters to prevent SQL injection
+    /// </summary>
+    private static bool IsValidTableName(string tableName)
+    {
+        if (string.IsNullOrWhiteSpace(tableName))
+            return false;
+
+        // Allow only letters, digits, and underscores
+        // This prevents SQL injection while allowing reasonable table names
+        return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
+               !char.IsDigit(tableName[0]) && // Cannot start with a digit
+               tableName.Length <= 63; // PostgreSQL identifier length limit
+    }
 }
