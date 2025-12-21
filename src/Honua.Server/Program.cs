@@ -11,6 +11,7 @@ using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
 using Serilog.Enrichers.Span;
 
@@ -90,11 +91,16 @@ ConfigureSecurityHeaders(builder.Services);
 
 // Configure output caching for metadata endpoints
 ConfigureOutputCaching(builder.Services);
+// Configure response compression
+ConfigureResponseCompression(builder.Services);
 
 var app = builder.Build();
 
 // Add security headers middleware (first in pipeline for all requests)
 app.UseSecurityHeaders();
+
+// Add response compression middleware (early in pipeline)
+app.UseResponseCompression();
 
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
@@ -212,6 +218,41 @@ static void ConfigureSecurityHeaders(IServiceCollection services)
                 .AddCrossOriginEmbedderPolicy(builder => builder.RequireCorp()) // COEP: require-corp
                 .AddPermissionsPolicyWithDefaultSecureDirectives(); // Permissions-Policy with secure defaults
         });
+}
+
+// Configure response compression for GeoJSON and JSON responses
+static void ConfigureResponseCompression(IServiceCollection services)
+{
+    // MIME types for geospatial data formats
+    string[] additionalMimeTypes = [
+        "application/geo+json",    // GeoJSON format
+        "application/json"         // Standard JSON responses
+    ];
+
+    services.AddResponseCompression(options =>
+    {
+        // Enable compression for HTTPS requests
+        options.EnableForHttps = true;
+
+        // Configure compression providers
+        options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+        options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+
+        // Add MIME types for geospatial data formats
+        options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(additionalMimeTypes);
+    });
+
+    // Configure Brotli compression for fastest performance (low latency)
+    services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options =>
+    {
+        options.Level = System.IO.Compression.CompressionLevel.Fastest;
+    });
+
+    // Configure Gzip compression for fastest performance (fallback)
+    services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(options =>
+    {
+        options.Level = System.IO.Compression.CompressionLevel.Fastest;
+    });
 }
 
 // Database migration helper
