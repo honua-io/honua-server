@@ -29,7 +29,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     private const int TestLayerId = 0;
     private const long TestFeatureId = 123;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
@@ -65,7 +65,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, JsonOptions);
+        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().HaveCount(2);
@@ -109,7 +109,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AddAttachmentResponse>(content, JsonOptions);
+        var result = JsonSerializer.Deserialize<AddAttachmentResponse>(content, _jsonOptions);
 
         result.Should().NotBeNull();
         result!.AddAttachmentResult.Success.Should().BeTrue();
@@ -181,7 +181,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<UpdateAttachmentResponse>(content, JsonOptions);
+        var result = JsonSerializer.Deserialize<UpdateAttachmentResponse>(content, _jsonOptions);
 
         result.Should().NotBeNull();
         result!.UpdateAttachmentResult.Success.Should().BeTrue();
@@ -230,7 +230,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<DeleteAttachmentsResponse>(content, JsonOptions);
+        var result = JsonSerializer.Deserialize<DeleteAttachmentsResponse>(content, _jsonOptions);
 
         result.Should().NotBeNull();
         result!.DeleteAttachmentResults.Should().HaveCount(2);
@@ -329,7 +329,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, JsonOptions);
+        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().BeEmpty();
