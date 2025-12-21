@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Server.Features.Infrastructure.Logging;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
@@ -131,9 +132,9 @@ public sealed class LimitsEnforcementMiddleware
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
 
-        var errorResponse = new LimitsErrorResponse
+        var errorResponse = new ApiErrorResponse
         {
-            Error = new LimitsErrorDetails
+            Error = new EsriError
             {
                 Code = statusCode,
                 Message = error,
@@ -144,7 +145,7 @@ public sealed class LimitsEnforcementMiddleware
         await JsonSerializer.SerializeAsync(
             context.Response.Body,
             errorResponse,
-            LimitsEnforcementJsonContext.Default.LimitsErrorResponse,
+            LimitsEnforcementJsonContext.Default.ApiErrorResponse,
             context.RequestAborted);
     }
 }
