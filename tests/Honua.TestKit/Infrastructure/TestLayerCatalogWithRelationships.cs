@@ -152,8 +152,8 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
     // Implement relationship-specific methods
     public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
     {
-        _relationships.TryGetValue((layerId, relationshipId), out var relationship);
-        return Task.FromResult<Relationship?>(relationship);
+        bool exists = _relationships.TryGetValue((layerId, relationshipId), out var relationship);
+        return Task.FromResult<Relationship?>(exists ? relationship : null);
     }
 
     public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)

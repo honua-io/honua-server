@@ -695,10 +695,17 @@ public static class FeatureServerEndpoints
             return;
         }
 
-        // Parse required parameters from POST body or query string
-        if (!TryBuildRelatedRecordsParameters(context, out QueryRelatedRecordsParameters? relatedParams, out string? error))
+        // Parse required parameters from POST body
+        (bool success, QueryRelatedRecordsParameters? relatedParams, string? error) = await TryBuildRelatedRecordsParametersFromJsonAsync(context);
+        if (!success)
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid related records parameters");
+            return;
+        }
+
+        if (relatedParams is null)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Failed to parse related records parameters");
             return;
         }
 
@@ -751,7 +758,13 @@ public static class FeatureServerEndpoints
         }
 
         // Required: relationshipId
-        if (!TryParseQueryInt(query, "relationshipId", out int? relationshipId, out _) || !relationshipId.HasValue)
+        if (!TryParseQueryInt(query, "relationshipId", out int? relationshipId, out string? relationshipIdError))
+        {
+            error = relationshipIdError ?? "relationshipId parameter is required";
+            return false;
+        }
+
+        if (!relationshipId.HasValue)
         {
             error = "relationshipId parameter is required";
             return false;
@@ -790,5 +803,147 @@ public static class FeatureServerEndpoints
         };
 
         return true;
+    }
+
+    /// <summary>
+    /// Builds QueryRelatedRecordsParameters from JSON POST body
+    /// </summary>
+    private static async Task<(bool Success, QueryRelatedRecordsParameters? Parameters, string? Error)> TryBuildRelatedRecordsParametersFromJsonAsync(
+        HttpContext context)
+    {
+
+        try
+        {
+            // First, try to deserialize as a generic JSON object to handle string-based objectIds
+            using var jsonDoc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            JsonElement root = jsonDoc.RootElement;
+
+            // Extract and parse objectIds (can be string or array)
+            if (!root.TryGetProperty("objectIds", out JsonElement objectIdsElement))
+            {
+                return (false, null, "objectIds parameter is required");
+            }
+
+            List<long> objectIds = [];
+            if (objectIdsElement.ValueKind == JsonValueKind.String)
+            {
+                // Handle string format "1,2,3"
+                string objectIdsString = objectIdsElement.GetString() ?? "";
+                if (string.IsNullOrWhiteSpace(objectIdsString))
+                {
+                    return (false, null, "objectIds parameter is required");
+                }
+
+                string[] objectIdStrings = objectIdsString.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                foreach (string idString in objectIdStrings)
+                {
+                    if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
+                    {
+                        objectIds.Add(id);
+                    }
+                    else
+                    {
+                        return (false, null, $"Invalid objectId: {idString}");
+                    }
+                }
+            }
+            else if (objectIdsElement.ValueKind == JsonValueKind.Array)
+            {
+                // Handle array format [1, 2, 3]
+                foreach (JsonElement element in objectIdsElement.EnumerateArray())
+                {
+                    if (element.TryGetInt64(out long id))
+                    {
+                        objectIds.Add(id);
+                    }
+                    else
+                    {
+                        return (false, null, "Invalid objectId in array");
+                    }
+                }
+            }
+            else
+            {
+                return (false, null, "objectIds must be a string or array");
+            }
+
+            if (objectIds.Count == 0)
+            {
+                return (false, null, "At least one valid objectId is required");
+            }
+
+            // Extract relationshipId
+            if (!root.TryGetProperty("relationshipId", out JsonElement relationshipIdElement) ||
+                !relationshipIdElement.TryGetInt32(out int relationshipId))
+            {
+                return (false, null, "relationshipId parameter is required and must be an integer");
+            }
+
+            // Extract optional parameters
+            string? outFields = null;
+            if (root.TryGetProperty("outFields", out JsonElement outFieldsElement))
+            {
+                outFields = outFieldsElement.GetString();
+            }
+
+            string? where = null;
+            if (root.TryGetProperty("where", out JsonElement whereElement))
+            {
+                where = whereElement.GetString();
+            }
+
+            bool returnGeometry = true; // Default value
+            if (root.TryGetProperty("returnGeometry", out JsonElement returnGeometryElement))
+            {
+                if (returnGeometryElement.ValueKind == JsonValueKind.True)
+                {
+                    returnGeometry = true;
+                }
+                else if (returnGeometryElement.ValueKind == JsonValueKind.False)
+                {
+                    returnGeometry = false;
+                }
+                else if (returnGeometryElement.ValueKind == JsonValueKind.String)
+                {
+                    string returnGeomStr = returnGeometryElement.GetString() ?? "";
+                    returnGeometry = !returnGeomStr.Equals("false", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            int? resultRecordCount = null;
+            if (root.TryGetProperty("resultRecordCount", out JsonElement resultRecordCountElement) &&
+                resultRecordCountElement.TryGetInt32(out int recordCount))
+            {
+                resultRecordCount = recordCount;
+            }
+
+            int? resultOffset = null;
+            if (root.TryGetProperty("resultOffset", out JsonElement resultOffsetElement) &&
+                resultOffsetElement.TryGetInt32(out int offset))
+            {
+                resultOffset = offset;
+            }
+
+            var parameters = new QueryRelatedRecordsParameters
+            {
+                ObjectIds = [.. objectIds],
+                RelationshipId = relationshipId,
+                OutFields = outFields,
+                Where = where,
+                ReturnGeometry = returnGeometry,
+                ResultRecordCount = resultRecordCount,
+                ResultOffset = resultOffset
+            };
+
+            return (true, parameters, null);
+        }
+        catch (JsonException)
+        {
+            return (false, null, "Invalid JSON payload");
+        }
+        catch (Exception ex)
+        {
+            return (false, null, $"Failed to parse request: {ex.Message}");
+        }
     }
 }

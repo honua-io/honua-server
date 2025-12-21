@@ -4,6 +4,14 @@
 -- Initial Honua schema migration
 -- Creates honua schema, enables PostGIS, and sets up core metadata tables
 
+-- Debug: Show current schema context
+DO $$
+BEGIN
+    RAISE NOTICE 'Current search_path: %', current_setting('search_path');
+    RAISE NOTICE 'Current schema: %', current_schema();
+END
+$$;
+
 -- Create honua schema for isolation
 CREATE SCHEMA IF NOT EXISTS honua;
 
@@ -11,7 +19,7 @@ CREATE SCHEMA IF NOT EXISTS honua;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- Services table - top-level service definitions
-CREATE TABLE honua.services (
+CREATE TABLE IF NOT EXISTS honua.services (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
@@ -21,7 +29,7 @@ CREATE TABLE honua.services (
 );
 
 -- Layers table - layer configuration within services
-CREATE TABLE honua.layers (
+CREATE TABLE IF NOT EXISTS honua.layers (
     layer_id SERIAL PRIMARY KEY,
     layer_name TEXT NOT NULL,
     description TEXT,
@@ -36,7 +44,7 @@ CREATE TABLE honua.layers (
 );
 
 -- Service layers junction table - maps layers to services with layer index
-CREATE TABLE honua.service_layers (
+CREATE TABLE IF NOT EXISTS honua.service_layers (
     service_id TEXT NOT NULL REFERENCES honua.services(id) ON DELETE CASCADE,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
     layer_index INT NOT NULL,
@@ -45,7 +53,7 @@ CREATE TABLE honua.service_layers (
 );
 
 -- Layer fields table - field metadata for each layer
-CREATE TABLE honua.layer_fields (
+CREATE TABLE IF NOT EXISTS honua.layer_fields (
     field_id SERIAL PRIMARY KEY,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
     field_name TEXT NOT NULL,
@@ -57,20 +65,20 @@ CREATE TABLE honua.layer_fields (
 );
 
 -- Relationships table - defines relationships between layers
-CREATE TABLE honua.relationships (
+CREATE TABLE IF NOT EXISTS honua.relationships_test (
     relationship_id INT NOT NULL,
-    origin_layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+    layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
     related_layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    relationship_name TEXT NOT NULL,
+    name TEXT NOT NULL,
     relationship_type TEXT NOT NULL,
-    origin_foreign_key_field TEXT NOT NULL,
-    destination_foreign_key_field TEXT NOT NULL,
+    origin_foreign_key TEXT NOT NULL,
+    destination_foreign_key TEXT NOT NULL,
     description TEXT,
-    PRIMARY KEY (origin_layer_id, relationship_id)
+    PRIMARY KEY (layer_id, relationship_id)
 );
 
 -- Features table - stores actual feature data
-CREATE TABLE features (
+CREATE TABLE IF NOT EXISTS features (
     objectid BIGSERIAL PRIMARY KEY,
     layer_id INT NOT NULL,
     geometry GEOMETRY,
@@ -80,14 +88,14 @@ CREATE TABLE features (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_service_layers_service_id ON honua.service_layers(service_id);
-CREATE INDEX idx_service_layers_layer_id ON honua.service_layers(layer_id);
-CREATE INDEX idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
-CREATE INDEX idx_relationships_origin_layer ON honua.relationships(origin_layer_id);
-CREATE INDEX idx_relationships_related_layer ON honua.relationships(related_layer_id);
-CREATE INDEX idx_features_layer_id ON features(layer_id);
-CREATE INDEX idx_features_geometry ON features USING GIST(geometry);
-CREATE INDEX idx_features_attributes ON features USING GIN(attributes);
+CREATE INDEX IF NOT EXISTS idx_service_layers_service_id ON honua.service_layers(service_id);
+CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
+CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_origin_layer ON honua.relationships_test(layer_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_related_layer ON honua.relationships_test(related_layer_id);
+CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
+CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
+CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
 
 -- Comments for documentation
 COMMENT ON SCHEMA honua IS 'Honua geospatial server metadata and configuration';
@@ -95,7 +103,7 @@ COMMENT ON TABLE honua.services IS 'Top-level service definitions (FeatureServer
 COMMENT ON TABLE honua.layers IS 'Layer definitions with geometry and field information';
 COMMENT ON TABLE honua.service_layers IS 'Junction table mapping layers to services with display order';
 COMMENT ON TABLE honua.layer_fields IS 'Field metadata and configuration for layer attributes';
-COMMENT ON TABLE honua.relationships IS 'Relationship definitions between layers for related record queries';
+COMMENT ON TABLE honua.relationships_test IS 'Relationship definitions between layers for related record queries';
 COMMENT ON TABLE features IS 'Feature data with geometry and attributes stored as JSONB';
 
 COMMENT ON COLUMN honua.layers.geometry_type IS 'PostGIS geometry type: Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon';

@@ -37,8 +37,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     public async Task DbUpMigrations_OnFreshDatabase_CreatesSchemaAndTables()
     {
         // Arrange
+        // Configure connection string with the isolated schema in search_path
+        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = $"{_schemaName},public"
+        };
+
         var upgrader = DeployChanges.To
-            .PostgresqlDatabase(_connectionString)
+            .PostgresqlDatabase(connectionStringBuilder.ToString())
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
             .WithTransaction()
             .Build();
@@ -47,6 +53,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var result = upgrader.PerformUpgrade();
 
         // Assert
+        if (!result.Successful)
+        {
+            Console.WriteLine($"Migration failed. Error: {result.Error}");
+        }
         result.Successful.Should().BeTrue("migrations should complete successfully");
         result.Scripts.Should().HaveCountGreaterThan(0, "at least one migration script should exist");
 
@@ -70,7 +80,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         tablesCmd.CommandText = """
             SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = 'honua'
-            AND table_name IN ('services', 'layers', 'layer_fields', 'relationships')
+            AND table_name IN ('services', 'layers', 'layer_fields', 'relationships_test')
             """;
         var tablesExist = (int)(long)(await tablesCmd.ExecuteScalarAsync())!;
         tablesExist.Should().Be(4, "all four core tables should exist");
@@ -101,8 +111,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     public async Task DbUpMigrations_OnExistingDatabase_IsIdempotent()
     {
         // Arrange
+        // Configure connection string with the isolated schema in search_path
+        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = $"{_schemaName},public"
+        };
+
         var upgrader = DeployChanges.To
-            .PostgresqlDatabase(_connectionString)
+            .PostgresqlDatabase(connectionStringBuilder.ToString())
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
             .WithTransaction()
             .Build();

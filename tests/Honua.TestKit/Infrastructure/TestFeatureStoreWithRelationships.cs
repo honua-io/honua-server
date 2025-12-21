@@ -36,7 +36,7 @@ public sealed class TestFeatureStoreWithRelationships : IFeatureStore
                 .Add("name", "Related Feature 3")
                 .Add("related_id", 2) // References object 2 from layer 0
                 .Add("description", "Third related feature")),
-            Feature.Create(4, null, ImmutableDictionary<string, object?>.Empty
+            Feature.Create(4, CreatePointWkb(-122.2, 37.8), ImmutableDictionary<string, object?>.Empty
                 .Add("objectid", 4)
                 .Add("name", "Related Feature 4")
                 .Add("related_id", 2) // Also references object 2 from layer 0
