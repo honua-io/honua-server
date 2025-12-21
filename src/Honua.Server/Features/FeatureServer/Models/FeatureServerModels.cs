@@ -811,6 +811,120 @@ public sealed class RelatedRecords
 /// <summary>
 /// JSON source generation context for FeatureServer models (AOT compatibility)
 /// </summary>
+/// <summary>
+/// Request model for the applyEdits endpoint
+/// </summary>
+public class ApplyEditsRequest
+{
+    /// <summary>
+    /// Array of features to add
+    /// </summary>
+    [JsonPropertyName("adds")]
+    public EsriFeature[]? Adds { get; set; }
+
+    /// <summary>
+    /// Array of features to update
+    /// </summary>
+    [JsonPropertyName("updates")]
+    public EsriFeature[]? Updates { get; set; }
+
+    /// <summary>
+    /// Array of objectIds to delete
+    /// </summary>
+    [JsonPropertyName("deletes")]
+    public object[]? Deletes { get; set; }
+
+    /// <summary>
+    /// Whether to rollback all changes on failure
+    /// </summary>
+    [JsonPropertyName("rollbackOnFailure")]
+    public bool RollbackOnFailure { get; set; } = false; // Esri default is false
+
+    /// <summary>
+    /// Whether to use global IDs
+    /// </summary>
+    [JsonPropertyName("useGlobalIds")]
+    public bool UseGlobalIds { get; set; } = false;
+}
+
+/// <summary>
+/// Response model for the applyEdits endpoint
+/// </summary>
+public class ApplyEditsResponse
+{
+    /// <summary>
+    /// Results of add operations
+    /// </summary>
+    [JsonPropertyName("addResults")]
+    public EditResult[]? AddResults { get; set; }
+
+    /// <summary>
+    /// Results of update operations
+    /// </summary>
+    [JsonPropertyName("updateResults")]
+    public EditResult[]? UpdateResults { get; set; }
+
+    /// <summary>
+    /// Results of delete operations
+    /// </summary>
+    [JsonPropertyName("deleteResults")]
+    public EditResult[]? DeleteResults { get; set; }
+
+    /// <summary>
+    /// Whether the entire transaction succeeded
+    /// </summary>
+    [JsonPropertyName("success")]
+    public bool Success { get; set; } = true;
+}
+
+/// <summary>
+/// Result of an individual edit operation
+/// </summary>
+public class EditResult
+{
+    /// <summary>
+    /// Object ID of the affected feature
+    /// </summary>
+    [JsonPropertyName("objectId")]
+    public long? ObjectId { get; set; }
+
+    /// <summary>
+    /// Global ID of the affected feature (if applicable)
+    /// </summary>
+    [JsonPropertyName("globalId")]
+    public string? GlobalId { get; set; }
+
+    /// <summary>
+    /// Whether this operation succeeded
+    /// </summary>
+    [JsonPropertyName("success")]
+    public bool Success { get; set; } = true;
+
+    /// <summary>
+    /// Error information if operation failed
+    /// </summary>
+    [JsonPropertyName("error")]
+    public EditError? Error { get; set; }
+}
+
+/// <summary>
+/// Error information for failed edit operations
+/// </summary>
+public class EditError
+{
+    /// <summary>
+    /// Error code
+    /// </summary>
+    [JsonPropertyName("code")]
+    public int Code { get; set; }
+
+    /// <summary>
+    /// Error description
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+}
+
 [JsonSerializable(typeof(FeatureServerResponse))]
 [JsonSerializable(typeof(LayerResponse))]
 [JsonSerializable(typeof(LayerInfo))]
@@ -826,6 +940,10 @@ public sealed class RelatedRecords
 [JsonSerializable(typeof(GeoJsonFeature))]
 [JsonSerializable(typeof(GeoJsonGeometry))]
 [JsonSerializable(typeof(GeoJsonCrs))]
+[JsonSerializable(typeof(ApplyEditsRequest))]
+[JsonSerializable(typeof(ApplyEditsResponse))]
+[JsonSerializable(typeof(EditResult))]
+[JsonSerializable(typeof(EditError))]
 [JsonSerializable(typeof(QueryRelatedRecordsParameters))]
 [JsonSerializable(typeof(QueryRelatedRecordsResponse))]
 [JsonSerializable(typeof(RelatedRecordGroup))]

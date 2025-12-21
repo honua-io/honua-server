@@ -244,6 +244,268 @@ internal sealed class FeatureServerHandler(
     }
 
     /// <summary>
+    /// Handles applyEdits requests for adding, updating, and deleting features
+    /// </summary>
+    public async Task<IResult> HandleApplyEditsAsync(
+        string serviceId,
+        int layerId,
+        ApplyEditsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            FeatureServerLog.ApplyEditsRequested(_logger, serviceId, layerId,
+                request.Adds?.Length ?? 0,
+                request.Updates?.Length ?? 0,
+                request.Deletes?.Length ?? 0);
+
+            // Validate service and layer exist
+            var service = await _layerCatalog.GetServiceAsync(serviceId, cancellationToken);
+            if (service == null)
+            {
+                FeatureServerLog.ServiceNotFound(_logger, serviceId);
+                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+            }
+
+            var layer = service.GetLayer(layerId);
+            if (layer == null)
+            {
+                FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
+                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
+            }
+
+            var response = new ApplyEditsResponse();
+            var allSuccess = true;
+
+            // Process add operations
+            if (request.Adds != null && request.Adds.Length > 0)
+            {
+                var addResults = await ProcessAddOperationsAsync(layer, request.Adds, cancellationToken);
+                response.AddResults = addResults;
+                allSuccess = allSuccess && addResults.All(r => r.Success);
+            }
+
+            // Process update operations
+            if (request.Updates != null && request.Updates.Length > 0)
+            {
+                var updateResults = await ProcessUpdateOperationsAsync(layer, request.Updates, cancellationToken);
+                response.UpdateResults = updateResults;
+                allSuccess = allSuccess && updateResults.All(r => r.Success);
+            }
+
+            // Process delete operations
+            if (request.Deletes != null && request.Deletes.Length > 0)
+            {
+                var deleteResults = await ProcessDeleteOperationsAsync(layer, request.Deletes, cancellationToken);
+                response.DeleteResults = deleteResults;
+                allSuccess = allSuccess && deleteResults.All(r => r.Success);
+            }
+
+            response.Success = allSuccess;
+
+            FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, allSuccess);
+
+            return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
+                contentType: "application/json");
+        }
+        catch (Exception ex)
+        {
+            FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
+            return EsriErrorHelpers.CreateInternalServerError("Apply edits failed", [ex.Message]);
+        }
+    }
+
+    /// <summary>
+    /// Process add operations for new features
+    /// </summary>
+    private async Task<EditResult[]> ProcessAddOperationsAsync(
+        LayerDefinition layer,
+        EsriFeature[] features,
+        CancellationToken cancellationToken)
+    {
+        var results = new EditResult[features.Length];
+
+        for (int i = 0; i < features.Length; i++)
+        {
+            try
+            {
+                var feature = features[i];
+
+                // Convert Esri geometry to WKB if present
+                byte[]? geometry = null;
+                if (feature.Geometry != null)
+                {
+                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.EsriGeometry);
+                    geometry = ConvertEsriJsonToWkb(geometryJson);
+                }
+
+                // Create feature object
+                var newFeature = new Feature
+                {
+                    Id = 0, // Will be assigned by the database
+                    Attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary(),
+                    Geometry = geometry
+                };
+
+                // Add the feature
+                var createdFeature = await _featureStore.CreateAsync(layer.Id, newFeature, cancellationToken);
+                var objectId = createdFeature.Id;
+
+                results[i] = new EditResult
+                {
+                    ObjectId = objectId,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                FeatureServerLog.FeatureAddFailed(_logger, i, ex.Message, ex);
+                results[i] = new EditResult
+                {
+                    Success = false,
+                    Error = new EditError
+                    {
+                        Code = 1000,
+                        Description = $"Failed to add feature: {ex.Message}"
+                    }
+                };
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Process update operations for existing features
+    /// </summary>
+    private async Task<EditResult[]> ProcessUpdateOperationsAsync(
+        LayerDefinition layer,
+        EsriFeature[] features,
+        CancellationToken cancellationToken)
+    {
+        var results = new EditResult[features.Length];
+
+        for (int i = 0; i < features.Length; i++)
+        {
+            try
+            {
+                var feature = features[i];
+
+                // Extract objectId from attributes
+                if (feature.Attributes?.TryGetValue("objectid", out var objectIdObj) != true ||
+                    !long.TryParse(objectIdObj?.ToString(), out var objectId))
+                {
+                    results[i] = new EditResult
+                    {
+                        Success = false,
+                        Error = new EditError
+                        {
+                            Code = 1001,
+                            Description = "ObjectId is required for update operations"
+                        }
+                    };
+                    continue;
+                }
+
+                // Convert Esri geometry to WKB if present
+                byte[]? geometry = null;
+                if (feature.Geometry != null)
+                {
+                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.EsriGeometry);
+                    geometry = ConvertEsriJsonToWkb(geometryJson);
+                }
+
+                // Create feature object for update
+                var updateFeature = new Feature
+                {
+                    Id = objectId,
+                    Attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary(),
+                    Geometry = geometry
+                };
+
+                // Update the feature
+                await _featureStore.UpdateAsync(layer.Id, updateFeature, cancellationToken);
+
+                results[i] = new EditResult
+                {
+                    ObjectId = objectId,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                FeatureServerLog.FeatureUpdateFailed(_logger, i, ex.Message, ex);
+                results[i] = new EditResult
+                {
+                    Success = false,
+                    Error = new EditError
+                    {
+                        Code = 1002,
+                        Description = $"Failed to update feature: {ex.Message}"
+                    }
+                };
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Process delete operations for existing features
+    /// </summary>
+    private async Task<EditResult[]> ProcessDeleteOperationsAsync(
+        LayerDefinition layer,
+        object[] objectIds,
+        CancellationToken cancellationToken)
+    {
+        var results = new EditResult[objectIds.Length];
+
+        for (int i = 0; i < objectIds.Length; i++)
+        {
+            try
+            {
+                if (!long.TryParse(objectIds[i]?.ToString(), out var objectId))
+                {
+                    results[i] = new EditResult
+                    {
+                        Success = false,
+                        Error = new EditError
+                        {
+                            Code = 1003,
+                            Description = "Invalid ObjectId for delete operation"
+                        }
+                    };
+                    continue;
+                }
+
+                // Delete the feature
+                await _featureStore.DeleteAsync(layer.Id, objectId, cancellationToken);
+
+                results[i] = new EditResult
+                {
+                    ObjectId = objectId,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                FeatureServerLog.FeatureDeleteFailed(_logger, i, ex.Message, ex);
+                results[i] = new EditResult
+                {
+                    Success = false,
+                    Error = new EditError
+                    {
+                        Code = 1004,
+                        Description = $"Failed to delete feature: {ex.Message}"
+                    }
+                };
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// Applies query limits enforcement and returns validated parameters or null if limits exceeded.
     /// </summary>
     private static QueryParameters? ApplyQueryLimits(QueryParameters queryParams, QueryLimits limits)

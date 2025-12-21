@@ -92,28 +92,48 @@ public static partial class FeatureServerLog
         Message = "Query parameter invalid: {Parameter} value {ActualValue}")]
     public static partial void QueryParameterInvalid(ILogger logger, string parameter, int actualValue);
 
-    // Related records query events (2300-2399)
+    // ApplyEdits events (2300-2399)
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "ApplyEdits requested for service '{ServiceId}' layer {LayerId} with {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes")]
+    public static partial void ApplyEditsRequested(ILogger logger, string serviceId, int layerId, int addCount, int updateCount, int deleteCount);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "ApplyEdits completed for service '{ServiceId}' layer {LayerId} with success: {Success}")]
+    public static partial void ApplyEditsCompleted(ILogger logger, string serviceId, int layerId, bool success);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "ApplyEdits failed for service '{ServiceId}' layer {LayerId}: {ErrorMessage}")]
+    public static partial void ApplyEditsFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to add feature {Index}: {ErrorMessage}")]
+    public static partial void FeatureAddFailed(ILogger logger, int index, string errorMessage, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to update feature {Index}: {ErrorMessage}")]
+    public static partial void FeatureUpdateFailed(ILogger logger, int index, string errorMessage, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to delete feature {Index}: {ErrorMessage}")]
+    public static partial void FeatureDeleteFailed(ILogger logger, int index, string errorMessage, Exception exception);
+
+    // Related records query events (2400-2499)
 
     [LoggerMessage(
-        EventId = 2301,
+        EventId = 2401,
         Level = LogLevel.Information,
         Message = "Related records query requested: {ServiceId}/FeatureServer/{LayerId}/queryRelatedRecords with objectIds: {ObjectIds}, relationshipId: {RelationshipId}")]
     public static partial void RelatedRecordsQueryRequested(ILogger logger, string serviceId, int layerId, string? objectIds, int? relationshipId);
 
     [LoggerMessage(
-        EventId = 2302,
+        EventId = 2402,
         Level = LogLevel.Information,
         Message = "Related records query completed: {ServiceId}/FeatureServer/{LayerId} returned {RelatedFeatureCount} related features in {GroupCount} groups")]
     public static partial void RelatedRecordsQueryCompleted(ILogger logger, string serviceId, int layerId, int relatedFeatureCount, int groupCount);
 
     [LoggerMessage(
-        EventId = 2303,
+        EventId = 2403,
         Level = LogLevel.Error,
         Message = "Related records query failed for {ServiceId}/FeatureServer/{LayerId}: {ErrorMessage}")]
     public static partial void RelatedRecordsQueryFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception? exception = null);
 
     [LoggerMessage(
-        EventId = 2304,
+        EventId = 2404,
         Level = LogLevel.Warning,
         Message = "Relationship not found: LayerId {LayerId}, RelationshipId {RelationshipId}")]
     public static partial void RelationshipNotFound(ILogger logger, int layerId, int relationshipId);
