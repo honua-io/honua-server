@@ -148,22 +148,23 @@ internal static partial class AttachmentHandler
             LogUpdateAttachment(logger, layerId, featureId, attachmentId);
 
             var existingAttachment = await attachmentStore.GetAsync(layerId, featureId, attachmentId, cancellationToken);
-            if (existingAttachment == null)
+            if (!existingAttachment.HasValue)
             {
                 return EsriErrorHelpers.CreateNotFoundError(
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 
             // Create updated attachment with new keywords
+            var attachment = existingAttachment.Value;
             var updatedAttachment = Attachment.Create(
-                existingAttachment.Value.Id,
-                existingAttachment.Value.FeatureId,
-                existingAttachment.Value.LayerId,
-                existingAttachment.Value.Filename,
-                existingAttachment.Value.ContentType,
-                existingAttachment.Value.Size,
-                existingAttachment.Value.CreatedAt,
-                existingAttachment.Value.StoragePath,
+                attachment.Id,
+                attachment.FeatureId,
+                attachment.LayerId,
+                attachment.Filename,
+                attachment.ContentType,
+                attachment.Size,
+                attachment.CreatedAt,
+                attachment.StoragePath,
                 keywords);
 
             await attachmentStore.UpdateAsync(layerId, featureId, updatedAttachment, cancellationToken);
