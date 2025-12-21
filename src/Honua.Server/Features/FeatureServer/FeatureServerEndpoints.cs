@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -116,7 +117,7 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return Results.NotFound($"Service '{serviceId}' not found");
+                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             var response = MapServiceToResponse(service, limits);
@@ -129,7 +130,7 @@ public static class FeatureServerEndpoints
         catch (Exception ex)
         {
             FeatureServerLog.ServiceMetadataFailed(logger, serviceId, ex.Message, ex);
-            return Results.StatusCode(500);
+            return EsriErrorHelpers.CreateInternalServerError("Service metadata retrieval failed", [ex.Message]);
         }
     }
 
@@ -188,7 +189,7 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return Results.NotFound($"Service '{serviceId}' not found");
+                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             // Find the layer in the service
@@ -196,7 +197,7 @@ public static class FeatureServerEndpoints
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
-                return Results.NotFound($"Layer {layerId} not found in service '{serviceId}'");
+                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
             var response = MapLayerToResponse(layer, limits);
@@ -209,7 +210,7 @@ public static class FeatureServerEndpoints
         catch (Exception ex)
         {
             FeatureServerLog.LayerMetadataFailed(logger, serviceId, layerId, ex.Message, ex);
-            return Results.StatusCode(500);
+            return EsriErrorHelpers.CreateInternalServerError("Layer metadata retrieval failed", [ex.Message]);
         }
     }
 

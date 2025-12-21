@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -65,40 +66,37 @@ internal sealed class FeatureServerHandler
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                return Results.NotFound($"Service '{serviceId}' not found");
+                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             var layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                return Results.NotFound($"Layer {layerId} not found in service '{serviceId}'");
+                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
             if (queryParams.ResultRecordCount is < 1)
             {
-                return Results.Problem(
-                    title: "Invalid query parameters",
-                    detail: $"{nameof(QueryParameters.ResultRecordCount)} must be greater than 0",
-                    statusCode: StatusCodes.Status400BadRequest);
+                return EsriErrorHelpers.CreateBadRequestError(
+                    "Invalid query parameters",
+                    [$"{nameof(QueryParameters.ResultRecordCount)} must be greater than 0"]);
             }
 
             if (queryParams.ResultOffset is < 0)
             {
-                return Results.Problem(
-                    title: "Invalid query parameters",
-                    detail: $"{nameof(QueryParameters.ResultOffset)} must be 0 or greater",
-                    statusCode: StatusCodes.Status400BadRequest);
+                return EsriErrorHelpers.CreateBadRequestError(
+                    "Invalid query parameters",
+                    [$"{nameof(QueryParameters.ResultOffset)} must be 0 or greater"]);
             }
 
             // Apply limits enforcement
             var validatedParams = ApplyQueryLimits(queryParams, _limitsOptions.Query);
             if (validatedParams == null)
             {
-                return Results.Problem(
-                    title: "Query parameters exceed configured limits",
-                    detail: $"Maximum record count: {_limitsOptions.Query.MaxRecordCount}, Maximum offset: {_limitsOptions.Query.MaxOffset}",
-                    statusCode: StatusCodes.Status400BadRequest);
+                return EsriErrorHelpers.CreateBadRequestError(
+                    "Query parameters exceed configured limits",
+                    [$"Maximum record count: {_limitsOptions.Query.MaxRecordCount}, Maximum offset: {_limitsOptions.Query.MaxOffset}"]);
             }
 
             // Build query from validated parameters
@@ -133,10 +131,9 @@ internal sealed class FeatureServerHandler
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return Results.Problem(
-                title: "Query execution failed",
-                detail: ex.Message,
-                statusCode: StatusCodes.Status500InternalServerError);
+            return EsriErrorHelpers.CreateInternalServerError(
+                "Query execution failed",
+                [ex.Message]);
         }
     }
 
@@ -253,4 +250,5 @@ internal sealed class FeatureServerHandler
     {
         return _geometryConverter.ConvertEsriJsonToWkb(esriJsonGeometry);
     }
+
 }
