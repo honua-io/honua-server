@@ -209,11 +209,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment", form);
 
         // Assert
-        var responseContent = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode == System.Net.HttpStatusCode.InternalServerError)
-        {
-            throw new InvalidOperationException($"Expected 404 but got 500. Response: {responseContent}");
-        }
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 
