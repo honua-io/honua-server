@@ -1199,5 +1199,314 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.Be400BadRequest();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithAddOperation_ReturnsNewObjectId()
+    {
+        // Arrange
+        var editsRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Test Added Feature",
+                        ["description"] = "Added via ApplyEdits test"
+                    },
+                    Geometry = new EsriGeometry
+                    {
+                        X = -122.4194,
+                        Y = 37.7749
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", content);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().NotBeNullOrEmpty();
+
+        var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        applyEditsResponse.Should().NotBeNull();
+        applyEditsResponse!.Success.Should().BeTrue();
+        applyEditsResponse.AddResults.Should().HaveCount(1);
+        applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+        applyEditsResponse.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithUpdateOperation_ReturnsUpdatedObjectId()
+    {
+        // Arrange - First add a feature to update
+        var addRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Feature to Update",
+                        ["description"] = "Original description"
+                    }
+                }
+            }
+        };
+
+        var addJson = JsonSerializer.Serialize(addRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
+        var addResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", addContent);
+        
+        var addResponseContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            addResponseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        // Now update the feature
+        var updateRequest = new ApplyEditsRequest
+        {
+            Updates = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = objectId,
+                        ["name"] = "Updated Feature Name",
+                        ["description"] = "Updated description"
+                    }
+                }
+            }
+        };
+
+        var updateJson = JsonSerializer.Serialize(updateRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var updateContent = new StringContent(updateJson, System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", updateContent);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        applyEditsResponse.Should().NotBeNull();
+        applyEditsResponse!.Success.Should().BeTrue();
+        applyEditsResponse.UpdateResults.Should().HaveCount(1);
+        applyEditsResponse.UpdateResults![0].Success.Should().BeTrue();
+        applyEditsResponse.UpdateResults[0].ObjectId.Should().Be(objectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithDeleteOperation_ReturnsDeletedObjectId()
+    {
+        // Arrange - First add a feature to delete
+        var addRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Feature to Delete",
+                        ["description"] = "Will be deleted"
+                    }
+                }
+            }
+        };
+
+        var addJson = JsonSerializer.Serialize(addRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
+        var addResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", addContent);
+        
+        var addResponseContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            addResponseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        // Now delete the feature
+        var deleteRequest = new ApplyEditsRequest
+        {
+            Deletes = new object[] { objectId }
+        };
+
+        var deleteJson = JsonSerializer.Serialize(deleteRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var deleteContent = new StringContent(deleteJson, System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", deleteContent);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        applyEditsResponse.Should().NotBeNull();
+        applyEditsResponse!.Success.Should().BeTrue();
+        applyEditsResponse.DeleteResults.Should().HaveCount(1);
+        applyEditsResponse.DeleteResults![0].Success.Should().BeTrue();
+        applyEditsResponse.DeleteResults[0].ObjectId.Should().Be(objectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithMixedOperations_ReturnsCorrectResults()
+    {
+        // Arrange - First add a feature to update/delete
+        var setupRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Feature for Update",
+                        ["description"] = "Setup feature"
+                    }
+                },
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Feature for Delete",
+                        ["description"] = "Setup feature"
+                    }
+                }
+            }
+        };
+
+        var setupJson = JsonSerializer.Serialize(setupRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var setupContent = new StringContent(setupJson, System.Text.Encoding.UTF8, "application/json");
+        var setupResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", setupContent);
+        
+        var setupResponseContent = await setupResponse.Content.ReadAsStringAsync();
+        var setupResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            setupResponseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var updateObjectId = setupResult!.AddResults![0].ObjectId!.Value;
+        var deleteObjectId = setupResult.AddResults![1].ObjectId!.Value;
+
+        // Mixed operations request
+        var mixedRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "New Added Feature",
+                        ["description"] = "Added in mixed operation"
+                    }
+                }
+            },
+            Updates = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = updateObjectId,
+                        ["name"] = "Updated in Mixed Operation",
+                        ["description"] = "Updated description"
+                    }
+                }
+            },
+            Deletes = new object[] { deleteObjectId }
+        };
+
+        var mixedJson = JsonSerializer.Serialize(mixedRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var mixedContent = new StringContent(mixedJson, System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", mixedContent);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        applyEditsResponse.Should().NotBeNull();
+        applyEditsResponse!.Success.Should().BeTrue();
+        
+        // Verify all operations succeeded
+        applyEditsResponse.AddResults.Should().HaveCount(1);
+        applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+        applyEditsResponse.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+        
+        applyEditsResponse.UpdateResults.Should().HaveCount(1);
+        applyEditsResponse.UpdateResults![0].Success.Should().BeTrue();
+        applyEditsResponse.UpdateResults[0].ObjectId.Should().Be(updateObjectId);
+        
+        applyEditsResponse.DeleteResults.Should().HaveCount(1);
+        applyEditsResponse.DeleteResults![0].Success.Should().BeTrue();
+        applyEditsResponse.DeleteResults[0].ObjectId.Should().Be(deleteObjectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithInvalidUpdate_ReturnsError()
+    {
+        // Arrange - Try to update non-existent feature
+        var updateRequest = new ApplyEditsRequest
+        {
+            Updates = new[]
+            {
+                new EsriFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = 999999, // Non-existent ID
+                        ["name"] = "Invalid Update"
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(updateRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", content);
+
+        // Assert
+        response.Be200Ok(); // ApplyEdits returns 200 but with error in results
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        applyEditsResponse.Should().NotBeNull();
+        applyEditsResponse!.UpdateResults.Should().HaveCount(1);
+        applyEditsResponse.UpdateResults![0].Success.Should().BeFalse();
+        applyEditsResponse.UpdateResults[0].Error.Should().NotBeNull();
+    }
+
     #endregion
 }
