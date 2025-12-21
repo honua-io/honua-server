@@ -110,8 +110,26 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
         return allLayers.ToArray();
     }
 
-    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        => _baseCatalog.GetServiceAsync(serviceName, cancellationToken);
+    public async Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+    {
+        var baseService = await _baseCatalog.GetServiceAsync(serviceName, cancellationToken);
+        if (baseService == null)
+            return null;
+
+        // Create extended service with all layers (base + related)
+        var allLayers = new List<LayerDefinition>(baseService.Layers);
+        allLayers.AddRange(_relatedLayers.Values);
+
+        return new ServiceDefinition(
+            Name: baseService.Name,
+            Description: baseService.Description,
+            Layers: allLayers.ToArray(),
+            SpatialReference: baseService.SpatialReference,
+            MaxRecordCount: baseService.MaxRecordCount,
+            SupportedFormats: baseService.SupportedFormats,
+            Capabilities: baseService.Capabilities,
+            ServiceExtent: baseService.ServiceExtent);
+    }
 
     public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
         => _baseCatalog.ListServicesAsync(cancellationToken);
