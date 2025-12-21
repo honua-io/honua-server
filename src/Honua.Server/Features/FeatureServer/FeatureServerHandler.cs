@@ -103,7 +103,23 @@ internal sealed class FeatureServerHandler
             var query = BuildFeatureQuery(validatedParams, service);
 
             // Execute query
-            var result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
+            FeatureResult result;
+            try
+            {
+                result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException($"Invalid query: {ex.Message}");
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+            }
+            catch (Exception ex) when (ex.Message.Contains("syntax") || ex.Message.Contains("SQL") || ex.Message.Contains("parse"))
+            {
+                throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+            }
 
             // Format response using QueryFormatter
             var outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
@@ -126,6 +142,14 @@ internal sealed class FeatureServerHandler
                 "geojson" => Results.Json(formattedResponse, FeatureServerJsonContext.Default.GeoJsonFeatureSet, contentType: contentType),
                 _ => Results.Json(formattedResponse, FeatureServerJsonContext.Default.QueryResponse, contentType: contentType)
             };
+        }
+        catch (InvalidOperationException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+
+            return EsriErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                [ex.Message]);
         }
         catch (Exception ex)
         {
@@ -203,8 +227,19 @@ internal sealed class FeatureServerHandler
         // Parse spatial filter if specified
         if (!string.IsNullOrEmpty(queryParams.Geometry))
         {
-            var spatialFilter = ParseSpatialFilter(queryParams.Geometry, queryParams.SpatialRel);
-            query = query with { SpatialFilter = spatialFilter };
+            try
+            {
+                var spatialFilter = ParseSpatialFilter(queryParams.Geometry, queryParams.SpatialRel);
+                query = query with { SpatialFilter = spatialFilter };
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException($"Invalid spatial parameters: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Invalid geometry: {ex.Message}");
+            }
         }
 
         return query;
