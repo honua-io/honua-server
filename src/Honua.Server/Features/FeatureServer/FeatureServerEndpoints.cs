@@ -68,6 +68,17 @@ public static class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/applyEdits", HandleApplyEdits)
+            .WithDisplayName("Apply Feature Edits")
+            .WithName("ApplyEdits")
+            .WithSummary("Apply feature edits (add, update, delete)")
+            .WithDescription("Apply feature edits to a layer including add, update, and delete operations")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        // .Produces<ApplyEditsResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
+
         return endpoints;
     }
 
@@ -554,5 +565,54 @@ public static class FeatureServerEndpoints
         return true;
     }
 
+    /// <summary>
+    /// Handles applyEdits requests
+    /// </summary>
+    private static async Task HandleApplyEdits(HttpContext context)
+    {
+        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
+            return;
 
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return;
+        }
+
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
+            return;
+        }
+
+        ApplyEditsRequest? editsRequest;
+        try
+        {
+            editsRequest = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                FeatureServerJsonContext.Default.ApplyEditsRequest,
+                context.RequestAborted);
+        }
+        catch (JsonException)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Invalid JSON payload");
+            return;
+        }
+
+        if (editsRequest is null)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Request body is required");
+            return;
+        }
+
+        var handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+
+        var result = await handler.HandleApplyEditsAsync(
+            serviceId,
+            layerId,
+            editsRequest,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
 }
