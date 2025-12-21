@@ -22,7 +22,7 @@ namespace Honua.Postgres;
 /// <summary>
 /// Dependency injection extensions for PostgreSQL services
 /// </summary>
-public static class ServiceCollectionExtensions
+internal static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Add PostgreSQL services including feature store and health checking

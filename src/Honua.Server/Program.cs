@@ -8,6 +8,7 @@ using Honua.Server.Features.Admin;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
 using Serilog;
@@ -81,6 +82,8 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometr
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFormatter,
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
 
+// Configure authentication and authorization
+builder.Services.AddApiKeyAuthentication();
 // Configure security headers
 ConfigureSecurityHeaders(builder.Services);
 
@@ -94,6 +97,9 @@ app.UseCorrelationId();
 
 // Add limits enforcement middleware (after correlation ID, before request logging)
 app.UseLimitsEnforcement();
+
+// Add authentication and authorization middleware
+app.UseApiKeyAuthentication();
 
 // Configure Serilog request logging with custom enrichment
 app.UseSerilogRequestLogging(options =>
@@ -131,9 +137,7 @@ app.MapHealthEndpoints();
 app.MapAdminEndpoints();
 
 // Configure FeatureServer endpoints
-#pragma warning disable IL2026, IL3050 // Suppress AOT warnings for endpoint mapping
 app.MapFeatureServerEndpoints();
-#pragma warning restore IL2026, IL3050
 
 // Configure file import endpoints
 app.MapImportEndpoints();

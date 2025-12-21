@@ -8,7 +8,7 @@ namespace Honua.Core.Features.Import.Domain;
 /// <summary>
 /// Supported vector file formats for import using NetTopologySuite
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(JsonStringEnumConverter<SupportedFileFormat>))]
 public enum SupportedFileFormat
 {
     /// <summary>

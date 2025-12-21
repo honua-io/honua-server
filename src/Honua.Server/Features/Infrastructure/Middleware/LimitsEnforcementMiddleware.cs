@@ -24,12 +24,6 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// </remarks>
 public sealed class LimitsEnforcementMiddleware
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     private readonly RequestDelegate _next;
     private readonly ILogger<LimitsEnforcementMiddleware> _logger;
     private readonly LimitsOptions _limits;
@@ -135,21 +129,23 @@ public sealed class LimitsEnforcementMiddleware
     private static async Task WriteErrorResponseAsync(HttpContext context, int statusCode, string error, string details)
     {
         context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = "application/json; charset=utf-8";
 
-        var errorResponse = new
+        var errorResponse = new LimitsErrorResponse
         {
-            error = new
+            Error = new LimitsErrorDetails
             {
-                code = statusCode,
-                message = error,
-                details = new[] { details }
+                Code = statusCode,
+                Message = error,
+                Details = [details]
             }
         };
 
-        var json = JsonSerializer.Serialize(errorResponse, _jsonOptions);
-
-        await context.Response.WriteAsync(json);
+        await JsonSerializer.SerializeAsync(
+            context.Response.Body,
+            errorResponse,
+            LimitsEnforcementJsonContext.Default.LimitsErrorResponse,
+            context.RequestAborted);
     }
 }
 

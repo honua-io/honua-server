@@ -85,4 +85,10 @@ public static partial class FeatureServerLog
         Level = LogLevel.Warning,
         Message = "Query limit exceeded: {Parameter} value {ActualValue} exceeds limit {LimitValue}")]
     public static partial void QueryLimitExceeded(ILogger logger, string parameter, int actualValue, int limitValue);
+
+    [LoggerMessage(
+        EventId = 2205,
+        Level = LogLevel.Warning,
+        Message = "Query parameter invalid: {Parameter} value {ActualValue}")]
+    public static partial void QueryParameterInvalid(ILogger logger, string parameter, int actualValue);
 }

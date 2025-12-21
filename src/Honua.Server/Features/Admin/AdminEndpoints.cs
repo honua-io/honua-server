@@ -6,6 +6,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Admin;
 
@@ -19,16 +20,19 @@ public static class AdminEndpoints
     /// </summary>
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use Map with explicit HTTP method metadata to avoid MapGet reflection
-        endpoints.Map("/api/admin/connections/{id}/tables", HandleGetConnectionTables)
-            .WithDisplayName("Get Connection Tables")
+        // Create admin group with authorization requirement
+        var adminGroup = endpoints.MapGroup("/api/admin")
             .WithTags("Admin")
+            .RequireAdminAuthorization();
+
+        // Use Map with explicit HTTP method metadata to avoid MapGet reflection
+        adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
+            .WithDisplayName("Get Connection Tables")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Use catch-all parameter to handle edge cases like empty segments
-        endpoints.Map("/api/admin/connections/{*path}", HandleGetConnectionTablesWithCatchAll)
+        adminGroup.Map("/connections/{*path}", HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Catch All")
-            .WithTags("Admin")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
