@@ -29,8 +29,8 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Add Aspire service defaults (OTel, health, resilience)
 builder.AddServiceDefaults();
 
-// Add Npgsql with connection from Aspire
-builder.AddNpgsqlDataSource("honua");
+// Add Npgsql with connection from Aspire using DefaultConnection key
+builder.AddNpgsqlDataSource("DefaultConnection");
 
 // Add Redis if configured
 builder.AddRedisDistributedCache("redis");
