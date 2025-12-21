@@ -195,6 +195,7 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
         liveResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
         readyResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
     }
+
 }
 
 /// <summary>

@@ -82,12 +82,15 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometr
     Honua.Server.Features.FeatureServer.Services.GeometryConverter>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFormatter,
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
 // Configure security headers
 ConfigureSecurityHeaders(builder.Services);
 
+// Configure output caching for metadata endpoints
+ConfigureOutputCaching(builder.Services);
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
@@ -107,6 +110,9 @@ app.UseLimitsEnforcement();
 
 // Add authentication and authorization middleware
 app.UseApiKeyAuthentication();
+
+// Enable output caching middleware
+app.UseOutputCache();
 
 // Configure Serilog request logging with custom enrichment
 app.UseSerilogRequestLogging(options =>
@@ -299,6 +305,33 @@ async Task RunDatabaseMigrationsAsync()
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
         // Don't throw - let the app start and rely on health checks to indicate readiness
     }
+}
+
+// Configure output caching for metadata endpoints
+static void ConfigureOutputCaching(IServiceCollection services)
+{
+    services.AddOutputCache(options =>
+    {
+        // Service metadata caching policy
+        options.AddPolicy("ServiceMetadata", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(5));
+            policy.SetVaryByRouteValue("serviceId");
+            policy.SetVaryByQuery("f"); // Support for format parameter if used
+            policy.Tag("service-metadata", "metadata");
+        });
+
+        // Layer metadata caching policy
+        options.AddPolicy("LayerMetadata", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(5));
+            policy.SetVaryByRouteValue("serviceId", "layerId");
+            policy.SetVaryByQuery("f"); // Support for format parameter if used
+            policy.Tag("layer-metadata", "metadata");
+        });
+
+        // Note: No default base policy - endpoints must explicitly opt into caching for security
+    });
 }
 
 

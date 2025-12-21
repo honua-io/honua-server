@@ -425,6 +425,10 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             kvp => ConvertJsonElementToObject(kvp.Value)
         );
 
+        // Inject objectid into attributes for Esri FeatureServer compatibility
+        // This ensures consistent behavior with TestFeatureStore and proper response formatting
+        convertedAttributes["objectid"] = id;
+
         var attributes = convertedAttributes.ToImmutableDictionary();
 
         return Feature.Create(id, geometry, attributes);
