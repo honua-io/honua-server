@@ -149,6 +149,13 @@ public class TestFeatureStore : IFeatureStore
         return Task.FromResult<FeatureExtent?>(extent);
     }
 
+    /// <summary>
+    /// Asynchronously creates a feature in the specified layer.
+    /// </summary>
+    /// <param name="layerId">The layer ID where the feature will be created.</param>
+    /// <param name="feature">The feature to create.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created feature.</returns>
     public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.ContainsKey(layerId))
@@ -160,6 +167,14 @@ public class TestFeatureStore : IFeatureStore
         return Task.FromResult(newFeature);
     }
 
+    /// <summary>
+    /// Asynchronously updates a feature in the specified layer.
+    /// </summary>
+    /// <param name="layerId">The layer ID where the feature exists.</param>
+    /// <param name="feature">The feature with updated data.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated feature.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the layer or feature is not found.</exception>
     public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.TryGetValue(layerId, out var features))
@@ -173,6 +188,13 @@ public class TestFeatureStore : IFeatureStore
         return Task.FromResult(feature);
     }
 
+    /// <summary>
+    /// Asynchronously deletes a feature from the specified layer.
+    /// </summary>
+    /// <param name="layerId">The layer ID where the feature exists.</param>
+    /// <param name="featureId">The ID of the feature to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the feature was successfully deleted, false if not found.</returns>
     public Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.TryGetValue(layerId, out var features))
