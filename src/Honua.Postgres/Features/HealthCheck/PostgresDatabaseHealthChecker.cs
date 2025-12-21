@@ -16,7 +16,7 @@ namespace Honua.Postgres.Features.HealthCheck;
 /// </remarks>
 internal sealed class PostgresDatabaseHealthChecker(IConfiguration configuration) : IDatabaseHealthChecker
 {
-    private readonly string? _connectionString = configuration.GetConnectionString("DefaultConnection");
+    private readonly string? _connectionString = configuration.GetConnectionString("honua");
 
     /// <summary>
     /// Checks PostgreSQL database connectivity and responsiveness

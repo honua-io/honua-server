@@ -144,7 +144,7 @@ public static partial class Log
     [LoggerMessage(
         EventId = 4013,
         Level = LogLevel.Information,
-        Message = "Database connection string 'DefaultConnection' not configured - skipping migrations")]
+        Message = "Database connection string 'honua' not configured - skipping migrations")]
     public static partial void DatabaseConnectionStringNotConfigured(ILogger logger);
 
     [LoggerMessage(

@@ -25,7 +25,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
-        string schema = string.IsNullOrEmpty(schemaName) ? "catalog" : schemaName;
+        string schema = string.IsNullOrEmpty(schemaName) ? "honua" : schemaName;
         _layersTable = $"{schema}.layers";
         _fieldsTable = $"{schema}.layer_fields";
         _servicesTable = $"{schema}.services";

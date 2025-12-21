@@ -37,10 +37,10 @@ internal static class ServiceCollectionExtensions
         // Register NpgsqlDataSource as specified in Issue #3
         _ = services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
-            string? connectionString = configuration.GetConnectionString("DefaultConnection");
+            string? connectionString = configuration.GetConnectionString("honua");
             if (string.IsNullOrEmpty(connectionString))
             {
-                throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
+                throw new InvalidOperationException("honua connection string is required for PostgreSQL services");
             }
 
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
@@ -72,9 +72,9 @@ internal static class ServiceCollectionExtensions
         // Register file import service with NetTopologySuite support
         _ = services.AddScoped<IFileImportService>(serviceProvider =>
         {
-            string? connectionString = configuration.GetConnectionString("DefaultConnection");
+            string? connectionString = configuration.GetConnectionString("honua");
             return string.IsNullOrEmpty(connectionString)
-                ? throw new InvalidOperationException("DefaultConnection connection string is required for file import services")
+                ? throw new InvalidOperationException("honua connection string is required for file import services")
                 : (IFileImportService)new FileImportService(connectionString);
         });
 
