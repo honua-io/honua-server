@@ -22,7 +22,7 @@ internal static partial class AttachmentHandler
         int layerId,
         long featureId,
         IAttachmentStore attachmentStore,
-        ILogger logger,
+        ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
         try
@@ -64,7 +64,7 @@ internal static partial class AttachmentHandler
         string? keywords,
         IAttachmentStore attachmentStore,
         AttachmentLimits limits,
-        ILogger logger,
+        ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
         try
@@ -140,7 +140,7 @@ internal static partial class AttachmentHandler
         long attachmentId,
         string? keywords,
         IAttachmentStore attachmentStore,
-        ILogger logger,
+        ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
         try
@@ -195,7 +195,7 @@ internal static partial class AttachmentHandler
         long featureId,
         long[] attachmentIds,
         IAttachmentStore attachmentStore,
-        ILogger logger,
+        ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
         try
@@ -239,7 +239,7 @@ internal static partial class AttachmentHandler
         long featureId,
         long attachmentId,
         IAttachmentStore attachmentStore,
-        ILogger logger,
+        ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
         try
@@ -307,46 +307,46 @@ internal static partial class AttachmentHandler
     #region Logging
 
     [LoggerMessage(EventId = 2001, Level = LogLevel.Information, Message = "Querying attachments for layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogQueryAttachments(ILogger logger, int layerId, long featureId);
+    private static partial void LogQueryAttachments(ILogger<AttachmentOperations> logger, int layerId, long featureId);
 
     [LoggerMessage(EventId = 2002, Level = LogLevel.Error, Message = "Failed to query attachments for layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogQueryAttachmentsError(ILogger logger, int layerId, long featureId, Exception ex);
+    private static partial void LogQueryAttachmentsError(ILogger<AttachmentOperations> logger, int layerId, long featureId, Exception ex);
 
     [LoggerMessage(EventId = 2003, Level = LogLevel.Information, Message = "Adding attachment '{FileName}' to layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogAddAttachment(ILogger logger, int layerId, long featureId, string fileName);
+    private static partial void LogAddAttachment(ILogger<AttachmentOperations> logger, int layerId, long featureId, string fileName);
 
     [LoggerMessage(EventId = 2004, Level = LogLevel.Information, Message = "Successfully added attachment {AttachmentId} to layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogAddAttachmentSuccess(ILogger logger, int layerId, long featureId, long attachmentId);
+    private static partial void LogAddAttachmentSuccess(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId);
 
     [LoggerMessage(EventId = 2005, Level = LogLevel.Error, Message = "Failed to add attachment '{FileName}' to layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogAddAttachmentError(ILogger logger, int layerId, long featureId, string fileName, Exception ex);
+    private static partial void LogAddAttachmentError(ILogger<AttachmentOperations> logger, int layerId, long featureId, string fileName, Exception ex);
 
     [LoggerMessage(EventId = 2006, Level = LogLevel.Information, Message = "Updating attachment {AttachmentId} for layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogUpdateAttachment(ILogger logger, int layerId, long featureId, long attachmentId);
+    private static partial void LogUpdateAttachment(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId);
 
     [LoggerMessage(EventId = 2007, Level = LogLevel.Information, Message = "Successfully updated attachment {AttachmentId} for layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogUpdateAttachmentSuccess(ILogger logger, int layerId, long featureId, long attachmentId);
+    private static partial void LogUpdateAttachmentSuccess(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId);
 
     [LoggerMessage(EventId = 2008, Level = LogLevel.Error, Message = "Failed to update attachment {AttachmentId} for layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogUpdateAttachmentError(ILogger logger, int layerId, long featureId, long attachmentId, Exception ex);
+    private static partial void LogUpdateAttachmentError(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId, Exception ex);
 
     [LoggerMessage(EventId = 2009, Level = LogLevel.Information, Message = "Deleting {AttachmentCount} attachments from layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogDeleteAttachments(ILogger logger, int layerId, long featureId, int attachmentCount);
+    private static partial void LogDeleteAttachments(ILogger<AttachmentOperations> logger, int layerId, long featureId, int attachmentCount);
 
     [LoggerMessage(EventId = 2010, Level = LogLevel.Information, Message = "Successfully deleted {SuccessCount}/{TotalCount} attachments from layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogDeleteAttachmentsSuccess(ILogger logger, int layerId, long featureId, int successCount, int totalCount);
+    private static partial void LogDeleteAttachmentsSuccess(ILogger<AttachmentOperations> logger, int layerId, long featureId, int successCount, int totalCount);
 
     [LoggerMessage(EventId = 2011, Level = LogLevel.Error, Message = "Failed to delete attachments from layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogDeleteAttachmentsError(ILogger logger, int layerId, long featureId, Exception ex);
+    private static partial void LogDeleteAttachmentsError(ILogger<AttachmentOperations> logger, int layerId, long featureId, Exception ex);
 
     [LoggerMessage(EventId = 2012, Level = LogLevel.Information, Message = "Downloading attachment {AttachmentId} from layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogDownloadAttachment(ILogger logger, int layerId, long featureId, long attachmentId);
+    private static partial void LogDownloadAttachment(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId);
 
     [LoggerMessage(EventId = 2013, Level = LogLevel.Information, Message = "Successfully downloaded attachment {AttachmentId} from layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogDownloadAttachmentSuccess(ILogger logger, int layerId, long featureId, long attachmentId);
+    private static partial void LogDownloadAttachmentSuccess(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId);
 
     [LoggerMessage(EventId = 2014, Level = LogLevel.Error, Message = "Failed to download attachment {AttachmentId} from layer {LayerId}, feature {FeatureId}")]
-    private static partial void LogDownloadAttachmentError(ILogger logger, int layerId, long featureId, long attachmentId, Exception ex);
+    private static partial void LogDownloadAttachmentError(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId, Exception ex);
 
     #endregion
 }

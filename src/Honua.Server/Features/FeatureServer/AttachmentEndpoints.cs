@@ -9,6 +9,13 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Features.FeatureServer;
 
 /// <summary>
+/// Logger category for attachment operations
+/// </summary>
+internal sealed class AttachmentOperations
+{
+}
+
+/// <summary>
 /// Extension methods to register FeatureServer attachment endpoints
 /// </summary>
 public static class AttachmentEndpoints
@@ -86,7 +93,7 @@ public static class AttachmentEndpoints
         }
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
-        var logger = context.RequestServices.GetRequiredService<ILogger>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await QueryAttachmentsAsync(
             layerId,
@@ -127,7 +134,7 @@ public static class AttachmentEndpoints
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
-        var logger = context.RequestServices.GetRequiredService<ILogger>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await AddAttachmentAsync(
             layerId,
@@ -170,7 +177,7 @@ public static class AttachmentEndpoints
         var keywords = context.Request.Form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
-        var logger = context.RequestServices.GetRequiredService<ILogger>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await UpdateAttachmentAsync(
             layerId,
@@ -227,7 +234,7 @@ public static class AttachmentEndpoints
         }
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
-        var logger = context.RequestServices.GetRequiredService<ILogger>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await DeleteAttachmentsAsync(
             layerId,
@@ -266,7 +273,7 @@ public static class AttachmentEndpoints
         }
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
-        var logger = context.RequestServices.GetRequiredService<ILogger>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await DownloadAttachmentAsync(
             layerId,
@@ -282,18 +289,18 @@ public static class AttachmentEndpoints
     // Handler methods would go here - delegating to AttachmentHandler
     // For now, creating placeholder methods to be implemented in the handler
 
-    private static Task<IResult> QueryAttachmentsAsync(int layerId, long featureId, IAttachmentStore attachmentStore, ILogger logger, CancellationToken cancellationToken)
+    private static Task<IResult> QueryAttachmentsAsync(int layerId, long featureId, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.QueryAttachmentsAsync(layerId, featureId, attachmentStore, logger, cancellationToken);
 
-    private static Task<IResult> AddAttachmentAsync(int layerId, long featureId, IFormFile file, string? keywords, IAttachmentStore attachmentStore, AttachmentLimits limits, ILogger logger, CancellationToken cancellationToken)
+    private static Task<IResult> AddAttachmentAsync(int layerId, long featureId, IFormFile file, string? keywords, IAttachmentStore attachmentStore, AttachmentLimits limits, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.AddAttachmentAsync(layerId, featureId, file, keywords, attachmentStore, limits, logger, cancellationToken);
 
-    private static Task<IResult> UpdateAttachmentAsync(int layerId, long featureId, long attachmentId, string? keywords, IAttachmentStore attachmentStore, ILogger logger, CancellationToken cancellationToken)
+    private static Task<IResult> UpdateAttachmentAsync(int layerId, long featureId, long attachmentId, string? keywords, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.UpdateAttachmentAsync(layerId, featureId, attachmentId, keywords, attachmentStore, logger, cancellationToken);
 
-    private static Task<IResult> DeleteAttachmentsAsync(int layerId, long featureId, long[] attachmentIds, IAttachmentStore attachmentStore, ILogger logger, CancellationToken cancellationToken)
+    private static Task<IResult> DeleteAttachmentsAsync(int layerId, long featureId, long[] attachmentIds, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.DeleteAttachmentsAsync(layerId, featureId, attachmentIds, attachmentStore, logger, cancellationToken);
 
-    private static Task<IResult> DownloadAttachmentAsync(int layerId, long featureId, long attachmentId, IAttachmentStore attachmentStore, ILogger logger, CancellationToken cancellationToken)
+    private static Task<IResult> DownloadAttachmentAsync(int layerId, long featureId, long attachmentId, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.DownloadAttachmentAsync(layerId, featureId, attachmentId, attachmentStore, logger, cancellationToken);
 }

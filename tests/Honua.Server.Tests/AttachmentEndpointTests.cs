@@ -93,13 +93,15 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         // Arrange
         var fileContent = "Test file content"u8.ToArray();
+        var byteContent = new ByteArrayContent(fileContent);
+        byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+
         var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent("test,keywords"), "keywords" },
-            { new ByteArrayContent(fileContent), "attachment", "test.txt" }
+            { byteContent, "attachment", "test.pdf" }
         };
-        form.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/form-data");
 
         // Act
         var response = await _fixture.Client.PostAsync(
@@ -207,6 +209,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment", form);
 
         // Assert
+        var responseContent = await response.Content.ReadAsStringAsync();
+        if (response.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+        {
+            throw new InvalidOperationException($"Expected 404 but got 500. Response: {responseContent}");
+        }
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 
