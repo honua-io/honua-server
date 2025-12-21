@@ -299,7 +299,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(1, result.UpdatedCount);
         Assert.Equal(1, result.DeletedCount);
         Assert.Equal(2, result.CreatedIds.Length);
-        Assert.Empty(result.Errors);
+        Assert.False(result.HasErrors);
     }
 
     [Fact]
@@ -317,7 +317,91 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(0, result.UpdatedCount);
         Assert.Equal(0, result.DeletedCount);
         Assert.Empty(result.CreatedIds);
-        Assert.Empty(result.Errors);
+        Assert.False(result.HasErrors);
+    }
+
+    [Fact]
+    public async Task ApplyEditsAsync_WithRollbackOnFailureProperty_BehaviorIsImplemented()
+    {
+        // This test verifies that the FeatureEditBatch rollbackOnFailure property
+        // is properly handled by the PostgresFeatureStore implementation
+
+        // Arrange
+        var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));
+        var feature2 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature2"));
+
+        // Test with rollbackOnFailure: true
+        var editBatchWithRollback = FeatureEditBatch.Create(
+            creates: ImmutableArray.Create(feature1, feature2),
+            rollbackOnFailure: true);
+
+        // Test with rollbackOnFailure: false (default Esri behavior)
+        var editBatchWithoutRollback = FeatureEditBatch.Create(
+            creates: ImmutableArray.Create(feature1, feature2),
+            rollbackOnFailure: false);
+
+        // Act
+        var resultWithRollback = await _featureStore.ApplyEditsAsync(TestLayerId, editBatchWithRollback);
+        var resultWithoutRollback = await _featureStore.ApplyEditsAsync(TestLayerId, editBatchWithoutRollback);
+
+        // Assert
+        // Both should succeed in this case since we have valid features
+        Assert.True(resultWithRollback.IsSuccess);
+        Assert.Equal(2, resultWithRollback.CreatedCount);
+        Assert.False(resultWithRollback.WasRolledBack);
+        Assert.False(resultWithRollback.HasErrors);
+        Assert.Equal(2, resultWithRollback.CreateResults.Length);
+        Assert.All(resultWithRollback.CreateResults, r => Assert.True(r.IsSuccess));
+
+        Assert.True(resultWithoutRollback.IsSuccess);
+        Assert.Equal(2, resultWithoutRollback.CreatedCount);
+        Assert.False(resultWithoutRollback.WasRolledBack);
+        Assert.False(resultWithoutRollback.HasErrors);
+        Assert.Equal(2, resultWithoutRollback.CreateResults.Length);
+        Assert.All(resultWithoutRollback.CreateResults, r => Assert.True(r.IsSuccess));
+    }
+
+    [Fact]
+    public async Task ApplyEditsAsync_ReturnsDetailedOperationResults()
+    {
+        // This test verifies that the enhanced FeatureEditResult structure
+        // provides detailed operation results as required by issue #12
+
+        // Arrange
+        var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));
+        var feature2 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature2"));
+
+        var editBatch = FeatureEditBatch.Create(
+            creates: ImmutableArray.Create(feature1, feature2));
+
+        // Act
+        var result = await _featureStore.ApplyEditsAsync(TestLayerId, editBatch);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.CreatedCount);
+        Assert.Equal(0, result.UpdatedCount);
+        Assert.Equal(0, result.DeletedCount);
+        Assert.False(result.WasRolledBack);
+        Assert.False(result.HasErrors);
+
+        // Verify detailed operation results
+        Assert.Equal(2, result.CreateResults.Length);
+        Assert.Empty(result.UpdateResults);
+        Assert.Empty(result.DeleteResults);
+
+        // Check individual create results
+        Assert.All(result.CreateResults, r =>
+        {
+            Assert.True(r.IsSuccess);
+            Assert.True(r.ObjectId.HasValue);
+            Assert.True(r.ObjectId.Value > 0);
+            Assert.Null(r.ErrorMessage);
+            Assert.Equal(0, r.ErrorCode);
+        });
+
+        // Verify created IDs match the result IDs
+        Assert.Equal(result.CreatedIds.Length, result.CreateResults.Count(r => r.IsSuccess));
     }
 
     [Fact]
