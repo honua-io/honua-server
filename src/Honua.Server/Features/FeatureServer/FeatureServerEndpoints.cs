@@ -719,8 +719,12 @@ public static class FeatureServerEndpoints
     {
         var error = new ApiErrorResponse
         {
-            Error = message,
-            Details = details
+            Error = new EsriError
+            {
+                Code = EsriErrorCodes.FromHttpStatusCode(statusCode),
+                Message = message,
+                Details = details
+            }
         };
 
         return Results.Json(error, FeatureServerJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
