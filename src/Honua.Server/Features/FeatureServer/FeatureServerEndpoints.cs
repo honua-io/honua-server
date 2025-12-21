@@ -32,7 +32,8 @@ public static class FeatureServerEndpoints
             .WithSummary("Get FeatureServer service metadata")
             .WithDescription("Returns metadata for a FeatureServer service including all layers")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .CacheOutput("ServiceMetadata");
         // .Produces<FeatureServerResponse>(200, "application/json")
         // .Produces(404);
 
@@ -42,7 +43,8 @@ public static class FeatureServerEndpoints
             .WithSummary("Get FeatureServer layer metadata")
             .WithDescription("Returns detailed layer metadata for a specific layer")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .CacheOutput("LayerMetadata");
         // .Produces<LayerResponse>(200, "application/json")
         // .Produces(404);
 

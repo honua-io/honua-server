@@ -87,6 +87,9 @@ builder.Services.AddApiKeyAuthentication();
 // Configure security headers
 ConfigureSecurityHeaders(builder.Services);
 
+// Configure output caching for metadata endpoints
+ConfigureOutputCaching(builder.Services);
+
 var app = builder.Build();
 
 // Add security headers middleware (first in pipeline for all requests)
@@ -100,6 +103,9 @@ app.UseLimitsEnforcement();
 
 // Add authentication and authorization middleware
 app.UseApiKeyAuthentication();
+
+// Enable output caching middleware
+app.UseOutputCache();
 
 // Configure Serilog request logging with custom enrichment
 app.UseSerilogRequestLogging(options =>
@@ -257,6 +263,37 @@ async Task RunDatabaseMigrationsAsync()
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
         // Don't throw - let the app start and rely on health checks to indicate readiness
     }
+}
+
+// Configure output caching for metadata endpoints
+static void ConfigureOutputCaching(IServiceCollection services)
+{
+    services.AddOutputCache(options =>
+    {
+        // Service metadata caching policy
+        options.AddPolicy("ServiceMetadata", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(5));
+            policy.SetVaryByRouteValue("serviceId");
+            policy.SetVaryByQuery("f"); // Support for format parameter if used
+            policy.Tag("service-metadata", "metadata");
+        });
+
+        // Layer metadata caching policy
+        options.AddPolicy("LayerMetadata", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(5));
+            policy.SetVaryByRouteValue("serviceId", "layerId");
+            policy.SetVaryByQuery("f"); // Support for format parameter if used
+            policy.Tag("layer-metadata", "metadata");
+        });
+
+        // Default policy for other endpoints that might benefit
+        options.AddBasePolicy(policy =>
+        {
+            policy.NoCache(); // Explicit no-cache by default for security
+        });
+    });
 }
 
 
