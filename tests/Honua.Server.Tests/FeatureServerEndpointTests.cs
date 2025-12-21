@@ -1271,7 +1271,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var addJson = JsonSerializer.Serialize(addRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
         var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", addContent);
-        
+
         var addResponseContent = await addResponse.Content.ReadAsStringAsync();
         var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
             addResponseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
@@ -1338,7 +1338,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var addJson = JsonSerializer.Serialize(addRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
         var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", addContent);
-        
+
         var addResponseContent = await addResponse.Content.ReadAsStringAsync();
         var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
             addResponseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
@@ -1402,7 +1402,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var setupJson = JsonSerializer.Serialize(setupRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
         var setupContent = new StringContent(setupJson, System.Text.Encoding.UTF8, "application/json");
         var setupResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", setupContent);
-        
+
         var setupResponseContent = await setupResponse.Content.ReadAsStringAsync();
         var setupResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
             setupResponseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
@@ -1453,16 +1453,16 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
         applyEditsResponse.Should().NotBeNull();
         applyEditsResponse!.Success.Should().BeTrue();
-        
+
         // Verify all operations succeeded
         applyEditsResponse.AddResults.Should().HaveCount(1);
         applyEditsResponse.AddResults![0].Success.Should().BeTrue();
         applyEditsResponse.AddResults[0].ObjectId.Should().BeGreaterThan(0);
-        
+
         applyEditsResponse.UpdateResults.Should().HaveCount(1);
         applyEditsResponse.UpdateResults![0].Success.Should().BeTrue();
         applyEditsResponse.UpdateResults[0].ObjectId.Should().Be(updateObjectId);
-        
+
         applyEditsResponse.DeleteResults.Should().HaveCount(1);
         applyEditsResponse.DeleteResults![0].Success.Should().BeTrue();
         applyEditsResponse.DeleteResults[0].ObjectId.Should().Be(deleteObjectId);
