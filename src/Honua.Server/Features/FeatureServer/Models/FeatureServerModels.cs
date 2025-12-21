@@ -705,6 +705,129 @@ public sealed class GeoJsonCrs
 }
 
 /// <summary>
+/// Attachment information for feature attachments
+/// </summary>
+public sealed class AttachmentInfo
+{
+    /// <summary>
+    /// Attachment identifier
+    /// </summary>
+    public required long Id { get; init; }
+
+    /// <summary>
+    /// Original filename
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// MIME content type
+    /// </summary>
+    public required string ContentType { get; init; }
+
+    /// <summary>
+    /// File size in bytes
+    /// </summary>
+    public required long Size { get; init; }
+
+    /// <summary>
+    /// Optional keywords for the attachment
+    /// </summary>
+    public string? Keywords { get; init; }
+}
+
+/// <summary>
+/// Response for querying feature attachments
+/// </summary>
+public sealed class AttachmentQueryResponse
+{
+    /// <summary>
+    /// Array of attachment information
+    /// </summary>
+    public required AttachmentInfo[] AttachmentInfos { get; init; }
+}
+
+/// <summary>
+/// Result of adding an attachment
+/// </summary>
+public sealed class AddAttachmentResult
+{
+    /// <summary>
+    /// Feature ID that owns the attachment
+    /// </summary>
+    public required long ObjectId { get; init; }
+
+    /// <summary>
+    /// Whether the operation was successful
+    /// </summary>
+    public required bool Success { get; init; }
+}
+
+/// <summary>
+/// Response for adding an attachment
+/// </summary>
+public sealed class AddAttachmentResponse
+{
+    /// <summary>
+    /// Add attachment result
+    /// </summary>
+    public required AddAttachmentResult AddAttachmentResult { get; init; }
+}
+
+/// <summary>
+/// Result of updating an attachment
+/// </summary>
+public sealed class UpdateAttachmentResult
+{
+    /// <summary>
+    /// Feature ID that owns the attachment
+    /// </summary>
+    public required long ObjectId { get; init; }
+
+    /// <summary>
+    /// Whether the operation was successful
+    /// </summary>
+    public required bool Success { get; init; }
+}
+
+/// <summary>
+/// Response for updating an attachment
+/// </summary>
+public sealed class UpdateAttachmentResponse
+{
+    /// <summary>
+    /// Update attachment result
+    /// </summary>
+    public required UpdateAttachmentResult UpdateAttachmentResult { get; init; }
+}
+
+/// <summary>
+/// Result of deleting an attachment
+/// </summary>
+public sealed class DeleteAttachmentResult
+{
+    /// <summary>
+    /// Feature ID that owns the attachment
+    /// </summary>
+    public required long ObjectId { get; init; }
+
+    /// <summary>
+    /// Whether the operation was successful
+    /// </summary>
+    public required bool Success { get; init; }
+}
+
+/// <summary>
+/// Response for deleting attachments
+/// </summary>
+public sealed class DeleteAttachmentsResponse
+{
+    /// <summary>
+    /// Delete attachment results
+    /// </summary>
+    public required DeleteAttachmentResult[] DeleteAttachmentResults { get; init; }
+}
+
+/// <summary>
 /// Request parameters for queryRelatedRecords endpoint
 /// </summary>
 public sealed class QueryRelatedRecordsParameters
@@ -955,6 +1078,14 @@ public class EditError
 [JsonSerializable(typeof(EsriError))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(AttachmentInfo))]
+[JsonSerializable(typeof(AttachmentQueryResponse))]
+[JsonSerializable(typeof(AddAttachmentResult))]
+[JsonSerializable(typeof(AddAttachmentResponse))]
+[JsonSerializable(typeof(UpdateAttachmentResult))]
+[JsonSerializable(typeof(UpdateAttachmentResponse))]
+[JsonSerializable(typeof(DeleteAttachmentResult))]
+[JsonSerializable(typeof(DeleteAttachmentsResponse))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]
