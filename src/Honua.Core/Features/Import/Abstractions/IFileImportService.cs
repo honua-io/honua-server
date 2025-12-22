@@ -82,10 +82,10 @@ public interface ICrsDetectionService
     Task<int?> DetectFromShapefilePrjAsync(string shapefilePath);
 
     /// <summary>
-    /// Validate that an SRID exists in PostGIS spatial_ref_sys table
+    /// Validate that an SRID exists in the spatial reference system database
     /// </summary>
     /// <param name="srid">SRID to validate</param>
-    /// <returns>True if SRID exists in PostGIS</returns>
+    /// <returns>True if SRID exists in the database</returns>
     Task<bool> ValidateSridAsync(int srid);
 }
 
