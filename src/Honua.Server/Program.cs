@@ -12,6 +12,7 @@ using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
@@ -156,6 +157,9 @@ app.MapFeatureServerEndpoints();
 
 // Configure FeatureServer attachment endpoints
 app.MapAttachmentEndpoints();
+
+// Configure OGC API Features endpoints
+app.MapOgcFeaturesEndpoints();
 
 // Configure file import endpoints
 app.MapImportEndpoints();
@@ -323,6 +327,35 @@ static void ConfigureOutputCaching(IServiceCollection services)
             _ = policy.SetVaryByRouteValue("serviceId", "layerId");
             _ = policy.SetVaryByQuery("f"); // Support for format parameter if used
             _ = policy.Tag("layer-metadata", "metadata");
+        });
+
+        // OGC API Features landing page caching policy
+        options.AddPolicy("OgcLandingPage", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(30));
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
+        // OGC API Features conformance caching policy
+        options.AddPolicy("OgcConformance", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
+        // OGC API Features collections list caching policy
+        options.AddPolicy("OgcCollections", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
+        // OGC API Features single collection caching policy
+        options.AddPolicy("OgcCollection", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByRouteValue("collectionId");
+            policy.Tag("ogc-metadata", "metadata");
         });
 
         // Note: No default base policy - endpoints must explicitly opt into caching for security
