@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -39,6 +40,9 @@ internal sealed class FileImportService : IFileImportService
         [".gpkg"] = SupportedFileFormat.GeoPackage,
         [".gpx"] = SupportedFileFormat.Gpx
     };
+
+    private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
+    private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
 
     public SupportedFileFormat? DetectFormat(string fileName)
     {
@@ -410,7 +414,7 @@ internal sealed class FileImportService : IFileImportService
 
         var wkbWriter = new WKBWriter();
 
-        // Use dynamic SQL execution to avoid CodeQL warnings about SQL construction
+        // Use stored functions with parameters to keep SQL text static and safe.
         await ExecuteInsertStatements(connection, tableName, features, sourceSrid, targetSrid, wkbWriter, cancellationToken);
 
         return features.Count();
@@ -428,15 +432,13 @@ internal sealed class FileImportService : IFileImportService
         WKBWriter wkbWriter,
         CancellationToken cancellationToken)
     {
-        // Use only predefined SQL statements to completely avoid CodeQL warnings
+        // Use stored function calls with parameters for inserts.
         await InsertFeaturesWithParameterizedQueries(connection, tableName, features, sourceSrid, targetSrid, wkbWriter, cancellationToken);
     }
 
     /// <summary>
     /// Insert features using only parameterized queries with no dynamic SQL construction
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA3001:Review code for SQL injection vulnerabilities", Justification = "All SQL statements use validated allowlist table names")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CS-SQL-I:SQL injection vulnerabilities", Justification = "All SQL statements use validated allowlist table names")]
     private static async Task InsertFeaturesWithParameterizedQueries(
         NpgsqlConnection connection,
         string tableName,
@@ -448,10 +450,6 @@ internal sealed class FileImportService : IFileImportService
     {
         // Validate table name with allowlist approach
         var allowedTableName = GetAllowedTableName(tableName);
-
-        // Use only hardcoded SQL statements for each allowed table
-        var insertSqlWithGeometry = GetInsertSqlWithGeometry(allowedTableName);
-        var insertSqlWithoutGeometry = GetInsertSqlWithoutGeometry(allowedTableName);
 
         foreach (var feature in features)
         {
@@ -465,34 +463,38 @@ internal sealed class FileImportService : IFileImportService
                 properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
             }
 
-            if (feature.Geometry != null)
+            using var command = new NpgsqlCommand(InsertImportFeatureSql, connection);
+            command.Parameters.AddWithValue("table_name", allowedTableName);
+
+            var wkb = feature.Geometry == null ? null : wkbWriter.Write(feature.Geometry);
+            var wkbParameter = new NpgsqlParameter("wkb", NpgsqlDbType.Bytea)
             {
-                using var command = new NpgsqlCommand(insertSqlWithGeometry, connection);
-                var wkb = wkbWriter.Write(feature.Geometry);
-                command.Parameters.AddWithValue(wkb);
-                command.Parameters.AddWithValue(sourceSrid);
-                command.Parameters.AddWithValue(targetSrid);
-                command.Parameters.AddWithValue(JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject));
-                await command.ExecuteNonQueryAsync(cancellationToken);
-            }
-            else
+                Value = wkb ?? (object)DBNull.Value
+            };
+            command.Parameters.Add(wkbParameter);
+
+            command.Parameters.AddWithValue("source_srid", sourceSrid);
+            command.Parameters.AddWithValue("target_srid", targetSrid);
+            var propertiesJson = JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
+            var propertiesParameter = new NpgsqlParameter("properties", NpgsqlDbType.Jsonb)
             {
-                using var command = new NpgsqlCommand(insertSqlWithoutGeometry, connection);
-                command.Parameters.AddWithValue(JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject));
-                await command.ExecuteNonQueryAsync(cancellationToken);
-            }
+                Value = propertiesJson
+            };
+            command.Parameters.Add(propertiesParameter);
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
     /// <summary>
-    /// Get allowed table name from predefined allowlist to satisfy CodeQL
+    /// Get allowed table name using validation and normalization.
     /// </summary>
     private static string GetAllowedTableName(string tableName)
     {
         // Validate and use only predefined allowed patterns
         ValidateTableName(tableName);
 
-        // For CodeQL safety, use a normalized table name pattern
+        // Normalize to a safe identifier shape.
         var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
 
         // Return a standardized table identifier
@@ -500,76 +502,16 @@ internal sealed class FileImportService : IFileImportService
     }
 
     /// <summary>
-    /// Get INSERT SQL with geometry using predefined table name
-    /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA3001:Review code for SQL injection vulnerabilities", Justification = "Table name is validated against strict allowlist and sanitized")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CS-SQL-I:SQL injection vulnerabilities", Justification = "Table name is validated against strict allowlist and sanitized")]
-    private static string GetInsertSqlWithGeometry(string allowedTableName)
-    {
-        // Use switch statement to provide only predefined SQL statements
-        return allowedTableName switch
-        {
-            var name when name.StartsWith("imported_", StringComparison.Ordinal) =>
-                "INSERT INTO \"" + allowedTableName + "\" (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB($1, $2), $3), $4::jsonb)",
-            _ => throw new ArgumentException("Table name not in allowed list", nameof(allowedTableName))
-        };
-    }
-
-    /// <summary>
-    /// Get INSERT SQL without geometry using predefined table name
-    /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA3001:Review code for SQL injection vulnerabilities", Justification = "Table name is validated against strict allowlist and sanitized")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CS-SQL-I:SQL injection vulnerabilities", Justification = "Table name is validated against strict allowlist and sanitized")]
-    private static string GetInsertSqlWithoutGeometry(string allowedTableName)
-    {
-        // Use switch statement to provide only predefined SQL statements
-        return allowedTableName switch
-        {
-            var name when name.StartsWith("imported_", StringComparison.Ordinal) =>
-                "INSERT INTO \"" + allowedTableName + "\" (geometry, properties) VALUES (NULL, $1::jsonb)",
-            _ => throw new ArgumentException("Table name not in allowed list", nameof(allowedTableName))
-        };
-    }
-
-    /// <summary>
     /// Create table for imported features
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA3001:Review code for SQL injection vulnerabilities", Justification = "Table name validated with allowlist and sanitization")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CS-SQL-I:SQL injection vulnerabilities", Justification = "Table name validated with allowlist and sanitization")]
     private static async Task CreateTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
         // Use allowlist approach to get safe table name
         var allowedTableName = GetAllowedTableName(tableName);
 
-        // Use only predefined SQL for table creation
-        var createTableSql = GetCreateTableSql(allowedTableName);
-
-        using var command = new NpgsqlCommand(createTableSql, connection);
+        using var command = new NpgsqlCommand(CreateImportTableSql, connection);
+        command.Parameters.AddWithValue("table_name", allowedTableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Get CREATE TABLE SQL using predefined table name
-    /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA3001:Review code for SQL injection vulnerabilities", Justification = "Table name is validated against strict allowlist and sanitized")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CS-SQL-I:SQL injection vulnerabilities", Justification = "Table name is validated against strict allowlist and sanitized")]
-    private static string GetCreateTableSql(string allowedTableName)
-    {
-        // Use switch statement to provide only predefined SQL statements
-        return allowedTableName switch
-        {
-            var name when name.StartsWith("imported_", StringComparison.Ordinal) =>
-                "DROP TABLE IF EXISTS \"" + allowedTableName + "\";" +
-                "CREATE TABLE \"" + allowedTableName + "\" (" +
-                "    id SERIAL PRIMARY KEY," +
-                "    geometry GEOMETRY," +
-                "    properties JSONB," +
-                "    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()" +
-                ");" +
-                "CREATE INDEX IF NOT EXISTS \"idx_" + allowedTableName + "_geometry\" ON \"" + allowedTableName + "\" USING GIST (geometry);" +
-                "CREATE INDEX IF NOT EXISTS \"idx_" + allowedTableName + "_properties\" ON \"" + allowedTableName + "\" USING GIN (properties);",
-            _ => throw new ArgumentException("Table name not in allowed list", nameof(allowedTableName))
-        };
     }
 
     /// <summary>
