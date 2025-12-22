@@ -26,21 +26,18 @@ public static class AuthenticationExtensions
     public static IServiceCollection AddApiKeyAuthentication(this IServiceCollection services)
     {
         // Add authentication with API key scheme
-        services.AddAuthentication(defaultScheme: ApiKeyScheme)
+        _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyScheme,
                 options => { });
 
         // Add authorization with admin policy
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy(AdminPolicy, policy =>
+        _ = services.AddAuthorization(options => options.AddPolicy(AdminPolicy, policy =>
             {
-                policy.RequireAuthenticatedUser();
-                policy.RequireRole("admin");
+                _ = policy.RequireAuthenticatedUser();
+                _ = policy.RequireRole("admin");
                 policy.AuthenticationSchemes.Add(ApiKeyScheme);
-            });
-        });
+            }));
 
         return services;
     }
@@ -58,8 +55,5 @@ public static class AuthenticationExtensions
     /// Requires admin authorization for an endpoint or endpoint group
     /// </summary>
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
-        where TBuilder : IEndpointConventionBuilder
-    {
-        return builder.RequireAuthorization(AdminPolicy);
-    }
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
 }

@@ -54,13 +54,13 @@ public sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as Esri JSON
     /// </summary>
-    private (object response, string contentType) FormatAsEsriJson(
+    private static (object response, string contentType) FormatAsEsriJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
         string[]? outFields)
     {
-        var features = result.Items.Select(f => ConvertToEsriFeature(f, returnGeometry, outFields)).ToArray();
+        EsriFeature[] features = result.Items.Select(f => ConvertToEsriFeature(f, returnGeometry, outFields)).ToArray();
 
         var response = new QueryResponse
         {
@@ -75,13 +75,13 @@ public sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as GeoJSON
     /// </summary>
-    private (object response, string contentType) FormatAsGeoJson(
+    private static (object response, string contentType) FormatAsGeoJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
         string[]? outFields)
     {
-        var features = result.Items.Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields)).ToArray();
+        GeoJsonFeature[] features = result.Items.Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields)).ToArray();
 
         var response = new GeoJsonFeatureSet
         {
@@ -102,7 +102,7 @@ public sealed class QueryFormatter : IQueryFormatter
     /// </summary>
     private static EsriFeature ConvertToEsriFeature(Feature feature, bool returnGeometry, string[]? outFields)
     {
-        var attributes = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
+        Dictionary<string, object?> attributes = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
 
         return new EsriFeature
         {
@@ -116,27 +116,27 @@ public sealed class QueryFormatter : IQueryFormatter
     /// </summary>
     private static GeoJsonFeature ConvertToGeoJsonFeature(Feature feature, bool returnGeometry, string[]? outFields)
     {
-        var properties = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
+        Dictionary<string, object?> properties = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
 
         // Extract the ID from attributes if available
         // Normalize numeric values to ensure type consistency
         object? id = null;
-        if (properties.TryGetValue("objectid", out var objectId))
+        if (properties.TryGetValue("objectid", out object? objectId))
         {
             // Normalize numeric types to avoid JsonElement vs primitive mismatches
             id = objectId switch
             {
                 System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.Number =>
-                    jsonElement.TryGetInt64(out var longVal) ? longVal : (object)jsonElement.GetDouble(),
+                    jsonElement.TryGetInt64(out long longVal) ? longVal : (object)jsonElement.GetDouble(),
                 _ => objectId
             };
         }
-        else if (properties.TryGetValue("id", out var idValue))
+        else if (properties.TryGetValue("id", out object? idValue))
         {
             id = idValue switch
             {
                 System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.Number =>
-                    jsonElement.TryGetInt64(out var longVal) ? longVal : (object)jsonElement.GetDouble(),
+                    jsonElement.TryGetInt64(out long longVal) ? longVal : (object)jsonElement.GetDouble(),
                 _ => idValue
             };
         }
@@ -162,12 +162,12 @@ public sealed class QueryFormatter : IQueryFormatter
         var filtered = new Dictionary<string, object?>();
 
         // Always include objectid field for Esri compatibility
-        if (attributes.TryGetValue("objectid", out var objectIdValue))
+        if (attributes.TryGetValue("objectid", out object? objectIdValue))
             filtered["objectid"] = objectIdValue;
 
-        foreach (var field in outFields)
+        foreach (string field in outFields)
         {
-            if (attributes.TryGetValue(field, out var fieldValue))
+            if (attributes.TryGetValue(field, out object? fieldValue))
                 filtered[field] = fieldValue;
         }
 
@@ -185,14 +185,14 @@ public sealed class QueryFormatter : IQueryFormatter
             return null;
 
         // Detect endianness (1 = little-endian, 0 = big-endian)
-        var isLittleEndian = wkbGeometry[0] == 1;
+        bool isLittleEndian = wkbGeometry[0] == 1;
         if (!isLittleEndian && wkbGeometry[0] != 0)
             return null; // Invalid endianness marker
 
         // Read geometry type with proper endianness
-        var geometryType = isLittleEndian
+        uint geometryType = isLittleEndian
             ? BitConverter.ToUInt32(wkbGeometry, 1)
-            : BitConverter.ToUInt32(wkbGeometry.AsSpan(1, 4).ToArray().Reverse().ToArray(), 0);
+            : BitConverter.ToUInt32([.. wkbGeometry.AsSpan(1, 4).ToArray().Reverse()], 0);
 
         // Only support point geometries for now
         if (geometryType != 1)
@@ -211,15 +211,15 @@ public sealed class QueryFormatter : IQueryFormatter
         }
         else
         {
-            var xBytes = wkbGeometry.AsSpan(5, 8).ToArray().Reverse().ToArray();
-            var yBytes = wkbGeometry.AsSpan(13, 8).ToArray().Reverse().ToArray();
+            byte[] xBytes = [.. wkbGeometry.AsSpan(5, 8).ToArray().Reverse()];
+            byte[] yBytes = [.. wkbGeometry.AsSpan(13, 8).ToArray().Reverse()];
             x = BitConverter.ToDouble(xBytes, 0);
             y = BitConverter.ToDouble(yBytes, 0);
         }
 
         // TODO: Extract actual SRID from WKB instead of defaulting to 4326
         // For now, use Web Mercator (3857) if coordinates suggest projected data, otherwise WGS84 (4326)
-        var srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
+        int srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
 
         return new EsriGeometry
         {
@@ -243,14 +243,14 @@ public sealed class QueryFormatter : IQueryFormatter
             return null;
         }
 
-        var geometryType = BitConverter.ToUInt32(wkbGeometry, 1);
+        uint geometryType = BitConverter.ToUInt32(wkbGeometry, 1);
         if (geometryType != 1)
         {
             return null;
         }
 
-        var x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-        var y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
+        double x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
+        double y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
 
         return new GeoJsonGeometry
         {

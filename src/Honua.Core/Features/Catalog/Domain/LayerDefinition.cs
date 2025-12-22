@@ -18,6 +18,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="MinScale">Minimum scale for layer visibility (optional)</param>
 /// <param name="MaxScale">Maximum scale for layer visibility (optional)</param>
 /// <param name="DefaultVisibility">Whether layer is visible by default</param>
+/// <param name="Relationships">Relationships defined for this layer (optional)</param>
 public record LayerDefinition(
     int Id,
     string Name,
@@ -28,7 +29,8 @@ public record LayerDefinition(
     FeatureExtent? Extent = null,
     double? MinScale = null,
     double? MaxScale = null,
-    bool DefaultVisibility = true)
+    bool DefaultVisibility = true,
+    Relationship[]? Relationships = null)
 {
     /// <summary>
     /// The geometry field definition (if layer has geometry)
@@ -53,6 +55,16 @@ public record LayerDefinition(
         f.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
         f.Name.Equals("fid", StringComparison.OrdinalIgnoreCase)) ??
         Fields.FirstOrDefault(f => f.Type is FieldType.Integer or FieldType.BigInteger);
+
+    /// <summary>
+    /// Relationships defined for this layer (empty array if none)
+    /// </summary>
+    public Relationship[] LayerRelationships => Relationships ?? Array.Empty<Relationship>();
+
+    /// <summary>
+    /// Whether this layer has any relationships defined
+    /// </summary>
+    public bool HasRelationships => Relationships?.Length > 0;
 
     /// <summary>
     /// Validates the layer definition for common issues

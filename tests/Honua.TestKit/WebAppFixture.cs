@@ -1,15 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Admin.Abstractions;
-using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Admin;
-using Honua.Postgres.Features.Import;
+using Honua.Postgres;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -52,28 +50,28 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                 builder.ConfigureTestServices(services =>
                 {
-                    // Remove all PostgreSQL-related services to avoid DefaultConnection dependency
+                    // Remove the default PostgreSQL services to avoid DefaultConnection dependency
                     services.RemoveAll<NpgsqlDataSource>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
-                    services.RemoveAll<IFileImportService>();
-                    services.RemoveAll<ITableDiscoveryService>();
 
-                    // Add test-specific PostgreSQL services
-                    services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
-                        NpgsqlDataSource.Create(_postgres.ConnectionString));
+                    // Create test configuration with our test connection string
+                    var testConfig = new ConfigurationBuilder()
+                        .AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString
+                        })
+                        .Build();
 
+                    // Add PostgreSQL services using the standard registration method with test config
+                    services.AddPostgreSqlServices(testConfig);
+
+                    // Override the database connection provider with test-specific implementation
+                    services.RemoveAll<IDatabaseConnectionProvider>();
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
                     {
                         var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
                         return new TestDatabaseConnectionProvider(dataSource);
                     });
-
-                    // Add test-specific import service with test connection string
-                    services.AddScoped<IFileImportService>(serviceProvider =>
-                        new FileImportService(_postgres.ConnectionString));
-
-                    // Add test-specific table discovery service
-                    services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
                     // Apply custom service configurations
                     foreach (var configure in _serviceConfigurations)

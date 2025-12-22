@@ -4,7 +4,7 @@ Honua Architecture Review Script
 Analyzes code changes using LLM for architectural compliance
 
 Features:
-- Complete .cs file analysis for full architectural context
+- Diff-only analysis with chunking to keep prompts small
 - Honua-specific criteria (dependency flow, API patterns, documentation)
 - Educational feedback explaining WHY patterns matter for geospatial/AOT
 - Three-tier assessment: APPROVED/NEEDS_ATTENTION/BLOCKING_ISSUES
@@ -17,7 +17,6 @@ import subprocess
 import re
 import urllib.request
 import urllib.error
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 def get_pr_info() -> Dict[str, Any]:
@@ -134,77 +133,27 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
     return criteria
 
 def get_honua_architecture_rules() -> str:
-    """Extract architecture rules from project documentation (CLAUDE.md)"""
-    try:
-        claude_md_path = Path("CLAUDE.md")
-        if claude_md_path.exists():
-            with open(claude_md_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+    """Provide a compact summary of Honua architecture rules to keep prompts small."""
+    return """# Honua Architecture Rules (Summary)
 
-            # Extract Critical Rules section (same as CI workflow and Claude script)
-            import re
-            match = re.search(r'## Critical Rules.*?(?=## Phase-Based Development)', content, re.DOTALL)
-            if match:
-                rules_section = match.group(0)
+## BLOCKING (Must Fix)
+- Dependency direction: Honua.Core must not reference Honua.Postgres or Honua.Server.
+- API pattern: No ControllerBase or [ApiController]; use Minimal APIs.
+- Encapsulation: Infrastructure implementation types must be internal.
+- Documentation: Public types require XML docs.
+- AOT: Avoid reflection/dynamic JSON; use source-generated JSON/logging.
 
-                # Add additional AI-specific context for more thorough analysis
-                enhanced_rules = f"""# Architecture Rules from CLAUDE.md
+## WARNING (Review Needed)
+- Too many dependencies: endpoints <= 5, handlers <= 4.
+- Sync-over-async (.Result/.Wait()).
+- Layered organization instead of vertical slices.
+"""
 
-{rules_section}
-
-## AI Review Specific Guidance:
-
-### Critical Analysis Points:
-1. **PR Process Compliance** (BLOCKING):
-   - Every PR MUST link to a GitHub issue
-   - Linked issue MUST have acceptance criteria
-   - Code changes MUST address the acceptance criteria
-
-2. **Dependency Analysis** (BLOCKING):
-   - Check all `using` statements for direction violations
-   - Core layer MUST NOT reference Infrastructure layers
-   - Look for circular dependencies
-
-3. **API Pattern Enforcement** (BLOCKING):
-   - Scan for ControllerBase inheritance (forbidden)
-   - Verify Minimal API patterns are used
-   - Check for proper encapsulation (internal vs public)
-
-4. **Code Quality Gates** (BLOCKING):
-   - All public types MUST have XML documentation
-   - Repository/DataAccess types MUST be internal
-   - No reflection in hot paths (AOT compatibility)
-
-### Review Output Format:
-Always include specific file:line references and concrete code examples in recommendations."""
-
-                return enhanced_rules
-
-        # Fallback with essential rules if CLAUDE.md not accessible
-        return """# Honua Architecture Rules (Fallback - CLAUDE.md not found)
-
-## Critical Violations (Blocking):
-1. **PR Process**: Not linked to GitHub issue OR missing acceptance criteria
-2. **Dependencies**: Core depending on Infrastructure (Honua.Postgres, Honua.Server)
-3. **API Patterns**: Controller usage (use Minimal APIs only)
-4. **Encapsulation**: Public repository/database types (should be internal)
-5. **Documentation**: Missing XML docs on public APIs
-
-## Good Patterns:
-- Vertical slice organization
-- Minimal API endpoints
-- Clean dependency direction (Core <- Infrastructure)
-- Comprehensive documentation
-- Composition over inheritance"""
-
-    except Exception as e:
-        return f"# Architecture Rules (Error: {e})\n\nUsing minimal fallback rules for safety."
-
-def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str = "mock") -> str:
+def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str = "mock", process_blocking: bool = False) -> str:
     """Analyze code using LLM API"""
 
     if provider == "mock" or not api_key:
-        return mock_analysis(context)
+        return mock_analysis(process_blocking)
 
     # TODO: Implement actual LLM providers
     if provider == "openai":
@@ -212,61 +161,20 @@ def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str 
     elif provider == "anthropic":
         return analyze_with_anthropic(context, api_key)
     else:
-        return mock_analysis(context)
+        return mock_analysis(process_blocking)
 
-def mock_analysis(context: str) -> str:
+def mock_analysis(process_blocking: bool) -> str:
     """Generate mock analysis for testing"""
-    # Check if context indicates missing issue link
-    has_blocking_issue = "🚫 BLOCKING" in context
-
-    if has_blocking_issue:
-        return """**🏗️ Architecture Review Summary**
-
-**🚫 Process Violations Found:**
-- **BLOCKING**: PR not properly linked to GitHub issue
-- Missing acceptance criteria validation
-
-**✅ Good Patterns Found:**
-- Following established project structure and naming conventions
-- Proper separation of test concerns
-- Clean project organization
-
-**💡 Recommendations:**
-- Link this PR to a GitHub issue using "Closes #123" or "Fixes #456"
-- Ensure the linked issue has clear acceptance criteria
-- Verify that changes actually address the acceptance criteria
-
-**📚 Educational Notes:**
-- Issue linking ensures traceability and proper change management
-- Acceptance criteria provide clear success criteria for changes
-- This process helps maintain project quality and team alignment
+    if process_blocking:
+        return """**Findings**
+- [BLOCKING] PR process: missing linked issue or acceptance criteria.
 
 **Overall Assessment:** BLOCKING_ISSUES
 
 *Note: This is a mock review. Configure OPENAI_API_KEY or ANTHROPIC_API_KEY for full LLM analysis.*"""
-    else:
-        return """**🏗️ Architecture Review Summary**
 
-**✅ Good Patterns Found:**
-- Following established project structure and naming conventions
-- Proper separation of test concerns
-- Clean project organization
-- Proper GitHub issue linkage and acceptance criteria
-
-**⚠️ Architecture Concerns:**
-- No significant architectural violations detected in this changeset
-- Changes appear to follow established patterns
-
-**💡 Recommendations:**
-- Continue following the established vertical slice organization
-- Consider adding integration tests for any new public APIs
-- Ensure new dependencies follow the Core -> Infrastructure direction
-
-**📚 Educational Notes:**
-- The changes maintain good separation of concerns
-- Test organization follows project standards
-- Architecture test infrastructure provides good foundation
-- Proper issue tracking maintains project traceability
+    return """**Findings**
+- No significant architectural violations detected in this chunk.
 
 **Overall Assessment:** APPROVED
 
@@ -283,94 +191,30 @@ def analyze_with_openai(context: str, api_key: str) -> str:
     try:
         client = OpenAI(api_key=api_key)
 
-        system_prompt = f"""You are a senior software architect reviewing code for the Honua geospatial feature server - a greenfield .NET 10 project implementing OGC standards with native AOT compilation.
-
-## PROJECT CONTEXT:
-- **Technology Stack**: .NET 10, Native AOT, Minimal APIs, PostgreSQL/PostGIS
-- **Architecture**: Clean Architecture with Vertical Slices
-- **Standards**: OGC API Features, GeoServices REST, OData v4, MVT
-- **Quality Gate**: 80% line coverage, warnings-as-errors, sub-100ms cold start
-- **Team Stage**: Establishing patterns for long-term maintainability
+        system_prompt = f"""You are a senior software architect reviewing PR diffs for Honua (a .NET 10, AOT-friendly geospatial server).
 
 {get_honua_architecture_rules()}
 
-## YOUR REVIEW FOCUS:
+Review only the provided diff. Focus on correctness and architectural rule compliance. Be concise and cite file/line when possible."""
 
-**🎯 Primary Concerns (BLOCKING):**
-1. **Dependency Violations**: Core depending on Infrastructure
-2. **API Pattern Violations**: Controllers instead of Minimal APIs
-3. **Encapsulation Violations**: Public database/repository types
+        user_prompt = f"""Review only the diff below. Do not ask for full files. Focus on:
+- Dependency direction
+- Minimal API usage (no controllers)
+- Infrastructure encapsulation (internal types)
+- AOT-safe patterns (source-generated JSON/logging)
+- Public XML docs
+- Dependency count limits
+- Sync-over-async
 
-**⚠️ Secondary Concerns (NEEDS ATTENTION):**
-1. **Organizational Anti-patterns**: Layer-based instead of vertical slices
-2. **Complexity Issues**: Too many dependencies, inheritance hierarchies
-3. **Performance Issues**: Sync over async, inefficient patterns
+Return findings in this exact format:
 
-**✅ Positive Pattern Recognition:**
-1. **Good Architecture**: Proper dependency flow, vertical organization
-2. **Clean Design**: Single responsibility, composition over inheritance
-3. **Quality Code**: Comprehensive documentation, proper encapsulation
-
-## REVIEW STYLE:
-- **Educational**: Explain WHY patterns matter for geospatial/performance/maintainability
-- **Specific**: Reference exact files and line numbers
-- **Actionable**: Provide concrete code examples and alternatives
-- **Balanced**: Acknowledge good patterns, not just problems
-- **Context-Aware**: Consider this is establishing patterns for the entire project"""
-
-        user_prompt = f"""Analyze these code changes for architectural compliance using Honua's specific criteria:
-
-## ASSESSMENT CRITERIA:
-
-**🚫 BLOCKING_ISSUES** (Must fix before merge):
-- PR not linked to any GitHub issue
-- Missing acceptance criteria in linked issue
-- Changes don't address acceptance criteria
-- Core depending on Infrastructure (`using Honua.Postgres` in Core)
-- Controller usage (`ControllerBase` inheritance)
-- Public repository/database types (security violation)
-- Missing XML docs on public APIs
-
-**⚠️ NEEDS_ATTENTION** (Review recommended):
-- Layer organization vs vertical slices
-- >5 dependencies per endpoint, >4 per handler
-- Deep inheritance (>3 levels)
-- Sync over async patterns
-- Complex methods (>10 parameters)
-
-**✅ APPROVED** (Good patterns):
-- Proper dependency flow
-- Vertical slice organization
-- Clean design patterns
-- Comprehensive documentation
-
-## CODE TO REVIEW:
-{context}
-
-Provide your review using this EXACT format:
-
-**🏗️ Architecture Review Summary**
-
-**✅ Good Patterns Found:**
-- [List positive architectural decisions with file:line references]
-
-**⚠️ Architecture Concerns:**
-- [List potential violations with specific file:line references and severity level]
-
-**💡 Recommendations:**
-- [Specific actionable improvements with code examples]
-
-**📚 Educational Notes:**
-- [Explain WHY patterns matter for geospatial/AOT/performance context]
+**Findings**
+- [SEVERITY] file:line - issue
 
 **Overall Assessment:** [APPROVED/NEEDS_ATTENTION/BLOCKING_ISSUES]
 
-CRITICAL: First check PR/Issue process compliance:
-1. Is this PR linked to a GitHub issue?
-2. Does the linked issue have acceptance criteria?
-3. Do the code changes actually address those acceptance criteria?
-
-If any of these fail, mark as BLOCKING_ISSUES regardless of code quality."""
+Diff:
+{context}"""
 
         response = client.chat.completions.create(
             model="gpt-4-turbo",  # Using GPT-4 Turbo for larger context window (128K tokens)
@@ -378,7 +222,7 @@ If any of these fail, mark as BLOCKING_ISSUES regardless of code quality."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=2000,
+            max_tokens=1200,
             temperature=0.3  # Lower temperature for more consistent, focused analysis
         )
 
@@ -408,6 +252,10 @@ def extract_assessment_level(analysis_text: str) -> str:
 
     # Look for "Overall Assessment:" line
     match = re.search(r'Overall Assessment:\s*([A-Z_]+)', analysis_text)
+    if match:
+        return match.group(1)
+
+    match = re.search(r'Assessment:\s*([A-Z_]+)', analysis_text)
     if match:
         return match.group(1)
 
@@ -465,37 +313,71 @@ def get_changed_files(base_ref: str, head_ref: str) -> List[str]:
         print(f"Error getting changed files: {e}")
         return []
 
-def get_file_content_and_diff(file_path: str, base_ref: str, head_ref: str) -> Dict[str, str]:
-    """Get file content and diff for analysis
-
-    For .cs files: Reads complete file content for full architectural context
-    For other files: Limits to 2000 chars to prevent token bloat
-    """
-    content = ""
-    diff = ""
-
+def get_file_diff(file_path: str, base_ref: str, head_ref: str) -> str:
+    """Get diff for a file."""
     try:
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                file_content = f.read()
-
-                # For .cs files, include complete content for architectural analysis
-                if file_path.endswith('.cs'):
-                    content = file_content
-                else:
-                    # For non-C# files, limit to prevent token bloat
-                    content = file_content[:2000] + ("...[truncated]" if len(file_content) > 2000 else "")
-
-        # Get diff - always full diff for architectural context
-        result = subprocess.run([
-            'git', 'diff', f"{base_ref}...{head_ref}", '--', file_path
-        ], capture_output=True, text=True, check=True)
-        diff = result.stdout
-
+        result = subprocess.run(
+            ['git', 'diff', f"{base_ref}...{head_ref}", '--', file_path],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
+        return ""
 
-    return {"content": content, "diff": diff}
+
+def split_diff_into_segments(diff_text: str, max_lines: int) -> List[str]:
+    """Split a diff into segments with repeated headers to keep chunks small."""
+    lines = diff_text.splitlines()
+    if not lines:
+        return []
+
+    if len(lines) <= max_lines:
+        return [diff_text]
+
+    header_end = 0
+    for i, line in enumerate(lines):
+        if line.startswith('@@'):
+            header_end = i
+            break
+    header_lines = lines[:header_end]
+    body_lines = lines[header_end:] if header_end else lines
+
+    max_body_lines = max(1, max_lines - len(header_lines))
+    segments = []
+    for i in range(0, len(body_lines), max_body_lines):
+        segment_lines = header_lines + body_lines[i:i + max_body_lines]
+        segments.append("\n".join(segment_lines))
+
+    return segments
+
+
+def clean_chunk_analysis(analysis_text: str) -> str:
+    """Remove per-chunk assessment lines for aggregation."""
+    cleaned_lines = []
+    for line in analysis_text.splitlines():
+        if line.strip().lower().startswith("overall assessment"):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+def combine_assessments(assessments: List[str], process_blocking: bool) -> str:
+    """Combine multiple assessments into a single overall result."""
+    if process_blocking:
+        return "BLOCKING_ISSUES"
+
+    if not assessments:
+        return "APPROVED"
+
+    severity_order = {
+        "APPROVED": 0,
+        "NEEDS_ATTENTION": 1,
+        "BLOCKING_ISSUES": 2
+    }
+
+    return max(assessments, key=lambda level: severity_order.get(level, 0))
 
 def main():
     """Main analysis function"""
@@ -503,6 +385,8 @@ def main():
     base_ref = os.environ.get('GITHUB_BASE_REF', 'main')
     head_ref = os.environ.get('GITHUB_SHA', 'HEAD')
     api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')
+    max_chunk_lines = int(os.environ.get('REVIEW_CHUNK_LINES', '300'))
+    max_files = int(os.environ.get('REVIEW_MAX_FILES', '50'))
 
     # Determine provider
     provider = "mock"
@@ -527,72 +411,103 @@ def main():
     pr_info = get_pr_info()
     print(f"PR Information: {pr_info.get('title', 'Unknown')}")
 
-    # Build context
-    context = f"""
-# Architecture Review Context
+    process_issues = []
+    process_warnings = []
 
-## PR Information:
-- **Title**: {pr_info.get('title', 'Unknown')}
-- **Number**: {pr_info.get('number', 'Unknown')}
-- **Linked Issues**: {len(pr_info.get('linked_issues', []))} issue(s)
-
-"""
-
-    # Add issue information
     if 'error' in pr_info:
-        context += f"**⚠️ PR Analysis Error**: {pr_info['error']}\n\n"
+        process_warnings.append(f"PR info unavailable: {pr_info['error']}")
     elif not pr_info.get('linked_issues'):
-        context += "**🚫 BLOCKING**: No GitHub issues linked to this PR\n\n"
+        process_issues.append("No GitHub issues linked to this PR.")
     else:
-        context += "## Linked Issues:\n"
         for issue in pr_info['linked_issues']:
             if 'error' in issue:
-                context += f"- Issue #{issue.get('number', '?')}: Error - {issue['error']}\n"
-            else:
-                context += f"- **Issue #{issue['number']}**: {issue['title']}\n"
-                ac_count = len(issue.get('acceptance_criteria', []))
-                if ac_count == 0:
-                    context += f"  **🚫 BLOCKING**: No acceptance criteria found\n"
-                else:
-                    context += f"  **Acceptance Criteria** ({ac_count} items):\n"
-                    for i, criteria in enumerate(issue['acceptance_criteria'][:5], 1):  # Limit to prevent bloat
-                        context += f"    {i}. {criteria}\n"
-                    if ac_count > 5:
-                        context += f"    ... and {ac_count - 5} more\n"
-        context += "\n"
+                process_warnings.append(f"Issue #{issue.get('number', '?')}: {issue['error']}")
+                continue
+            if len(issue.get('acceptance_criteria', [])) == 0:
+                process_issues.append(f"Issue #{issue.get('number', '?')} is missing acceptance criteria.")
 
-    context += f"""
-## Changed Files: {len(changed_files)}
-{chr(10).join(f"- {f}" for f in changed_files)}
+    process_blocking = len(process_issues) > 0
 
-## File Analysis:
-"""
+    segments = []
+    skipped_files = []
 
-    for file_path in changed_files[:10]:  # Limit to prevent context overflow
-        file_info = get_file_content_and_diff(file_path, f"origin/{base_ref}", head_ref)
+    for file_path in changed_files[:max_files]:
+        diff_text = get_file_diff(file_path, f"origin/{base_ref}", head_ref)
+        if not diff_text.strip():
+            continue
 
-        # Use appropriate language identifier for syntax highlighting
-        language = "csharp" if file_path.endswith('.cs') else "text"
+        diff_segments = split_diff_into_segments(diff_text, max_chunk_lines)
+        total_parts = len(diff_segments)
+        for part_index, segment in enumerate(diff_segments, start=1):
+            segments.append({
+                "file": file_path,
+                "part_index": part_index,
+                "part_total": total_parts,
+                "diff": segment
+            })
 
-        context += f"""
-### File: {file_path}
+    if len(changed_files) > max_files:
+        skipped_files = changed_files[max_files:]
 
-#### Current Content:
-```{language}
-{file_info['content']}
-```
+    if not segments:
+        print("No diff segments found, skipping analysis")
+        sys.exit(0)
 
-#### Changes:
-```diff
-{file_info['diff']}
-```
-"""
+    chunk_results = []
+    for index, segment in enumerate(segments, start=1):
+        label = segment["file"]
+        if segment["part_total"] > 1:
+            label = f"{label} (part {segment['part_index']}/{segment['part_total']})"
 
-    # Perform analysis
-    analysis = analyze_with_llm(context, api_key, provider)
+        chunk_context = f"## Diff Chunk {index}/{len(segments)}\n### {label}\n```diff\n{segment['diff']}\n```"
+        chunk_analysis = analyze_with_llm(
+            chunk_context,
+            api_key,
+            provider,
+            process_blocking=process_blocking
+        )
+        chunk_assessment = extract_assessment_level(chunk_analysis)
+        chunk_results.append({
+            "label": label,
+            "analysis": chunk_analysis,
+            "assessment": chunk_assessment
+        })
 
-    # Extract assessment level
-    assessment = extract_assessment_level(analysis)
+    overall_assessment = combine_assessments(
+        [result["assessment"] for result in chunk_results],
+        process_blocking
+    )
+
+    analysis_lines = ["**🏗️ Architecture Review Summary**", ""]
+
+    analysis_lines.append("**Process Checks:**")
+    if process_issues:
+        for issue in process_issues:
+            analysis_lines.append(f"- 🚫 BLOCKING: {issue}")
+    elif 'error' in pr_info:
+        analysis_lines.append("- ⚠️ Unable to verify issue linkage and acceptance criteria.")
+    elif process_warnings:
+        analysis_lines.append("- ⚠️ Issue linkage detected, but some checks failed.")
+    else:
+        analysis_lines.append("- ✅ Linked issue with acceptance criteria detected.")
+    for warning in process_warnings:
+        analysis_lines.append(f"- ⚠️ {warning}")
+    if skipped_files:
+        analysis_lines.append(f"- ⚠️ Review limited to first {max_files} files; {len(skipped_files)} file(s) not analyzed.")
+
+    analysis_lines.append("")
+    analysis_lines.append(f"**Diff Review Chunks:** {len(chunk_results)}")
+
+    for i, result in enumerate(chunk_results, start=1):
+        analysis_lines.append(f"### Chunk {i}/{len(chunk_results)} ({result['label']})")
+        cleaned = clean_chunk_analysis(result["analysis"])
+        analysis_lines.append(cleaned if cleaned else "- No findings.")
+        analysis_lines.append("")
+
+    analysis_lines.append(f"**Overall Assessment:** {overall_assessment}")
+
+    analysis = "\n".join(analysis_lines).strip()
+    assessment = overall_assessment
 
     # Output result for GitHub Actions
     output_file = os.environ.get('GITHUB_OUTPUT')

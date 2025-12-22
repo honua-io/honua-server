@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Npgsql;
+using Polly;
 
 namespace Honua.Postgres.Features.Infrastructure.Resilience;
 
@@ -22,7 +23,7 @@ internal static class NpgsqlDataSourceExtensions
         Action<Exception, TimeSpan, int>? onRetry = null,
         CancellationToken cancellationToken = default)
     {
-        var retryPolicy = ResiliencePolicies.GetConnectionRetryPolicy(onRetry);
+        IAsyncPolicy retryPolicy = ResiliencePolicies.GetConnectionRetryPolicy(onRetry);
 
         return await retryPolicy.ExecuteAsync(async () =>
             await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);

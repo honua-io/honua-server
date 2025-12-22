@@ -69,6 +69,18 @@ internal static class ServiceCollectionExtensions
         // Register database connection provider with resilience policies
         services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
 
+        // Register CRS detection service
+        services.AddScoped<ICrsDetectionService>(serviceProvider =>
+        {
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new InvalidOperationException("DefaultConnection connection string is required for CRS detection services");
+            }
+
+            return new CrsDetectionService(connectionString);
+        });
+
         // Register file import service with NetTopologySuite support
         services.AddScoped<IFileImportService>(serviceProvider =>
         {
@@ -78,7 +90,8 @@ internal static class ServiceCollectionExtensions
                 throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
             }
 
-            return new FileImportService(connectionString);
+            var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
+            return new FileImportService(connectionString, crsDetectionService);
         });
 
         return services;
