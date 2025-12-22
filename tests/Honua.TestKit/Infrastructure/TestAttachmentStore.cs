@@ -9,7 +9,7 @@ namespace Honua.TestKit.Infrastructure;
 /// <summary>
 /// Test implementation of IAttachmentStore for unit and integration tests
 /// </summary>
-internal class TestAttachmentStore : IAttachmentStore
+internal sealed class TestAttachmentStore : IAttachmentStore
 {
     private readonly Dictionary<(int layerId, long featureId), List<Attachment>> _attachments = new();
     private long _nextId = 1;

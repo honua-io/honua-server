@@ -10,7 +10,7 @@ namespace Honua.TestKit.Infrastructure;
 /// <summary>
 /// Test implementation of IFeatureStore for unit and integration tests
 /// </summary>
-internal class TestFeatureStore : IFeatureStore
+internal sealed class TestFeatureStore : IFeatureStore
 {
     private readonly Dictionary<int, List<Feature>> _layerFeatures = new();
 
