@@ -235,7 +235,11 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         int id = reader.GetInt32(reader.GetOrdinal("layer_id"));
         string name = reader.GetString(reader.GetOrdinal("layer_name"));
         string? description = reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description"));
-        GeometryType geometryType = Enum.Parse<GeometryType>(reader.GetString(reader.GetOrdinal("geometry_type")));
+
+        string geometryTypeString = reader.GetString(reader.GetOrdinal("geometry_type"));
+        if (!Enum.TryParse<GeometryType>(geometryTypeString, out GeometryType geometryType))
+            throw new InvalidDataException($"Invalid geometry type: {geometryTypeString}");
+
         int srid = reader.GetInt32(reader.GetOrdinal("srid"));
         double? minScale = reader.IsDBNull(reader.GetOrdinal("min_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("min_scale"));
         double? maxScale = reader.IsDBNull(reader.GetOrdinal("max_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("max_scale"));
@@ -327,7 +331,11 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         while (await reader.ReadAsync(cancellationToken))
         {
             string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
-            FieldType fieldType = Enum.Parse<FieldType>(reader.GetString(reader.GetOrdinal("field_type")));
+
+            string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
+            if (!Enum.TryParse<FieldType>(fieldTypeString, out FieldType fieldType))
+                throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
+
             int maxLengthOrdinal = reader.GetOrdinal("max_length");
             int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
             bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
@@ -372,7 +380,11 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         {
             int layerId = reader.GetInt32(reader.GetOrdinal("layer_id"));
             string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
-            FieldType fieldType = Enum.Parse<FieldType>(reader.GetString(reader.GetOrdinal("field_type")));
+
+            string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
+            if (!Enum.TryParse<FieldType>(fieldTypeString, out FieldType fieldType))
+                throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
+
             int maxLengthOrdinal = reader.GetOrdinal("max_length");
             int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
             bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));

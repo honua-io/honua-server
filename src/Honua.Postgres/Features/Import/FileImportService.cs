@@ -471,8 +471,8 @@ internal sealed class FileImportService : IFileImportService
 
         var quotedTableName = QuoteIdentifier(tableName);
         var sanitizedName = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
-        var geometryIndexName = QuoteIdentifier("idx_" + sanitizedName + "_geometry");
-        var propertiesIndexName = QuoteIdentifier("idx_" + sanitizedName + "_properties");
+        var geometryIndexName = QuoteIdentifier(string.Format(System.Globalization.CultureInfo.InvariantCulture, "idx_{0}_geometry", sanitizedName));
+        var propertiesIndexName = QuoteIdentifier(string.Format(System.Globalization.CultureInfo.InvariantCulture, "idx_{0}_properties", sanitizedName));
 
         // Use format strings instead of concatenation to satisfy CodeQL
         const string createTableTemplate = @"

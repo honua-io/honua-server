@@ -121,7 +121,8 @@ public static class FeatureServerEndpoints
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         IOptions<LimitsOptions> limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
-        ILogger<FeatureServerHandler> logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+        ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+        ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
         IResult result = await GetServiceMetadataAsync(
             serviceId,
@@ -140,7 +141,7 @@ public static class FeatureServerEndpoints
         string serviceId,
         ILayerCatalog catalog,
         QueryLimits limits,
-        ILogger<FeatureServerHandler> logger,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         try
@@ -190,7 +191,8 @@ public static class FeatureServerEndpoints
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         IOptions<LimitsOptions> limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
-        ILogger<FeatureServerHandler> logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+        ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+        ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
         IResult result = await GetLayerMetadataAsync(
             serviceId,
@@ -211,7 +213,7 @@ public static class FeatureServerEndpoints
         int layerId,
         ILayerCatalog catalog,
         QueryLimits limits,
-        ILogger<FeatureServerHandler> logger,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         try
