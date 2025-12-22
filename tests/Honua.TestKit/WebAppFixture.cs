@@ -69,8 +69,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                     });
 
                     // Add test-specific import service with test connection string
+                    services.AddScoped<ICrsDetectionService>(serviceProvider =>
+                        new CrsDetectionService(_postgres.ConnectionString));
+
                     services.AddScoped<IFileImportService>(serviceProvider =>
-                        new FileImportService(_postgres.ConnectionString));
+                    {
+                        var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
+                        return new FileImportService(_postgres.ConnectionString, crsDetectionService);
+                    });
 
                     // Add test-specific table discovery service
                     services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
