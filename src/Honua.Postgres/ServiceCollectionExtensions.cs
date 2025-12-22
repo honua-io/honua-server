@@ -35,12 +35,12 @@ internal static class ServiceCollectionExtensions
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
         // Register NpgsqlDataSource as specified in Issue #3
-        _ = services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
+        services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
-            string? connectionString = configuration.GetConnectionString("honua");
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
             if (string.IsNullOrEmpty(connectionString))
             {
-                throw new InvalidOperationException("honua connection string is required for PostgreSQL services");
+                throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
             }
 
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
@@ -52,30 +52,46 @@ internal static class ServiceCollectionExtensions
         });
 
         // Register feature store implementation
-        _ = services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+        services.AddScoped<IFeatureStore, PostgresFeatureStore>();
 
         // Register attachment store implementation
         services.AddScoped<IAttachmentStore, PostgresAttachmentStore>();
 
         // Register layer catalog implementation
-        _ = services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
+        services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
 
         // Register table discovery implementation
-        _ = services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
+        services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
         // Register health checker
-        _ = services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
+        services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
 
         // Register database connection provider with resilience policies
-        _ = services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
+        services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
+
+        // Register CRS detection service
+        services.AddScoped<ICrsDetectionService>(serviceProvider =>
+        {
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new InvalidOperationException("DefaultConnection connection string is required for CRS detection services");
+            }
+
+            return new CrsDetectionService(connectionString);
+        });
 
         // Register file import service with NetTopologySuite support
-        _ = services.AddScoped<IFileImportService>(serviceProvider =>
+        services.AddScoped<IFileImportService>(serviceProvider =>
         {
-            string? connectionString = configuration.GetConnectionString("honua");
-            return string.IsNullOrEmpty(connectionString)
-                ? throw new InvalidOperationException("honua connection string is required for file import services")
-                : (IFileImportService)new FileImportService(connectionString);
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
+            }
+
+            var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
+            return new FileImportService(connectionString, crsDetectionService);
         });
 
         return services;

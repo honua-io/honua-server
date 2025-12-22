@@ -6,7 +6,6 @@ using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Features;
-using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
 
@@ -15,9 +14,16 @@ namespace Honua.Postgres.Features.Import;
 /// <summary>
 /// NetTopologySuite-based file import service supporting multiple geospatial formats
 /// </summary>
-internal sealed class FileImportService(string connectionString) : IFileImportService
+internal sealed class FileImportService : IFileImportService
 {
-    private readonly string _connectionString = connectionString;
+    private readonly string _connectionString;
+    private readonly ICrsDetectionService _crsDetectionService;
+
+    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService)
+    {
+        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
+    }
 
     /// <summary>
     /// Supported file extensions mapped to formats
@@ -36,17 +42,17 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
 
     public SupportedFileFormat? DetectFormat(string fileName)
     {
-        string extension = Path.GetExtension(fileName);
+        var extension = Path.GetExtension(fileName);
         return string.IsNullOrEmpty(extension) ? null :
-               _fileExtensions.TryGetValue(extension, out global::Honua.Core.Features.Import.Domain.SupportedFileFormat format) ? format : null;
+               _fileExtensions.TryGetValue(extension, out var format) ? format : null;
     }
 
-    public string[] GetSupportedExtensions() => [.. _fileExtensions.Keys];
+    public string[] GetSupportedExtensions() => _fileExtensions.Keys.ToArray();
 
     public async Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        SupportedFileFormat? format = DetectFormat(request.FileName);
+        var format = DetectFormat(request.FileName);
 
         if (format == null)
         {
@@ -59,7 +65,7 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
 
         try
         {
-            IEnumerable<IFeature> features = await ReadFeaturesAsync(request.FileStream, format.Value, cancellationToken);
+            var features = await ReadFeaturesAsync(request.FileStream, format.Value, cancellationToken);
 
             if (!features.Any())
             {
@@ -70,10 +76,16 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
                     stopwatch.Elapsed);
             }
 
-            int featureCount = await ImportFeaturesToPostGisAsync(
+            // Detect CRS if not provided in request
+            var detectedSrid = request.SourceSrid ?? await DetectCrsFromFileAsync(request.FileName, request.FileStream, format.Value, cancellationToken);
+
+            // Use detected SRID or fall back to WGS84
+            var sourceSrid = detectedSrid ?? 4326;
+
+            var featureCount = await ImportFeaturesToPostGisAsync(
                 features,
                 request.TableName,
-                request.SourceSrid ?? 4326,
+                sourceSrid,
                 request.TargetSrid,
                 request.OverwriteExisting,
                 cancellationToken);
@@ -84,7 +96,7 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
                 request.TableName,
                 format.Value,
                 featureCount,
-                request.SourceSrid,
+                detectedSrid,
                 stopwatch.Elapsed);
         }
         catch (Exception ex)
@@ -98,24 +110,157 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
         }
     }
 
+    /// <summary>
+    /// Detect coordinate reference system from various file sources
+    /// </summary>
+    private async Task<int?> DetectCrsFromFileAsync(string fileName, Stream fileStream, SupportedFileFormat format, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Reset stream position for CRS detection
+            if (fileStream.CanSeek)
+            {
+                fileStream.Position = 0;
+            }
+
+            switch (format)
+            {
+                case SupportedFileFormat.Shapefile:
+                    return await _crsDetectionService.DetectFromShapefilePrjAsync(fileName);
+
+                case SupportedFileFormat.GeoJson:
+                    return await DetectCrsFromGeoJsonAsync(fileStream, cancellationToken);
+
+                case SupportedFileFormat.Wkt:
+                    return await DetectCrsFromWktFileAsync(fileStream, cancellationToken);
+
+                default:
+                    // For other formats, try generic detection methods
+                    return await TryGenericCrsDetectionAsync(fileName, fileStream, cancellationToken);
+            }
+        }
+        catch (Exception)
+        {
+            // If CRS detection fails, return null to use default
+            return null;
+        }
+        finally
+        {
+            // Reset stream position for subsequent reading
+            if (fileStream.CanSeek)
+            {
+                fileStream.Position = 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Detect CRS from GeoJSON file content
+    /// </summary>
+    private async Task<int?> DetectCrsFromGeoJsonAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        var content = await reader.ReadToEndAsync(cancellationToken);
+
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+
+            // Check for CRS property in GeoJSON
+            if (root.TryGetProperty("crs", out var crsElement))
+            {
+                var crsJson = crsElement.GetRawText();
+                return await _crsDetectionService.DetectFromGeoJsonCrsAsync(crsJson);
+            }
+
+            // Check for legacy 'name' property
+            if (root.TryGetProperty("name", out var nameElement))
+            {
+                var name = nameElement.GetString();
+                if (!string.IsNullOrEmpty(name))
+                {
+                    return _crsDetectionService.DetectFromEpsgCode(name);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Invalid JSON - fall through to return null
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Detect CRS from WKT file content
+    /// </summary>
+    private async Task<int?> DetectCrsFromWktFileAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        var content = await reader.ReadToEndAsync(cancellationToken);
+
+        return await _crsDetectionService.DetectFromWktAsync(content);
+    }
+
+    /// <summary>
+    /// Try generic CRS detection methods for unsupported formats
+    /// </summary>
+    private async Task<int?> TryGenericCrsDetectionAsync(string fileName, Stream stream, CancellationToken cancellationToken)
+    {
+        // Try to read first few lines and look for CRS indicators
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        var previewLines = new List<string>();
+
+        for (int i = 0; i < 10 && !reader.EndOfStream; i++)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(line))
+            {
+                previewLines.Add(line);
+            }
+        }
+
+        var content = string.Join("\n", previewLines);
+
+        // Try EPSG code detection
+        var epsgResult = _crsDetectionService.DetectFromEpsgCode(content);
+        if (epsgResult.HasValue)
+        {
+            return epsgResult;
+        }
+
+        // Try WKT detection
+        var wktResult = await _crsDetectionService.DetectFromWktAsync(content);
+        if (wktResult.HasValue)
+        {
+            return wktResult;
+        }
+
+        return null;
+    }
+
     public async Task<FilePreview> PreviewFileAsync(Stream fileStream, string fileName, CancellationToken cancellationToken = default)
     {
-        SupportedFileFormat? format = DetectFormat(fileName);
+        var format = DetectFormat(fileName);
 
         if (!format.HasValue)
         {
             throw new NotSupportedException($"Unsupported file format: {Path.GetExtension(fileName)}");
         }
 
-        IEnumerable<IFeature> features = await ReadFeaturesAsync(fileStream, format.Value, cancellationToken);
+        // Detect CRS before reading features
+        var detectedSrid = await DetectCrsFromFileAsync(fileName, fileStream, format.Value, cancellationToken);
+
+        var features = await ReadFeaturesAsync(fileStream, format.Value, cancellationToken);
         var featureList = features.Take(100).ToList();
 
         var sampleProperties = new Dictionary<string, object?>();
-        IFeature? firstFeature = featureList.FirstOrDefault();
+        var firstFeature = featureList.FirstOrDefault();
         if (firstFeature?.Attributes is not null)
         {
-            string[] names = firstFeature.Attributes.GetNames();
-            object[] values = firstFeature.Attributes.GetValues();
+            var names = firstFeature.Attributes.GetNames();
+            var values = firstFeature.Attributes.GetValues();
             sampleProperties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
         }
 
@@ -123,7 +268,7 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
         {
             Format = format.Value,
             TotalFeatureCount = featureList.Count,
-            DetectedSrid = 4326,
+            DetectedSrid = detectedSrid,
             SampleProperties = sampleProperties,
             AvailableLayers = []
         };
@@ -152,7 +297,7 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
     private static async Task<IEnumerable<IFeature>> ReadSimpleGeoJsonAsync(Stream stream, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream);
-        string content = await reader.ReadToEndAsync(cancellationToken);
+        var content = await reader.ReadToEndAsync(cancellationToken);
 
         // Basic GeoJSON parsing - in production would use NetTopologySuite.IO.GeoJSON
         var features = new List<IFeature>();
@@ -160,15 +305,15 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
         try
         {
             using var document = JsonDocument.Parse(content);
-            if (document.RootElement.TryGetProperty("features", out JsonElement featuresArray))
+            if (document.RootElement.TryGetProperty("features", out var featuresArray))
             {
-                foreach (JsonElement featureElement in featuresArray.EnumerateArray())
+                foreach (var featureElement in featuresArray.EnumerateArray())
                 {
                     // Create a simple point feature as placeholder
                     var attributes = new AttributesTable();
-                    if (featureElement.TryGetProperty("properties", out JsonElement props))
+                    if (featureElement.TryGetProperty("properties", out var props))
                     {
-                        foreach (JsonProperty prop in props.EnumerateObject())
+                        foreach (var prop in props.EnumerateObject())
                         {
                             attributes.Add(prop.Name, prop.Value.ToString());
                         }
@@ -193,7 +338,7 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
     private static async Task<IEnumerable<IFeature>> ReadSimpleKmlAsync(Stream stream, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream);
-        string content = await reader.ReadToEndAsync(cancellationToken);
+        var content = await reader.ReadToEndAsync(cancellationToken);
 
         var features = new List<IFeature>();
 
@@ -213,19 +358,19 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
     private static async Task<IEnumerable<IFeature>> ReadWktAsync(Stream stream, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream);
-        string content = await reader.ReadToEndAsync(cancellationToken);
+        var content = await reader.ReadToEndAsync(cancellationToken);
 
         var wktReader = new WKTReader();
         var features = new List<IFeature>();
 
-        string[] lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-        foreach (string line in lines)
+        foreach (var line in lines)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                Geometry geometry = wktReader.Read(line.Trim());
+                var geometry = wktReader.Read(line.Trim());
                 if (geometry != null)
                 {
                     var attributes = new AttributesTable();
@@ -260,18 +405,18 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
             await CreateTableAsync(connection, tableName, cancellationToken);
         }
 
-        int featureCount = 0;
+        var featureCount = 0;
         var wkbWriter = new WKBWriter();
 
-        foreach (IFeature feature in features)
+        foreach (var feature in features)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var properties = new Dictionary<string, object?>();
             if (feature.Attributes is not null)
             {
-                string[] names = feature.Attributes.GetNames();
-                object[] values = feature.Attributes.GetValues();
+                var names = feature.Attributes.GetNames();
+                var values = feature.Attributes.GetValues();
                 properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
             }
 
@@ -286,10 +431,10 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
                     INSERT INTO {QuoteIdentifier(tableName)} (geometry, properties)
                     VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
 
-                byte[] wkb = wkbWriter.Write(feature.Geometry);
-                _ = command.Parameters.AddWithValue("@wkb", wkb);
-                _ = command.Parameters.AddWithValue("@sourceSrid", sourceSrid);
-                _ = command.Parameters.AddWithValue("@targetSrid", targetSrid);
+                var wkb = wkbWriter.Write(feature.Geometry);
+                command.Parameters.AddWithValue("@wkb", wkb);
+                command.Parameters.AddWithValue("@sourceSrid", sourceSrid);
+                command.Parameters.AddWithValue("@targetSrid", targetSrid);
             }
             else
             {
@@ -297,14 +442,14 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
                     INSERT INTO {QuoteIdentifier(tableName)} (geometry, properties)
                     VALUES (@geometry, @properties::jsonb)";
 
-                _ = command.Parameters.AddWithValue("@geometry", DBNull.Value);
+                command.Parameters.AddWithValue("@geometry", DBNull.Value);
             }
 
             command.CommandText = sql;
 
-            _ = command.Parameters.AddWithValue("@properties", JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject));
+            command.Parameters.AddWithValue("@properties", JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject));
 
-            _ = await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryAsync(cancellationToken);
             featureCount++;
         }
 
@@ -316,17 +461,8 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
     /// </summary>
     private static async Task CreateTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
-        // Validate table name to prevent SQL injection
-        if (!IsValidTableName(tableName))
-        {
-            throw new ArgumentException($"Invalid table name: {tableName}. Table names must contain only letters, digits, and underscores.", nameof(tableName));
-        }
-
-        string quotedTableName = QuoteIdentifier(tableName);
-        string geometryIndexName = QuoteIdentifier($"idx_{tableName}_geometry");
-        string propertiesIndexName = QuoteIdentifier($"idx_{tableName}_properties");
-
-        string createTableSql = $@"
+        var quotedTableName = QuoteIdentifier(tableName);
+        var createTableSql = $@"
             DROP TABLE IF EXISTS {quotedTableName};
 
             CREATE TABLE {quotedTableName} (
@@ -336,32 +472,19 @@ internal sealed class FileImportService(string connectionString) : IFileImportSe
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
 
-            CREATE INDEX IF NOT EXISTS {geometryIndexName} ON {quotedTableName} USING GIST (geometry);
-            CREATE INDEX IF NOT EXISTS {propertiesIndexName} ON {quotedTableName} USING GIN (properties);";
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_geometry")} ON {quotedTableName} USING GIST (geometry);
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_properties")} ON {quotedTableName} USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
-        _ = await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
     /// Safely quotes a PostgreSQL identifier to prevent SQL injection
     /// </summary>
-    private static string QuoteIdentifier(string identifier) =>
-        // PostgreSQL identifier quoting: double quotes around identifier and escape any existing double quotes
-        $"\"{identifier.Replace("\"", "\"\"")}\"";
-
-    /// <summary>
-    /// Validates that a table name contains only safe characters to prevent SQL injection
-    /// </summary>
-    private static bool IsValidTableName(string tableName)
+    private static string QuoteIdentifier(string identifier)
     {
-        if (string.IsNullOrWhiteSpace(tableName))
-            return false;
-
-        // Allow only letters, digits, and underscores
-        // This prevents SQL injection while allowing reasonable table names
-        return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
-               !char.IsDigit(tableName[0]) && // Cannot start with a digit
-               tableName.Length <= 63; // PostgreSQL identifier length limit
+        // PostgreSQL identifier quoting: double quotes around identifier and escape any existing double quotes
+        return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
 }
