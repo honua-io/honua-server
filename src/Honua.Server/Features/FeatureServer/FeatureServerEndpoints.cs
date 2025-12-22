@@ -972,6 +972,7 @@ public static class FeatureServerEndpoints
     /// <param name="x">Tile X coordinate</param>
     /// <param name="y">Tile Y coordinate</param>
     /// <param name="where">Optional WHERE clause for filtering</param>
+    /// <param name="response">HTTP response for setting headers</param>
     /// <param name="featureStore">Feature store service</param>
     /// <param name="layerCatalog">Layer catalog service</param>
     /// <param name="tileOptions">Tile configuration options</param>
@@ -983,6 +984,7 @@ public static class FeatureServerEndpoints
         int x,
         int y,
         string? where,
+        HttpResponse response,
         IFeatureStore featureStore,
         ILayerCatalog layerCatalog,
         IOptions<TileOptions> tileOptions,
@@ -1026,7 +1028,7 @@ public static class FeatureServerEndpoints
             }
 
             // Return MVT with appropriate content type
-            // Cache headers are automatically managed by Output Caching middleware via .CacheOutput("MvtTile")
+            response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
             return Results.Bytes(mvtData, "application/vnd.mapbox-vector-tile");
         }
         catch (ArgumentException ex)

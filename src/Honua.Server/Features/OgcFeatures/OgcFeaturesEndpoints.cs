@@ -230,7 +230,7 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features items request with optional CQL filtering
     /// </summary>
-    private static async Task<Results<Ok<FeatureCollection>, BadRequest<string>, NotFound, ProblemHttpResult>> HandleGetItems(
+    private static async Task<IResult> HandleGetItems(
         string collectionId,
         string? filter,
         int? limit,
@@ -288,6 +288,8 @@ public static class OgcFeaturesEndpoints
                 }
             }
 
+            var whereClause = string.IsNullOrWhiteSpace(filter) ? null : filter;
+
             // Create feature query with proper parameterized filter support
             FeatureQuery featureQuery;
             if (filterExpression != null)
@@ -298,6 +300,7 @@ public static class OgcFeaturesEndpoints
                 // Use parameterized SQL filter to preserve parameters
                 featureQuery = new FeatureQuery
                 {
+                    Where = whereClause,
                     SqlFilter = sqlFragment,
                     Limit = limit ?? 1000, // Default limit per OGC spec
                     Offset = offset
@@ -307,6 +310,7 @@ public static class OgcFeaturesEndpoints
             {
                 featureQuery = new FeatureQuery
                 {
+                    Where = whereClause,
                     Limit = limit ?? 1000, // Default limit per OGC spec
                     Offset = offset
                 };
@@ -318,7 +322,7 @@ public static class OgcFeaturesEndpoints
             // Convert to GeoJSON FeatureCollection
             var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter);
 
-            return TypedResults.Ok(featureCollection);
+            return Results.Json(featureCollection, contentType: MediaTypes.GeoJson);
         }
         catch (ArgumentException ex)
         {

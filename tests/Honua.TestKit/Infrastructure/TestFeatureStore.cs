@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -261,10 +262,15 @@ public sealed class TestFeatureStore : IFeatureStore
     {
         // Simple WHERE clause parsing for testing
         // This is a simplified version, real implementation would be more robust
-        return whereClause.ToLowerInvariant() switch
+        var normalized = Regex.Replace(whereClause, @"\s*=\s*", "=", RegexOptions.CultureInvariant);
+        var lowerClause = normalized.Trim().ToLowerInvariant();
+
+        return lowerClause switch
         {
             "name='test feature'" => features.Where(f => f.Attributes.TryGetValue("name", out var nameValue) &&
                                                          nameValue?.ToString()?.Equals("Test Feature", StringComparison.OrdinalIgnoreCase) == true),
+            "category='test'" => features.Where(f => f.Attributes.TryGetValue("category", out var categoryValue) &&
+                                                     categoryValue?.ToString()?.Equals("test", StringComparison.OrdinalIgnoreCase) == true),
             var clause when clause.Contains("drop", StringComparison.OrdinalIgnoreCase) || clause.Contains(';') || clause.Contains("--", StringComparison.OrdinalIgnoreCase) =>
                 throw new ArgumentException("WHERE clause contains dangerous pattern: " + clause.Split(' ').First(w => new[] { "drop", ";", "--" }.Contains(w.ToLower(System.Globalization.CultureInfo.InvariantCulture))), nameof(whereClause)),
             "invalid syntax here" =>
