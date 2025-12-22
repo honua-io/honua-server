@@ -351,6 +351,21 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.Tag("ogc-metadata", "metadata");
         });
 
+        // OGC API Features collections list caching policy
+        options.AddPolicy("OgcCollections", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
+        // OGC API Features single collection caching policy
+        options.AddPolicy("OgcCollection", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByRouteValue("collectionId");
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
         // Note: No default base policy - endpoints must explicitly opt into caching for security
     });
 }

@@ -146,6 +146,126 @@ public static class RelationTypes
 }
 
 /// <summary>
+/// Collections response containing list of available feature collections
+/// </summary>
+public sealed record Collections
+{
+    /// <summary>
+    /// List of available collections
+    /// </summary>
+    [JsonPropertyName("collections")]
+    public required ImmutableArray<CollectionInfo> CollectionList { get; init; }
+
+    /// <summary>
+    /// Links to related resources
+    /// </summary>
+    [JsonPropertyName("links")]
+    public required ImmutableArray<Link> Links { get; init; }
+}
+
+/// <summary>
+/// Feature collection metadata
+/// </summary>
+public sealed record CollectionInfo
+{
+    /// <summary>
+    /// Unique identifier for the collection
+    /// </summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Human readable title for the collection
+    /// </summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    /// <summary>
+    /// Description of the collection
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    /// <summary>
+    /// Links to related resources
+    /// </summary>
+    [JsonPropertyName("links")]
+    public required ImmutableArray<Link> Links { get; init; }
+
+    /// <summary>
+    /// Spatial extent of the collection
+    /// </summary>
+    [JsonPropertyName("extent")]
+    public Extent? Extent { get; init; }
+
+    /// <summary>
+    /// Collection data type (always "feature" for feature collections)
+    /// </summary>
+    [JsonPropertyName("itemType")]
+    public string ItemType { get; init; } = "feature";
+
+    /// <summary>
+    /// Coordinate reference systems supported by this collection
+    /// </summary>
+    [JsonPropertyName("crs")]
+    public ImmutableArray<string>? Crs { get; init; }
+}
+
+/// <summary>
+/// Spatial and temporal extent of a collection
+/// </summary>
+public sealed record Extent
+{
+    /// <summary>
+    /// Spatial extent
+    /// </summary>
+    [JsonPropertyName("spatial")]
+    public SpatialExtent? Spatial { get; init; }
+
+    /// <summary>
+    /// Temporal extent
+    /// </summary>
+    [JsonPropertyName("temporal")]
+    public TemporalExtent? Temporal { get; init; }
+}
+
+/// <summary>
+/// Spatial extent with bounding box
+/// </summary>
+public sealed record SpatialExtent
+{
+    /// <summary>
+    /// Bounding box coordinates [minx, miny, maxx, maxy]
+    /// </summary>
+    [JsonPropertyName("bbox")]
+    public required ImmutableArray<ImmutableArray<double>> BoundingBox { get; init; }
+
+    /// <summary>
+    /// Coordinate reference system identifier
+    /// </summary>
+    [JsonPropertyName("crs")]
+    public string Crs { get; init; } = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
+}
+
+/// <summary>
+/// Temporal extent with start and end times
+/// </summary>
+public sealed record TemporalExtent
+{
+    /// <summary>
+    /// Temporal interval [start, end] - null values indicate open intervals
+    /// </summary>
+    [JsonPropertyName("interval")]
+    public required ImmutableArray<ImmutableArray<string?>> Interval { get; init; }
+
+    /// <summary>
+    /// Temporal reference system
+    /// </summary>
+    [JsonPropertyName("trs")]
+    public string Trs { get; init; } = "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian";
+}
+
+/// <summary>
 /// Standard media types for OGC API Features
 /// </summary>
 public static class MediaTypes

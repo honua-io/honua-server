@@ -3,11 +3,13 @@
 
 using System.Net.Http.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Xunit;
 
 namespace Honua.Server.Tests;
@@ -22,7 +24,8 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // These endpoints don't require database or layer catalog services
+        // Replace with test implementation for OGC collections tests
+        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
         await _fixture.InitializeAsync();
     }
 
@@ -121,4 +124,113 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
     }
 
     // TODO: Add cache header tests when output caching is properly configured for test environment
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/collections")]
+    public async Task GetCollections_ReturnsValidCollectionsWithLayers()
+    {
+        // Arrange
+        var client = _fixture.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/ogc/features/collections");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var collections = await response.Content.ReadFromJsonAsync<Collections>();
+        collections.Should().NotBeNull();
+        collections!.CollectionList.Should().NotBeEmpty();
+        collections.Links.Should().NotBeEmpty();
+
+        // Verify required links exist
+        var links = collections.Links.ToArray();
+        links.Should().Contain(l => l.Rel == RelationTypes.Self);
+        links.Should().Contain(l => l.Rel == "parent");
+
+        // Verify collections have required properties
+        var firstCollection = collections.CollectionList.First();
+        firstCollection.Id.Should().NotBeNullOrEmpty();
+        firstCollection.Links.Should().NotBeEmpty();
+        firstCollection.ItemType.Should().Be("feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task GetCollection_WithValidId_ReturnsCollectionMetadata()
+    {
+        // Arrange
+        var client = _fixture.CreateClient();
+        var collectionId = "0"; // Layer ID from TestLayerCatalog
+
+        // Act
+        var response = await client.GetAsync($"/ogc/features/collections/{collectionId}");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var collection = await response.Content.ReadFromJsonAsync<CollectionInfo>();
+        collection.Should().NotBeNull();
+        collection!.Id.Should().Be(collectionId);
+        collection.Links.Should().NotBeEmpty();
+        collection.ItemType.Should().Be("feature");
+
+        // Verify required links exist
+        var links = collection.Links.ToArray();
+        links.Should().Contain(l => l.Rel == RelationTypes.Self);
+        links.Should().Contain(l => l.Rel == RelationTypes.Data); // Items link
+        links.Should().Contain(l => l.Rel == "parent");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task GetCollection_WithInvalidId_Returns404()
+    {
+        // Arrange
+        var client = _fixture.CreateClient();
+        var invalidCollectionId = "nonexistent_layer";
+
+        // Act
+        var response = await client.GetAsync($"/ogc/features/collections/{invalidCollectionId}");
+
+        // Assert
+        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/collections")]
+    public async Task GetCollections_IncludesCorrectBaseUrl()
+    {
+        // Arrange
+        var client = _fixture.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/ogc/features/collections");
+
+        // Assert
+        response.Be200Ok();
+
+        var collections = await response.Content.ReadFromJsonAsync<Collections>();
+        collections.Should().NotBeNull();
+
+        // Verify that links use the correct base URL
+        var links = collections!.Links.ToArray();
+        var selfLink = links.First(l => l.Rel == RelationTypes.Self);
+        selfLink.Href.Should().EndWith("/ogc/features/collections");
+        selfLink.Href.Should().StartWith("http");
+
+        // Verify collection links are correct
+        if (collections.CollectionList.Length > 0)
+        {
+            var firstCollection = collections.CollectionList.First();
+            var collectionSelfLink = firstCollection.Links.First(l => l.Rel == RelationTypes.Self);
+            collectionSelfLink.Href.Should().Contain($"/ogc/features/collections/{firstCollection.Id}");
+        }
+    }
 }
