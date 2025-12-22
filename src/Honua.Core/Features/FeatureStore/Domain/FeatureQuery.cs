@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -14,6 +15,11 @@ public readonly record struct FeatureQuery
     /// WHERE clause filter expression (GeoServices REST SQL syntax)
     /// </summary>
     public string? Where { get; init; }
+
+    /// <summary>
+    /// Parameterized SQL filter with parameters (takes precedence over Where if provided)
+    /// </summary>
+    public SqlFragment? SqlFilter { get; init; }
 
     /// <summary>
     /// Fields to return (null means all fields)
@@ -42,6 +48,14 @@ public readonly record struct FeatureQuery
     /// <returns>Feature query instance</returns>
     public static FeatureQuery WithWhere(string where)
         => new() { Where = where };
+
+    /// <summary>
+    /// Creates a parameterized SQL filter query
+    /// </summary>
+    /// <param name="sqlFilter">Parameterized SQL filter with parameters</param>
+    /// <returns>Feature query instance</returns>
+    public static FeatureQuery WithSqlFilter(SqlFragment sqlFilter)
+        => new() { SqlFilter = sqlFilter };
 
     /// <summary>
     /// Creates a query with pagination

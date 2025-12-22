@@ -74,6 +74,9 @@ RegisterInfrastructureServices(builder.Services, builder.Configuration);
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);
 
+// Configure tile options
+ConfigureTileOptions(builder.Services, builder.Configuration);
+
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
@@ -366,10 +369,28 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.Tag("ogc-metadata", "metadata");
         });
 
+        // MVT tile caching policy
+        options.AddPolicy("MvtTile", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1)); // Cache tiles for 1 hour by default
+            policy.SetVaryByRouteValue("layerId", "z", "x", "y");
+            policy.SetVaryByQuery("where"); // Support for WHERE clause filtering
+            policy.Tag("mvt-tiles", "tiles");
+        });
+
         // Note: No default base policy - endpoints must explicitly opt into caching for security
     });
 }
 
+// Configure tile options with validation
+static void ConfigureTileOptions(IServiceCollection services, IConfiguration configuration)
+{
+    // Bind configuration with default values
+    services.Configure<Honua.Core.Features.Tiles.TileOptions>(options =>
+    {
+        configuration.GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName).Bind(options);
+    });
+}
 
 // Make Program accessible to WebApplicationFactory
 public partial class Program { }
