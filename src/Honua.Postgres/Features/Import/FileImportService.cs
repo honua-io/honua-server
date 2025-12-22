@@ -17,10 +17,12 @@ namespace Honua.Postgres.Features.Import;
 internal sealed class FileImportService : IFileImportService
 {
     private readonly string _connectionString;
+    private readonly ICrsDetectionService _crsDetectionService;
 
-    public FileImportService(string connectionString)
+    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService)
     {
-        _connectionString = connectionString;
+        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
     }
 
     /// <summary>
@@ -74,10 +76,16 @@ internal sealed class FileImportService : IFileImportService
                     stopwatch.Elapsed);
             }
 
+            // Detect CRS if not provided in request
+            var detectedSrid = request.SourceSrid ?? await DetectCrsFromFileAsync(request.FileName, request.FileStream, format.Value, cancellationToken);
+
+            // Use detected SRID or fall back to WGS84
+            var sourceSrid = detectedSrid ?? 4326;
+
             var featureCount = await ImportFeaturesToPostGisAsync(
                 features,
                 request.TableName,
-                request.SourceSrid ?? 4326,
+                sourceSrid,
                 request.TargetSrid,
                 request.OverwriteExisting,
                 cancellationToken);
@@ -88,7 +96,7 @@ internal sealed class FileImportService : IFileImportService
                 request.TableName,
                 format.Value,
                 featureCount,
-                request.SourceSrid,
+                detectedSrid,
                 stopwatch.Elapsed);
         }
         catch (Exception ex)
@@ -102,6 +110,136 @@ internal sealed class FileImportService : IFileImportService
         }
     }
 
+    /// <summary>
+    /// Detect coordinate reference system from various file sources
+    /// </summary>
+    private async Task<int?> DetectCrsFromFileAsync(string fileName, Stream fileStream, SupportedFileFormat format, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Reset stream position for CRS detection
+            if (fileStream.CanSeek)
+            {
+                fileStream.Position = 0;
+            }
+
+            switch (format)
+            {
+                case SupportedFileFormat.Shapefile:
+                    return await _crsDetectionService.DetectFromShapefilePrjAsync(fileName);
+
+                case SupportedFileFormat.GeoJson:
+                    return await DetectCrsFromGeoJsonAsync(fileStream, cancellationToken);
+
+                case SupportedFileFormat.Wkt:
+                    return await DetectCrsFromWktFileAsync(fileStream, cancellationToken);
+
+                default:
+                    // For other formats, try generic detection methods
+                    return await TryGenericCrsDetectionAsync(fileName, fileStream, cancellationToken);
+            }
+        }
+        catch (Exception)
+        {
+            // If CRS detection fails, return null to use default
+            return null;
+        }
+        finally
+        {
+            // Reset stream position for subsequent reading
+            if (fileStream.CanSeek)
+            {
+                fileStream.Position = 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Detect CRS from GeoJSON file content
+    /// </summary>
+    private async Task<int?> DetectCrsFromGeoJsonAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        var content = await reader.ReadToEndAsync(cancellationToken);
+
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+
+            // Check for CRS property in GeoJSON
+            if (root.TryGetProperty("crs", out var crsElement))
+            {
+                var crsJson = crsElement.GetRawText();
+                return await _crsDetectionService.DetectFromGeoJsonCrsAsync(crsJson);
+            }
+
+            // Check for legacy 'name' property
+            if (root.TryGetProperty("name", out var nameElement))
+            {
+                var name = nameElement.GetString();
+                if (!string.IsNullOrEmpty(name))
+                {
+                    return _crsDetectionService.DetectFromEpsgCode(name);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Invalid JSON - fall through to return null
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Detect CRS from WKT file content
+    /// </summary>
+    private async Task<int?> DetectCrsFromWktFileAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        var content = await reader.ReadToEndAsync(cancellationToken);
+
+        return await _crsDetectionService.DetectFromWktAsync(content);
+    }
+
+    /// <summary>
+    /// Try generic CRS detection methods for unsupported formats
+    /// </summary>
+    private async Task<int?> TryGenericCrsDetectionAsync(string fileName, Stream stream, CancellationToken cancellationToken)
+    {
+        // Try to read first few lines and look for CRS indicators
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        var previewLines = new List<string>();
+
+        for (int i = 0; i < 10 && !reader.EndOfStream; i++)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(line))
+            {
+                previewLines.Add(line);
+            }
+        }
+
+        var content = string.Join("\n", previewLines);
+
+        // Try EPSG code detection
+        var epsgResult = _crsDetectionService.DetectFromEpsgCode(content);
+        if (epsgResult.HasValue)
+        {
+            return epsgResult;
+        }
+
+        // Try WKT detection
+        var wktResult = await _crsDetectionService.DetectFromWktAsync(content);
+        if (wktResult.HasValue)
+        {
+            return wktResult;
+        }
+
+        return null;
+    }
+
     public async Task<FilePreview> PreviewFileAsync(Stream fileStream, string fileName, CancellationToken cancellationToken = default)
     {
         var format = DetectFormat(fileName);
@@ -110,6 +248,9 @@ internal sealed class FileImportService : IFileImportService
         {
             throw new NotSupportedException($"Unsupported file format: {Path.GetExtension(fileName)}");
         }
+
+        // Detect CRS before reading features
+        var detectedSrid = await DetectCrsFromFileAsync(fileName, fileStream, format.Value, cancellationToken);
 
         var features = await ReadFeaturesAsync(fileStream, format.Value, cancellationToken);
         var featureList = features.Take(100).ToList();
@@ -127,7 +268,7 @@ internal sealed class FileImportService : IFileImportService
         {
             Format = format.Value,
             TotalFeatureCount = featureList.Count,
-            DetectedSrid = 4326,
+            DetectedSrid = detectedSrid,
             SampleProperties = sampleProperties,
             AvailableLayers = []
         };
@@ -331,8 +472,8 @@ internal sealed class FileImportService : IFileImportService
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
 
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_geometry")} ON {quotedTableName} USING GIST (geometry);
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_properties")} ON {quotedTableName} USING GIN (properties);";
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_geometry")} ON {quotedTableName} USING GIST (geometry);
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_properties")} ON {quotedTableName} USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
