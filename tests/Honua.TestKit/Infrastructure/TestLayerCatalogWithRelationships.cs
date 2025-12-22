@@ -11,7 +11,7 @@ namespace Honua.TestKit.Infrastructure;
 /// Test implementation of ILayerCatalog that extends TestLayerCatalog
 /// to provide relationship support for queryRelatedRecords endpoint tests.
 /// </summary>
-internal sealed class TestLayerCatalogWithRelationships : ILayerCatalog
+public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
 {
     private readonly TestLayerCatalog _baseCatalog = new();
     private readonly Dictionary<(int layerId, int relationshipId), Relationship> _relationships = new();
