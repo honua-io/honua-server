@@ -13,7 +13,7 @@ namespace Honua.Postgres.Features.Import;
 /// Behavior reference: ../Honua.Server/src/platform/core/Query/Filter/CqlFilterParser.cs
 /// Implements CRS detection from .prj files, WKT, EPSG codes, and GeoJSON
 /// </summary>
-public sealed class CrsDetectionService : ICrsDetectionService
+internal sealed class CrsDetectionService : ICrsDetectionService
 {
     private readonly string _connectionString;
 
