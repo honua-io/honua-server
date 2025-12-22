@@ -2,15 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.FeatureServer.Models;
-using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -64,159 +58,7 @@ public static class OgcFeaturesEndpoints
             .Produces<CollectionInfo>(200, MediaTypes.Json)
             .Produces(404);
 
-        endpoints.MapGet("/ogc/features/collections/{collectionId}/items", HandleGetItems)
-            .WithDisplayName("OGC API Features Items")
-            .WithName("OgcItems")
-            .WithSummary("Get features from a collection")
-            .WithDescription("Get features from a specific collection with optional filtering")
-            .WithTags("OGC API Features")
-            .Produces<GeoJsonFeatureSet>(200, MediaTypes.GeoJson)
-            .Produces(400)
-            .Produces(404);
-
         return endpoints;
-    }
-
-    /// <summary>
-    /// Handles the OGC API Features items request for a specific collection
-    /// </summary>
-    private static async Task<IResult> HandleGetItems(
-        string collectionId,
-        HttpContext context,
-        ILayerCatalog layerCatalog,
-        IFeatureStore featureStore,
-        IQueryFormatter queryFormatter,
-        [FromQuery] string? bbox = null,
-        [FromQuery] int limit = 10,
-        [FromQuery] int offset = 0)
-    {
-        try
-        {
-            // OGC collection IDs are strings, but layer catalog uses int IDs
-            // For now, try to parse the string as an integer
-            if (!int.TryParse(collectionId, out var layerId))
-            {
-                return TypedResults.NotFound();
-            }
-
-            // Verify the layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId);
-            if (layer == null)
-            {
-                return TypedResults.NotFound();
-            }
-
-            // Build query for the layer using existing FeatureQuery pattern
-            var query = new FeatureQuery
-            {
-                Where = null, // No WHERE clause filter for basic OGC query
-                Offset = offset,
-                Limit = limit,
-                OutFields = null // Return all fields (equivalent to "*")
-            };
-
-            // Handle bbox parameter if provided
-            // OGC bbox format: minx,miny,maxx,maxy
-            if (!string.IsNullOrEmpty(bbox))
-            {
-                var parts = bbox.Split(',');
-                if (parts.Length == 4 &&
-                    double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) &&
-                    double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minY) &&
-                    double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) &&
-                    double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
-                {
-                    // Create spatial filter for bbox using simple envelope WKB
-                    // For now, create a simple envelope filter - production would use proper WKB generation
-                    var spatialFilter = new SpatialFilter
-                    {
-                        Geometry = CreateBoundingBoxWkb(minX, minY, maxX, maxY),
-                        SpatialRelationship = SpatialRelationship.Intersects
-                    };
-                    query = query with { SpatialFilter = spatialFilter };
-                }
-                else
-                {
-                    var problemDetails = new ProblemDetails
-                    {
-                        Status = 400,
-                        Title = "Invalid bbox parameter",
-                        Detail = "bbox parameter must be in format 'minx,miny,maxx,maxy' with valid numbers",
-                        Instance = context.Request.Path
-                    };
-                    return TypedResults.BadRequest(problemDetails);
-                }
-            }
-
-            // Execute query using existing infrastructure
-            var queryResult = await featureStore.QueryAsync(layerId, query, context.RequestAborted);
-
-            // Use existing query formatter to convert to GeoJSON (avoiding duplication)
-            var (formattedResponse, contentType) = queryFormatter.FormatQueryResult(
-                queryResult,
-                layer,
-                "geojson",
-                true, // returnGeometry
-                null); // outFields = null means all fields
-
-            // Set the correct content type for GeoJSON
-            return Results.Json((GeoJsonFeatureSet)formattedResponse,
-                FeatureServerJsonContext.Default.GeoJsonFeatureSet,
-                contentType: contentType);
-        }
-        catch (ArgumentException ex)
-        {
-            var problemDetails = new ProblemDetails
-            {
-                Status = 400,
-                Title = "Invalid query parameters",
-                Detail = ex.Message,
-                Instance = context.Request.Path
-            };
-            return TypedResults.BadRequest(problemDetails);
-        }
-        catch
-        {
-            return TypedResults.NotFound();
-        }
-    }
-
-    /// <summary>
-    /// Creates a simple WKB envelope geometry for bounding box queries.
-    /// TODO: Replace with proper WKB generation using NetTopologySuite in production.
-    /// </summary>
-    private static byte[] CreateBoundingBoxWkb(double minX, double minY, double maxX, double maxY)
-    {
-        // For now, create a simple polygon WKB representing the bounding box
-        // This is a simplified implementation - production would use proper geometry libraries
-        var polygon = new List<byte>();
-
-        // WKB header: little-endian (01) + polygon type (03000000)
-        polygon.AddRange([0x01, 0x03, 0x00, 0x00, 0x00]);
-
-        // Number of linear rings (1)
-        polygon.AddRange(BitConverter.GetBytes(1));
-
-        // Number of points in ring (5 - closed rectangle)
-        polygon.AddRange(BitConverter.GetBytes(5));
-
-        // Points: bottom-left, bottom-right, top-right, top-left, bottom-left (closed)
-        polygon.AddRange(BitConverter.GetBytes(minX));
-        polygon.AddRange(BitConverter.GetBytes(minY));
-
-        polygon.AddRange(BitConverter.GetBytes(maxX));
-        polygon.AddRange(BitConverter.GetBytes(minY));
-
-        polygon.AddRange(BitConverter.GetBytes(maxX));
-        polygon.AddRange(BitConverter.GetBytes(maxY));
-
-        polygon.AddRange(BitConverter.GetBytes(minX));
-        polygon.AddRange(BitConverter.GetBytes(maxY));
-
-        polygon.AddRange(BitConverter.GetBytes(minX));
-        polygon.AddRange(BitConverter.GetBytes(minY));
-
-        return polygon.ToArray();
     }
 
     /// <summary>

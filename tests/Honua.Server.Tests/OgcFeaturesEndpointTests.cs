@@ -4,7 +4,6 @@
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -25,10 +24,8 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Replace with test implementations for OGC tests
-        // Use real QueryFormatter to test shared query pipeline (DRY principle)
+        // Replace with test implementation for OGC collections tests
         _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<Honua.Core.Features.FeatureStore.Abstractions.IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
@@ -235,81 +232,5 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
             var collectionSelfLink = firstCollection.Links.First(l => l.Rel == RelationTypes.Self);
             collectionSelfLink.Href.Should().Contain($"/ogc/features/collections/{firstCollection.Id}");
         }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithValidCollection_ReturnsGeoJsonFeatures()
-    {
-        // Arrange
-        var client = _fixture.CreateClient();
-        var collectionId = "0"; // Layer ID from TestLayerCatalog
-
-        // Act
-        var response = await client.GetAsync($"/ogc/features/collections/{collectionId}/items");
-
-        // Assert
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
-
-        var features = await response.Content.ReadFromJsonAsync<GeoJsonFeatureSet>();
-        features.Should().NotBeNull();
-        features!.Type.Should().Be("FeatureCollection");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithBboxParameter_ReturnsFilteredFeatures()
-    {
-        // Arrange
-        var client = _fixture.CreateClient();
-        var collectionId = "0";
-        var bbox = "-180,-90,180,90"; // World extent
-
-        // Act
-        var response = await client.GetAsync($"/ogc/features/collections/{collectionId}/items?bbox={bbox}");
-
-        // Assert
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
-
-        var features = await response.Content.ReadFromJsonAsync<GeoJsonFeatureSet>();
-        features.Should().NotBeNull();
-        features!.Type.Should().Be("FeatureCollection");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithInvalidBbox_Returns400()
-    {
-        // Arrange
-        var client = _fixture.CreateClient();
-        var collectionId = "0";
-        var invalidBbox = "invalid-bbox";
-
-        // Act
-        var response = await client.GetAsync($"/ogc/features/collections/{collectionId}/items?bbox={invalidBbox}");
-
-        // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithInvalidCollectionId_Returns404()
-    {
-        // Arrange
-        var client = _fixture.CreateClient();
-        var invalidCollectionId = "nonexistent";
-
-        // Act
-        var response = await client.GetAsync($"/ogc/features/collections/{invalidCollectionId}/items");
-
-        // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
     }
 }
