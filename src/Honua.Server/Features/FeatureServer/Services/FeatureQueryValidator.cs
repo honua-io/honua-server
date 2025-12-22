@@ -1,0 +1,90 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Configuration;
+using Honua.Server.Features.FeatureServer.Models;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Server.Features.FeatureServer.Services;
+
+/// <summary>
+/// Validates and applies limits to feature query parameters
+/// </summary>
+internal sealed class FeatureQueryValidator : IFeatureQueryValidator
+{
+    private readonly LimitsOptions _limitsOptions;
+
+    public FeatureQueryValidator(IOptions<LimitsOptions> limitsOptions)
+    {
+        _limitsOptions = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
+    }
+
+    /// <inheritdoc/>
+    public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
+    {
+        // Get the effective values (use defaults if not specified)
+        var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.MaxRecordCount;
+        var requestedOffset = queryParams.ResultOffset ?? 0;
+
+        // First validate that the original request is within allowed ranges
+        if (requestedOffset > _limitsOptions.Query.MaxOffset)
+        {
+            return QueryValidationResult.Failure($"Maximum offset: {_limitsOptions.Query.MaxOffset}");
+        }
+
+        if (requestedRecordCount > _limitsOptions.Query.MaxRecordCount)
+        {
+            return QueryValidationResult.Failure($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
+        }
+
+        // Apply limit constraints per MVP Plan (clamp to maximum allowed)
+        var recordCount = Math.Min(requestedRecordCount, _limitsOptions.Query.MaxRecordCount);
+        var offset = Math.Min(requestedOffset, _limitsOptions.Query.MaxOffset);
+
+        // Create new validated parameters object
+        var validatedParams = new QueryParameters
+        {
+            Where = queryParams.Where,
+            OutFields = queryParams.OutFields,
+            ReturnGeometry = queryParams.ReturnGeometry,
+            F = queryParams.F,
+            ResultOffset = offset,
+            ResultRecordCount = recordCount,
+            Geometry = queryParams.Geometry,
+            GeometryType = queryParams.GeometryType,
+            SpatialRel = queryParams.SpatialRel
+        };
+
+        return QueryValidationResult.Success(validatedParams);
+    }
+
+    /// <inheritdoc/>
+    public RelatedRecordsValidationResult ValidateRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams)
+    {
+        // Get the effective value (use default if not specified)
+        var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.MaxRecordCount;
+
+        // First validate that the original request is within allowed ranges
+        if (requestedRecordCount > _limitsOptions.Query.MaxRecordCount)
+        {
+            return RelatedRecordsValidationResult.Failure($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
+        }
+
+        // Apply limit constraints for related records queries (clamp to maximum allowed)
+        var recordCount = Math.Min(requestedRecordCount, _limitsOptions.Query.MaxRecordCount);
+
+        // Create new validated parameters object
+        var validatedParams = new QueryRelatedRecordsParameters
+        {
+            ObjectIds = queryParams.ObjectIds,
+            RelationshipId = queryParams.RelationshipId,
+            OutFields = queryParams.OutFields,
+            ReturnGeometry = queryParams.ReturnGeometry,
+            F = queryParams.F,
+            ResultRecordCount = recordCount,
+            Where = queryParams.Where
+        };
+
+        return RelatedRecordsValidationResult.Success(validatedParams);
+    }
+}

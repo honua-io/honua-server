@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.OgcFeatures.Models;
@@ -268,6 +269,88 @@ public sealed record TemporalExtent
 /// <summary>
 /// GeoJSON FeatureCollection for OGC API Features Items response
 /// </summary>
+/// <summary>
+/// GeoJSON Feature for items response
+/// </summary>
+/// <summary>
+/// Simple GeoJSON geometry representation for AOT compatibility
+/// </summary>
+/// <summary>
+/// Simple GeoJSON geometry representation for AOT compatibility
+/// </summary>
+/// <summary>
+/// JSON converter for raw JSON strings to avoid double encoding
+/// </summary>
+public sealed class RawJsonStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.GetString();
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            // Write the string as raw JSON without quotes
+            writer.WriteRawValue(value);
+        }
+    }
+}
+
+public sealed record SimpleGeoJsonGeometry
+{
+    /// <summary>
+    /// Geometry type (Point, LineString, Polygon, etc.)
+    /// </summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    /// <summary>
+    /// Geometry coordinates as raw JSON string for AOT compatibility
+    /// </summary>
+    [JsonPropertyName("coordinates")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? CoordinatesJson { get; init; }
+}
+
+/// <summary>
+/// GeoJSON Feature for items response
+/// </summary>
+public sealed record GeoJsonFeature
+{
+    /// <summary>
+    /// GeoJSON object type (always "Feature")
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "Feature";
+
+    /// <summary>
+    /// Feature identifier
+    /// </summary>
+    [JsonPropertyName("id")]
+    public object? Id { get; init; }
+
+    /// <summary>
+    /// Feature geometry in GeoJSON format
+    /// </summary>
+    [JsonPropertyName("geometry")]
+    public SimpleGeoJsonGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// Feature properties (attributes)
+    /// </summary>
+    [JsonPropertyName("properties")]
+    public Dictionary<string, object?> Properties { get; init; } = new();
+}
+
+/// <summary>
+/// GeoJSON FeatureCollection for OGC API Features Items response
+/// </summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "FeatureCollection is the standard GeoJSON type name")]
 public sealed record FeatureCollection
 {
@@ -281,7 +364,7 @@ public sealed record FeatureCollection
     /// Array of GeoJSON Feature objects
     /// </summary>
     [JsonPropertyName("features")]
-    public required object[] Features { get; init; }
+    public required GeoJsonFeature[] Features { get; init; }
 
     /// <summary>
     /// Number of features matched by the query (before pagination)

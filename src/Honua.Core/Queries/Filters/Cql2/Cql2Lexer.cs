@@ -139,6 +139,10 @@ public sealed class Cql2Lexer
                     {
                         ReadNumericLiteral();
                     }
+                    else if (ch == '-' && (char.IsDigit(PeekNext()) || (PeekNext() == '.' && PeekNext(1) != '\0' && char.IsDigit(PeekNext(1)))))
+                    {
+                        ReadNumericLiteral();
+                    }
                     else if (char.IsLetter(ch) || ch == '_')
                     {
                         ReadIdentifierOrKeyword();
@@ -168,12 +172,19 @@ public sealed class Cql2Lexer
         return _position + 1 < _input.Length ? _input[_position + 1] : '\0';
     }
 
+    private char PeekNext(int offset)
+    {
+        return _position + offset < _input.Length ? _input[_position + offset] : '\0';
+    }
+
     private void ReadStringLiteral()
     {
         var start = _position;
         _position++; // Skip opening quote
 
         var value = new StringBuilder();
+        var terminated = false;
+
         while (_position < _input.Length)
         {
             var ch = _input[_position];
@@ -187,6 +198,7 @@ public sealed class Cql2Lexer
                 else
                 {
                     _position++; // Skip closing quote
+                    terminated = true;
                     break;
                 }
             }
@@ -195,6 +207,11 @@ public sealed class Cql2Lexer
                 value.Append(ch);
                 _position++;
             }
+        }
+
+        if (!terminated)
+        {
+            throw new ArgumentException($"Unterminated quoted string starting at position {start}");
         }
 
         _tokens.Add(Cql2Token.Create(Cql2TokenType.Text, value.ToString(), start, _position - start));
@@ -221,6 +238,12 @@ public sealed class Cql2Lexer
     private void ReadNumericLiteral()
     {
         var start = _position;
+
+        // Handle optional negative sign
+        if (_position < _input.Length && _input[_position] == '-')
+        {
+            _position++;
+        }
 
         while (_position < _input.Length &&
                (char.IsDigit(_input[_position]) || _input[_position] == '.'))

@@ -23,6 +23,12 @@ namespace Honua.Server.Features.OgcFeatures;
 [JsonSerializable(typeof(ImmutableArray<string>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<double>>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<string?>>))]
+[JsonSerializable(typeof(FeatureCollection))]
+[JsonSerializable(typeof(GeoJsonFeature))]
+[JsonSerializable(typeof(GeoJsonFeature[]))]
+[JsonSerializable(typeof(SimpleGeoJsonGeometry))]
+[JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(object))]
 internal sealed partial class OgcJsonContext : JsonSerializerContext
 {
 }

@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Infrastructure.Middleware;
+
 namespace Honua.Server.Features.Infrastructure.Models;
 
 /// <summary>
@@ -22,7 +24,7 @@ public static class EsriErrorHelpers
                 Details = null
             }
         };
-        return Results.Json(errorResponse, statusCode: 404);
+        return Results.Json(errorResponse, LimitsEnforcementJsonContext.Default.ApiErrorResponse, statusCode: 404);
     }
 
     /// <summary>
@@ -39,7 +41,7 @@ public static class EsriErrorHelpers
                 Details = details
             }
         };
-        return Results.Json(errorResponse, statusCode: 400);
+        return Results.Json(errorResponse, LimitsEnforcementJsonContext.Default.ApiErrorResponse, statusCode: 400);
     }
 
     /// <summary>
@@ -56,6 +58,6 @@ public static class EsriErrorHelpers
                 Details = details
             }
         };
-        return Results.Json(errorResponse, statusCode: 500);
+        return Results.Json(errorResponse, LimitsEnforcementJsonContext.Default.ApiErrorResponse, statusCode: 500);
     }
 }

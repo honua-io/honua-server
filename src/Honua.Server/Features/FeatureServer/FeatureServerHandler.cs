@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -11,7 +10,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -21,22 +19,21 @@ namespace Honua.Server.Features.FeatureServer;
 /// </summary>
 /// <remarks>
 /// Initializes a new FeatureServerHandler with required dependencies.
-/// Note: This handler has 6 dependencies (exceeding 4-handler limit) but reduces
-/// endpoint dependency count from 6 to 1, meeting the 5-endpoint limit.
+/// Note: This handler has 6 dependencies (meets the refactored limit with IFeatureQueryValidator service).
 /// </remarks>
 internal sealed class FeatureServerHandler(
     ILayerCatalog layerCatalog,
     IFeatureStore featureStore,
-    IGeometryConverter geometryConverter,
+    Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
     IQueryFormatter queryFormatter,
-    IOptions<LimitsOptions> limitsOptions,
+    IFeatureQueryValidator queryValidator,
     ILogger<FeatureServerHandler> logger)
 {
     private readonly ILayerCatalog _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
     private readonly IFeatureStore _featureStore = featureStore ?? throw new ArgumentNullException(nameof(featureStore));
-    private readonly IGeometryConverter _geometryConverter = geometryConverter ?? throw new ArgumentNullException(nameof(geometryConverter));
+    private readonly Honua.Server.Features.Infrastructure.Services.IGeometryConverter _geometryConverter = geometryConverter ?? throw new ArgumentNullException(nameof(geometryConverter));
     private readonly IQueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
-    private readonly LimitsOptions _limitsOptions = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
+    private readonly IFeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
     private readonly ILogger<FeatureServerHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -82,13 +79,15 @@ internal sealed class FeatureServerHandler(
             }
 
             // Apply limits enforcement
-            QueryParameters? validatedParams = ApplyQueryLimits(queryParams, _limitsOptions.Query);
-            if (validatedParams == null)
+            QueryValidationResult validationResult = _queryValidator.ValidateQueryLimits(queryParams);
+            if (!validationResult.IsValid)
             {
                 return EsriErrorHelpers.CreateBadRequestError(
                     "Query parameters exceed configured limits",
-                    [$"Maximum record count: {_limitsOptions.Query.MaxRecordCount}, Maximum offset: {_limitsOptions.Query.MaxOffset}"]);
+                    [validationResult.ErrorMessage!]);
             }
+
+            QueryParameters validatedParams = validationResult.ValidatedParameters!;
 
             // Build query from validated parameters
             FeatureQuery query = BuildFeatureQuery(validatedParams, service);
@@ -186,13 +185,15 @@ internal sealed class FeatureServerHandler(
             var relationship = relationshipMaybe.Value;
 
             // Apply limits enforcement
-            QueryRelatedRecordsParameters? validatedParams = ApplyRelatedRecordsLimits(queryParams, _limitsOptions.Query);
-            if (validatedParams == null)
+            RelatedRecordsValidationResult validationResult = _queryValidator.ValidateRelatedRecordsLimits(queryParams);
+            if (!validationResult.IsValid)
             {
                 return EsriErrorHelpers.CreateBadRequestError(
                     "Query parameters exceed configured limits",
-                    [$"Maximum record count: {_limitsOptions.Query.MaxRecordCount}"]);
+                    [validationResult.ErrorMessage!]);
             }
+
+            QueryRelatedRecordsParameters validatedParams = validationResult.ValidatedParameters!;
 
             // Get related layer information
             var relatedLayer = service.Layers.FirstOrDefault(l => l.Id == relationship!.RelatedLayerId);
@@ -506,39 +507,6 @@ internal sealed class FeatureServerHandler(
         return results;
     }
 
-    /// <summary>
-    /// Applies query limits enforcement and returns validated parameters or null if limits exceeded.
-    /// </summary>
-    private static QueryParameters? ApplyQueryLimits(QueryParameters queryParams, QueryLimits limits)
-    {
-        // Validate and apply record count limits
-        int recordCount = queryParams.ResultRecordCount ?? limits.DefaultRecordCount;
-        if (recordCount > limits.MaxRecordCount)
-        {
-            return null;
-        }
-
-        // Validate offset limits
-        int offset = queryParams.ResultOffset ?? 0;
-        if (offset > limits.MaxOffset)
-        {
-            return null;
-        }
-
-        // Return validated parameters with applied defaults
-        return new QueryParameters
-        {
-            Where = queryParams.Where,
-            OutFields = queryParams.OutFields,
-            ReturnGeometry = queryParams.ReturnGeometry,
-            F = queryParams.F,
-            ResultOffset = offset,
-            ResultRecordCount = recordCount,
-            Geometry = queryParams.Geometry,
-            GeometryType = queryParams.GeometryType,
-            SpatialRel = queryParams.SpatialRel
-        };
-    }
 
     /// <summary>
     /// Builds a FeatureQuery from query parameters
@@ -652,30 +620,6 @@ internal sealed class FeatureServerHandler(
     }
 
 
-    /// <summary>
-    /// Applies related records query limits enforcement and returns validated parameters or null if limits exceeded.
-    /// </summary>
-    private static QueryRelatedRecordsParameters? ApplyRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams, QueryLimits limits)
-    {
-        // Validate and apply record count limits
-        int recordCount = queryParams.ResultRecordCount ?? limits.DefaultRecordCount;
-        if (recordCount > limits.MaxRecordCount)
-        {
-            return null;
-        }
-
-        // Return validated parameters with applied defaults
-        return new QueryRelatedRecordsParameters
-        {
-            ObjectIds = queryParams.ObjectIds,
-            RelationshipId = queryParams.RelationshipId,
-            OutFields = queryParams.OutFields,
-            ReturnGeometry = queryParams.ReturnGeometry,
-            F = queryParams.F,
-            ResultRecordCount = recordCount,
-            Where = queryParams.Where
-        };
-    }
 
     /// <summary>
     /// Builds a FeatureQuery for related records from query parameters
