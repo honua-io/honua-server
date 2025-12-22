@@ -266,6 +266,49 @@ public sealed record TemporalExtent
 }
 
 /// <summary>
+/// GeoJSON FeatureCollection for OGC API Features Items response
+/// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "FeatureCollection is the standard GeoJSON type name")]
+public sealed record FeatureCollection
+{
+    /// <summary>
+    /// GeoJSON object type (always "FeatureCollection")
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "FeatureCollection";
+
+    /// <summary>
+    /// Array of GeoJSON Feature objects
+    /// </summary>
+    [JsonPropertyName("features")]
+    public required object[] Features { get; init; }
+
+    /// <summary>
+    /// Number of features matched by the query (before pagination)
+    /// </summary>
+    [JsonPropertyName("numberMatched")]
+    public long? NumberMatched { get; init; }
+
+    /// <summary>
+    /// Number of features returned in this response (after pagination)
+    /// </summary>
+    [JsonPropertyName("numberReturned")]
+    public int NumberReturned { get; init; }
+
+    /// <summary>
+    /// Links to related resources (pagination, etc.)
+    /// </summary>
+    [JsonPropertyName("links")]
+    public ImmutableArray<Link>? Links { get; init; }
+
+    /// <summary>
+    /// Timestamp when the collection was generated
+    /// </summary>
+    [JsonPropertyName("timeStamp")]
+    public DateTimeOffset? TimeStamp { get; init; }
+}
+
+/// <summary>
 /// Standard media types for OGC API Features
 /// </summary>
 public static class MediaTypes

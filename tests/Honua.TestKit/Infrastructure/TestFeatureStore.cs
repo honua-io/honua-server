@@ -388,4 +388,23 @@ public sealed class TestFeatureStore : IFeatureStore
         // Basic implementation returns empty result - tests that need related features should use TestFeatureStoreWithRelationships
         return Task.FromResult(QueryResult<Feature>.Empty());
     }
+
+    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    {
+        // Return a simple mock MVT tile for testing
+        if (!_layerFeatures.TryGetValue(layerId, out var features) || features.Count == 0)
+        {
+            return Task.FromResult<byte[]?>(null); // Empty tile
+        }
+
+        // Return a mock MVT tile with basic header
+        var mockMvt = new byte[]
+        {
+            0x1A, 0x04, 0x6C, 0x61, 0x79, 0x65, 0x72, // Basic MVT header
+            0x12, 0x02, 0x08, 0x01, // Mock feature data
+            0x18, 0x03, 0x22, 0x02, 0x08, 0x01
+        };
+
+        return Task.FromResult<byte[]?>(mockMvt);
+    }
 }

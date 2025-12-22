@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Tiles;
 using Npgsql;
 
 namespace Honua.Postgres.Features.FeatureStore;
@@ -1009,5 +1010,100 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             feature.Geometry,
             filteredAttributes.ToImmutableDictionary()
         );
+    }
+
+    public async Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    {
+        // Validate tile coordinates
+        if (!TileMath.ValidateTileCoordinates(x, y, z))
+        {
+            throw new ArgumentException($"Invalid tile coordinates: x={x}, y={y}, z={z}");
+        }
+
+        // Get tile bounds in Web Mercator (EPSG:3857)
+        var bounds = TileMath.GetTileBounds(x, y, z);
+        var tolerance = TileMath.GetSimplificationTolerance(z);
+
+        // Build MVT query
+        var sql = new StringBuilder();
+        var parameters = new List<object> { layerId };
+        var paramIndex = 2;
+
+        // Build the base query for MVT generation
+        sql.Append($@"
+            SELECT ST_AsMVT(tile, 'layer', 4096, 'geom') AS mvt
+            FROM (
+                SELECT
+                    objectid as id,
+                    ST_AsMVTGeom(");
+
+        // Apply geometry simplification for low zoom levels
+        if (z < 10 && tolerance > 0)
+        {
+            sql.Append(@"
+                        ST_Simplify(ST_Transform(geometry, 3857), $");
+            sql.Append(paramIndex++);
+            sql.Append("),");
+            parameters.Add(tolerance);
+        }
+        else
+        {
+            sql.Append(@"
+                        ST_Transform(geometry, 3857),");
+        }
+
+        // Add tile bounds envelope and MVT parameters
+        sql.Append(CultureInfo.InvariantCulture, $@"
+                        ST_MakeEnvelope(${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, 3857),
+                        4096, 256, true
+                    ) AS geom,
+                    attributes");
+
+        parameters.Add(bounds.XMin);
+        parameters.Add(bounds.YMin);
+        parameters.Add(bounds.XMax);
+        parameters.Add(bounds.YMax);
+
+        sql.Append(CultureInfo.InvariantCulture, $@"
+                FROM {_tableName}
+                WHERE layer_id = $1
+                AND geometry && ST_Transform(ST_MakeEnvelope(${paramIndex - 4}, ${paramIndex - 3}, ${paramIndex - 2}, ${paramIndex - 1}, 3857), ST_SRID(geometry))");
+
+        // Add WHERE clause filter if specified
+        if (query.HasValue && !string.IsNullOrWhiteSpace(query.Value.Where))
+        {
+            var whereClause = query.Value.Where.Trim();
+            var parameterizedClause = ParseAndParameterizeWhereClause(whereClause, ref paramIndex, parameters);
+            sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
+        }
+
+        // Add feature limit for performance (10,000 default)
+        sql.Append(" LIMIT 10000");
+
+        sql.Append(@"
+            ) AS tile
+            WHERE geom IS NOT NULL");
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql.ToString(), connection);
+
+        // Set query timeout (10 seconds default)
+        command.CommandTimeout = 10;
+
+        // Add all parameters
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            command.Parameters.AddWithValue(parameters[i]);
+        }
+
+        // Execute query and return MVT bytes
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+
+        if (result == null || result == DBNull.Value)
+        {
+            return null; // Empty tile
+        }
+
+        return (byte[])result;
     }
 }

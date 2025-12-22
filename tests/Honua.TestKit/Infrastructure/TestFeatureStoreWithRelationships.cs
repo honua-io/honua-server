@@ -84,6 +84,9 @@ public sealed class TestFeatureStoreWithRelationships : IFeatureStore
     public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
         => _baseStore.ApplyEditsAsync(layerId, editBatch, cancellationToken);
 
+    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+        => _baseStore.GetMvtTileAsync(layerId, x, y, z, query, cancellationToken);
+
     // Implement relationship-specific method
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
