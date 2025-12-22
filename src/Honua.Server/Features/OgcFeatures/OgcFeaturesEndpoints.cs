@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.OgcFeatures.Models;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -64,7 +63,7 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features landing page request
     /// </summary>
-    private static Ok<LandingPage> HandleGetLandingPage(HttpContext context)
+    private static IResult HandleGetLandingPage(HttpContext context)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -108,13 +107,13 @@ public static class OgcFeaturesEndpoints
             )
         };
 
-        return TypedResults.Ok(landingPage);
+        return Results.Json(landingPage, OgcJsonContext.Default.LandingPage);
     }
 
     /// <summary>
     /// Handles the OGC API Features conformance declaration request
     /// </summary>
-    private static Ok<ConformanceDeclaration> HandleGetConformance()
+    private static IResult HandleGetConformance()
     {
         var conformance = new ConformanceDeclaration
         {
@@ -132,13 +131,13 @@ public static class OgcFeaturesEndpoints
             )
         };
 
-        return TypedResults.Ok(conformance);
+        return Results.Json(conformance, OgcJsonContext.Default.ConformanceDeclaration);
     }
 
     /// <summary>
     /// Handles the OGC API Features collections list request
     /// </summary>
-    private static async Task<Results<Ok<Collections>, NotFound>> HandleGetCollections(
+    private static async Task<IResult> HandleGetCollections(
         HttpContext context, ILayerCatalog layerCatalog)
     {
         var request = context.Request;
@@ -171,18 +170,18 @@ public static class OgcFeaturesEndpoints
                 )
             };
 
-            return TypedResults.Ok(response);
+            return Results.Json(response, OgcJsonContext.Default.Collections);
         }
         catch
         {
-            return TypedResults.NotFound();
+            return Results.NotFound();
         }
     }
 
     /// <summary>
     /// Handles the OGC API Features single collection request
     /// </summary>
-    private static async Task<Results<Ok<CollectionInfo>, NotFound>> HandleGetCollection(
+    private static async Task<IResult> HandleGetCollection(
         string collectionId, HttpContext context, ILayerCatalog layerCatalog)
     {
         var request = context.Request;
@@ -194,21 +193,21 @@ public static class OgcFeaturesEndpoints
             // For now, try to parse the string as an integer
             if (!int.TryParse(collectionId, out var layerId))
             {
-                return TypedResults.NotFound();
+                return Results.NotFound();
             }
 
             var layer = await layerCatalog.GetLayerAsync(layerId);
             if (layer == null)
             {
-                return TypedResults.NotFound();
+                return Results.NotFound();
             }
 
             var collection = CreateCollection(layer, baseUrl);
-            return TypedResults.Ok(collection);
+            return Results.Json(collection, OgcJsonContext.Default.CollectionInfo);
         }
         catch
         {
-            return TypedResults.NotFound();
+            return Results.NotFound();
         }
     }
 
