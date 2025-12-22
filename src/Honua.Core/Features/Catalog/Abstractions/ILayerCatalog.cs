@@ -55,4 +55,21 @@ public interface ILayerCatalog
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>True if service exists, false otherwise</returns>
     Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves a specific relationship definition for a layer
+    /// </summary>
+    /// <param name="layerId">Layer identifier</param>
+    /// <param name="relationshipId">Relationship identifier</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Relationship definition if found, null otherwise</returns>
+    Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves all relationships defined for a layer
+    /// </summary>
+    /// <param name="layerId">Layer identifier</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Array of relationship definitions for the layer</returns>
+    Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default);
 }
