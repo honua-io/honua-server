@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -21,17 +22,17 @@ public static class AdminEndpoints
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Create admin group with authorization requirement
-        var adminGroup = endpoints.MapGroup("/api/admin")
+        RouteGroupBuilder adminGroup = endpoints.MapGroup("/api/admin")
             .WithTags("Admin")
             .RequireAdminAuthorization();
 
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
-        adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
+        _ = adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Use catch-all parameter to handle edge cases like empty segments
-        adminGroup.Map("/connections/{*path}", HandleGetConnectionTablesWithCatchAll)
+        _ = adminGroup.Map("/connections/{*path}", HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Catch All")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
@@ -41,7 +42,7 @@ public static class AdminEndpoints
     /// </summary>
     private static async Task HandleGetConnectionTablesWithCatchAll(HttpContext context)
     {
-        var path = context.GetRouteValue("path")?.ToString() ?? "";
+        string path = context.GetRouteValue("path")?.ToString() ?? "";
 
         // Check if this is the tables endpoint with empty or invalid connection ID
         if (path.Equals("/tables", StringComparison.OrdinalIgnoreCase) ||
@@ -75,7 +76,7 @@ public static class AdminEndpoints
         }
 
         // Extract connection ID from route
-        var id = context.GetRouteValue("id")?.ToString();
+        string? id = context.GetRouteValue("id")?.ToString();
 
         // Validate input
         if (string.IsNullOrWhiteSpace(id))
@@ -86,19 +87,19 @@ public static class AdminEndpoints
             return;
         }
 
-        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Admin.TableDiscovery");
+        ILogger logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Admin.TableDiscovery");
 
         try
         {
             // For this initial implementation, use the default database connection for all connection IDs
             // In a full implementation, this would look up the connection by ID and validate it exists
-            var connectionProvider = context.RequestServices.GetRequiredService<IDatabaseConnectionProvider>();
-            var tableDiscoveryService = context.RequestServices.GetRequiredService<ITableDiscoveryService>();
+            IDatabaseConnectionProvider connectionProvider = context.RequestServices.GetRequiredService<IDatabaseConnectionProvider>();
+            ITableDiscoveryService tableDiscoveryService = context.RequestServices.GetRequiredService<ITableDiscoveryService>();
 
-            await using var connection = await connectionProvider.OpenConnectionAsync(context.RequestAborted);
+            await using DbConnection connection = await connectionProvider.OpenConnectionAsync(context.RequestAborted);
 
             // Pass the opened connection directly to avoid password extraction issues
-            var tables = await tableDiscoveryService.DiscoverPostGisTablesAsync(
+            List<TableInfo> tables = await tableDiscoveryService.DiscoverPostGisTablesAsync(
                 connection,
                 context.RequestAborted);
 

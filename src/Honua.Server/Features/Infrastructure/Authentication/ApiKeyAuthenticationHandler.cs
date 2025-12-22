@@ -6,35 +6,29 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
 /// <summary>
 /// API Key authentication handler with development bypass mode support
 /// </summary>
-public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+/// <remarks>
+/// Initializes a new instance of the ApiKeyAuthenticationHandler
+/// </remarks>
+public sealed class ApiKeyAuthenticationHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder,
+    IConfiguration configuration,
+    IWebHostEnvironment environment) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     private const string ApiKeyHeader = "X-API-Key";
     private const string DevAuthBypassEnvVar = "HONUA_DEV_AUTH";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
 
-    private readonly IConfiguration _configuration;
-    private readonly IWebHostEnvironment _environment;
-
-    /// <summary>
-    /// Initializes a new instance of the ApiKeyAuthenticationHandler
-    /// </summary>
-    public ApiKeyAuthenticationHandler(
-        IOptionsMonitor<AuthenticationSchemeOptions> options,
-        ILoggerFactory logger,
-        UrlEncoder encoder,
-        IConfiguration configuration,
-        IWebHostEnvironment environment)
-        : base(options, logger, encoder)
-    {
-        _configuration = configuration;
-        _environment = environment;
-    }
+    private readonly IConfiguration _configuration = configuration;
+    private readonly IWebHostEnvironment _environment = environment;
 
     /// <summary>
     /// Handles API key authentication with development bypass support
@@ -49,13 +43,13 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         }
 
         // Extract API key from header
-        if (!Request.Headers.TryGetValue(ApiKeyHeader, out var apiKeyValues))
+        if (!Request.Headers.TryGetValue(ApiKeyHeader, out StringValues apiKeyValues))
         {
             AuthenticationLog.NoApiKeyFound(Logger, ApiKeyHeader);
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var providedApiKey = apiKeyValues.FirstOrDefault();
+        string? providedApiKey = apiKeyValues.FirstOrDefault();
         if (string.IsNullOrEmpty(providedApiKey))
         {
             AuthenticationLog.EmptyApiKeyProvided(Logger, ApiKeyHeader);
@@ -63,7 +57,7 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         }
 
         // Get configured admin password
-        var configuredPassword = _configuration[AdminPasswordEnvVar];
+        string? configuredPassword = _configuration[AdminPasswordEnvVar];
         if (string.IsNullOrEmpty(configuredPassword))
         {
             AuthenticationLog.NoAdminPasswordConfigured(Logger, AdminPasswordEnvVar);
@@ -89,7 +83,7 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
     private bool IsDevelopmentBypassEnabled()
     {
         // Check if HONUA_DEV_AUTH is explicitly set to true
-        var devAuthBypass = _configuration[DevAuthBypassEnvVar];
+        string? devAuthBypass = _configuration[DevAuthBypassEnvVar];
         if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -98,7 +92,7 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         // Check if we're in development environment AND admin password is empty/not configured
         if (_environment.IsDevelopment())
         {
-            var adminPassword = _configuration[AdminPasswordEnvVar];
+            string? adminPassword = _configuration[AdminPasswordEnvVar];
             if (string.IsNullOrEmpty(adminPassword))
             {
                 AuthenticationLog.DevelopmentEnvironmentAuthBypass(Logger);
@@ -117,11 +111,11 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         if (providedKey.Length != configuredKey.Length)
             return false;
 
-        var providedBytes = Encoding.UTF8.GetBytes(providedKey);
-        var configuredBytes = Encoding.UTF8.GetBytes(configuredKey);
+        byte[] providedBytes = Encoding.UTF8.GetBytes(providedKey);
+        byte[] configuredBytes = Encoding.UTF8.GetBytes(configuredKey);
 
-        var areEqual = true;
-        for (var i = 0; i < providedBytes.Length; i++)
+        bool areEqual = true;
+        for (int i = 0; i < providedBytes.Length; i++)
         {
             areEqual &= providedBytes[i] == configuredBytes[i];
         }
@@ -134,7 +128,7 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
     /// </summary>
     private AuthenticateResult CreateSuccessfulAuthenticationResult(string authenticationType)
     {
-        var claims = new[]
+        Claim[] claims = new[]
         {
             new Claim(ClaimTypes.Name, "admin"),
             new Claim(ClaimTypes.Role, "admin"),
@@ -157,15 +151,15 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         Response.ContentType = "application/problem+json; charset=utf-8";
 
         // Check if there's a specific failure message from authentication
-        var failureMessage = Context.Items["AuthFailureMessage"] as string;
+        string? failureMessage = Context.Items["AuthFailureMessage"] as string;
         if (!string.IsNullOrEmpty(failureMessage))
         {
-            var problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{failureMessage}}"}""";
+            string problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{failureMessage}}"}""";
             return Response.WriteAsync(problemDetails);
         }
 
-        var devBypassEnabled = IsDevelopmentBypassEnabled();
-        var defaultDetails = devBypassEnabled
+        bool devBypassEnabled = IsDevelopmentBypassEnabled();
+        string defaultDetails = devBypassEnabled
             ? """{"title":"Unauthorized","status":401,"detail":"API key required. Development bypass is enabled but this request still requires authentication."}"""
             : """{"title":"Unauthorized","status":401,"detail":"API key required. Provide a valid API key in the X-API-Key header."}""";
 

@@ -19,22 +19,24 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     private readonly string _fieldsTable;
     private readonly string _servicesTable;
     private readonly string _serviceLayersTable;
+    private readonly string _relationshipsTable;
 
     public PostgresLayerCatalog(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
-        var schema = string.IsNullOrEmpty(schemaName) ? "catalog" : schemaName;
+        string schema = string.IsNullOrEmpty(schemaName) ? "honua" : schemaName;
         _layersTable = $"{schema}.layers";
         _fieldsTable = $"{schema}.layer_fields";
         _servicesTable = $"{schema}.services";
         _serviceLayersTable = $"{schema}.service_layers";
+        _relationshipsTable = $"{schema}.relationships";
     }
 
     /// <inheritdoc />
     public async Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        var sql = $"""
+        string sql = $"""
             SELECT
                 l.layer_id,
                 l.layer_name,
@@ -54,25 +56,28 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@layerId", layerId);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        var layer = ReadLayerDefinition(reader);
+        LayerDefinition layer = ReadLayerDefinition(reader);
         reader.Close();
 
         // Get field definitions for this layer
-        var fields = await GetLayerFieldsAsync(layerId, cancellationToken);
+        FieldDefinition[] fields = await GetLayerFieldsAsync(layerId, cancellationToken);
 
-        return layer with { Fields = fields };
+        // Get relationships for this layer
+        Relationship[] relationships = await ListRelationshipsAsync(layerId, cancellationToken);
+
+        return layer with { Fields = fields, Relationships = relationships };
     }
 
     /// <inheritdoc />
     public async Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
     {
-        var sql = $"""
+        string sql = $"""
             SELECT
                 l.layer_id,
                 l.layer_name,
@@ -92,33 +97,37 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var layers = new List<LayerDefinition>();
         var layerIds = new List<int>();
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            var layer = ReadLayerDefinition(reader);
+            LayerDefinition layer = ReadLayerDefinition(reader);
             layers.Add(layer);
             layerIds.Add(layer.Id);
         }
         reader.Close();
 
         // Get fields for all layers in batch
-        var fieldsMap = await GetLayerFieldsBatchAsync(layerIds.ToArray(), cancellationToken);
+        Dictionary<int, FieldDefinition[]> fieldsMap = await GetLayerFieldsBatchAsync([.. layerIds], cancellationToken);
 
-        // Combine layers with their fields
-        return layers.Select(layer => layer with
+        // Get relationships for all layers in batch
+        Dictionary<int, Relationship[]> relationshipsMap = await GetLayerRelationshipsBatchAsync([.. layerIds], cancellationToken);
+
+        // Combine layers with their fields and relationships
+        return [.. layers.Select(layer => layer with
         {
-            Fields = fieldsMap.TryGetValue(layer.Id, out var fields) ? fields : []
-        }).ToArray();
+            Fields = fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
+            Relationships = relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []
+        })];
     }
 
     /// <inheritdoc />
     public async Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
     {
-        var sql = $"""
+        string sql = $"""
             SELECT
                 s.service_name,
                 s.description,
@@ -136,17 +145,17 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@serviceName", serviceName);
+        _ = command.Parameters.AddWithValue("@serviceName", serviceName);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        var service = ReadServiceDefinition(reader);
+        ServiceDefinition service = ReadServiceDefinition(reader);
         reader.Close();
 
         // Get layers for this service
-        var layers = await GetServiceLayersAsync(serviceName, cancellationToken);
+        LayerDefinition[] layers = await GetServiceLayersAsync(serviceName, cancellationToken);
 
         return service with { Layers = layers };
     }
@@ -154,7 +163,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     /// <inheritdoc />
     public async Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
     {
-        var sql = $"""
+        string sql = $"""
             SELECT
                 s.service_name,
                 s.description,
@@ -172,75 +181,79 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var services = new List<ServiceDefinition>();
         var serviceNames = new List<string>();
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            var service = ReadServiceDefinition(reader);
+            ServiceDefinition service = ReadServiceDefinition(reader);
             services.Add(service);
             serviceNames.Add(service.Name);
         }
         reader.Close();
 
         // Get layers for all services in batch
-        var layersMap = await GetServiceLayersBatchAsync(serviceNames.ToArray(), cancellationToken);
+        Dictionary<string, LayerDefinition[]> layersMap = await GetServiceLayersBatchAsync([.. serviceNames], cancellationToken);
 
         // Combine services with their layers
-        return services.Select(service => service with
+        return [.. services.Select(service => service with
         {
-            Layers = layersMap.TryGetValue(service.Name, out var layers) ? layers : []
-        }).ToArray();
+            Layers = layersMap.TryGetValue(service.Name, out LayerDefinition[]? layers) ? layers : []
+        })];
     }
 
     /// <inheritdoc />
     public async Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        var sql = $"SELECT 1 FROM {_layersTable} WHERE layer_id = @layerId";
+        string sql = $"SELECT 1 FROM {_layersTable} WHERE layer_id = @layerId";
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@layerId", layerId);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
         return result != null;
     }
 
     /// <inheritdoc />
     public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
     {
-        var sql = $"SELECT 1 FROM {_servicesTable} WHERE LOWER(service_name) = LOWER(@serviceName)";
+        string sql = $"SELECT 1 FROM {_servicesTable} WHERE LOWER(service_name) = LOWER(@serviceName)";
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@serviceName", serviceName);
+        _ = command.Parameters.AddWithValue("@serviceName", serviceName);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
         return result != null;
     }
 
     private static LayerDefinition ReadLayerDefinition(NpgsqlDataReader reader)
     {
-        var id = reader.GetInt32(reader.GetOrdinal("layer_id"));
-        var name = reader.GetString(reader.GetOrdinal("layer_name"));
-        var description = reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description"));
-        var geometryType = Enum.Parse<GeometryType>(reader.GetString(reader.GetOrdinal("geometry_type")));
-        var srid = reader.GetInt32(reader.GetOrdinal("srid"));
-        var minScale = reader.IsDBNull(reader.GetOrdinal("min_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("min_scale"));
-        var maxScale = reader.IsDBNull(reader.GetOrdinal("max_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("max_scale"));
-        var defaultVisibility = reader.GetBoolean(reader.GetOrdinal("default_visibility"));
+        int id = reader.GetInt32(reader.GetOrdinal("layer_id"));
+        string name = reader.GetString(reader.GetOrdinal("layer_name"));
+        string? description = reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description"));
+
+        string geometryTypeString = reader.GetString(reader.GetOrdinal("geometry_type"));
+        if (!Enum.TryParse<GeometryType>(geometryTypeString, out GeometryType geometryType))
+            throw new InvalidDataException($"Invalid geometry type: {geometryTypeString}");
+
+        int srid = reader.GetInt32(reader.GetOrdinal("srid"));
+        double? minScale = reader.IsDBNull(reader.GetOrdinal("min_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("min_scale"));
+        double? maxScale = reader.IsDBNull(reader.GetOrdinal("max_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("max_scale"));
+        bool defaultVisibility = reader.GetBoolean(reader.GetOrdinal("default_visibility"));
 
         // Build extent if available
         FeatureExtent? extent = null;
-        var xminOrdinal = reader.GetOrdinal("xmin");
+        int xminOrdinal = reader.GetOrdinal("xmin");
         if (!reader.IsDBNull(xminOrdinal))
         {
-            var xmin = reader.GetDouble(xminOrdinal);
-            var ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
-            var xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
-            var ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
+            double xmin = reader.GetDouble(xminOrdinal);
+            double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
+            double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
+            double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
             extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, srid);
         }
 
@@ -261,22 +274,22 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
     private static ServiceDefinition ReadServiceDefinition(NpgsqlDataReader reader)
     {
-        var name = reader.GetString(reader.GetOrdinal("service_name"));
-        var description = reader.GetString(reader.GetOrdinal("description"));
-        var srid = reader.GetInt32(reader.GetOrdinal("srid"));
-        var maxRecordCount = reader.GetInt32(reader.GetOrdinal("max_record_count"));
-        var supportedFormats = reader.GetFieldValue<string[]>(reader.GetOrdinal("supported_formats"));
-        var capabilities = reader.GetFieldValue<string[]>(reader.GetOrdinal("capabilities"));
+        string name = reader.GetString(reader.GetOrdinal("service_name"));
+        string description = reader.GetString(reader.GetOrdinal("description"));
+        int srid = reader.GetInt32(reader.GetOrdinal("srid"));
+        int maxRecordCount = reader.GetInt32(reader.GetOrdinal("max_record_count"));
+        string[] supportedFormats = reader.GetFieldValue<string[]>(reader.GetOrdinal("supported_formats"));
+        string[] capabilities = reader.GetFieldValue<string[]>(reader.GetOrdinal("capabilities"));
 
         // Build service extent if available
         FeatureExtent? extent = null;
-        var xminOrdinal = reader.GetOrdinal("xmin");
+        int xminOrdinal = reader.GetOrdinal("xmin");
         if (!reader.IsDBNull(xminOrdinal))
         {
-            var xmin = reader.GetDouble(xminOrdinal);
-            var ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
-            var xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
-            var ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
+            double xmin = reader.GetDouble(xminOrdinal);
+            double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
+            double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
+            double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
             extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, srid);
         }
 
@@ -295,7 +308,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
     private async Task<FieldDefinition[]> GetLayerFieldsAsync(int layerId, CancellationToken cancellationToken)
     {
-        var sql = $"""
+        string sql = $"""
             SELECT
                 f.field_name,
                 f.field_type,
@@ -310,35 +323,39 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@layerId", layerId);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         var fields = new List<FieldDefinition>();
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            var fieldName = reader.GetString(reader.GetOrdinal("field_name"));
-            var fieldType = Enum.Parse<FieldType>(reader.GetString(reader.GetOrdinal("field_type")));
-            var maxLengthOrdinal = reader.GetOrdinal("max_length");
-            var maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
-            var nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
-            var defaultValueOrdinal = reader.GetOrdinal("default_value");
-            var defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
-            var descriptionOrdinal = reader.GetOrdinal("description");
-            var description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
+            string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
+
+            string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
+            if (!Enum.TryParse<FieldType>(fieldTypeString, out FieldType fieldType))
+                throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
+
+            int maxLengthOrdinal = reader.GetOrdinal("max_length");
+            int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
+            bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
+            int defaultValueOrdinal = reader.GetOrdinal("default_value");
+            object? defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
+            int descriptionOrdinal = reader.GetOrdinal("description");
+            string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
 
             fields.Add(new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description));
         }
 
-        return fields.ToArray();
+        return [.. fields];
     }
 
     private async Task<Dictionary<int, FieldDefinition[]>> GetLayerFieldsBatchAsync(int[] layerIds, CancellationToken cancellationToken)
     {
         if (layerIds.Length == 0)
-            return new Dictionary<int, FieldDefinition[]>();
+            return [];
 
-        var sql = $"""
+        string sql = $"""
             SELECT
                 f.layer_id,
                 f.field_name,
@@ -354,27 +371,31 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@layerIds", layerIds);
+        _ = command.Parameters.AddWithValue("@layerIds", layerIds);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         var fieldsMap = new Dictionary<int, List<FieldDefinition>>();
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            var layerId = reader.GetInt32(reader.GetOrdinal("layer_id"));
-            var fieldName = reader.GetString(reader.GetOrdinal("field_name"));
-            var fieldType = Enum.Parse<FieldType>(reader.GetString(reader.GetOrdinal("field_type")));
-            var maxLengthOrdinal = reader.GetOrdinal("max_length");
-            var maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
-            var nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
-            var defaultValueOrdinal = reader.GetOrdinal("default_value");
-            var defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
-            var descriptionOrdinal = reader.GetOrdinal("description");
-            var description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
+            int layerId = reader.GetInt32(reader.GetOrdinal("layer_id"));
+            string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
 
-            if (!fieldsMap.TryGetValue(layerId, out var fieldsList))
+            string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
+            if (!Enum.TryParse<FieldType>(fieldTypeString, out FieldType fieldType))
+                throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
+
+            int maxLengthOrdinal = reader.GetOrdinal("max_length");
+            int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
+            bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
+            int defaultValueOrdinal = reader.GetOrdinal("default_value");
+            object? defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
+            int descriptionOrdinal = reader.GetOrdinal("description");
+            string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
+
+            if (!fieldsMap.TryGetValue(layerId, out List<FieldDefinition>? fieldsList))
             {
-                fieldsList = new List<FieldDefinition>();
+                fieldsList = [];
                 fieldsMap[layerId] = fieldsList;
             }
 
@@ -386,7 +407,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
     private async Task<LayerDefinition[]> GetServiceLayersAsync(string serviceName, CancellationToken cancellationToken)
     {
-        var sql = $"""
+        string sql = $"""
             SELECT l.layer_id
             FROM {_serviceLayersTable} sl
             JOIN {_layersTable} l ON sl.layer_id = l.layer_id
@@ -396,9 +417,9 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@serviceName", serviceName);
+        _ = command.Parameters.AddWithValue("@serviceName", serviceName);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         var layerIds = new List<int>();
 
         while (await reader.ReadAsync(cancellationToken))
@@ -408,26 +429,148 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         // Get full layer definitions for these IDs
         var layers = new List<LayerDefinition>();
-        foreach (var layerId in layerIds)
+        foreach (int layerId in layerIds)
         {
-            var layer = await GetLayerAsync(layerId, cancellationToken);
+            LayerDefinition? layer = await GetLayerAsync(layerId, cancellationToken);
             if (layer != null)
                 layers.Add(layer);
         }
 
-        return layers.ToArray();
+        return [.. layers];
     }
 
     private async Task<Dictionary<string, LayerDefinition[]>> GetServiceLayersBatchAsync(string[] serviceNames, CancellationToken cancellationToken)
     {
         var result = new Dictionary<string, LayerDefinition[]>();
 
-        foreach (var serviceName in serviceNames)
+        foreach (string serviceName in serviceNames)
         {
-            var layers = await GetServiceLayersAsync(serviceName, cancellationToken);
+            LayerDefinition[] layers = await GetServiceLayersAsync(serviceName, cancellationToken);
             result[serviceName] = layers;
         }
 
         return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
+    {
+        string sql = $"""
+            SELECT
+                r.relationship_id,
+                r.name,
+                r.related_layer_id,
+                r.relationship_type,
+                r.origin_foreign_key,
+                r.destination_foreign_key,
+                r.description
+            FROM {_relationshipsTable} r
+            WHERE r.layer_id = @layerId AND r.relationship_id = @relationshipId
+            """;
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
+        _ = command.Parameters.AddWithValue("@relationshipId", relationshipId);
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        return !await reader.ReadAsync(cancellationToken) ? null : ReadRelationship(reader);
+    }
+
+    /// <inheritdoc />
+    public async Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        string sql = $"""
+            SELECT
+                r.relationship_id,
+                r.name,
+                r.related_layer_id,
+                r.relationship_type,
+                r.origin_foreign_key,
+                r.destination_foreign_key,
+                r.description
+            FROM {_relationshipsTable} r
+            WHERE r.layer_id = @layerId
+            ORDER BY r.relationship_id
+            """;
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        var relationships = new List<Relationship>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            relationships.Add(ReadRelationship(reader));
+        }
+
+        return [.. relationships];
+    }
+
+    private async Task<Dictionary<int, Relationship[]>> GetLayerRelationshipsBatchAsync(int[] layerIds, CancellationToken cancellationToken)
+    {
+        if (layerIds.Length == 0)
+            return [];
+
+        string sql = $"""
+            SELECT
+                r.layer_id,
+                r.relationship_id,
+                r.name,
+                r.related_layer_id,
+                r.relationship_type,
+                r.origin_foreign_key,
+                r.destination_foreign_key,
+                r.description
+            FROM {_relationshipsTable} r
+            WHERE r.layer_id = ANY(@layerIds)
+            ORDER BY r.layer_id, r.relationship_id
+            """;
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@layerIds", layerIds);
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        var relationshipsMap = new Dictionary<int, List<Relationship>>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            int layerId = reader.GetInt32(reader.GetOrdinal("layer_id"));
+            Relationship relationship = ReadRelationship(reader, layerId);
+
+            if (!relationshipsMap.TryGetValue(layerId, out List<Relationship>? relationshipsList))
+            {
+                relationshipsList = [];
+                relationshipsMap[layerId] = relationshipsList;
+            }
+
+            relationshipsList.Add(relationship);
+        }
+
+        return relationshipsMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToArray());
+    }
+
+    private static Relationship ReadRelationship(NpgsqlDataReader reader, int? layerId = null)
+    {
+        int relationshipId = reader.GetInt32(reader.GetOrdinal("relationship_id"));
+        string name = reader.GetString(reader.GetOrdinal("name"));
+        int relatedLayerId = reader.GetInt32(reader.GetOrdinal("related_layer_id"));
+        string relationshipType = reader.GetString(reader.GetOrdinal("relationship_type"));
+        string originForeignKey = reader.GetString(reader.GetOrdinal("origin_foreign_key"));
+        string destinationForeignKey = reader.GetString(reader.GetOrdinal("destination_foreign_key"));
+        int descriptionOrdinal = reader.GetOrdinal("description");
+        string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
+
+        return Relationship.Create(
+            relationshipId,
+            name,
+            relatedLayerId,
+            relationshipType,
+            originForeignKey,
+            destinationForeignKey,
+            description);
     }
 }

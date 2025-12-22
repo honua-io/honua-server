@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using Honua.Server.Features.Infrastructure.Logging;
+using Microsoft.Extensions.Primitives;
 using Serilog.Context;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
@@ -22,24 +23,18 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// - Pushed to Serilog LogContext for all log entries
 /// - Available via HttpContext.TraceIdentifier for framework integration
 /// </remarks>
-public sealed class CorrelationIdMiddleware
+public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     private const string CorrelationIdHeader = "X-Correlation-ID";
     private const string CorrelationIdLogProperty = "CorrelationId";
 
-    private readonly RequestDelegate _next;
-    private readonly ILogger<CorrelationIdMiddleware> _logger;
-
-    public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
-    {
-        _next = next ?? throw new ArgumentNullException(nameof(next));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
+    private readonly ILogger<CorrelationIdMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     public async Task InvokeAsync(HttpContext context)
     {
         // Determine correlation ID using order of precedence
-        var correlationId = GetOrGenerateCorrelationId(context);
+        string correlationId = GetOrGenerateCorrelationId(context);
 
         // Set correlation ID in HttpContext for framework integration
         context.TraceIdentifier = correlationId;
@@ -67,10 +62,10 @@ public sealed class CorrelationIdMiddleware
     private static string GetOrGenerateCorrelationId(HttpContext context)
     {
         // 1. Check for client-provided correlation ID header
-        if (context.Request.Headers.TryGetValue(CorrelationIdHeader, out var headerValue) &&
+        if (context.Request.Headers.TryGetValue(CorrelationIdHeader, out StringValues headerValue) &&
             !string.IsNullOrWhiteSpace(headerValue.ToString()))
         {
-            var clientCorrelationId = headerValue.ToString().Trim();
+            string clientCorrelationId = headerValue.ToString().Trim();
             // Basic validation - ensure it's reasonable length and doesn't contain control characters
             if (clientCorrelationId.Length <= 128 &&
                 !HasControlCharacters(clientCorrelationId))

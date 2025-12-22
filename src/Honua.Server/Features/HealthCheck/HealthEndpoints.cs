@@ -14,11 +14,11 @@ public static class HealthEndpoints
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Use Map with explicit HTTP method to avoid MapGet reflection
-        endpoints.Map("/healthz/live", HandleLivenessProbe)
+        _ = endpoints.Map("/healthz/live", HandleLivenessProbe)
             .WithDisplayName("Liveness Probe")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        endpoints.Map("/healthz/ready", HandleReadinessProbe)
+        _ = endpoints.Map("/healthz/ready", HandleReadinessProbe)
             .WithDisplayName("Readiness Probe")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
@@ -54,8 +54,8 @@ public static class HealthEndpoints
         }
 
         // Delegate health checking to dedicated service
-        var readinessCheckService = context.RequestServices.GetRequiredService<IReadinessCheckService>();
-        var result = await readinessCheckService.CheckReadinessAsync(context.RequestAborted);
+        IReadinessCheckService readinessCheckService = context.RequestServices.GetRequiredService<IReadinessCheckService>();
+        ReadinessResult result = await readinessCheckService.CheckReadinessAsync(context.RequestAborted);
 
         // Convert health check result to HTTP response
         await WriteHealthCheckResponse(context, result);
