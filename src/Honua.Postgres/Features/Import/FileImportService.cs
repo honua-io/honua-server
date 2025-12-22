@@ -59,7 +59,7 @@ internal sealed class FileImportService : IFileImportService
             return ImportResult.CreateFailure(
                 request.TableName,
                 SupportedFileFormat.GeoJson,
-                $"Unsupported file format: {Path.GetExtension(request.FileName)}",
+                "Unsupported file format: " + Path.GetExtension(request.FileName),
                 stopwatch.Elapsed);
         }
 
@@ -105,7 +105,7 @@ internal sealed class FileImportService : IFileImportService
             return ImportResult.CreateFailure(
                 request.TableName,
                 format.Value,
-                $"Import failed: {ex.Message}",
+                "Import failed: " + ex.Message,
                 stopwatch.Elapsed);
         }
     }
@@ -246,7 +246,7 @@ internal sealed class FileImportService : IFileImportService
 
         if (!format.HasValue)
         {
-            throw new NotSupportedException($"Unsupported file format: {Path.GetExtension(fileName)}");
+            throw new NotSupportedException("Unsupported file format: " + Path.GetExtension(fileName));
         }
 
         // Detect CRS before reading features
@@ -287,7 +287,7 @@ internal sealed class FileImportService : IFileImportService
             SupportedFileFormat.GeoJson => await ReadSimpleGeoJsonAsync(stream, cancellationToken),
             SupportedFileFormat.Kml => await ReadSimpleKmlAsync(stream, cancellationToken),
             SupportedFileFormat.Wkt => await ReadWktAsync(stream, cancellationToken),
-            _ => throw new NotImplementedException($"Format {format} reading will be implemented with proper NTS packages")
+            _ => throw new NotImplementedException("Format " + format + " reading will be implemented with proper NTS packages")
         };
     }
 
@@ -326,7 +326,7 @@ internal sealed class FileImportService : IFileImportService
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException($"Invalid GeoJSON format: {ex.Message}");
+            throw new InvalidDataException("Invalid GeoJSON format: " + ex.Message);
         }
 
         return features;
@@ -509,7 +509,7 @@ internal sealed class FileImportService : IFileImportService
         };
 
         if (keywords.Contains(tableName))
-            throw new ArgumentException($"Table name '{tableName}' conflicts with SQL keywords", nameof(tableName));
+            throw new ArgumentException("Table name '" + tableName + "' conflicts with SQL keywords", nameof(tableName));
     }
 
     /// <summary>
@@ -518,6 +518,6 @@ internal sealed class FileImportService : IFileImportService
     private static string QuoteIdentifier(string identifier)
     {
         // PostgreSQL identifier quoting: double quotes around identifier and escape any existing double quotes
-        return $"\"{identifier.Replace("\"", "\"\"")}\"";
+        return "\"" + identifier.Replace("\"", "\"\"") + "\"";
     }
 }
