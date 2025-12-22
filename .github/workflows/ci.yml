@@ -246,7 +246,7 @@ jobs:
           path: ./coverage/report/
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage/report/Cobertura.xml
           flags: combined
@@ -324,7 +324,7 @@ jobs:
 
       - name: Setup Python
         if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
