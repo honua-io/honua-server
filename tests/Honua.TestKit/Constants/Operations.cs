@@ -19,6 +19,7 @@ public static class Operations
     public const string BulkUpdate = "BulkUpdate";
     public const string BulkDelete = "BulkDelete";
     public const string ApplyEdits = "ApplyEdits";
+    public const string QueryRelatedRecords = "QueryRelatedRecords";
 
     // Spatial Operations
     public const string SpatialQuery = "SpatialQuery";

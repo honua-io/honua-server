@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -40,6 +41,9 @@ internal sealed class FileImportService : IFileImportService
         [".gpx"] = SupportedFileFormat.Gpx
     };
 
+    private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
+    private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
+
     public SupportedFileFormat? DetectFormat(string fileName)
     {
         var extension = Path.GetExtension(fileName);
@@ -59,7 +63,7 @@ internal sealed class FileImportService : IFileImportService
             return ImportResult.CreateFailure(
                 request.TableName,
                 SupportedFileFormat.GeoJson,
-                $"Unsupported file format: {Path.GetExtension(request.FileName)}",
+                "Unsupported file format: " + Path.GetExtension(request.FileName),
                 stopwatch.Elapsed);
         }
 
@@ -105,7 +109,7 @@ internal sealed class FileImportService : IFileImportService
             return ImportResult.CreateFailure(
                 request.TableName,
                 format.Value,
-                $"Import failed: {ex.Message}",
+                "Import failed: " + ex.Message,
                 stopwatch.Elapsed);
         }
     }
@@ -246,7 +250,7 @@ internal sealed class FileImportService : IFileImportService
 
         if (!format.HasValue)
         {
-            throw new NotSupportedException($"Unsupported file format: {Path.GetExtension(fileName)}");
+            throw new NotSupportedException("Unsupported file format: " + Path.GetExtension(fileName));
         }
 
         // Detect CRS before reading features
@@ -287,7 +291,7 @@ internal sealed class FileImportService : IFileImportService
             SupportedFileFormat.GeoJson => await ReadSimpleGeoJsonAsync(stream, cancellationToken),
             SupportedFileFormat.Kml => await ReadSimpleKmlAsync(stream, cancellationToken),
             SupportedFileFormat.Wkt => await ReadWktAsync(stream, cancellationToken),
-            _ => throw new NotImplementedException($"Format {format} reading will be implemented with proper NTS packages")
+            _ => throw new NotImplementedException("Format " + format + " reading will be implemented with proper NTS packages")
         };
     }
 
@@ -326,7 +330,7 @@ internal sealed class FileImportService : IFileImportService
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException($"Invalid GeoJSON format: {ex.Message}");
+            throw new InvalidDataException("Invalid GeoJSON format: " + ex.Message);
         }
 
         return features;
@@ -400,13 +404,52 @@ internal sealed class FileImportService : IFileImportService
         using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
+        // Validate table name before any operations
+        ValidateTableName(tableName);
+
         if (overwriteExisting)
         {
             await CreateTableAsync(connection, tableName, cancellationToken);
         }
 
-        var featureCount = 0;
         var wkbWriter = new WKBWriter();
+
+        // Use stored functions with parameters to keep SQL text static and safe.
+        await ExecuteInsertStatements(connection, tableName, features, sourceSrid, targetSrid, wkbWriter, cancellationToken);
+
+        return features.Count();
+    }
+
+    /// <summary>
+    /// Execute INSERT statements using parameterized queries only
+    /// </summary>
+    private static async Task ExecuteInsertStatements(
+        NpgsqlConnection connection,
+        string tableName,
+        IEnumerable<IFeature> features,
+        int sourceSrid,
+        int targetSrid,
+        WKBWriter wkbWriter,
+        CancellationToken cancellationToken)
+    {
+        // Use stored function calls with parameters for inserts.
+        await InsertFeaturesWithParameterizedQueries(connection, tableName, features, sourceSrid, targetSrid, wkbWriter, cancellationToken);
+    }
+
+    /// <summary>
+    /// Insert features using only parameterized queries with no dynamic SQL construction
+    /// </summary>
+    private static async Task InsertFeaturesWithParameterizedQueries(
+        NpgsqlConnection connection,
+        string tableName,
+        IEnumerable<IFeature> features,
+        int sourceSrid,
+        int targetSrid,
+        WKBWriter wkbWriter,
+        CancellationToken cancellationToken)
+    {
+        // Validate table name with allowlist approach
+        var allowedTableName = GetAllowedTableName(tableName);
 
         foreach (var feature in features)
         {
@@ -420,40 +463,42 @@ internal sealed class FileImportService : IFileImportService
                 properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
             }
 
-            // Handle geometry transformation in SQL with proper parameterization
-            string sql;
-            using var command = new NpgsqlCommand();
-            command.Connection = connection;
+            using var command = new NpgsqlCommand(InsertImportFeatureSql, connection);
+            command.Parameters.AddWithValue("table_name", allowedTableName);
 
-            if (feature.Geometry != null)
+            var wkb = feature.Geometry == null ? null : wkbWriter.Write(feature.Geometry);
+            var wkbParameter = new NpgsqlParameter("wkb", NpgsqlDbType.Bytea)
             {
-                sql = $@"
-                    INSERT INTO {QuoteIdentifier(tableName)} (geometry, properties)
-                    VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
+                Value = wkb ?? (object)DBNull.Value
+            };
+            command.Parameters.Add(wkbParameter);
 
-                var wkb = wkbWriter.Write(feature.Geometry);
-                command.Parameters.AddWithValue("@wkb", wkb);
-                command.Parameters.AddWithValue("@sourceSrid", sourceSrid);
-                command.Parameters.AddWithValue("@targetSrid", targetSrid);
-            }
-            else
+            command.Parameters.AddWithValue("source_srid", sourceSrid);
+            command.Parameters.AddWithValue("target_srid", targetSrid);
+            var propertiesJson = JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
+            var propertiesParameter = new NpgsqlParameter("properties", NpgsqlDbType.Jsonb)
             {
-                sql = $@"
-                    INSERT INTO {QuoteIdentifier(tableName)} (geometry, properties)
-                    VALUES (@geometry, @properties::jsonb)";
-
-                command.Parameters.AddWithValue("@geometry", DBNull.Value);
-            }
-
-            command.CommandText = sql;
-
-            command.Parameters.AddWithValue("@properties", JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject));
+                Value = propertiesJson
+            };
+            command.Parameters.Add(propertiesParameter);
 
             await command.ExecuteNonQueryAsync(cancellationToken);
-            featureCount++;
         }
+    }
 
-        return featureCount;
+    /// <summary>
+    /// Get allowed table name using validation and normalization.
+    /// </summary>
+    private static string GetAllowedTableName(string tableName)
+    {
+        // Validate and use only predefined allowed patterns
+        ValidateTableName(tableName);
+
+        // Normalize to a safe identifier shape.
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
+
+        // Return a standardized table identifier
+        return "imported_" + sanitized.ToLowerInvariant();
     }
 
     /// <summary>
@@ -461,30 +506,38 @@ internal sealed class FileImportService : IFileImportService
     /// </summary>
     private static async Task CreateTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
-        var quotedTableName = QuoteIdentifier(tableName);
-        var createTableSql = $@"
-            DROP TABLE IF EXISTS {quotedTableName};
+        // Use allowlist approach to get safe table name
+        var allowedTableName = GetAllowedTableName(tableName);
 
-            CREATE TABLE {quotedTableName} (
-                id SERIAL PRIMARY KEY,
-                geometry GEOMETRY,
-                properties JSONB,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-            );
-
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_geometry")} ON {quotedTableName} USING GIST (geometry);
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_properties")} ON {quotedTableName} USING GIN (properties);";
-
-        using var command = new NpgsqlCommand(createTableSql, connection);
+        using var command = new NpgsqlCommand(CreateImportTableSql, connection);
+        command.Parameters.AddWithValue("table_name", allowedTableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
-    /// Safely quotes a PostgreSQL identifier to prevent SQL injection
+    /// Validates that a table name is safe for SQL operations
     /// </summary>
-    private static string QuoteIdentifier(string identifier)
+    private static void ValidateTableName(string tableName)
     {
-        // PostgreSQL identifier quoting: double quotes around identifier and escape any existing double quotes
-        return $"\"{identifier.Replace("\"", "\"\"")}\"";
+        if (string.IsNullOrWhiteSpace(tableName))
+            throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+
+        if (tableName.Length > 63) // PostgreSQL identifier limit
+            throw new ArgumentException("Table name exceeds PostgreSQL identifier limit of 63 characters", nameof(tableName));
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(tableName, @"^[a-zA-Z][a-zA-Z0-9_]*$"))
+            throw new ArgumentException("Table name must start with a letter and contain only letters, digits, and underscores", nameof(tableName));
+
+        // Prevent SQL keywords
+        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TABLE", "INDEX", "VIEW", "DATABASE", "SCHEMA"
+        };
+
+        if (keywords.Contains(tableName))
+            throw new ArgumentException(
+                string.Format(System.Globalization.CultureInfo.InvariantCulture, "Table name '{0}' conflicts with SQL keywords", tableName),
+                nameof(tableName));
     }
+
 }

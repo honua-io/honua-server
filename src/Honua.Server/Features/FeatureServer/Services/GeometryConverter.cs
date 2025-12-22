@@ -21,46 +21,43 @@ internal sealed class GeometryConverter : IGeometryConverter
         try
         {
             using var jsonDoc = JsonDocument.Parse(esriJsonGeometry);
-            var root = jsonDoc.RootElement;
+            JsonElement root = jsonDoc.RootElement;
 
             // Handle POINT geometry format
-            if (root.TryGetProperty("x", out var xElement) && root.TryGetProperty("y", out var yElement))
+            if (root.TryGetProperty("x", out JsonElement xElement) && root.TryGetProperty("y", out JsonElement yElement))
             {
                 return ConvertEsriPointToWkb(xElement.GetDouble(), yElement.GetDouble());
             }
 
             // Handle POLYGON/MULTIPOLYGON geometry format (rings)
-            if (root.TryGetProperty("rings", out var ringsElement) && ringsElement.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("rings", out JsonElement ringsElement) && ringsElement.ValueKind == JsonValueKind.Array)
             {
                 return ConvertEsriPolygonToWkb(ringsElement);
             }
 
             // Handle LINESTRING/POLYLINE geometry format (paths)
-            if (root.TryGetProperty("paths", out var pathsElement) && pathsElement.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("paths", out JsonElement pathsElement) && pathsElement.ValueKind == JsonValueKind.Array)
             {
                 return ConvertEsriLineStringToWkb(pathsElement);
             }
 
             // Handle MULTIPOINT geometry format (points)
-            if (root.TryGetProperty("points", out var pointsElement) && pointsElement.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("points", out JsonElement pointsElement) && pointsElement.ValueKind == JsonValueKind.Array)
             {
                 return ConvertEsriMultiPointToWkb(pointsElement);
             }
 
             // Handle ENVELOPE/EXTENT geometry format
-            if (root.TryGetProperty("xmin", out var xminElement) &&
-                root.TryGetProperty("ymin", out var yminElement) &&
-                root.TryGetProperty("xmax", out var xmaxElement) &&
-                root.TryGetProperty("ymax", out var ymaxElement))
-            {
-                return ConvertEsriEnvelopeToWkb(
+            return root.TryGetProperty("xmin", out JsonElement xminElement) &&
+                root.TryGetProperty("ymin", out JsonElement yminElement) &&
+                root.TryGetProperty("xmax", out JsonElement xmaxElement) &&
+                root.TryGetProperty("ymax", out JsonElement ymaxElement)
+                ? ConvertEsriEnvelopeToWkb(
                     xminElement.GetDouble(),
                     yminElement.GetDouble(),
                     xmaxElement.GetDouble(),
-                    ymaxElement.GetDouble());
-            }
-
-            throw new ArgumentException("Invalid Esri JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)");
+                    ymaxElement.GetDouble())
+                : throw new ArgumentException("Invalid Esri JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)");
         }
         catch (JsonException)
         {
@@ -75,18 +72,18 @@ internal sealed class GeometryConverter : IGeometryConverter
     {
         var rings = new List<List<(double x, double y)>>();
 
-        foreach (var ring in ringsElement.EnumerateArray())
+        foreach (JsonElement ring in ringsElement.EnumerateArray())
         {
             if (ring.ValueKind != JsonValueKind.Array)
                 continue;
 
             var points = new List<(double x, double y)>();
-            foreach (var point in ring.EnumerateArray())
+            foreach (JsonElement point in ring.EnumerateArray())
             {
                 if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2)
                 {
-                    var x = point[0].GetDouble();
-                    var y = point[1].GetDouble();
+                    double x = point[0].GetDouble();
+                    double y = point[1].GetDouble();
                     points.Add((x, y));
                 }
             }
@@ -108,10 +105,10 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         writer.Write((uint)rings.Count); // Number of rings
 
-        foreach (var ring in rings)
+        foreach (List<(double x, double y)> ring in rings)
         {
             writer.Write((uint)ring.Count); // Number of points in ring
-            foreach (var (x, y) in ring)
+            foreach ((double x, double y) in ring)
             {
                 writer.Write(x); // X coordinate
                 writer.Write(y); // Y coordinate
@@ -128,7 +125,7 @@ internal sealed class GeometryConverter : IGeometryConverter
     {
         // Create WKB for a POINT geometry (little-endian format)
         // WKB format: [endian][type][x][y]
-        var wkbBytes = new byte[21]; // 1 + 4 + 8 + 8 bytes
+        byte[] wkbBytes = new byte[21]; // 1 + 4 + 8 + 8 bytes
         wkbBytes[0] = 1; // Little-endian
         BitConverter.GetBytes((uint)1).CopyTo(wkbBytes, 1); // POINT type
         BitConverter.GetBytes(x).CopyTo(wkbBytes, 5); // X coordinate
@@ -144,18 +141,18 @@ internal sealed class GeometryConverter : IGeometryConverter
     {
         var paths = new List<List<(double x, double y)>>();
 
-        foreach (var path in pathsElement.EnumerateArray())
+        foreach (JsonElement path in pathsElement.EnumerateArray())
         {
             if (path.ValueKind != JsonValueKind.Array)
                 continue;
 
             var points = new List<(double x, double y)>();
-            foreach (var point in path.EnumerateArray())
+            foreach (JsonElement point in path.EnumerateArray())
             {
                 if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2)
                 {
-                    var x = point[0].GetDouble();
-                    var y = point[1].GetDouble();
+                    double x = point[0].GetDouble();
+                    double y = point[1].GetDouble();
                     points.Add((x, y));
                 }
             }
@@ -167,14 +164,7 @@ internal sealed class GeometryConverter : IGeometryConverter
             throw new ArgumentException("No valid paths found in linestring geometry");
 
         // For single path, create LINESTRING, for multiple paths create MULTILINESTRING
-        if (paths.Count == 1)
-        {
-            return CreateLineStringWkb(paths[0]);
-        }
-        else
-        {
-            return CreateMultiLineStringWkb(paths);
-        }
+        return paths.Count == 1 ? CreateLineStringWkb(paths[0]) : CreateMultiLineStringWkb(paths);
     }
 
     /// <summary>
@@ -184,20 +174,17 @@ internal sealed class GeometryConverter : IGeometryConverter
     {
         var points = new List<(double x, double y)>();
 
-        foreach (var point in pointsElement.EnumerateArray())
+        foreach (JsonElement point in pointsElement.EnumerateArray())
         {
             if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2)
             {
-                var x = point[0].GetDouble();
-                var y = point[1].GetDouble();
+                double x = point[0].GetDouble();
+                double y = point[1].GetDouble();
                 points.Add((x, y));
             }
         }
 
-        if (points.Count == 0)
-            throw new ArgumentException("No valid points found in multipoint geometry");
-
-        return CreateMultiPointWkb(points);
+        return points.Count == 0 ? throw new ArgumentException("No valid points found in multipoint geometry") : CreateMultiPointWkb(points);
     }
 
     /// <summary>
@@ -231,7 +218,7 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         writer.Write((uint)points.Count); // Number of points
 
-        foreach (var (x, y) in points)
+        foreach ((double x, double y) in points)
         {
             writer.Write(x); // X coordinate
             writer.Write(y); // Y coordinate
@@ -253,13 +240,13 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         writer.Write((uint)paths.Count); // Number of linestrings
 
-        foreach (var path in paths)
+        foreach (List<(double x, double y)> path in paths)
         {
             writer.Write((byte)1); // Little-endian for nested linestring
             writer.Write((uint)2); // LINESTRING type
             writer.Write((uint)path.Count); // Number of points in this linestring
 
-            foreach (var (x, y) in path)
+            foreach ((double x, double y) in path)
             {
                 writer.Write(x); // X coordinate
                 writer.Write(y); // Y coordinate
@@ -282,7 +269,7 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         writer.Write((uint)points.Count); // Number of points
 
-        foreach (var (x, y) in points)
+        foreach ((double x, double y) in points)
         {
             writer.Write((byte)1); // Little-endian for nested point
             writer.Write((uint)1); // POINT type
@@ -306,10 +293,10 @@ internal sealed class GeometryConverter : IGeometryConverter
 
         writer.Write((uint)rings.Count); // Number of rings
 
-        foreach (var ring in rings)
+        foreach (List<(double x, double y)> ring in rings)
         {
             writer.Write((uint)ring.Count); // Number of points in ring
-            foreach (var (x, y) in ring)
+            foreach ((double x, double y) in ring)
             {
                 writer.Write(x); // X coordinate
                 writer.Write(y); // Y coordinate

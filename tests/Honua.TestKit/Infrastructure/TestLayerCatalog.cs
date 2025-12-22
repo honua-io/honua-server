@@ -87,4 +87,16 @@ public sealed class TestLayerCatalog : ILayerCatalog
     {
         return Task.FromResult(string.Equals(serviceName, "test", StringComparison.OrdinalIgnoreCase));
     }
+
+    public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
+    {
+        // Basic implementation returns null - tests that need relationships should use TestLayerCatalogWithRelationships
+        return Task.FromResult<Relationship?>(null);
+    }
+
+    public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        // Basic implementation returns empty array - tests that need relationships should use TestLayerCatalogWithRelationships
+        return Task.FromResult(Array.Empty<Relationship>());
+    }
 }

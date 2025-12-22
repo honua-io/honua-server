@@ -19,18 +19,12 @@ namespace Honua.Postgres.Features.Infrastructure;
 /// - Structured logging for retry attempts
 /// - Proper error handling and resource management
 /// </remarks>
-internal sealed class PostgresDatabaseConnectionProvider : IDatabaseConnectionProvider
+internal sealed class PostgresDatabaseConnectionProvider(
+    NpgsqlDataSource dataSource,
+    ILogger<PostgresDatabaseConnectionProvider> logger) : IDatabaseConnectionProvider
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly ILogger<PostgresDatabaseConnectionProvider> _logger;
-
-    public PostgresDatabaseConnectionProvider(
-        NpgsqlDataSource dataSource,
-        ILogger<PostgresDatabaseConnectionProvider> logger)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
     /// Opens a PostgreSQL connection with automatic retry for transient failures
@@ -40,7 +34,7 @@ internal sealed class PostgresDatabaseConnectionProvider : IDatabaseConnectionPr
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         // Use the resilience extension method with logging callback
-        var connection = await _dataSource.OpenConnectionWithRetryAsync(
+        NpgsqlConnection connection = await _dataSource.OpenConnectionWithRetryAsync(
             onRetry: (ex, delay, attempt) =>
             {
 #pragma warning disable CA1848 // Use LoggerMessage delegates for performance

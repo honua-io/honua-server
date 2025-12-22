@@ -13,17 +13,12 @@ namespace Honua.Postgres.Features.Admin;
 /// <summary>
 /// PostgreSQL implementation of table discovery service.
 /// </summary>
-internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
+/// <remarks>
+/// Initialize the PostgreSQL table discovery service.
+/// </remarks>
+internal sealed class PostgreSqlTableDiscoveryService(ILogger<PostgreSqlTableDiscoveryService> logger) : ITableDiscoveryService
 {
-    private readonly ILogger<PostgreSqlTableDiscoveryService> _logger;
-
-    /// <summary>
-    /// Initialize the PostgreSQL table discovery service.
-    /// </summary>
-    public PostgreSqlTableDiscoveryService(ILogger<PostgreSqlTableDiscoveryService> logger)
-    {
-        _logger = logger;
-    }
+    private readonly ILogger<PostgreSqlTableDiscoveryService> _logger = logger;
 
     /// <inheritdoc />
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
@@ -67,29 +62,29 @@ internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
                 """;
 
             await using var command = new NpgsqlCommand(sql, connection);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
             var discoveredTables = new Dictionary<string, TableInfo>();
 
             while (await reader.ReadAsync(cancellationToken))
             {
-                var schema = reader.GetString(0);
-                var tableName = reader.GetString(1);
-                var geometryColumn = reader.GetString(2);
-                var geometryType = reader.GetString(3);
-                var srid = reader.GetInt32(4);
+                string schema = reader.GetString(0);
+                string tableName = reader.GetString(1);
+                string geometryColumn = reader.GetString(2);
+                string geometryType = reader.GetString(3);
+                int srid = reader.GetInt32(4);
 
-                var qualifiedName = $"{schema}.{tableName}";
+                string qualifiedName = $"{schema}.{tableName}";
 
                 // If we already processed this table, skip (could happen if table has multiple geometry columns)
                 if (discoveredTables.ContainsKey(qualifiedName))
                     continue;
 
                 // Get estimated row count
-                var rowCount = await GetEstimatedRowCountAsync(connection, schema, tableName, cancellationToken);
+                long? rowCount = await GetEstimatedRowCountAsync(connection, schema, tableName, cancellationToken);
 
                 // Get all columns
-                var columns = await GetTableColumnsAsync(connection, schema, tableName, cancellationToken);
+                List<ColumnInfo> columns = await GetTableColumnsAsync(connection, schema, tableName, cancellationToken);
 
                 var tableInfo = new TableInfo
                 {
@@ -130,7 +125,7 @@ internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
         try
         {
             // Use the existing connection - no need to open/close it
-            var npgsqlConnection = connection as NpgsqlConnection
+            NpgsqlConnection npgsqlConnection = connection as NpgsqlConnection
                 ?? throw new ArgumentException("Connection must be an NpgsqlConnection", nameof(connection));
 
             // Query both geometry_columns and geography_columns for spatial tables
@@ -161,29 +156,29 @@ internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
                 """;
 
             await using var command = new NpgsqlCommand(sql, npgsqlConnection);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
             var discoveredTables = new Dictionary<string, TableInfo>();
 
             while (await reader.ReadAsync(cancellationToken))
             {
-                var schema = reader.GetString(0);
-                var tableName = reader.GetString(1);
-                var geometryColumn = reader.GetString(2);
-                var geometryType = reader.GetString(3);
-                var srid = reader.GetInt32(4);
+                string schema = reader.GetString(0);
+                string tableName = reader.GetString(1);
+                string geometryColumn = reader.GetString(2);
+                string geometryType = reader.GetString(3);
+                int srid = reader.GetInt32(4);
 
-                var qualifiedName = $"{schema}.{tableName}";
+                string qualifiedName = $"{schema}.{tableName}";
 
                 // If we already processed this table, skip (could happen if table has multiple geometry columns)
                 if (discoveredTables.ContainsKey(qualifiedName))
                     continue;
 
                 // Get estimated row count
-                var rowCount = await GetEstimatedRowCountAsync(npgsqlConnection, schema, tableName, cancellationToken);
+                long? rowCount = await GetEstimatedRowCountAsync(npgsqlConnection, schema, tableName, cancellationToken);
 
                 // Get all columns
-                var columns = await GetTableColumnsAsync(npgsqlConnection, schema, tableName, cancellationToken);
+                List<ColumnInfo> columns = await GetTableColumnsAsync(npgsqlConnection, schema, tableName, cancellationToken);
 
                 var tableInfo = new TableInfo
                 {
@@ -231,10 +226,10 @@ internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
                 """;
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("schema", schema);
-            command.Parameters.AddWithValue("tableName", tableName);
+            _ = command.Parameters.AddWithValue("schema", schema);
+            _ = command.Parameters.AddWithValue("tableName", tableName);
 
-            var result = await command.ExecuteScalarAsync(cancellationToken);
+            object? result = await command.ExecuteScalarAsync(cancellationToken);
             return result != DBNull.Value ? Convert.ToInt64(result, CultureInfo.InvariantCulture) : null;
         }
         catch
@@ -281,10 +276,10 @@ internal sealed class PostgreSqlTableDiscoveryService : ITableDiscoveryService
                 """;
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("schema", schema);
-            command.Parameters.AddWithValue("tableName", tableName);
+            _ = command.Parameters.AddWithValue("schema", schema);
+            _ = command.Parameters.AddWithValue("tableName", tableName);
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
             while (await reader.ReadAsync(cancellationToken))
             {

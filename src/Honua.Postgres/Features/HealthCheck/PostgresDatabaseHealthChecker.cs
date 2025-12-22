@@ -14,14 +14,9 @@ namespace Honua.Postgres.Features.HealthCheck;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed class PostgresDatabaseHealthChecker : IDatabaseHealthChecker
+internal sealed class PostgresDatabaseHealthChecker(IConfiguration configuration) : IDatabaseHealthChecker
 {
-    private readonly string? _connectionString;
-
-    public PostgresDatabaseHealthChecker(IConfiguration configuration)
-    {
-        _connectionString = configuration.GetConnectionString("DefaultConnection");
-    }
+    private readonly string? _connectionString = configuration.GetConnectionString("honua");
 
     /// <summary>
     /// Checks PostgreSQL database connectivity and responsiveness
@@ -41,7 +36,7 @@ internal sealed class PostgresDatabaseHealthChecker : IDatabaseHealthChecker
             // Execute a simple query to verify database is responsive with timeout
             await using var command = new NpgsqlCommand("SELECT 1", connection);
             command.CommandTimeout = 5; // 5-second timeout for health checks
-            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
             return true;
         }
