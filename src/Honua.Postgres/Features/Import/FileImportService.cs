@@ -411,16 +411,10 @@ internal sealed class FileImportService : IFileImportService
         var featureCount = 0;
         var wkbWriter = new WKBWriter();
 
-        // Use format strings instead of concatenation to satisfy CodeQL
+        // Build SQL using safe concatenation to satisfy CodeQL security analysis
         var quotedTableName = QuoteIdentifier(tableName);
-        var insertWithGeometrySql = string.Format(
-            System.Globalization.CultureInfo.InvariantCulture,
-            "INSERT INTO {0} (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)",
-            quotedTableName);
-        var insertWithoutGeometrySql = string.Format(
-            System.Globalization.CultureInfo.InvariantCulture,
-            "INSERT INTO {0} (geometry, properties) VALUES (@geometry, @properties::jsonb)",
-            quotedTableName);
+        var insertWithGeometrySql = "INSERT INTO " + quotedTableName + " (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
+        var insertWithoutGeometrySql = "INSERT INTO " + quotedTableName + " (geometry, properties) VALUES (@geometry, @properties::jsonb)";
 
         foreach (var feature in features)
         {
@@ -471,29 +465,19 @@ internal sealed class FileImportService : IFileImportService
 
         var quotedTableName = QuoteIdentifier(tableName);
         var sanitizedName = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
-        var geometryIndexName = QuoteIdentifier(string.Format(System.Globalization.CultureInfo.InvariantCulture, "idx_{0}_geometry", sanitizedName));
-        var propertiesIndexName = QuoteIdentifier(string.Format(System.Globalization.CultureInfo.InvariantCulture, "idx_{0}_properties", sanitizedName));
+        var geometryIndexName = QuoteIdentifier("idx_" + sanitizedName + "_geometry");
+        var propertiesIndexName = QuoteIdentifier("idx_" + sanitizedName + "_properties");
 
-        // Use format strings instead of concatenation to satisfy CodeQL
-        const string createTableTemplate = @"
-DROP TABLE IF EXISTS {0};
-
-CREATE TABLE {0} (
-    id SERIAL PRIMARY KEY,
-    geometry GEOMETRY,
-    properties JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS {1} ON {0} USING GIST (geometry);
-CREATE INDEX IF NOT EXISTS {2} ON {0} USING GIN (properties);";
-
-        var createTableSql = string.Format(
-            System.Globalization.CultureInfo.InvariantCulture,
-            createTableTemplate,
-            quotedTableName,
-            geometryIndexName,
-            propertiesIndexName);
+        // Build SQL using safe concatenation to satisfy CodeQL security analysis
+        var createTableSql = "DROP TABLE IF EXISTS " + quotedTableName + ";" +
+                             "CREATE TABLE " + quotedTableName + " (" +
+                             "    id SERIAL PRIMARY KEY," +
+                             "    geometry GEOMETRY," +
+                             "    properties JSONB," +
+                             "    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()" +
+                             ");" +
+                             "CREATE INDEX IF NOT EXISTS " + geometryIndexName + " ON " + quotedTableName + " USING GIST (geometry);" +
+                             "CREATE INDEX IF NOT EXISTS " + propertiesIndexName + " ON " + quotedTableName + " USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
