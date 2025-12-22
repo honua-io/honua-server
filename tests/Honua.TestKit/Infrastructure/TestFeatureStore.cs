@@ -10,7 +10,7 @@ namespace Honua.TestKit.Infrastructure;
 /// <summary>
 /// Test implementation of IFeatureStore for unit and integration tests
 /// </summary>
-public class TestFeatureStore : IFeatureStore
+public sealed class TestFeatureStore : IFeatureStore
 {
     private readonly Dictionary<int, List<Feature>> _layerFeatures = new();
 
@@ -381,5 +381,11 @@ public class TestFeatureStore : IFeatureStore
             (-123.0, 38.0),
             (-123.0, 37.0)
         };
+    }
+
+    public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
+    {
+        // Basic implementation returns empty result - tests that need related features should use TestFeatureStoreWithRelationships
+        return Task.FromResult(QueryResult<Feature>.Empty());
     }
 }

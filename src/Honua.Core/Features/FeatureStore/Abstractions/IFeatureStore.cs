@@ -48,6 +48,15 @@ public interface IFeatureStore
     /// <returns>Spatial extent of the features, null if no features found</returns>
     Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Queries features related to the specified source features through a relationship
+    /// </summary>
+    /// <param name="layerId">Source layer identifier</param>
+    /// <param name="query">Related query specification including object IDs and relationship</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Query result containing related features</returns>
+    Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default);
+
     // Edit operations
 
     /// <summary>

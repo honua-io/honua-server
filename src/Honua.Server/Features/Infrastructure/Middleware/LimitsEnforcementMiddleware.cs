@@ -23,21 +23,14 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// Per-endpoint limits (MaxRecordCount, spatial bounds) are enforced in individual handlers
 /// using the injected LimitsOptions configuration.
 /// </remarks>
-public sealed class LimitsEnforcementMiddleware
+public sealed class LimitsEnforcementMiddleware(
+    RequestDelegate next,
+    ILogger<LimitsEnforcementMiddleware> logger,
+    IOptions<LimitsOptions> limitsOptions)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<LimitsEnforcementMiddleware> _logger;
-    private readonly LimitsOptions _limits;
-
-    public LimitsEnforcementMiddleware(
-        RequestDelegate next,
-        ILogger<LimitsEnforcementMiddleware> logger,
-        IOptions<LimitsOptions> limitsOptions)
-    {
-        _next = next ?? throw new ArgumentNullException(nameof(next));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _limits = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
-    }
+    private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
+    private readonly ILogger<LimitsEnforcementMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly LimitsOptions _limits = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -94,7 +87,7 @@ public sealed class LimitsEnforcementMiddleware
     /// </summary>
     private static bool HasRequestBody(HttpContext context)
     {
-        var method = context.Request.Method;
+        string method = context.Request.Method;
         return string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(method, "PUT", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(method, "PATCH", StringComparison.OrdinalIgnoreCase);
@@ -105,7 +98,7 @@ public sealed class LimitsEnforcementMiddleware
     /// </summary>
     private bool ValidatePayloadSize(HttpContext context)
     {
-        var contentLength = context.Request.ContentLength;
+        long? contentLength = context.Request.ContentLength;
 
         // If content length is not provided, we'll let it proceed and rely on
         // the request body size limits configured at the Kestrel level

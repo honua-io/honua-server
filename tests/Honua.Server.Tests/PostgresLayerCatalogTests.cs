@@ -81,6 +81,19 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 layer_order integer NOT NULL,
                 PRIMARY KEY (service_name, layer_id)
             );
+
+            -- Relationships table - defines relationships between layers
+            CREATE TABLE relationships (
+                layer_id integer NOT NULL REFERENCES layers(layer_id),
+                relationship_id integer NOT NULL,
+                name varchar(64) NOT NULL,
+                related_layer_id integer NOT NULL REFERENCES layers(layer_id),
+                relationship_type varchar(64) NOT NULL,
+                origin_foreign_key varchar(64) NOT NULL,
+                destination_foreign_key varchar(64) NOT NULL,
+                description text,
+                PRIMARY KEY (layer_id, relationship_id)
+            );
             """, _schemaName);
 
         // Insert test data

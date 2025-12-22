@@ -11,6 +11,7 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -24,7 +25,7 @@ public static class FeatureServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer", HandleGetServiceMetadata)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer", HandleGetServiceMetadata)
             .WithDisplayName("Get FeatureServer Service Metadata")
             .WithName("GetServiceMetadata")
             .WithSummary("Get FeatureServer service metadata")
@@ -35,7 +36,7 @@ public static class FeatureServerEndpoints
         // .Produces<FeatureServerResponse>(200, "application/json")
         // .Produces(404);
 
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", HandleGetLayerMetadata)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", HandleGetLayerMetadata)
             .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
             .WithSummary("Get FeatureServer layer metadata")
@@ -46,7 +47,7 @@ public static class FeatureServerEndpoints
         // .Produces<LayerResponse>(200, "application/json")
         // .Produces(404);
 
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
@@ -57,7 +58,7 @@ public static class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
@@ -79,6 +80,28 @@ public static class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsGet)
+            .WithDisplayName("Query Related Records (GET)")
+            .WithName("QueryRelatedRecordsGet")
+            .WithSummary("Query features related to source features through a relationship using GET")
+            .WithDescription("Returns features from a related layer based on relationship definitions via GET parameters")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // .Produces<QueryRelatedRecordsResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
+
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsPost)
+            .WithDisplayName("Query Related Records (POST)")
+            .WithName("QueryRelatedRecordsPost")
+            .WithSummary("Query features related to source features through a relationship using POST")
+            .WithDescription("Returns features from a related layer based on relationship definitions via POST body")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        // .Produces<QueryRelatedRecordsResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
+
         return endpoints;
     }
 
@@ -90,17 +113,18 @@ public static class FeatureServerEndpoints
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
             return;
 
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
-        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
-        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+        ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        IOptions<LimitsOptions> limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+        ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
-        var result = await GetServiceMetadataAsync(
+        IResult result = await GetServiceMetadataAsync(
             serviceId,
             catalog,
             limitsOptions.Value.Query,
@@ -117,21 +141,21 @@ public static class FeatureServerEndpoints
         string serviceId,
         ILayerCatalog catalog,
         QueryLimits limits,
-        ILogger<FeatureServerHandler> logger,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         try
         {
             FeatureServerLog.ServiceMetadataRequested(logger, serviceId);
 
-            var service = await catalog.GetServiceAsync(serviceId, cancellationToken);
+            ServiceDefinition? service = await catalog.GetServiceAsync(serviceId, cancellationToken);
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
                 return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
-            var response = MapServiceToResponse(service, limits);
+            FeatureServerResponse response = MapServiceToResponse(service, limits);
 
             FeatureServerLog.ServiceMetadataReturned(logger, serviceId, response.Layers.Length);
 
@@ -153,23 +177,24 @@ public static class FeatureServerEndpoints
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
             return;
 
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
             return;
         }
 
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
-        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
-        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureServerHandler>>();
+        ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        IOptions<LimitsOptions> limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+        ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
-        var result = await GetLayerMetadataAsync(
+        IResult result = await GetLayerMetadataAsync(
             serviceId,
             layerId,
             catalog,
@@ -188,7 +213,7 @@ public static class FeatureServerEndpoints
         int layerId,
         ILayerCatalog catalog,
         QueryLimits limits,
-        ILogger<FeatureServerHandler> logger,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         try
@@ -196,7 +221,7 @@ public static class FeatureServerEndpoints
             FeatureServerLog.LayerMetadataRequested(logger, serviceId, layerId);
 
             // First check if service exists
-            var service = await catalog.GetServiceAsync(serviceId, cancellationToken);
+            ServiceDefinition? service = await catalog.GetServiceAsync(serviceId, cancellationToken);
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
@@ -204,14 +229,14 @@ public static class FeatureServerEndpoints
             }
 
             // Find the layer in the service
-            var layer = service.GetLayer(layerId);
+            LayerDefinition? layer = service.GetLayer(layerId);
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
                 return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
-            var response = MapLayerToResponse(layer, limits);
+            LayerResponse response = MapLayerToResponse(layer, limits);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layerId, layer.Name);
 
@@ -234,14 +259,14 @@ public static class FeatureServerEndpoints
         {
             ServiceName = service.Name,
             ServiceDescription = service.Description,
-            Layers = service.Layers.Select(MapLayerInfo).ToArray(),
+            Layers = [.. service.Layers.Select(MapLayerInfo)],
             SpatialReference = MapSpatialReference(service.SpatialReference),
             InitialExtent = service.EffectiveExtent.HasValue ? MapExtent(service.EffectiveExtent.Value) : null,
             FullExtent = service.EffectiveExtent.HasValue ? MapExtent(service.EffectiveExtent.Value) : null,
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = service.SupportedFormats,
             Capabilities = string.Join(",", service.Capabilities),
-            Fields = service.AllFields.Select(MapFieldInfo).ToArray()
+            Fields = [.. service.AllFields.Select(MapFieldInfo)]
         };
     }
 
@@ -250,8 +275,8 @@ public static class FeatureServerEndpoints
     /// </summary>
     private static LayerResponse MapLayerToResponse(LayerDefinition layer, QueryLimits queryLimits)
     {
-        var displayField = layer.AttributeFields.FirstOrDefault()?.Name;
-        var objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
+        string? displayField = layer.AttributeFields.FirstOrDefault()?.Name;
+        string objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
 
         return new LayerResponse
         {
@@ -260,7 +285,7 @@ public static class FeatureServerEndpoints
             Description = layer.Description,
             GeometryType = MapGeometryType(layer.GeometryType),
             SpatialReference = MapSpatialReference(layer.SpatialReference),
-            Fields = layer.Fields.Select(MapFieldInfo).ToArray(),
+            Fields = [.. layer.Fields.Select(MapFieldInfo)],
             Extent = layer.Extent.HasValue ? MapExtent(layer.Extent.Value) : null,
             MinScale = layer.MinScale,
             MaxScale = layer.MaxScale,
@@ -321,7 +346,7 @@ public static class FeatureServerEndpoints
     /// </summary>
     private static EsriFieldInfo MapFieldInfo(FieldDefinition field)
     {
-        var (esriType, sqlType, length) = MapFieldType(field.Type);
+        (string? esriType, string? sqlType, int? length) = MapFieldType(field.Type);
 
         return new EsriFieldInfo
         {
@@ -386,27 +411,27 @@ public static class FeatureServerEndpoints
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
             return;
 
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
             return;
         }
 
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
             return;
         }
 
-        if (!TryBuildQueryParameters(context.Request.Query, out var queryParams, out var error))
+        if (!TryBuildQueryParameters(context.Request.Query, out QueryParameters? queryParams, out string? error))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid query parameters");
             return;
         }
 
-        var handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
 
-        var result = await handler.HandleQueryFeaturesAsync(
+        IResult result = await handler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
             queryParams,
@@ -423,13 +448,13 @@ public static class FeatureServerEndpoints
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
             return;
 
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
             return;
         }
 
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
             return;
@@ -455,9 +480,9 @@ public static class FeatureServerEndpoints
             return;
         }
 
-        var handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
 
-        var result = await handler.HandleQueryFeaturesAsync(
+        IResult result = await handler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
             queryParams,
@@ -469,28 +494,26 @@ public static class FeatureServerEndpoints
 
     private static bool TryBuildQueryParameters(IQueryCollection query, out QueryParameters queryParams, out string? error)
     {
-        error = null;
+        string? where = TryGetQueryValue(query, "where");
+        string? outFields = TryGetQueryValue(query, "outFields");
+        string? geometry = TryGetQueryValue(query, "geometry");
+        string? geometryType = TryGetQueryValue(query, "geometryType");
+        string? spatialRel = TryGetQueryValue(query, "spatialRel");
+        string format = TryGetQueryValue(query, "f") ?? "json";
 
-        var where = TryGetQueryValue(query, "where");
-        var outFields = TryGetQueryValue(query, "outFields");
-        var geometry = TryGetQueryValue(query, "geometry");
-        var geometryType = TryGetQueryValue(query, "geometryType");
-        var spatialRel = TryGetQueryValue(query, "spatialRel");
-        var format = TryGetQueryValue(query, "f") ?? "json";
-
-        if (!TryParseQueryBool(query, "returnGeometry", true, out var returnGeometry, out error))
+        if (!TryParseQueryBool(query, "returnGeometry", true, out bool returnGeometry, out error))
         {
             queryParams = new QueryParameters();
             return false;
         }
 
-        if (!TryParseQueryInt(query, "resultOffset", out var resultOffset, out error))
+        if (!TryParseQueryInt(query, "resultOffset", out int? resultOffset, out error))
         {
             queryParams = new QueryParameters();
             return false;
         }
 
-        if (!TryParseQueryInt(query, "resultRecordCount", out var resultRecordCount, out error))
+        if (!TryParseQueryInt(query, "resultRecordCount", out int? resultRecordCount, out error))
         {
             queryParams = new QueryParameters();
             return false;
@@ -514,12 +537,12 @@ public static class FeatureServerEndpoints
 
     private static string? TryGetQueryValue(IQueryCollection query, string key)
     {
-        if (!query.TryGetValue(key, out var values))
+        if (!query.TryGetValue(key, out StringValues values))
         {
             return null;
         }
 
-        var value = values.ToString();
+        string value = values.ToString();
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
@@ -528,13 +551,13 @@ public static class FeatureServerEndpoints
         value = null;
         error = null;
 
-        var raw = TryGetQueryValue(query, key);
+        string? raw = TryGetQueryValue(query, key);
         if (raw is null)
         {
             return true;
         }
 
-        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
         {
             error = $"{key} must be an integer.";
             return false;
@@ -549,13 +572,13 @@ public static class FeatureServerEndpoints
         value = defaultValue;
         error = null;
 
-        var raw = TryGetQueryValue(query, key);
+        string? raw = TryGetQueryValue(query, key);
         if (raw is null)
         {
             return true;
         }
 
-        if (!bool.TryParse(raw, out var parsed))
+        if (!bool.TryParse(raw, out bool parsed))
         {
             error = $"{key} must be a boolean.";
             return false;
@@ -614,5 +637,315 @@ public static class FeatureServerEndpoints
             context.RequestAborted);
 
         await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Handles GET query related records requests
+    /// </summary>
+    private static async Task HandleQueryRelatedRecordsGet(HttpContext context)
+    {
+        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
+            return;
+
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return;
+        }
+
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
+            return;
+        }
+
+        // Parse required parameters from query string
+        if (!TryBuildRelatedRecordsParameters(context, out QueryRelatedRecordsParameters? relatedParams, out string? error))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid related records parameters");
+            return;
+        }
+
+        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+
+        IResult result = await handler.HandleQueryRelatedRecordsAsync(
+            serviceId,
+            layerId,
+            relatedParams,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Handles POST query related records requests
+    /// </summary>
+    private static async Task HandleQueryRelatedRecordsPost(HttpContext context)
+    {
+        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
+            return;
+
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return;
+        }
+
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
+            return;
+        }
+
+        // Parse required parameters from POST body
+        (bool success, QueryRelatedRecordsParameters? relatedParams, string? error) = await TryBuildRelatedRecordsParametersFromJsonAsync(context);
+        if (!success)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid related records parameters");
+            return;
+        }
+
+        if (relatedParams is null)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Failed to parse related records parameters");
+            return;
+        }
+
+        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+
+        IResult result = await handler.HandleQueryRelatedRecordsAsync(
+            serviceId,
+            layerId,
+            relatedParams,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
+
+    private static bool TryBuildRelatedRecordsParameters(HttpContext context, out QueryRelatedRecordsParameters parameters, out string? error)
+    {
+        error = null;
+        parameters = null!; // Will be set later once we have all required values
+
+        IQueryCollection query = context.Request.Query;
+
+        // Required: objectIds
+        string? objectIdsValue = TryGetQueryValue(query, "objectIds");
+        if (string.IsNullOrWhiteSpace(objectIdsValue))
+        {
+            error = "objectIds parameter is required";
+            return false;
+        }
+
+        string[] objectIdStrings = objectIdsValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var objectIds = new List<long>();
+
+        foreach (string idString in objectIdStrings)
+        {
+            if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
+            {
+                objectIds.Add(id);
+            }
+            else
+            {
+                error = $"Invalid objectId: {idString}";
+                return false;
+            }
+        }
+
+        if (objectIds.Count == 0)
+        {
+            error = "At least one valid objectId is required";
+            return false;
+        }
+
+        // Required: relationshipId
+        if (!TryParseQueryInt(query, "relationshipId", out int? relationshipId, out string? relationshipIdError))
+        {
+            error = relationshipIdError ?? "relationshipId parameter is required";
+            return false;
+        }
+
+        if (!relationshipId.HasValue)
+        {
+            error = "relationshipId parameter is required";
+            return false;
+        }
+
+        // Optional parameters
+        string? outFields = TryGetQueryValue(query, "outFields");
+        string? where = TryGetQueryValue(query, "where");
+        string format = TryGetQueryValue(query, "f") ?? "json";
+
+        if (!TryParseQueryBool(query, "returnGeometry", true, out bool returnGeometry, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseQueryInt(query, "resultOffset", out int? resultOffset, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseQueryInt(query, "resultRecordCount", out int? resultRecordCount, out error))
+        {
+            return false;
+        }
+
+        parameters = new QueryRelatedRecordsParameters
+        {
+            ObjectIds = [.. objectIds],
+            RelationshipId = relationshipId.Value,
+            OutFields = outFields,
+            Where = where,
+            ReturnGeometry = returnGeometry,
+            F = format,
+            ResultOffset = resultOffset,
+            ResultRecordCount = resultRecordCount
+        };
+
+        return true;
+    }
+
+    /// <summary>
+    /// Builds QueryRelatedRecordsParameters from JSON POST body
+    /// </summary>
+    private static async Task<(bool Success, QueryRelatedRecordsParameters? Parameters, string? Error)> TryBuildRelatedRecordsParametersFromJsonAsync(
+        HttpContext context)
+    {
+
+        try
+        {
+            // First, try to deserialize as a generic JSON object to handle string-based objectIds
+            using var jsonDoc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            JsonElement root = jsonDoc.RootElement;
+
+            // Extract and parse objectIds (can be string or array)
+            if (!root.TryGetProperty("objectIds", out JsonElement objectIdsElement))
+            {
+                return (false, null, "objectIds parameter is required");
+            }
+
+            List<long> objectIds = [];
+            if (objectIdsElement.ValueKind == JsonValueKind.String)
+            {
+                // Handle string format "1,2,3"
+                string objectIdsString = objectIdsElement.GetString() ?? "";
+                if (string.IsNullOrWhiteSpace(objectIdsString))
+                {
+                    return (false, null, "objectIds parameter is required");
+                }
+
+                string[] objectIdStrings = objectIdsString.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                foreach (string idString in objectIdStrings)
+                {
+                    if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
+                    {
+                        objectIds.Add(id);
+                    }
+                    else
+                    {
+                        return (false, null, $"Invalid objectId: {idString}");
+                    }
+                }
+            }
+            else if (objectIdsElement.ValueKind == JsonValueKind.Array)
+            {
+                // Handle array format [1, 2, 3]
+                foreach (JsonElement element in objectIdsElement.EnumerateArray())
+                {
+                    if (element.TryGetInt64(out long id))
+                    {
+                        objectIds.Add(id);
+                    }
+                    else
+                    {
+                        return (false, null, "Invalid objectId in array");
+                    }
+                }
+            }
+            else
+            {
+                return (false, null, "objectIds must be a string or array");
+            }
+
+            if (objectIds.Count == 0)
+            {
+                return (false, null, "At least one valid objectId is required");
+            }
+
+            // Extract relationshipId
+            if (!root.TryGetProperty("relationshipId", out JsonElement relationshipIdElement) ||
+                !relationshipIdElement.TryGetInt32(out int relationshipId))
+            {
+                return (false, null, "relationshipId parameter is required and must be an integer");
+            }
+
+            // Extract optional parameters
+            string? outFields = null;
+            if (root.TryGetProperty("outFields", out JsonElement outFieldsElement))
+            {
+                outFields = outFieldsElement.GetString();
+            }
+
+            string? where = null;
+            if (root.TryGetProperty("where", out JsonElement whereElement))
+            {
+                where = whereElement.GetString();
+            }
+
+            bool returnGeometry = true; // Default value
+            if (root.TryGetProperty("returnGeometry", out JsonElement returnGeometryElement))
+            {
+                if (returnGeometryElement.ValueKind == JsonValueKind.True)
+                {
+                    returnGeometry = true;
+                }
+                else if (returnGeometryElement.ValueKind == JsonValueKind.False)
+                {
+                    returnGeometry = false;
+                }
+                else if (returnGeometryElement.ValueKind == JsonValueKind.String)
+                {
+                    string returnGeomStr = returnGeometryElement.GetString() ?? "";
+                    returnGeometry = !returnGeomStr.Equals("false", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            int? resultRecordCount = null;
+            if (root.TryGetProperty("resultRecordCount", out JsonElement resultRecordCountElement) &&
+                resultRecordCountElement.TryGetInt32(out int recordCount))
+            {
+                resultRecordCount = recordCount;
+            }
+
+            int? resultOffset = null;
+            if (root.TryGetProperty("resultOffset", out JsonElement resultOffsetElement) &&
+                resultOffsetElement.TryGetInt32(out int offset))
+            {
+                resultOffset = offset;
+            }
+
+            var parameters = new QueryRelatedRecordsParameters
+            {
+                ObjectIds = [.. objectIds],
+                RelationshipId = relationshipId,
+                OutFields = outFields,
+                Where = where,
+                ReturnGeometry = returnGeometry,
+                ResultRecordCount = resultRecordCount,
+                ResultOffset = resultOffset
+            };
+
+            return (true, parameters, null);
+        }
+        catch (JsonException)
+        {
+            return (false, null, "Invalid JSON payload");
+        }
+        catch (Exception ex)
+        {
+            return (false, null, $"Failed to parse request: {ex.Message}");
+        }
     }
 }

@@ -865,4 +865,149 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         return value;
     }
+
+    public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
+    {
+        // Step 1: Get the foreign key values from the origin features
+        var foreignKeyValues = await GetOriginForeignKeyValuesAsync(layerId, query, cancellationToken);
+
+        if (foreignKeyValues.Length == 0)
+        {
+            return QueryResult<Feature>.Empty();
+        }
+
+        // Step 2: Query the related layer using the foreign key values
+        var relatedFeatures = await QueryRelatedFeaturesAsync(query, foreignKeyValues, cancellationToken);
+
+        return QueryResult<Feature>.Create(relatedFeatures.Length, relatedFeatures.ToImmutableArray());
+    }
+
+    private async Task<object[]> GetOriginForeignKeyValuesAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
+    {
+        var objectIdParams = string.Join(",", Enumerable.Range(1, query.ObjectIds.Length).Select(i => $"${i + 1}"));
+        var sql = $@"
+            SELECT DISTINCT attributes->>'{query.Relationship.OriginForeignKeyField}' as fk_value
+            FROM {_tableName}
+            WHERE layer_id = $1 AND objectid = ANY(ARRAY[{objectIdParams}])
+            AND attributes->>'{query.Relationship.OriginForeignKeyField}' IS NOT NULL";
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue(layerId);
+        foreach (var objectId in query.ObjectIds)
+        {
+            command.Parameters.AddWithValue(objectId);
+        }
+
+        var values = new List<object>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var fkValue = reader["fk_value"];
+            if (fkValue != DBNull.Value)
+            {
+                values.Add(fkValue);
+            }
+        }
+
+        return values.ToArray();
+    }
+
+    private async Task<Feature[]> QueryRelatedFeaturesAsync(RelatedQuery query, object[] foreignKeyValues, CancellationToken cancellationToken)
+    {
+        if (foreignKeyValues.Length == 0)
+        {
+            return Array.Empty<Feature>();
+        }
+
+        var sql = new StringBuilder();
+        var parameters = new List<object> { query.Relationship.RelatedLayerId };
+        var paramIndex = 2;
+
+        // Build base query
+        sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT objectid, geometry, attributes
+            FROM {_tableName}
+            WHERE layer_id = $1");
+
+        // Add foreign key filter
+        var fkParams = new List<string>();
+        foreach (var fkValue in foreignKeyValues)
+        {
+            fkParams.Add($"${paramIndex++}");
+            parameters.Add(fkValue);
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $" AND attributes->>'{query.Relationship.DestinationForeignKeyField}' = ANY(ARRAY[{string.Join(",", fkParams)}])");
+
+        // Add WHERE clause filter if specified
+        if (!string.IsNullOrWhiteSpace(query.Where))
+        {
+            var whereClause = query.Where.Trim();
+            var parameterizedClause = ParseAndParameterizeWhereClause(whereClause, ref paramIndex, parameters);
+            sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
+        }
+
+        // Add ordering for consistent results
+        sql.Append(" ORDER BY objectid");
+
+        // Add limit if specified
+        if (query.Limit.HasValue && query.Limit.Value > 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {query.Limit.Value}");
+        }
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql.ToString(), connection);
+
+        // Add all parameters
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            command.Parameters.AddWithValue(parameters[i]);
+        }
+
+        var features = new List<Feature>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var feature = await ReadFeatureAsync(reader, cancellationToken);
+
+            // Apply field filtering if specified
+            if (query.OutFields?.IsDefault == false)
+            {
+                feature = FilterFeatureFields(feature, query.OutFields.Value.ToArray());
+            }
+
+            features.Add(feature);
+        }
+
+        return features.ToArray();
+    }
+
+    private static Feature FilterFeatureFields(Feature feature, string[] outFields)
+    {
+        if (outFields.Length == 0)
+        {
+            return feature;
+        }
+
+        var filteredAttributes = new Dictionary<string, object?>();
+
+        foreach (var field in outFields)
+        {
+            if (feature.Attributes.TryGetValue(field, out var value))
+            {
+                filteredAttributes[field] = value;
+            }
+        }
+
+        return Feature.Create(
+            feature.Id,
+            feature.Geometry,
+            filteredAttributes.ToImmutableDictionary()
+        );
+    }
 }

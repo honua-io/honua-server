@@ -36,7 +36,7 @@ internal static class RouteValidationHelpers
     /// <returns>True if serviceId is valid, false otherwise</returns>
     public static bool TryValidateServiceId(HttpContext context, out string serviceId)
     {
-        var rawServiceId = context.GetRouteValue("serviceId")?.ToString();
+        string? rawServiceId = context.GetRouteValue("serviceId")?.ToString();
         serviceId = rawServiceId ?? string.Empty;
         return !string.IsNullOrWhiteSpace(rawServiceId);
     }
@@ -51,7 +51,7 @@ internal static class RouteValidationHelpers
     {
         layerId = default;
 
-        if (!context.Request.RouteValues.TryGetValue("layerId", out var raw) || raw is null)
+        if (!context.Request.RouteValues.TryGetValue("layerId", out object? raw) || raw is null)
         {
             return false;
         }

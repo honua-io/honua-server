@@ -17,18 +17,18 @@ public static class ImportEndpoints
     /// </summary>
     public static void MapImportEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/import")
+        RouteGroupBuilder group = app.MapGroup("/api/import")
             .WithTags("Import");
 
         // Get supported file formats
-        group.Map("/formats", HandleGetSupportedFormats)
+        _ = group.Map("/formats", HandleGetSupportedFormats)
             .WithName("GetSupportedFileFormats")
             .WithSummary("Get supported geospatial file formats")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
         // .Produces<FileFormatsResponse>();
 
         // Preview file before import
-        group.Map("/preview", HandlePreviewFile)
+        _ = group.Map("/preview", HandlePreviewFile)
             .WithName("PreviewFile")
             .WithSummary("Preview geospatial file contents")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -36,7 +36,7 @@ public static class ImportEndpoints
             .DisableAntiforgery(); // For file uploads
 
         // Import geospatial file
-        group.Map("/upload", HandleImportFile)
+        _ = group.Map("/upload", HandleImportFile)
             .WithName("ImportFile")
             .WithSummary("Import geospatial file to PostgreSQL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -55,8 +55,8 @@ public static class ImportEndpoints
             return;
         }
 
-        var importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        var extensions = importService.GetSupportedExtensions();
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        string[] extensions = importService.GetSupportedExtensions();
         var formatDescriptions = new Dictionary<string, string>
         {
             [".geojson"] = "GeoJSON - Web-standard JSON format",
@@ -78,7 +78,7 @@ public static class ImportEndpoints
                 .ToDictionary(kv => kv.Key, kv => kv.Value)
         };
 
-        var result = Results.Json(response, ImportJsonContext.Default.FileFormatsResponse);
+        IResult result = Results.Json(response, ImportJsonContext.Default.FileFormatsResponse);
         await result.ExecuteAsync(context);
     }
 
@@ -93,9 +93,9 @@ public static class ImportEndpoints
             return;
         }
 
-        var cancellationToken = context.RequestAborted;
-        var form = await context.Request.ReadFormAsync(cancellationToken);
-        var file = GetFormFile(form, "file", "File");
+        CancellationToken cancellationToken = context.RequestAborted;
+        IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
+        IFormFile? file = GetFormFile(form, "file", "File");
 
         if (file == null || file.Length == 0)
         {
@@ -113,8 +113,8 @@ public static class ImportEndpoints
             return;
         }
 
-        var importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        var format = importService.DetectFormat(file.FileName);
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        SupportedFileFormat? format = importService.DetectFormat(file.FileName);
         if (format == null)
         {
             await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(file.FileName)}",
@@ -124,9 +124,9 @@ public static class ImportEndpoints
 
         try
         {
-            using var stream = file.OpenReadStream();
-            var preview = await importService.PreviewFileAsync(stream, file.FileName, cancellationToken);
-            var result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
+            using Stream stream = file.OpenReadStream();
+            FilePreview preview = await importService.PreviewFileAsync(stream, file.FileName, cancellationToken);
+            IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
             await result.ExecuteAsync(context);
         }
         catch (Exception ex)
@@ -146,17 +146,17 @@ public static class ImportEndpoints
             return;
         }
 
-        var cancellationToken = context.RequestAborted;
-        var form = await context.Request.ReadFormAsync(cancellationToken);
+        CancellationToken cancellationToken = context.RequestAborted;
+        IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
 
-        var file = GetFormFile(form, "File", "file");
+        IFormFile? file = GetFormFile(form, "File", "file");
         if (file == null || file.Length == 0)
         {
             await WriteErrorAsync(context, "File is required", StatusCodes.Status400BadRequest);
             return;
         }
 
-        var tableName = form["TableName"].ToString();
+        string tableName = form["TableName"].ToString();
         if (string.IsNullOrWhiteSpace(tableName))
         {
             await WriteErrorAsync(context, "Table name is required", StatusCodes.Status400BadRequest);
@@ -171,8 +171,8 @@ public static class ImportEndpoints
             return;
         }
 
-        var importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        var format = importService.DetectFormat(file.FileName);
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        SupportedFileFormat? format = importService.DetectFormat(file.FileName);
         if (format == null)
         {
             await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(file.FileName)}",
@@ -182,12 +182,12 @@ public static class ImportEndpoints
 
         try
         {
-            using var stream = file.OpenReadStream();
+            using Stream stream = file.OpenReadStream();
 
             // Parse optional parameters
-            var sourceSrid = int.TryParse(form["SourceSrid"], out var src) ? src : (int?)null;
-            var targetSrid = int.TryParse(form["TargetSrid"], out var tgt) ? tgt : 4326;
-            var overwriteExisting = bool.TryParse(form["OverwriteExisting"], out var overwrite) && overwrite;
+            int? sourceSrid = int.TryParse(form["SourceSrid"], out int src) ? src : (int?)null;
+            int targetSrid = int.TryParse(form["TargetSrid"], out int tgt) ? tgt : 4326;
+            bool overwriteExisting = bool.TryParse(form["OverwriteExisting"], out bool overwrite) && overwrite;
 
             var importRequest = new ImportRequest
             {
@@ -199,8 +199,8 @@ public static class ImportEndpoints
                 OverwriteExisting = overwriteExisting
             };
 
-            var result = await importService.ImportFileAsync(importRequest, cancellationToken);
-            var response = Results.Json(result, ImportJsonContext.Default.ImportResult);
+            ImportResult result = await importService.ImportFileAsync(importRequest, cancellationToken);
+            IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
             await response.ExecuteAsync(context);
         }
         catch (Exception ex)
@@ -222,10 +222,7 @@ public static class ImportEndpoints
                (char.IsLetter(tableName[0]) || tableName[0] == '_');
     }
 
-    private static IFormFile? GetFormFile(IFormCollection form, string primaryName, string fallbackName)
-    {
-        return form.Files.GetFile(primaryName) ?? form.Files.GetFile(fallbackName);
-    }
+    private static IFormFile? GetFormFile(IFormCollection form, string primaryName, string fallbackName) => form.Files.GetFile(primaryName) ?? form.Files.GetFile(fallbackName);
 
     private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
     {
@@ -237,7 +234,7 @@ public static class ImportEndpoints
                 Message = message
             }
         };
-        var result = Results.Json(error, ImportJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
+        IResult result = Results.Json(error, ImportJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
         return result.ExecuteAsync(context);
     }
 }
