@@ -202,28 +202,14 @@ static void ConfigureSecurityHeaders(IServiceCollection services)
         .SetDefaultPolicy(policy =>
         {
             // Add required security headers per MVP Plan
-            policy.AddStrictTransportSecurityMaxAgeIncludeSubDomains(maxAgeInSeconds: 63072000) // 2 years
-                .AddContentTypeOptionsNoSniff() // X-Content-Type-Options: nosniff
-                .AddFrameOptionsDeny() // X-Frame-Options: DENY
-                .AddReferrerPolicyStrictOriginWhenCrossOrigin() // Referrer-Policy: strict-origin-when-cross-origin
-                .RemoveServerHeader() // Remove Server header for security
-                .AddContentSecurityPolicy(builder =>
-                {
-                    // Strict CSP for API - only self for API responses
-                    builder.AddDefaultSrc().Self();
-                    builder.AddFrameAncestors().None(); // frame-ancestors 'none'
-                    builder.AddObjectSrc().None();
-                    builder.AddScriptSrc().Self();
-                    builder.AddStyleSrc().Self().UnsafeInline(); // Allow inline styles for minimal API responses
-                    builder.AddImgSrc().Self().Data(); // Allow data: URIs for inline images
-                    builder.AddConnectSrc().Self();
-                    builder.AddFontSrc().Self();
-                    builder.AddMediaSrc().Self();
-                    builder.AddFormAction().Self();
-                })
-                .AddCrossOriginOpenerPolicy(builder => builder.SameOrigin()) // COOP: same-origin
-                .AddCrossOriginEmbedderPolicy(builder => builder.RequireCorp()) // COEP: require-corp
-                .AddPermissionsPolicyWithDefaultSecureDirectives(); // Permissions-Policy with secure defaults
+            policy.AddDefaultSecurityHeaders() // Adds basic security headers
+                .AddStrictTransportSecurityMaxAgeIncludeSubDomains(maxAgeInSeconds: 63072000) // 2 years HSTS
+                .AddCustomHeader("Cross-Origin-Opener-Policy", "same-origin") // COOP: same-origin
+                .AddCustomHeader("Cross-Origin-Embedder-Policy", "require-corp") // COEP: require-corp
+                .AddCustomHeader("Permissions-Policy",
+                    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), " +
+                    "magnetometer=(), gyroscope=(), accelerometer=(), ambient-light-sensor=(), " +
+                    "autoplay=(), encrypted-media=(), fullscreen=(), picture-in-picture=()"); // Restrictive permissions
         });
 }
 
