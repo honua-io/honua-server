@@ -26,7 +26,7 @@ public class FileImportServiceTests
         public Task<bool> ValidateSridAsync(int srid) => Task.FromResult(true);
     }
 
-    private static readonly ICrsDetectionService MockCrsService = new MockCrsDetectionService();
+    private static readonly ICrsDetectionService _mockCrsService = new MockCrsDetectionService();
 
     [Theory]
     [InlineData("test.geojson", "GeoJson")]
@@ -38,7 +38,7 @@ public class FileImportServiceTests
     public void DetectFormat_WithVariousExtensions_ReturnsExpectedFormat(string fileName, string? expectedFormat)
     {
         // Arrange
-        var service = new FileImportService("test-connection-string", MockCrsService);
+        var service = new FileImportService("test-connection-string", _mockCrsService);
 
         // Act
         var result = service.DetectFormat(fileName);

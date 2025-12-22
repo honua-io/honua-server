@@ -20,7 +20,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
     /// <summary>
     /// Common EPSG codes and their variations for quick lookup
     /// </summary>
-    private static readonly Dictionary<string, int> WellKnownEpsgCodes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, int> _wellKnownEpsgCodes = new(StringComparer.OrdinalIgnoreCase)
     {
         // WGS84 variants
         ["WGS84"] = 4326,
@@ -51,7 +51,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
     /// <summary>
     /// Regex patterns for extracting EPSG codes from various string formats
     /// </summary>
-    private static readonly Regex EpsgCodeRegex = new(
+    private static readonly Regex _epsgCodeRegex = new(
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{4,5})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -70,7 +70,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         var cleanedContent = prjContent.Trim();
 
         // Try EPSG code extraction first (most reliable)
-        var epsgMatch = EpsgCodeRegex.Match(cleanedContent);
+        var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
         if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode))
         {
             if (await ValidateSridAsync(epsgCode))
@@ -78,7 +78,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         }
 
         // Check for well-known coordinate system names
-        foreach (var kvp in WellKnownEpsgCodes)
+        foreach (var kvp in _wellKnownEpsgCodes)
         {
             if (cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
             {
@@ -100,7 +100,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         var cleanedContent = wktContent.Trim();
 
         // Try EPSG authority code extraction
-        var epsgMatch = EpsgCodeRegex.Match(cleanedContent);
+        var epsgMatch = _epsgCodeRegex.Match(cleanedContent);
         if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var epsgCode))
         {
             if (await ValidateSridAsync(epsgCode))
@@ -108,7 +108,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         }
 
         // Check for common coordinate system names in WKT
-        foreach (var kvp in WellKnownEpsgCodes)
+        foreach (var kvp in _wellKnownEpsgCodes)
         {
             if (cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
             {
