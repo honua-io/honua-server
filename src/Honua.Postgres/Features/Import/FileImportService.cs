@@ -472,8 +472,8 @@ internal sealed class FileImportService : IFileImportService
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
 
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_geometry")} ON {quotedTableName} USING GIST (geometry);
-            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{tableName}_properties")} ON {quotedTableName} USING GIN (properties);";
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_geometry")} ON {quotedTableName} USING GIST (geometry);
+            CREATE INDEX IF NOT EXISTS {QuoteIdentifier($"idx_{System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_")}_properties")} ON {quotedTableName} USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
