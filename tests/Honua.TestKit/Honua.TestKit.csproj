@@ -16,8 +16,8 @@
     <!-- PostgreSQL/PostGIS -->
     <PackageReference Include="Npgsql" Version="9.0.4" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="9.0.4" />
-    <PackageReference Include="Npgsql.NetTopologySuite" Version="9.0.2" />
-    <PackageReference Include="NetTopologySuite" Version="2.5.0" />
+    <PackageReference Include="Npgsql.NetTopologySuite" Version="9.0.4" />
+    <PackageReference Include="NetTopologySuite" Version="2.6.0" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
 
     <!-- Testcontainers -->
@@ -28,7 +28,7 @@
     <PackageReference Include="xunit.abstractions" Version="2.0.3" />
 
     <!-- Assertion Libraries -->
-    <PackageReference Include="FluentAssertions" Version="7.0.0" />
+    <PackageReference Include="FluentAssertions" Version="7.2.0" />
     <PackageReference Include="FluentAssertions.Json" Version="6.1.0" />
 
     <!-- Data Generation -->
