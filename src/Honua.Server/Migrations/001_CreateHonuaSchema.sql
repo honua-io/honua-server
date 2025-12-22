@@ -15,8 +15,8 @@ $$;
 -- Create honua schema for isolation
 CREATE SCHEMA IF NOT EXISTS honua;
 
--- Enable PostGIS extension for spatial functionality
-CREATE EXTENSION IF NOT EXISTS postgis;
+-- Note: PostGIS extension is enabled by the test fixture/infrastructure setup
+-- This ensures proper permissions and avoids duplicate extension creation
 
 -- Services table - top-level service definitions
 CREATE TABLE IF NOT EXISTS honua.services (
@@ -64,18 +64,8 @@ CREATE TABLE IF NOT EXISTS honua.layer_fields (
     field_length INT
 );
 
--- Relationships table - defines relationships between layers
-CREATE TABLE IF NOT EXISTS honua.relationships_test (
-    relationship_id INT NOT NULL,
-    layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    related_layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    relationship_type TEXT NOT NULL,
-    origin_foreign_key TEXT NOT NULL,
-    destination_foreign_key TEXT NOT NULL,
-    description TEXT,
-    PRIMARY KEY (layer_id, relationship_id)
-);
+-- Relationships table - created in separate migration (003_CreateRelationshipsTable.sql)
+-- This ensures proper dependency management and cleaner migration structure
 
 -- Features table - stores actual feature data
 CREATE TABLE IF NOT EXISTS features (
@@ -91,8 +81,6 @@ CREATE TABLE IF NOT EXISTS features (
 CREATE INDEX IF NOT EXISTS idx_service_layers_service_id ON honua.service_layers(service_id);
 CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
-CREATE INDEX IF NOT EXISTS idx_relationships_origin_layer ON honua.relationships_test(layer_id);
-CREATE INDEX IF NOT EXISTS idx_relationships_related_layer ON honua.relationships_test(related_layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
@@ -103,7 +91,6 @@ COMMENT ON TABLE honua.services IS 'Top-level service definitions (FeatureServer
 COMMENT ON TABLE honua.layers IS 'Layer definitions with geometry and field information';
 COMMENT ON TABLE honua.service_layers IS 'Junction table mapping layers to services with display order';
 COMMENT ON TABLE honua.layer_fields IS 'Field metadata and configuration for layer attributes';
-COMMENT ON TABLE honua.relationships_test IS 'Relationship definitions between layers for related record queries';
 COMMENT ON TABLE features IS 'Feature data with geometry and attributes stored as JSONB';
 
 COMMENT ON COLUMN honua.layers.geometry_type IS 'PostGIS geometry type: Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon';
