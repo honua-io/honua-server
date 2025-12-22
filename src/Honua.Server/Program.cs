@@ -202,8 +202,22 @@ static void ConfigureSecurityHeaders(IServiceCollection services)
         .SetDefaultPolicy(policy =>
         {
             // Add required security headers per MVP Plan
-            policy.AddDefaultSecurityHeaders() // Adds basic security headers
+            policy.AddDefaultSecurityHeaders() // Adds X-Content-Type-Options, X-Frame-Options, Referrer-Policy
                 .AddStrictTransportSecurityMaxAgeIncludeSubDomains(maxAgeInSeconds: 63072000) // 2 years HSTS
+                .AddContentSecurityPolicy(builder =>
+                {
+                    // Comprehensive CSP for API - matches test expectations
+                    builder.AddDefaultSrc().Self();
+                    builder.AddScriptSrc().Self();
+                    builder.AddStyleSrc().Self().UnsafeInline(); // Allow inline styles for minimal API responses
+                    builder.AddImgSrc().Self().Data(); // Allow data: URIs for inline images
+                    builder.AddConnectSrc().Self();
+                    builder.AddFontSrc().Self();
+                    builder.AddMediaSrc().Self();
+                    builder.AddObjectSrc().None();
+                    builder.AddFrameAncestors().None(); // frame-ancestors 'none'
+                    builder.AddFormAction().Self();
+                })
                 .AddCustomHeader("Cross-Origin-Opener-Policy", "same-origin") // COOP: same-origin
                 .AddCustomHeader("Cross-Origin-Embedder-Policy", "require-corp") // COEP: require-corp
                 .AddCustomHeader("Permissions-Policy",
