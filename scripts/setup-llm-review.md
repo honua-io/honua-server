@@ -117,14 +117,14 @@ Description of the issue...
 
 - **Model**: GPT-4 (higher quality architectural reasoning)
 - **Estimated Cost**: ~$0.05-0.25 per PR review (varies by file count/size)
-- **Context Strategy**: Complete .cs files for full architectural analysis
-- **File Limits**: Analyzes up to 10 changed files per PR
+- **Context Strategy**: Diff-only, chunked into ~300-line segments
+- **File Limits**: Reviews up to 50 changed files per PR (configurable)
 - **Frequency**: Only on C# file changes, not on documentation
 
 **Cost Scaling:**
 - Small PRs (1-3 small .cs files): ~$0.05-0.10
 - Medium PRs (4-6 medium .cs files): ~$0.10-0.20
-- Large PRs (7-10 large .cs files): ~$0.20-0.25+
+- Large PRs (many files/large diffs): cost scales with number of chunks
 
 ## Customization
 
@@ -137,6 +137,13 @@ In `scripts/architecture-review.py`:
 model="gpt-4-turbo",  # More cost-effective
 # or
 model="gpt-3.5-turbo",  # Even cheaper for simpler reviews
+```
+
+### Adjust Chunking Limits
+In `.github/workflows/ci.yml`, set:
+```yaml
+REVIEW_CHUNK_LINES: 300   # max diff lines per chunk
+REVIEW_MAX_FILES: 50      # max changed files to review
 ```
 
 ### Add Anthropic Claude Support

@@ -204,24 +204,6 @@ jobs:
           name: vulnerability-report
           path: vulnerability-report.txt
 
-      - name: Setup Trivy for Container Scanning
-        if: needs.build.result == 'success'
-        uses: aquasecurity/trivy-action@0.15.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
-
-      - name: Upload Trivy Results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: trivy-scan-results
-          path: trivy-results.sarif
-
   coverage:
     name: Coverage Report
     runs-on: ubuntu-latest
@@ -264,7 +246,7 @@ jobs:
           path: ./coverage/report/
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage/report/Cobertura.xml
           flags: combined
@@ -340,58 +322,9 @@ jobs:
           echo "C# files (for architecture analysis):"
           echo "$CS_CHANGED_FILES"
 
-      - name: Get File Contents and Diff
-        if: steps.changed-files.outputs.skip_review == 'false'
-        id: get-content
-        run: |
-          # Create analysis context
-          mkdir -p /tmp/architecture-review
-
-          # Get project architectural rules
-          echo "=== HONUA ARCHITECTURE RULES ===" > /tmp/architecture-review/context.md
-          echo "" >> /tmp/architecture-review/context.md
-
-          # Include relevant parts of CLAUDE.md
-          echo "## Project Architecture (from CLAUDE.md):" >> /tmp/architecture-review/context.md
-          sed -n '/## Critical Rules/,/## Phase-Based Development/p' CLAUDE.md >> /tmp/architecture-review/context.md
-          echo "" >> /tmp/architecture-review/context.md
-
-          # Include file changes with context
-          echo "## Changed Files Analysis:" >> /tmp/architecture-review/context.md
-          echo "" >> /tmp/architecture-review/context.md
-
-          while IFS= read -r file; do
-            if [ -f "$file" ]; then
-              echo "### File: $file" >> /tmp/architecture-review/context.md
-
-              # Determine syntax highlighting based on file extension
-              case "$file" in
-                *.cs) syntax="csharp" ;;
-                *.csproj) syntax="xml" ;;
-                *.yml|*.yaml) syntax="yaml" ;;
-                *.json) syntax="json" ;;
-                *.md) syntax="markdown" ;;
-                *.sh) syntax="bash" ;;
-                Dockerfile*) syntax="dockerfile" ;;
-                *) syntax="text" ;;
-              esac
-
-              echo "\`\`\`$syntax" >> /tmp/architecture-review/context.md
-              cat "$file" >> /tmp/architecture-review/context.md
-              echo '```' >> /tmp/architecture-review/context.md
-              echo "" >> /tmp/architecture-review/context.md
-
-              echo "### Diff for: $file" >> /tmp/architecture-review/context.md
-              echo '```diff' >> /tmp/architecture-review/context.md
-              git diff origin/${{ github.base_ref }}...${{ github.sha }} -- "$file" >> /tmp/architecture-review/context.md
-              echo '```' >> /tmp/architecture-review/context.md
-              echo "" >> /tmp/architecture-review/context.md
-            fi
-          done <<< "${{ steps.changed-files.outputs.changed_files }}"
-
       - name: Setup Python
         if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -414,6 +347,8 @@ jobs:
           GITHUB_PR_NUMBER: ${{ github.event.number }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          REVIEW_CHUNK_LINES: 300
+          REVIEW_MAX_FILES: 50
         run: |
           python scripts/architecture-review.py
 

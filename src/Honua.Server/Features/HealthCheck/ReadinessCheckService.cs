@@ -9,18 +9,12 @@ namespace Honua.Server.Features.HealthCheck;
 /// <summary>
 /// Service for orchestrating readiness health checks
 /// </summary>
-public sealed class ReadinessCheckService : IReadinessCheckService
+public sealed class ReadinessCheckService(
+    IDatabaseHealthChecker databaseHealthChecker,
+    ILogger<ReadinessCheckService> logger) : IReadinessCheckService
 {
-    private readonly IDatabaseHealthChecker _databaseHealthChecker;
-    private readonly ILogger<ReadinessCheckService> _logger;
-
-    public ReadinessCheckService(
-        IDatabaseHealthChecker databaseHealthChecker,
-        ILogger<ReadinessCheckService> logger)
-    {
-        _databaseHealthChecker = databaseHealthChecker;
-        _logger = logger;
-    }
+    private readonly IDatabaseHealthChecker _databaseHealthChecker = databaseHealthChecker;
+    private readonly ILogger<ReadinessCheckService> _logger = logger;
 
     /// <summary>
     /// Performs all readiness checks and returns the overall result
@@ -32,7 +26,7 @@ public sealed class ReadinessCheckService : IReadinessCheckService
         try
         {
             // Check database health
-            var isDatabaseHealthy = await _databaseHealthChecker.IsDatabaseHealthyAsync(cancellationToken);
+            bool isDatabaseHealthy = await _databaseHealthChecker.IsDatabaseHealthyAsync(cancellationToken);
 
             if (isDatabaseHealthy)
             {
