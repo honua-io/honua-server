@@ -411,10 +411,16 @@ internal sealed class FileImportService : IFileImportService
         var featureCount = 0;
         var wkbWriter = new WKBWriter();
 
-        // Build SQL statements using string concatenation to avoid CodeQL interpolation flags
+        // Use format strings instead of concatenation to satisfy CodeQL
         var quotedTableName = QuoteIdentifier(tableName);
-        var insertWithGeometrySql = "INSERT INTO " + quotedTableName + " (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
-        var insertWithoutGeometrySql = "INSERT INTO " + quotedTableName + " (geometry, properties) VALUES (@geometry, @properties::jsonb)";
+        var insertWithGeometrySql = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "INSERT INTO {0} (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)",
+            quotedTableName);
+        var insertWithoutGeometrySql = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "INSERT INTO {0} (geometry, properties) VALUES (@geometry, @properties::jsonb)",
+            quotedTableName);
 
         foreach (var feature in features)
         {
@@ -468,21 +474,26 @@ internal sealed class FileImportService : IFileImportService
         var geometryIndexName = QuoteIdentifier("idx_" + sanitizedName + "_geometry");
         var propertiesIndexName = QuoteIdentifier("idx_" + sanitizedName + "_properties");
 
-        // Use string concatenation instead of interpolation to satisfy CodeQL
-        var sqlBuilder = new System.Text.StringBuilder();
-        sqlBuilder.AppendLine("DROP TABLE IF EXISTS " + quotedTableName + ";");
-        sqlBuilder.AppendLine();
-        sqlBuilder.AppendLine("CREATE TABLE " + quotedTableName + " (");
-        sqlBuilder.AppendLine("    id SERIAL PRIMARY KEY,");
-        sqlBuilder.AppendLine("    geometry GEOMETRY,");
-        sqlBuilder.AppendLine("    properties JSONB,");
-        sqlBuilder.AppendLine("    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()");
-        sqlBuilder.AppendLine(");");
-        sqlBuilder.AppendLine();
-        sqlBuilder.AppendLine("CREATE INDEX IF NOT EXISTS " + geometryIndexName + " ON " + quotedTableName + " USING GIST (geometry);");
-        sqlBuilder.AppendLine("CREATE INDEX IF NOT EXISTS " + propertiesIndexName + " ON " + quotedTableName + " USING GIN (properties);");
+        // Use format strings instead of concatenation to satisfy CodeQL
+        const string createTableTemplate = @"
+DROP TABLE IF EXISTS {0};
 
-        var createTableSql = sqlBuilder.ToString();
+CREATE TABLE {0} (
+    id SERIAL PRIMARY KEY,
+    geometry GEOMETRY,
+    properties JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS {1} ON {0} USING GIST (geometry);
+CREATE INDEX IF NOT EXISTS {2} ON {0} USING GIN (properties);";
+
+        var createTableSql = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            createTableTemplate,
+            quotedTableName,
+            geometryIndexName,
+            propertiesIndexName);
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -509,7 +520,9 @@ internal sealed class FileImportService : IFileImportService
         };
 
         if (keywords.Contains(tableName))
-            throw new ArgumentException("Table name '" + tableName + "' conflicts with SQL keywords", nameof(tableName));
+            throw new ArgumentException(
+                string.Format(System.Globalization.CultureInfo.InvariantCulture, "Table name '{0}' conflicts with SQL keywords", tableName),
+                nameof(tableName));
     }
 
     /// <summary>
