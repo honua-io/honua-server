@@ -4,9 +4,12 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
@@ -18,7 +21,13 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture = new();
     private const int TestLayerId = 0; // Use existing test layer
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        // Replace the real services with test implementations
+        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
+        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
+        await _fixture.InitializeAsync();
+    }
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]

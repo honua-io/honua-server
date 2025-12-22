@@ -61,6 +61,19 @@ public interface IFeatureStore
     Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Generates an MVT (Mapbox Vector Tile) for the specified tile coordinates with custom tile options
+    /// </summary>
+    /// <param name="layerId">Layer identifier to generate tile from</param>
+    /// <param name="x">Tile X coordinate</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="z">Zoom level</param>
+    /// <param name="query">Optional query specification for filtering</param>
+    /// <param name="tileOptions">Tile generation options (extent, buffer, simplification, etc.)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>MVT tile data as byte array, null if no features in tile</returns>
+    Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query, Honua.Core.Features.Tiles.TileOptions tileOptions, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Queries features related to the specified source features through a relationship
     /// </summary>
     /// <param name="layerId">Source layer identifier</param>

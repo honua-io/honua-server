@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using NetTopologySuite.IO;
 
 namespace Honua.Core.Queries.Filters.Cql2;
@@ -94,11 +95,31 @@ public sealed class Cql2Parser
             return new BinaryExpression(expr, op, right);
         }
 
+        // Handle NOT LIKE
+        if (Check(Cql2TokenType.Not) && CheckNext(Cql2TokenType.Like))
+        {
+            Advance(); // Consume NOT
+            Advance(); // Consume LIKE
+            var right = ParsePrimaryExpression();
+            return new BinaryExpression(expr, BinaryOperator.NotLike, right);
+        }
+
         // Handle LIKE
         if (Match(Cql2TokenType.Like))
         {
             var right = ParsePrimaryExpression();
             return new BinaryExpression(expr, BinaryOperator.Like, right);
+        }
+
+        // Handle NOT IN
+        if (Check(Cql2TokenType.Not) && CheckNext(Cql2TokenType.In))
+        {
+            Advance(); // Consume NOT
+            Advance(); // Consume IN
+            Consume(Cql2TokenType.LeftParen, "Expected '(' after NOT IN");
+            var values = ParseValueList();
+            Consume(Cql2TokenType.RightParen, "Expected ')' after value list");
+            return new BinaryExpression(expr, BinaryOperator.NotIn, values);
         }
 
         // Handle IN
@@ -154,7 +175,7 @@ public sealed class Cql2Parser
         if (Current().Type == Cql2TokenType.Number)
         {
             var value = Advance().Value;
-            if (double.TryParse(value, out var number))
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
             {
                 return new Literal(number, LiteralType.Number);
             }
@@ -343,6 +364,13 @@ public sealed class Cql2Parser
         if (IsAtEnd())
             return false;
         return Current().Type == type;
+    }
+
+    private bool CheckNext(Cql2TokenType type)
+    {
+        if (_position + 1 >= _tokens.Count)
+            return false;
+        return _tokens[_position + 1].Type == type;
     }
 
     private Cql2Token Advance()

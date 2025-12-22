@@ -44,7 +44,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(property, _layer);
 
         // Assert
-        result.Sql.Should().Be("name");
+        result.Sql.Should().Be("\"name\"");
         result.Parameters.Should().BeEmpty();
     }
 
@@ -75,7 +75,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(comparison, _layer);
 
         // Assert
-        result.Sql.Should().Be("age >= @p0");
+        result.Sql.Should().Be("\"age\" >= @p0");
         result.Parameters.Should().HaveCount(1);
         result.Parameters[0].Should().Be(25);
     }
@@ -100,7 +100,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(andExpr, _layer);
 
         // Assert
-        result.Sql.Should().Be("(age >= @p0 AND name LIKE @p1)");
+        result.Sql.Should().Be("(\"age\" >= @p0 AND \"name\" LIKE @p1)");
         result.Parameters.Should().HaveCount(2);
         result.Parameters[0].Should().Be(18);
         result.Parameters[1].Should().Be("John%");
@@ -121,7 +121,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(notExpr, _layer);
 
         // Assert
-        result.Sql.Should().Be("NOT (active = @p0)");
+        result.Sql.Should().Be("NOT (\"active\" = @p0)");
         result.Parameters.Should().HaveCount(1);
         result.Parameters[0].Should().Be(true);
     }
@@ -136,7 +136,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(isNull, _layer);
 
         // Assert
-        result.Sql.Should().Be("description IS NULL");
+        result.Sql.Should().Be("\"description\" IS NULL");
         result.Parameters.Should().BeEmpty();
     }
 
@@ -150,7 +150,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(isNotNull, _layer);
 
         // Assert
-        result.Sql.Should().Be("description IS NOT NULL");
+        result.Sql.Should().Be("\"description\" IS NOT NULL");
         result.Parameters.Should().BeEmpty();
     }
 
@@ -173,7 +173,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(inClause, _layer);
 
         // Assert
-        result.Sql.Should().Be("status IN (@p0, @p1, @p2)");
+        result.Sql.Should().Be("\"status\" IN (@p0, @p1, @p2)");
         result.Parameters.Should().HaveCount(3);
         result.Parameters[0].Should().Be("active");
         result.Parameters[1].Should().Be("pending");
@@ -195,7 +195,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(spatial, _layer);
 
         // Assert
-        result.Sql.Should().Be("ST_Intersects(geom, ST_GeomFromWKB(@p0, @p1))");
+        result.Sql.Should().Be("ST_Intersects(\"geom\", ST_GeomFromWKB(@p0, @p1))");
         result.Parameters.Should().HaveCount(2);
         result.Parameters[0].Should().BeEquivalentTo(wkb);
         result.Parameters[1].Should().Be(4326);
@@ -293,7 +293,7 @@ public class SqlFilterTranslatorTests
         var result = _translator.Translate(orExpr, _layer);
 
         // Assert
-        result.Sql.Should().Be("((age >= @p0 AND name LIKE @p1) OR (description = @p2 AND active = @p3))");
+        result.Sql.Should().Be("((\"age\" >= @p0 AND \"name\" LIKE @p1) OR (\"description\" = @p2 AND \"active\" = @p3))");
         result.Parameters.Should().HaveCount(4);
         result.Parameters[0].Should().Be(18);
         result.Parameters[1].Should().Be("John%");

@@ -15,4 +15,12 @@ internal interface IGeometryConverter
     /// <returns>Geometry in WKB format</returns>
     /// <exception cref="ArgumentException">Thrown when geometry format is invalid</exception>
     byte[] ConvertEsriJsonToWkb(string esriJsonGeometry);
+
+    /// <summary>
+    /// Converts Well-Known Binary (WKB) geometry to GeoJSON format
+    /// </summary>
+    /// <param name="wkbGeometry">Geometry in WKB format</param>
+    /// <returns>Geometry in GeoJSON format as a JSON object</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    object? ConvertWkbToGeoJson(byte[] wkbGeometry);
 }

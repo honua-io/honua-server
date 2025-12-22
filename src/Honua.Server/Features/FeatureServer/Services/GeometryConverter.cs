@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -62,6 +63,38 @@ internal sealed class GeometryConverter : IGeometryConverter
         catch (JsonException)
         {
             throw new ArgumentException("Invalid JSON format in geometry parameter");
+        }
+    }
+
+    /// <summary>
+    /// Converts Well-Known Binary (WKB) geometry to GeoJSON format
+    /// </summary>
+    /// <param name="wkbGeometry">Geometry in WKB format</param>
+    /// <returns>Geometry in GeoJSON format as a JSON object</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    public object? ConvertWkbToGeoJson(byte[] wkbGeometry)
+    {
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+            return null;
+
+        try
+        {
+            var reader = new WKBReader();
+            var geometry = reader.Read(wkbGeometry);
+
+            if (geometry == null)
+                return null;
+
+            var writer = new GeoJsonWriter();
+            var geoJsonString = writer.Write(geometry);
+
+            // Parse the GeoJSON string to return as an object
+            using var jsonDoc = JsonDocument.Parse(geoJsonString);
+            return JsonSerializer.Deserialize<JsonElement>(jsonDoc.RootElement.GetRawText());
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
+        {
+            throw new ArgumentException($"Invalid WKB geometry format: {ex.Message}", ex);
         }
     }
 

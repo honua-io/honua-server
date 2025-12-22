@@ -1016,8 +1016,8 @@ public static class FeatureServerEndpoints
                 Where = where
             };
 
-            // Generate MVT tile
-            var mvtData = await featureStore.GetMvtTileAsync(layerId, x, y, z, query, cancellationToken);
+            // Generate MVT tile using TileOptions
+            var mvtData = await featureStore.GetMvtTileAsync(layerId, x, y, z, query, options, cancellationToken);
 
             if (mvtData == null || mvtData.Length == 0)
             {
@@ -1025,18 +1025,9 @@ public static class FeatureServerEndpoints
                 return Results.NoContent();
             }
 
-            // Return MVT with appropriate headers
-            var response = Results.Bytes(mvtData, "application/vnd.mapbox-vector-tile");
-
-            // Add cache control headers
-            var headers = new HeaderDictionary
-            {
-                ["Cache-Control"] = $"public, max-age={options.CacheMaxAge}",
-                ["Content-Encoding"] = "gzip", // MVT tiles are typically gzipped by PostGIS
-                ["Vary"] = "Accept-Encoding"
-            };
-
-            return response;
+            // Return MVT with appropriate content type
+            // Cache headers are automatically managed by Output Caching middleware via .CacheOutput("MvtTile")
+            return Results.Bytes(mvtData, "application/vnd.mapbox-vector-tile");
         }
         catch (ArgumentException ex)
         {

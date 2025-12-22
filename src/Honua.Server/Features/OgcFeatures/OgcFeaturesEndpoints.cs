@@ -17,10 +17,6 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 public static class OgcFeaturesEndpoints
 {
-    /// <summary>
-    /// Placeholder coordinates for simplified geometry conversion
-    /// </summary>
-    private static readonly double[] _placeholderCoordinates = { 0.0, 0.0 };
 
     /// <summary>
     /// Maps OGC API Features endpoints for Core and Conformance
@@ -234,17 +230,36 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features items request with optional CQL filtering
     /// </summary>
-    private static async Task<Results<Ok<FeatureCollection>, BadRequest<string>, NotFound>> HandleGetItems(
+    private static async Task<Results<Ok<FeatureCollection>, BadRequest<string>, NotFound, ProblemHttpResult>> HandleGetItems(
         string collectionId,
         string? filter,
         int? limit,
         int? offset,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        Honua.Server.Features.FeatureServer.Services.IGeometryConverter geometryConverter,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            // Validate limit and offset parameters
+            if (limit.HasValue && limit.Value <= 0)
+            {
+                return TypedResults.BadRequest("Limit must be a positive integer");
+            }
+
+            if (offset.HasValue && offset.Value < 0)
+            {
+                return TypedResults.BadRequest("Offset must be non-negative");
+            }
+
+            // Apply reasonable maximum limit to prevent unbounded queries
+            const int maxLimit = 10000;
+            if (limit.HasValue && limit.Value > maxLimit)
+            {
+                return TypedResults.BadRequest($"Limit cannot exceed {maxLimit}");
+            }
+
             // Parse collection ID to layer ID
             if (!int.TryParse(collectionId, out var layerId))
             {
@@ -273,37 +288,57 @@ public static class OgcFeaturesEndpoints
                 }
             }
 
-            // Convert filter to SqlFilterTranslator format
-            string? whereClause = null;
+            // Create feature query with proper parameterized filter support
+            FeatureQuery featureQuery;
             if (filterExpression != null)
             {
                 var translator = new SqlFilterTranslator();
                 var sqlFragment = translator.Translate(filterExpression, layer);
-                // For now, we need to adapt this to the existing WHERE clause format
-                // This is a temporary bridge until we fully integrate the new filter system
-                whereClause = sqlFragment.Sql;
-                // Note: Parameters would need to be handled properly in a full implementation
-            }
 
-            // Create feature query
-            var featureQuery = new FeatureQuery
+                // Use parameterized SQL filter to preserve parameters
+                featureQuery = new FeatureQuery
+                {
+                    SqlFilter = sqlFragment,
+                    Limit = limit ?? 1000, // Default limit per OGC spec
+                    Offset = offset
+                };
+            }
+            else
             {
-                Where = whereClause,
-                Limit = limit ?? 1000, // Default limit per OGC spec
-                Offset = offset
-            };
+                featureQuery = new FeatureQuery
+                {
+                    Limit = limit ?? 1000, // Default limit per OGC spec
+                    Offset = offset
+                };
+            }
 
             // Query features
             var result = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
 
             // Convert to GeoJSON FeatureCollection
-            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer);
+            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter);
 
             return TypedResults.Ok(featureCollection);
         }
+        catch (ArgumentException ex)
+        {
+            // Client errors - invalid parameters, filters, etc.
+            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Client errors - invalid operations like layer not found
+            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+        }
         catch (Exception ex)
         {
-            return TypedResults.BadRequest($"Error processing request: {ex.Message}");
+            // Server errors - log details but don't expose to client
+            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error processing OGC features request"))
+            _ = ex; // Suppress unused variable warning until logging is implemented
+            return TypedResults.Problem(
+                title: "Internal server error",
+                detail: "An error occurred while processing the request.",
+                statusCode: 500);
         }
     }
 
@@ -312,17 +347,14 @@ public static class OgcFeaturesEndpoints
     /// </summary>
     private static FeatureCollection ConvertToGeoJsonFeatureCollection(
         QueryResult<Feature> queryResult,
-        Honua.Core.Features.Catalog.Domain.LayerDefinition layer)
+        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
+        Honua.Server.Features.FeatureServer.Services.IGeometryConverter geometryConverter)
     {
-        // This is a simplified implementation
-        // In a full implementation, this would properly convert geometries and attributes
-        // For now, return a basic structure that matches the OGC API Features spec
-
         var features = queryResult.Items.Select(feature => new
         {
             type = "Feature",
             id = feature.Id,
-            geometry = feature.Geometry != null ? new { type = "Point", coordinates = _placeholderCoordinates } : null,
+            geometry = ConvertFeatureGeometry(feature.Geometry, geometryConverter),
             properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
         }).ToArray();
 
@@ -333,6 +365,26 @@ public static class OgcFeaturesEndpoints
             NumberMatched = queryResult.TotalCount,
             NumberReturned = queryResult.Items.Length
         };
+    }
+
+    /// <summary>
+    /// Converts a feature's WKB geometry to GeoJSON format
+    /// </summary>
+    private static object? ConvertFeatureGeometry(byte[]? wkbGeometry, Honua.Server.Features.FeatureServer.Services.IGeometryConverter geometryConverter)
+    {
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+            return null;
+
+        try
+        {
+            return geometryConverter.ConvertWkbToGeoJson(wkbGeometry);
+        }
+        catch (ArgumentException)
+        {
+            // If geometry conversion fails, return null rather than throwing
+            // This allows the feature to be returned without geometry
+            return null;
+        }
     }
 
     /// <summary>

@@ -93,8 +93,9 @@ public sealed class SqlFilterTranslator
         var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException($"Field '{property.PropertyName}' not found in layer '{layer.Name}'");
 
-        // Use exact field name from layer definition for case sensitivity
-        return field.Name;
+        // Quote field name to handle reserved words and mixed-case names
+        // PostgreSQL uses double quotes for identifiers
+        return $"\"{field.Name}\"";
     }
 
     private string TranslateLiteral(Literal literal)
@@ -106,7 +107,8 @@ public sealed class SqlFilterTranslator
 
     private string TranslateSpatial(SpatialPredicate spatial, LayerDefinition layer)
     {
-        var geomColumn = layer.GeometryField?.Name ?? "geom";
+        var geomColumnName = layer.GeometryField?.Name ?? "geom";
+        var geomColumn = $"\"{geomColumnName}\""; // Quote geometry column name
         var function = spatial.Operator switch
         {
             SpatialOperator.Intersects => "ST_Intersects",
