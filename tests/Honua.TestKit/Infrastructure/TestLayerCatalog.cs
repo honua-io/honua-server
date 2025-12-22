@@ -12,7 +12,7 @@ namespace Honua.TestKit.Infrastructure;
 /// for FeatureServer endpoint tests. This is a minimal implementation
 /// to make tests pass while the actual PostgreSQL implementation is being fixed.
 /// </summary>
-public sealed class TestLayerCatalog : ILayerCatalog
+internal sealed class TestLayerCatalog : ILayerCatalog
 {
     private static readonly string[] _supportedFormats = new[] { "JSON", "GeoJSON" };
     private static readonly string[] _capabilities = new[] { "Query", "Extract" };
