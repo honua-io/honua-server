@@ -411,10 +411,10 @@ internal sealed class FileImportService : IFileImportService
         var featureCount = 0;
         var wkbWriter = new WKBWriter();
 
-        // Build SQL using safe concatenation to satisfy CodeQL security analysis
-        var quotedTableName = QuoteIdentifier(tableName);
-        var insertWithGeometrySql = "INSERT INTO " + quotedTableName + " (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
-        var insertWithoutGeometrySql = "INSERT INTO " + quotedTableName + " (geometry, properties) VALUES (@geometry, @properties::jsonb)";
+        // Build SQL using safe table identifier to satisfy CodeQL security analysis
+        var safeTableName = CreateSafeTableIdentifier(tableName);
+        var insertWithGeometrySql = "INSERT INTO " + safeTableName + " (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB(@wkb, @sourceSrid), @targetSrid), @properties::jsonb)";
+        var insertWithoutGeometrySql = "INSERT INTO " + safeTableName + " (geometry, properties) VALUES (@geometry, @properties::jsonb)";
 
         foreach (var feature in features)
         {
@@ -460,24 +460,21 @@ internal sealed class FileImportService : IFileImportService
     /// </summary>
     private static async Task CreateTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
-        // Validate table name before any SQL operations
-        ValidateTableName(tableName);
-
-        var quotedTableName = QuoteIdentifier(tableName);
+        // Build SQL using safe table identifier to satisfy CodeQL security analysis
+        var safeTableName = CreateSafeTableIdentifier(tableName);
         var sanitizedName = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
         var geometryIndexName = QuoteIdentifier("idx_" + sanitizedName + "_geometry");
         var propertiesIndexName = QuoteIdentifier("idx_" + sanitizedName + "_properties");
 
-        // Build SQL using safe concatenation to satisfy CodeQL security analysis
-        var createTableSql = "DROP TABLE IF EXISTS " + quotedTableName + ";" +
-                             "CREATE TABLE " + quotedTableName + " (" +
+        var createTableSql = "DROP TABLE IF EXISTS " + safeTableName + ";" +
+                             "CREATE TABLE " + safeTableName + " (" +
                              "    id SERIAL PRIMARY KEY," +
                              "    geometry GEOMETRY," +
                              "    properties JSONB," +
                              "    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()" +
                              ");" +
-                             "CREATE INDEX IF NOT EXISTS " + geometryIndexName + " ON " + quotedTableName + " USING GIST (geometry);" +
-                             "CREATE INDEX IF NOT EXISTS " + propertiesIndexName + " ON " + quotedTableName + " USING GIN (properties);";
+                             "CREATE INDEX IF NOT EXISTS " + geometryIndexName + " ON " + safeTableName + " USING GIST (geometry);" +
+                             "CREATE INDEX IF NOT EXISTS " + propertiesIndexName + " ON " + safeTableName + " USING GIN (properties);";
 
         using var command = new NpgsqlCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -507,6 +504,25 @@ internal sealed class FileImportService : IFileImportService
             throw new ArgumentException(
                 string.Format(System.Globalization.CultureInfo.InvariantCulture, "Table name '{0}' conflicts with SQL keywords", tableName),
                 nameof(tableName));
+    }
+
+    /// <summary>
+    /// Creates a safe, validated table identifier for SQL operations.
+    /// This method ensures the table name is secure before any SQL construction.
+    /// </summary>
+    private static string CreateSafeTableIdentifier(string tableName)
+    {
+        // Validate the table name first
+        ValidateTableName(tableName);
+
+        // Create a sanitized version using only safe characters
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
+
+        // If the sanitized name is different, use the sanitized version
+        var safeName = sanitized;
+
+        // Quote the identifier using PostgreSQL rules
+        return "\"" + safeName.Replace("\"", "\"\"") + "\"";
     }
 
     /// <summary>
