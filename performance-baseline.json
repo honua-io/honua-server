@@ -1,0 +1,149 @@
+{
+  "Version": "1.0",
+  "Created": "2024-12-21",
+  "Description": "Performance baseline for Honua Server query endpoints",
+  "Environment": {
+    "Runtime": ".NET 10.0",
+    "OS": "Ubuntu 22.04",
+    "Hardware": "GitHub Actions Standard (2 cores, 7GB RAM)"
+  },
+  "Benchmarks": [
+    {
+      "Method": "SimpleWhereQuery",
+      "Type": "QueryBenchmarks",
+      "Statistics": {
+        "Mean": 45000000.0,
+        "StandardError": 2000000.0,
+        "Percentile95": 65000000.0,
+        "Percentile99": 85000000.0
+      },
+      "Memory": {
+        "AllocatedBytes": 1024,
+        "Gen0Collections": 0,
+        "Gen1Collections": 0,
+        "Gen2Collections": 0
+      }
+    },
+    {
+      "Method": "SpatialBboxQuery",
+      "Type": "QueryBenchmarks",
+      "Statistics": {
+        "Mean": 48000000.0,
+        "StandardError": 2500000.0,
+        "Percentile95": 70000000.0,
+        "Percentile99": 90000000.0
+      },
+      "Memory": {
+        "AllocatedBytes": 2048,
+        "Gen0Collections": 0,
+        "Gen1Collections": 0,
+        "Gen2Collections": 0
+      }
+    },
+    {
+      "Method": "CombinedWhereAndSpatialQuery",
+      "Type": "QueryBenchmarks",
+      "Statistics": {
+        "Mean": 75000000.0,
+        "StandardError": 3000000.0,
+        "Percentile95": 110000000.0,
+        "Percentile99": 140000000.0
+      },
+      "Memory": {
+        "AllocatedBytes": 3072,
+        "Gen0Collections": 0,
+        "Gen1Collections": 0,
+        "Gen2Collections": 0
+      }
+    },
+    {
+      "Method": "PaginatedQuery",
+      "Type": "QueryBenchmarks",
+      "Statistics": {
+        "Mean": 18000000.0,
+        "StandardError": 1000000.0,
+        "Percentile95": 25000000.0,
+        "Percentile99": 35000000.0
+      },
+      "Memory": {
+        "AllocatedBytes": 512,
+        "Gen0Collections": 0,
+        "Gen1Collections": 0,
+        "Gen2Collections": 0
+      }
+    },
+    {
+      "Method": "LargeResultSet",
+      "Type": "QueryBenchmarks",
+      "Statistics": {
+        "Mean": 140000000.0,
+        "StandardError": 5000000.0,
+        "Percentile95": 200000000.0,
+        "Percentile99": 250000000.0
+      },
+      "Memory": {
+        "AllocatedBytes": 51200,
+        "Gen0Collections": 1,
+        "Gen1Collections": 0,
+        "Gen2Collections": 0
+      }
+    }
+  ],
+  "LoadTests": [
+    {
+      "TestName": "SimpleQueryThroughput",
+      "RequestsPerSecond": 1200.0,
+      "AverageLatencyMs": 42.0,
+      "P95LatencyMs": 85.0,
+      "P99LatencyMs": 120.0,
+      "ErrorRatePercent": 0.0
+    },
+    {
+      "TestName": "SpatialQueryThroughput",
+      "RequestsPerSecond": 650.0,
+      "AverageLatencyMs": 75.0,
+      "P95LatencyMs": 145.0,
+      "P99LatencyMs": 210.0,
+      "ErrorRatePercent": 0.0
+    },
+    {
+      "TestName": "MixedWorkloadThroughput",
+      "RequestsPerSecond": 900.0,
+      "AverageLatencyMs": 55.0,
+      "P95LatencyMs": 110.0,
+      "P99LatencyMs": 165.0,
+      "ErrorRatePercent": 0.0
+    }
+  ],
+  "MemoryTests": [
+    {
+      "TestName": "Query_Soak_10k",
+      "OperationCount": 10000,
+      "MemoryDeltaBytes": 15728640,
+      "MemoryDeltaMB": 15.0,
+      "OperationsPerSecond": 800.0,
+      "IsMemoryLeakSuspected": false
+    },
+    {
+      "TestName": "Mixed_Soak_5k",
+      "OperationCount": 5000,
+      "MemoryDeltaBytes": 10485760,
+      "MemoryDeltaMB": 10.0,
+      "OperationsPerSecond": 650.0,
+      "IsMemoryLeakSuspected": false
+    },
+    {
+      "TestName": "ConnectionPool_Soak_2k",
+      "OperationCount": 2000,
+      "MemoryDeltaBytes": 3145728,
+      "MemoryDeltaMB": 3.0,
+      "OperationsPerSecond": 500.0,
+      "IsMemoryLeakSuspected": false
+    }
+  ],
+  "Thresholds": {
+    "MaxLatencyRegressionPercent": 10.0,
+    "MaxThroughputRegressionPercent": 10.0,
+    "MaxMemoryRegressionMB": 10.0
+  }
+}

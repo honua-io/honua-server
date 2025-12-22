@@ -25,6 +25,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Architecture.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Tests", "tests\Honua.Core.Tests\Honua.Core.Tests.csproj", "{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", "{66320409-64EC-F7C5-3DEF-65E7510DAAD1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Benchmarks", "benchmarks\Honua.Benchmarks\Honua.Benchmarks.csproj", "{F9F24087-26D9-481F-83B3-402D67B926EE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -143,6 +147,18 @@ Global
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}.Release|x64.Build.0 = Release|Any CPU
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}.Release|x86.ActiveCfg = Release|Any CPU
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}.Release|x86.Build.0 = Release|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x64.Build.0 = Debug|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x86.Build.0 = Debug|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x64.ActiveCfg = Release|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x64.Build.0 = Release|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x86.ActiveCfg = Release|Any CPU
+		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -150,5 +166,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{15E10F2A-5805-4E70-ADE1-FEE7DA86AB54} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{F9F24087-26D9-481F-83B3-402D67B926EE} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
 	EndGlobalSection
 EndGlobal
