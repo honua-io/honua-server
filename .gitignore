@@ -224,6 +224,9 @@ appsettings.Development.json
 .serena/
 .claude/plans/
 
+# Benchmark artifacts
+benchmarks/**/BenchmarkDotNet.Artifacts/
+
 # Aspire
 .aspire/
 

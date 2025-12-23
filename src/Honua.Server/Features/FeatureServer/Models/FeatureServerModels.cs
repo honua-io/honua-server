@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Server.Features.Infrastructure.Models;
+// using Honua.Server.Features.OData.Models; // Temporarily disabled for Issue 46 performance testing
 
 namespace Honua.Server.Features.FeatureServer.Models;
 
@@ -1086,6 +1087,16 @@ public class EditError
 [JsonSerializable(typeof(UpdateAttachmentResponse))]
 [JsonSerializable(typeof(DeleteAttachmentResult))]
 [JsonSerializable(typeof(DeleteAttachmentsResponse))]
+// OData v4 types (temporarily disabled for Issue 46 performance testing)
+// [JsonSerializable(typeof(ODataServiceRoot))]
+// [JsonSerializable(typeof(ODataEntitySetInfo))]
+// [JsonSerializable(typeof(ODataEntitySetResponse))]
+// [JsonSerializable(typeof(ODataSingleEntityResponse))]
+// [JsonSerializable(typeof(ODataErrorResponse))]
+// [JsonSerializable(typeof(ODataErrorDetails))]
+// [JsonSerializable(typeof(ODataFeatureEntity))]
+// [JsonSerializable(typeof(IReadOnlyList<ODataEntitySetInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<object>))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]

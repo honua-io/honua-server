@@ -450,7 +450,7 @@ public static class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -501,7 +501,7 @@ public static class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -1042,5 +1042,22 @@ public static class FeatureServerEndpoints
                 statusCode: 500,
                 title: "Tile generation failed");
         }
+    }
+
+    /// <summary>
+    /// Gets the timeout-aware cancellation token from middleware, falling back to request cancellation token
+    /// </summary>
+    /// <param name="context">HTTP context</param>
+    /// <returns>Cancellation token that respects timeout limits</returns>
+    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    {
+        // Try to get the timeout token from LimitsEnforcementMiddleware
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            return timeoutToken;
+        }
+
+        // Fallback to request cancellation token
+        return context.RequestAborted;
     }
 }
