@@ -4,18 +4,18 @@
 namespace Honua.Server.Features.Infrastructure.Models;
 
 /// <summary>
-/// Represents an Esri-compatible API error response
-/// Follows ArcGIS Server error response format: { "error": { "code": number, "message": "string", "details": [] } }
+/// Represents a GeoServices-compatible API error response
+/// Follows GeoServices REST error response format: { "error": { "code": number, "message": "string", "details": [] } }
 /// </summary>
 public sealed class ApiErrorResponse
 {
-    public required EsriError Error { get; init; }
+    public required GeoServicesError Error { get; init; }
 }
 
 /// <summary>
-/// Represents the error details in Esri-compatible format
+/// Represents the error details in GeoServices-compatible format
 /// </summary>
-public sealed class EsriError
+public sealed class GeoServicesError
 {
     public required int Code { get; init; }
 

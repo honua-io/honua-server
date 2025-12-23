@@ -8,7 +8,7 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ApiErrorResponse))]
-[JsonSerializable(typeof(EsriError))]
+[JsonSerializable(typeof(GeoServicesError))]
 internal sealed partial class LimitsEnforcementJsonContext : JsonSerializerContext
 {
 }

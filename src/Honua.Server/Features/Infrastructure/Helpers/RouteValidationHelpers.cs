@@ -80,7 +80,7 @@ internal static class RouteValidationHelpers
     {
         var errorResponse = new ApiErrorResponse
         {
-            Error = new EsriError
+            Error = new GeoServicesError
             {
                 Code = statusCode,
                 Message = message,

@@ -116,6 +116,11 @@ public static class RelationTypes
     public const string Data = "data";
 
     /// <summary>
+    /// Refers to the items (features) of a collection
+    /// </summary>
+    public const string Items = "items";
+
+    /// <summary>
     /// Indicates the link target provides service documentation
     /// </summary>
     public const string ServiceDoc = "service-doc";
@@ -134,6 +139,11 @@ public static class RelationTypes
     /// Indicates the link target provides collections metadata
     /// </summary>
     public const string Collections = "data";
+
+    /// <summary>
+    /// Indicates the link target provides the collection containing a feature
+    /// </summary>
+    public const string Collection = "collection";
 
     /// <summary>
     /// Indicates the link target provides next page of results
@@ -273,7 +283,13 @@ public sealed class RawJsonStringConverter : JsonConverter<string?>
 {
     public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return reader.GetString();
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.ParseValue(ref reader);
+        return document.RootElement.GetRawText();
     }
 
     public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
@@ -337,6 +353,12 @@ public sealed record GeoJsonFeature
     /// </summary>
     [JsonPropertyName("properties")]
     public Dictionary<string, object?> Properties { get; init; } = new();
+
+    /// <summary>
+    /// Links to related resources (self, collection, etc.)
+    /// </summary>
+    [JsonPropertyName("links")]
+    public ImmutableArray<Link>? Links { get; init; }
 }
 
 /// <summary>

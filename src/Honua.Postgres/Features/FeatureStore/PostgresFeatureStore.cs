@@ -297,16 +297,16 @@ internal sealed class PostgresFeatureStore : IFeatureStore
                            System.Linq.Enumerable.Any(updateResults, r => !r.IsSuccess) ||
                            System.Linq.Enumerable.Any(deleteResults, r => !r.IsSuccess);
 
-            // Handle rollback behavior based on Esri specification
+            // Handle rollback behavior based on GeoServices specification
             if (hasErrors && editBatch.RollbackOnFailure)
             {
-                // Esri behavior: rollback entire transaction on any failure
+                // GeoServices behavior: rollback entire transaction on any failure
                 await transaction.RollbackAsync(cancellationToken);
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
             else if (hasErrors && !editBatch.RollbackOnFailure)
             {
-                // Esri default behavior: commit successful operations, ignore failures
+                // GeoServices default behavior: commit successful operations, ignore failures
                 // Individual operations that failed are already tracked in the results
                 // Note: This implementation processes operations sequentially within the transaction,
                 // so we commit what succeeded and the failed operations are already excluded
@@ -471,7 +471,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             kvp => ConvertJsonElementToObject(kvp.Value)
         );
 
-        // Inject objectid into attributes for Esri FeatureServer compatibility
+        // Inject objectid into attributes for GeoServices FeatureServer compatibility
         // This ensures consistent behavior with TestFeatureStore and proper response formatting
         convertedAttributes["objectid"] = id;
 
@@ -488,6 +488,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
+        AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
         if (query.Limit.HasValue)
@@ -510,6 +511,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
+        AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
         return new ParameterizedQuery(sql.ToString(), parameters);
@@ -569,6 +571,7 @@ WHERE layer_id = $1");
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
+        AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
         if (query.Limit.HasValue)
@@ -598,6 +601,7 @@ WHERE layer_id = $1");
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
+        AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
 
         sql.Append(") AS extent_query");
@@ -875,6 +879,60 @@ WHERE layer_id = $1");
         return false;
     }
 
+    private static void AppendTemporalFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
+    {
+        if (query.TemporalFilter is null)
+        {
+            return;
+        }
+
+        var filter = query.TemporalFilter.Value;
+        var fieldName = filter.PropertyName;
+        var valueExpression = filter.PropertyType switch
+        {
+            TemporalPropertyType.Date => $"NULLIF(attributes->>'{fieldName}', '')::date",
+            _ => $"NULLIF(attributes->>'{fieldName}', '')::timestamptz"
+        };
+
+        string? predicate = null;
+
+        if (filter.Start.HasValue && filter.End.HasValue)
+        {
+            var startIndex = paramIndex++;
+            var endIndex = paramIndex++;
+            parameters.Add(filter.Start.Value.UtcDateTime);
+            parameters.Add(filter.End.Value.UtcDateTime);
+
+            var startExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${startIndex}::date" : $"${startIndex}";
+            var endExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${endIndex}::date" : $"${endIndex}";
+            predicate = $"{valueExpression} >= {startExpr} AND {valueExpression} <= {endExpr}";
+        }
+        else if (filter.Start.HasValue)
+        {
+            var startIndex = paramIndex++;
+            parameters.Add(filter.Start.Value.UtcDateTime);
+
+            var startExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${startIndex}::date" : $"${startIndex}";
+            predicate = $"{valueExpression} >= {startExpr}";
+        }
+        else if (filter.End.HasValue)
+        {
+            var endIndex = paramIndex++;
+            parameters.Add(filter.End.Value.UtcDateTime);
+
+            var endExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${endIndex}::date" : $"${endIndex}";
+            predicate = $"{valueExpression} <= {endExpr}";
+        }
+
+        if (predicate is null)
+        {
+            return;
+        }
+
+        var nullCheck = $"NULLIF(attributes->>'{fieldName}', '') IS NULL";
+        sql.Append(CultureInfo.InvariantCulture, $" AND ({predicate} OR {nullCheck})");
+    }
+
     private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
     {
         if (query.SpatialFilter.HasValue)
@@ -888,7 +946,15 @@ WHERE layer_id = $1");
                 _ => "ST_Intersects"
             };
 
-            sql.Append(CultureInfo.InvariantCulture, $" AND {spatialFunction}(geometry, ST_GeomFromWKB(${paramIndex++}))");
+            var spatialPredicate = $"{spatialFunction}(geometry, ST_GeomFromWKB(${paramIndex++}))";
+            if (query.IncludeNullGeometry)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" AND ({spatialPredicate} OR geometry IS NULL)");
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" AND {spatialPredicate}");
+            }
         }
     }
 

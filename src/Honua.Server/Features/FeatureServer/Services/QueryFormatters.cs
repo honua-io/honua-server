@@ -47,20 +47,20 @@ public sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "geojson" => FormatAsGeoJson(result, layer, returnGeometry, outFields),
-            "json" or _ => FormatAsEsriJson(result, layer, returnGeometry, outFields)
+            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outFields)
         };
     }
 
     /// <summary>
-    /// Formats result as Esri JSON
+    /// Formats result as GeoServices JSON
     /// </summary>
-    private static (object response, string contentType) FormatAsEsriJson(
+    private static (object response, string contentType) FormatAsGeoServicesJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
         string[]? outFields)
     {
-        EsriFeature[] features = result.Items.Select(f => ConvertToEsriFeature(f, returnGeometry, outFields)).ToArray();
+        GeoServicesFeature[] features = result.Items.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields)).ToArray();
 
         var response = new QueryResponse
         {
@@ -98,16 +98,16 @@ public sealed class QueryFormatter : IQueryFormatter
     }
 
     /// <summary>
-    /// Converts a Feature to Esri feature format
+    /// Converts a Feature to GeoServices feature format
     /// </summary>
-    private static EsriFeature ConvertToEsriFeature(Feature feature, bool returnGeometry, string[]? outFields)
+    private static GeoServicesFeature ConvertToGeoServicesFeature(Feature feature, bool returnGeometry, string[]? outFields)
     {
         Dictionary<string, object?> attributes = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
 
-        return new EsriFeature
+        return new GeoServicesFeature
         {
             Attributes = attributes,
-            Geometry = returnGeometry ? ConvertGeometryToEsriFormat(feature.Geometry) : null
+            Geometry = returnGeometry ? ConvertGeometryToGeoServicesFormat(feature.Geometry) : null
         };
     }
 
@@ -161,7 +161,7 @@ public sealed class QueryFormatter : IQueryFormatter
 
         var filtered = new Dictionary<string, object?>();
 
-        // Always include objectid field for Esri compatibility
+        // Always include objectid field for GeoServices compatibility
         if (attributes.TryGetValue("objectid", out object? objectIdValue))
             filtered["objectid"] = objectIdValue;
 
@@ -175,11 +175,11 @@ public sealed class QueryFormatter : IQueryFormatter
     }
 
     /// <summary>
-    /// Converts WKB geometry to Esri JSON format.
+    /// Converts WKB geometry to GeoServices JSON format.
     /// Currently supports point geometries with improved endianness and SRID detection.
     /// TODO: Implement full geometry support using NetTopologySuite for production use.
     /// </summary>
-    private static EsriGeometry? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
+    private static GeoServicesGeometry? ConvertGeometryToGeoServicesFormat(byte[]? wkbGeometry)
     {
         if (wkbGeometry == null || wkbGeometry.Length < 21)
             return null;
@@ -221,11 +221,11 @@ public sealed class QueryFormatter : IQueryFormatter
         // For now, use Web Mercator (3857) if coordinates suggest projected data, otherwise WGS84 (4326)
         int srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
 
-        return new EsriGeometry
+        return new GeoServicesGeometry
         {
             X = x,
             Y = y,
-            SpatialReference = new EsriSpatialReference { Wkid = srid }
+            SpatialReference = new GeoServicesSpatialReference { Wkid = srid }
         };
     }
 

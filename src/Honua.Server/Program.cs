@@ -365,6 +365,7 @@ static void ConfigureOutputCaching(IServiceCollection services)
         options.AddPolicy("OgcLandingPage", policy =>
         {
             policy.Expire(TimeSpan.FromMinutes(30));
+            policy.SetVaryByQuery("f");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -372,6 +373,7 @@ static void ConfigureOutputCaching(IServiceCollection services)
         options.AddPolicy("OgcConformance", policy =>
         {
             policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByQuery("f");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -379,6 +381,7 @@ static void ConfigureOutputCaching(IServiceCollection services)
         options.AddPolicy("OgcCollections", policy =>
         {
             policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByQuery("f");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -387,6 +390,14 @@ static void ConfigureOutputCaching(IServiceCollection services)
         {
             policy.Expire(TimeSpan.FromMinutes(10));
             policy.SetVaryByRouteValue("collectionId");
+            policy.SetVaryByQuery("f");
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
+        options.AddPolicy("OgcOpenApi", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByQuery("f");
             policy.Tag("ogc-metadata", "metadata");
         });
 

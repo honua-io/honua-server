@@ -6,18 +6,18 @@ using Honua.Server.Features.Infrastructure.Middleware;
 namespace Honua.Server.Features.Infrastructure.Models;
 
 /// <summary>
-/// Helper methods for creating Esri-compatible error responses
+/// Helper methods for creating GeoServices-compatible error responses
 /// </summary>
-public static class EsriErrorHelpers
+public static class GeoServicesErrorHelpers
 {
     /// <summary>
-    /// Creates an Esri-compatible 404 Not Found error response
+    /// Creates a GeoServices-compatible 404 Not Found error response
     /// </summary>
     public static IResult CreateNotFoundError(string message)
     {
         var errorResponse = new ApiErrorResponse
         {
-            Error = new EsriError
+            Error = new GeoServicesError
             {
                 Code = 404,
                 Message = message,
@@ -28,13 +28,13 @@ public static class EsriErrorHelpers
     }
 
     /// <summary>
-    /// Creates an Esri-compatible 400 Bad Request error response
+    /// Creates a GeoServices-compatible 400 Bad Request error response
     /// </summary>
     public static IResult CreateBadRequestError(string message, string[]? details = null)
     {
         var errorResponse = new ApiErrorResponse
         {
-            Error = new EsriError
+            Error = new GeoServicesError
             {
                 Code = 400,
                 Message = message,
@@ -45,13 +45,13 @@ public static class EsriErrorHelpers
     }
 
     /// <summary>
-    /// Creates an Esri-compatible 500 Internal Server Error response
+    /// Creates a GeoServices-compatible 500 Internal Server Error response
     /// </summary>
     public static IResult CreateInternalServerError(string message, string[]? details = null)
     {
         var errorResponse = new ApiErrorResponse
         {
-            Error = new EsriError
+            Error = new GeoServicesError
             {
                 Code = 500,
                 Message = message,

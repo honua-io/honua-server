@@ -167,7 +167,7 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             FeatureServerResponse response = MapServiceToResponse(service, limits);
@@ -180,7 +180,7 @@ public static class FeatureServerEndpoints
         catch (Exception ex)
         {
             FeatureServerLog.ServiceMetadataFailed(logger, serviceId, ex.Message, ex);
-            return EsriErrorHelpers.CreateInternalServerError("Service metadata retrieval failed", [ex.Message]);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Service metadata retrieval failed", [ex.Message]);
         }
     }
 
@@ -240,7 +240,7 @@ public static class FeatureServerEndpoints
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(logger, serviceId);
-                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             // Find the layer in the service
@@ -248,7 +248,7 @@ public static class FeatureServerEndpoints
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
-                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
             LayerResponse response = MapLayerToResponse(layer, limits);
@@ -261,7 +261,7 @@ public static class FeatureServerEndpoints
         catch (Exception ex)
         {
             FeatureServerLog.LayerMetadataFailed(logger, serviceId, layerId, ex.Message, ex);
-            return EsriErrorHelpers.CreateInternalServerError("Layer metadata retrieval failed", [ex.Message]);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Layer metadata retrieval failed", [ex.Message]);
         }
     }
 
@@ -357,16 +357,16 @@ public static class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Maps FieldDefinition to EsriFieldInfo
+    /// Maps FieldDefinition to GeoServicesFieldInfo
     /// </summary>
-    private static EsriFieldInfo MapFieldInfo(FieldDefinition field)
+    private static GeoServicesFieldInfo MapFieldInfo(FieldDefinition field)
     {
-        (string? esriType, string? sqlType, int? length) = MapFieldType(field.Type);
+        (string? geoServicesType, string? sqlType, int? length) = MapFieldType(field.Type);
 
-        return new EsriFieldInfo
+        return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = esriType,
+            Type = geoServicesType,
             Alias = field.Name, // TODO: Support field aliases
             SqlType = sqlType,
             Length = length,
@@ -377,7 +377,7 @@ public static class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Maps GeometryType to Esri geometry type string
+    /// Maps GeometryType to GeoServices geometry type string
     /// </summary>
     private static string MapGeometryType(GeometryType geometryType)
     {
@@ -396,9 +396,9 @@ public static class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Maps FieldType to Esri field type, SQL type, and length
+    /// Maps FieldType to GeoServices field type, SQL type, and length
     /// </summary>
-    private static (string esriType, string sqlType, int? length) MapFieldType(FieldType fieldType)
+    private static (string geoServicesType, string sqlType, int? length) MapFieldType(FieldType fieldType)
     {
         return fieldType switch
         {

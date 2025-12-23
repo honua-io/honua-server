@@ -105,7 +105,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Fields common across all layers
     /// </summary>
-    public EsriFieldInfo[] Fields { get; init; } = [];
+    public GeoServicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
     /// Relationships between layers (typically empty for basic implementation)
@@ -156,7 +156,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Field definitions for the layer
     /// </summary>
-    public required EsriFieldInfo[] Fields { get; init; }
+    public required GeoServicesFieldInfo[] Fields { get; init; }
 
     /// <summary>
     /// Layer extent
@@ -366,7 +366,7 @@ public sealed class LayerInfo
 }
 
 /// <summary>
-/// Spatial reference information in Esri format
+/// Spatial reference information in GeoServices format
 /// </summary>
 public sealed class SpatialReferenceInfo
 {
@@ -428,9 +428,9 @@ public sealed class ExtentInfo
 }
 
 /// <summary>
-/// Field definition in Esri format
+/// Field definition in GeoServices format
 /// </summary>
-public sealed class EsriFieldInfo
+public sealed class GeoServicesFieldInfo
 {
     /// <summary>
     /// Field name
@@ -438,7 +438,7 @@ public sealed class EsriFieldInfo
     public required string Name { get; init; }
 
     /// <summary>
-    /// Field type in Esri format
+    /// Field type in GeoServices format
     /// </summary>
     public required string Type { get; init; }
 
@@ -511,7 +511,7 @@ public sealed class QueryResponse
     /// <summary>
     /// Features returned by the query
     /// </summary>
-    public EsriFeature[] Features { get; init; } = [];
+    public GeoServicesFeature[] Features { get; init; } = [];
 
     /// <summary>
     /// Whether the transfer limit was exceeded
@@ -520,9 +520,9 @@ public sealed class QueryResponse
 }
 
 /// <summary>
-/// Esri feature representation
+/// GeoServices feature representation
 /// </summary>
-public sealed class EsriFeature
+public sealed class GeoServicesFeature
 {
     /// <summary>
     /// Feature attributes as key-value pairs
@@ -532,13 +532,13 @@ public sealed class EsriFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
-    public EsriGeometry? Geometry { get; init; }
+    public GeoServicesGeometry? Geometry { get; init; }
 }
 
 /// <summary>
-/// Esri geometry representation (point)
+/// GeoServices geometry representation (point)
 /// </summary>
-public sealed class EsriGeometry
+public sealed class GeoServicesGeometry
 {
     /// <summary>
     /// X coordinate (longitude)
@@ -553,13 +553,13 @@ public sealed class EsriGeometry
     /// <summary>
     /// Spatial reference information
     /// </summary>
-    public EsriSpatialReference? SpatialReference { get; init; }
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
 }
 
 /// <summary>
-/// Esri spatial reference representation
+/// GeoServices spatial reference representation
 /// </summary>
-public sealed class EsriSpatialReference
+public sealed class GeoServicesSpatialReference
 {
     /// <summary>
     /// Well-known ID for the spatial reference
@@ -603,7 +603,7 @@ public sealed class QueryParameters
     public int? ResultRecordCount { get; init; }
 
     /// <summary>
-    /// Filter geometry in Esri JSON format for spatial queries
+    /// Filter geometry in GeoServices JSON format for spatial queries
     /// </summary>
     public string? Geometry { get; init; }
 
@@ -919,17 +919,17 @@ public sealed class RelatedRecords
     /// <summary>
     /// Array of field definitions
     /// </summary>
-    public EsriFieldInfo[] Fields { get; init; } = [];
+    public GeoServicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
     /// Spatial reference system for geometries
     /// </summary>
-    public EsriSpatialReference? SpatialReference { get; init; }
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
     /// Array of related features
     /// </summary>
-    public EsriFeature[] Features { get; init; } = [];
+    public GeoServicesFeature[] Features { get; init; } = [];
 }
 
 /// <summary>
@@ -944,13 +944,13 @@ public class ApplyEditsRequest
     /// Array of features to add
     /// </summary>
     [JsonPropertyName("adds")]
-    public EsriFeature[]? Adds { get; set; }
+    public GeoServicesFeature[]? Adds { get; set; }
 
     /// <summary>
     /// Array of features to update
     /// </summary>
     [JsonPropertyName("updates")]
-    public EsriFeature[]? Updates { get; set; }
+    public GeoServicesFeature[]? Updates { get; set; }
 
     /// <summary>
     /// Array of objectIds to delete
@@ -962,7 +962,7 @@ public class ApplyEditsRequest
     /// Whether to rollback all changes on failure
     /// </summary>
     [JsonPropertyName("rollbackOnFailure")]
-    public bool RollbackOnFailure { get; set; } = false; // Esri default is false
+    public bool RollbackOnFailure { get; set; } = false; // GeoServices default is false
 
     /// <summary>
     /// Whether to use global IDs
@@ -1054,11 +1054,11 @@ public class EditError
 [JsonSerializable(typeof(LayerInfo))]
 [JsonSerializable(typeof(SpatialReferenceInfo))]
 [JsonSerializable(typeof(ExtentInfo))]
-[JsonSerializable(typeof(EsriFieldInfo))]
+[JsonSerializable(typeof(GeoServicesFieldInfo))]
 [JsonSerializable(typeof(QueryResponse))]
-[JsonSerializable(typeof(EsriFeature))]
-[JsonSerializable(typeof(EsriGeometry))]
-[JsonSerializable(typeof(EsriSpatialReference))]
+[JsonSerializable(typeof(GeoServicesFeature))]
+[JsonSerializable(typeof(GeoServicesGeometry))]
+[JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(QueryParameters))]
 [JsonSerializable(typeof(GeoJsonFeatureSet))]
 [JsonSerializable(typeof(GeoJsonFeature))]
@@ -1076,7 +1076,7 @@ public class EditError
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(double[][][]))]
 [JsonSerializable(typeof(ApiErrorResponse))]
-[JsonSerializable(typeof(EsriError))]
+[JsonSerializable(typeof(GeoServicesError))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(AttachmentInfo))]

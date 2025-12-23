@@ -4,10 +4,10 @@
 namespace Honua.Server.Features.Infrastructure.Models;
 
 /// <summary>
-/// Standard Esri error codes used in ArcGIS Server REST API responses
-/// Based on Esri ArcGIS Server error response documentation
+/// Standard GeoServices error codes used in GeoServices REST API responses
+/// Based on GeoServices REST error response documentation
 /// </summary>
-public static class EsriErrorCodes
+public static class GeoServicesErrorCodes
 {
     /// <summary>
     /// Bad Request - Invalid parameters or malformed request
@@ -58,13 +58,13 @@ public static class EsriErrorCodes
     public const int UnprocessableEntity = 422;
 
     /// <summary>
-    /// Invalid Token - Esri-specific error code for authentication issues
+    /// Invalid Token - GeoServices-specific error code for authentication issues
     /// Used for: Expired or invalid authentication tokens
     /// </summary>
     public const int InvalidToken = 498;
 
     /// <summary>
-    /// Token Required - Esri-specific error code for missing authentication
+    /// Token Required - GeoServices-specific error code for missing authentication
     /// Used for: Missing authentication when required
     /// </summary>
     public const int TokenRequired = 499;
@@ -88,10 +88,10 @@ public static class EsriErrorCodes
     public const int ServiceUnavailable = 503;
 
     /// <summary>
-    /// Gets the appropriate Esri error code for an HTTP status code
+    /// Gets the appropriate GeoServices error code for an HTTP status code
     /// </summary>
     /// <param name="httpStatusCode">HTTP status code</param>
-    /// <returns>Corresponding Esri error code</returns>
+    /// <returns>Corresponding GeoServices error code</returns>
     public static int FromHttpStatusCode(int httpStatusCode) => httpStatusCode switch
     {
         400 => BadRequest,
