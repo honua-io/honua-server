@@ -323,6 +323,13 @@ public sealed record SimpleGeoJsonGeometry
     [JsonPropertyName("coordinates")]
     [JsonConverter(typeof(RawJsonStringConverter))]
     public string? CoordinatesJson { get; init; }
+
+    /// <summary>
+    /// Geometry collection members as raw JSON string for AOT compatibility
+    /// </summary>
+    [JsonPropertyName("geometries")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? GeometriesJson { get; init; }
 }
 
 /// <summary>

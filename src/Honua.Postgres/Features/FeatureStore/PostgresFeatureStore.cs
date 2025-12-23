@@ -929,8 +929,7 @@ WHERE layer_id = $1");
             return;
         }
 
-        var nullCheck = $"NULLIF(attributes->>'{fieldName}', '') IS NULL";
-        sql.Append(CultureInfo.InvariantCulture, $" AND ({predicate} OR {nullCheck})");
+        sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
     }
 
     private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
