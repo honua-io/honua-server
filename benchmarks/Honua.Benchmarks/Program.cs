@@ -4,15 +4,23 @@
 using BenchmarkDotNet.Running;
 using Honua.Benchmarks;
 
-// Run all benchmarks or filter by class
-if (args.Length > 0 && args[0] == "--filter")
+// Parse command line for benchmark selection
+if (args.Length > 0)
 {
-    var filter = args.Length > 1 ? args[1] : "*";
+    // Use BenchmarkSwitcher to enable filtering and multi-benchmark runs
     BenchmarkSwitcher.FromAssembly(typeof(BenchmarkProgram).Assembly).Run(args);
 }
 else
 {
-    // Run query benchmarks only for now
+    // Default: Run query benchmarks
+    Console.WriteLine("Available benchmark categories:");
+    Console.WriteLine("  --filter *Query*     - Query latency benchmarks");
+    Console.WriteLine("  --filter *MemorySoak*  - Memory leak detection");
+    Console.WriteLine("  --filter *LoadTest*  - Throughput and concurrency");
+    Console.WriteLine();
+    Console.WriteLine("Running query benchmarks by default...");
+    Console.WriteLine();
+
     BenchmarkRunner.Run<QueryBenchmarks>();
 }
 
