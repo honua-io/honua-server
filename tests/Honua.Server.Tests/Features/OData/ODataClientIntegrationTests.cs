@@ -607,64 +607,182 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
     #endregion
 
-    #region Spatial Filter Tests (Expected to fail - drives implementation)
+    #region Logical Operator Tests
 
-    // NOTE: These tests are intentionally designed to fail with current implementation
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=and")]
+    public async Task FeaturesQuery_WithAndOperator_ReturnsMatchingFeatures()
+    {
+        // Arrange - Filter for features with ObjectId > 5 AND ObjectId < 10
+        var filter = "ObjectId gt 5 and ObjectId lt 10";
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        // Assert
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        features.Should().HaveCount(4); // IDs 6, 7, 8, 9
+        features.Should().OnlyContain(f =>
+            f.GetProperty("ObjectId").GetInt64() > 5 &&
+            f.GetProperty("ObjectId").GetInt64() < 10);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=or")]
+    public async Task FeaturesQuery_WithOrOperator_ReturnsMatchingFeatures()
+    {
+        // Arrange - Filter for features with ObjectId = 1 OR ObjectId = 15
+        var filter = "ObjectId eq 1 or ObjectId eq 15";
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        // Assert
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        features.Should().HaveCount(2); // IDs 1 and 15
+        var objectIds = features.Select(f => f.GetProperty("ObjectId").GetInt64()).ToList();
+        objectIds.Should().Contain(1);
+        objectIds.Should().Contain(15);
+    }
+
+    #endregion
+
+    #region Context URL Validation Tests
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata")]
+    public async Task ServiceDocument_HasAbsoluteContextUrl()
+    {
+        // Arrange & Act
+        var response = await _fixture.Client.GetAsync("/odata");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        // Assert - @odata.context must be absolute URL
+        var contextUrl = document.RootElement.GetProperty("@odata.context").GetString();
+        contextUrl.Should().NotBeNullOrEmpty();
+        contextUrl.Should().StartWith("http");
+        contextUrl.Should().Contain("/odata/$metadata");
+
+        // Verify it's a valid absolute URI
+        Uri.TryCreate(contextUrl, UriKind.Absolute, out var uri).Should().BeTrue();
+        uri.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task FeaturesResponse_HasAbsoluteContextUrl()
+    {
+        // Arrange & Act
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        // Assert - @odata.context must be absolute URL with #Features suffix
+        var contextUrl = document.RootElement.GetProperty("@odata.context").GetString();
+        contextUrl.Should().NotBeNullOrEmpty();
+        contextUrl.Should().StartWith("http");
+        contextUrl.Should().Contain("/odata/$metadata#Features");
+
+        Uri.TryCreate(contextUrl, UriKind.Absolute, out var uri).Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Spatial Filter Tests (Expected to FAIL - drives implementation)
+
+    // NOTE: These tests are intentionally designed to FAIL with current implementation
     // to drive the implementation of spatial filter support in OData endpoints.
     // Per issue #158: "Tests should intentionally fail rather than skip to force
     // implementation of geo-spatial functions and CRS metadata alignment."
+    //
+    // When spatial filtering is implemented, these tests should pass.
+    // DO NOT change these to pass without implementing actual spatial filtering.
 
     [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects()")]
-    public async Task FeaturesQuery_WithGeoIntersects_IsNotYetImplemented()
+    public async Task FeaturesQuery_WithGeoIntersects_FiltersToFeaturesInPolygon()
     {
         // Arrange - Spatial filter using OData geo.intersects function
+        // Polygon covers San Francisco area (roughly 37-38 lat, -123 to -122 lon)
         var filter = "geo.intersects(Geometry, geography'POLYGON((-123 37, -122 37, -122 38, -123 38, -123 37))')";
 
         // Act
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
-        // Assert
-        // This test documents current behavior - spatial functions are not yet implemented
-        // When implemented, this should return features within the polygon
-        // For now, we verify the endpoint handles the request without crashing
-        var statusCode = (int)response.StatusCode;
-        statusCode.Should().BeOneOf(200, 400, 501);
+        // Assert - When spatial filtering is implemented:
+        // - Response should be 200 OK
+        // - Only features within the polygon should be returned
+        // - San Francisco (objectid=1) is at -122.4194, 37.7749 - INSIDE polygon
+        // - Sacramento (objectid=3) is at -121.4944, 38.5816 - OUTSIDE polygon (lat > 38)
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK,
+            "geo.intersects spatial filter should be supported");
 
-        if (response.StatusCode == System.Net.HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            using var document = JsonDocument.Parse(content);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
 
-            // If successful, verify spatial filter was applied
-            // Features 1-5 (CA cities) should be in the polygon, but this depends on implementation
-            var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        // San Francisco should be included (inside polygon)
+        features.Should().Contain(f => f.GetProperty("ObjectId").GetInt64() == 1,
+            "San Francisco (objectid=1) should be inside the polygon");
 
-            // When spatial filters are implemented, these cities should be returned:
-            // San Francisco, Los Angeles, Sacramento, San Diego, San Jose
-            // For now, we just verify the response is valid JSON
-        }
+        // Features outside the polygon should NOT be included
+        features.Should().NotContain(f => f.GetProperty("ObjectId").GetInt64() == 3,
+            "Sacramento (objectid=3) should be outside the polygon");
+
+        // Should NOT return all features (that would mean filter wasn't applied)
+        features.Should().HaveCountLessThan(TotalTestFeatures,
+            "Spatial filter should reduce the result set, not return all features");
     }
 
     [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=geo.distance()")]
-    public async Task FeaturesQuery_WithGeoDistance_IsNotYetImplemented()
+    public async Task FeaturesQuery_WithGeoDistance_FiltersToNearbyFeatures()
     {
         // Arrange - Spatial filter using OData geo.distance function
-        // Find cities within 100km of San Francisco
-        var filter = "geo.distance(Geometry, geography'POINT(-122.4194 37.7749)') lt 100000";
+        // Find cities within 50km of San Francisco (-122.4194, 37.7749)
+        var filter = "geo.distance(Geometry, geography'POINT(-122.4194 37.7749)') lt 50000";
 
         // Act
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
-        // Assert
-        // This test documents current behavior - spatial functions are not yet implemented
-        var statusCode = (int)response.StatusCode;
-        statusCode.Should().BeOneOf(200, 400, 501);
+        // Assert - When spatial filtering is implemented:
+        // - Response should be 200 OK
+        // - Only features within 50km of SF should be returned
+        // - San Francisco itself should definitely be included (distance = 0)
+        // - Distant cities like Phoenix should NOT be included
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK,
+            "geo.distance spatial filter should be supported");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+
+        // San Francisco should be included (distance = 0)
+        features.Should().Contain(f => f.GetProperty("ObjectId").GetInt64() == 1,
+            "San Francisco should be within 50km of itself");
+
+        // Phoenix (objectid=10) is ~1000km away - should NOT be included
+        features.Should().NotContain(f => f.GetProperty("ObjectId").GetInt64() == 10,
+            "Phoenix should be more than 50km from San Francisco");
+
+        // Should NOT return all features
+        features.Should().HaveCountLessThan(TotalTestFeatures,
+            "Distance filter should reduce the result set");
     }
 
     #endregion

@@ -390,6 +390,40 @@ public sealed class ODataTestFeatureStore : IFeatureStore
         // Comprehensive WHERE clause parsing for OData-style filters converted to SQL
         var normalized = whereClause.Trim();
 
+        // Handle AND logical operator (split and apply both conditions)
+        if (normalized.Contains(" AND ", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = Regex.Split(normalized, @"\s+AND\s+", RegexOptions.IgnoreCase);
+            var result = features;
+            foreach (var part in parts)
+            {
+                result = ApplyWhereFilter(result, part.Trim());
+            }
+            return result;
+        }
+
+        // Handle OR logical operator (union of both conditions)
+        if (normalized.Contains(" OR ", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = Regex.Split(normalized, @"\s+OR\s+", RegexOptions.IgnoreCase);
+            var featuresList = features.ToList();
+            var resultSet = new HashSet<long>();
+            var resultFeatures = new List<Feature>();
+
+            foreach (var part in parts)
+            {
+                var partResult = ApplyWhereFilter(featuresList, part.Trim());
+                foreach (var f in partResult)
+                {
+                    if (resultSet.Add(f.Id))
+                    {
+                        resultFeatures.Add(f);
+                    }
+                }
+            }
+            return resultFeatures;
+        }
+
         // Handle objectid comparisons (from OData ObjectId filters)
         // Pattern: objectid = 1, objectid > 10, etc.
         var objectIdMatch = Regex.Match(normalized, @"objectid\s*(=|<>|>|<|>=|<=)\s*'?(\d+)'?", RegexOptions.IgnoreCase);
