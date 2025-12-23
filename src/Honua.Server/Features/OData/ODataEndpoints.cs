@@ -1,11 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OData.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
 
@@ -64,7 +68,7 @@ public static class ODataEndpoints
     /// <summary>
     /// Handles OData service document request
     /// </summary>
-    private static Ok<ServiceDocument> HandleGetServiceDocument(HttpContext context)
+    private static IResult HandleGetServiceDocument(HttpContext context)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -87,7 +91,7 @@ public static class ODataEndpoints
             }
         };
 
-        return TypedResults.Ok(serviceDocument);
+        return Results.Json(serviceDocument, ODataJsonContext.Default.ServiceDocument, contentType: "application/json;odata.metadata=minimal");
     }
 
     /// <summary>
@@ -133,15 +137,41 @@ public static class ODataEndpoints
     /// Handles OData layers collection request
     /// </summary>
     private static async Task<IResult> HandleGetLayers(
+        HttpContext context,
         ILayerCatalog layerCatalog,
-        string? filter = null,
-        string? select = null,
-        int? top = null,
-        int? skip = null,
+        IFeatureQueryValidator queryValidator,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$select")] string? select = null,
+        [FromQuery(Name = "$top")] int? top = null,
+        [FromQuery(Name = "$skip")] int? skip = null,
+        [FromQuery(Name = "$count")] bool? count = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            if (top.HasValue && top.Value <= 0)
+            {
+                return TypedResults.BadRequest("$top must be a positive integer.");
+            }
+
+            if (skip.HasValue && skip.Value < 0)
+            {
+                return TypedResults.BadRequest("$skip must be a non-negative integer.");
+            }
+
+            var validationResult = queryValidator.ValidateQueryLimits(new QueryParameters
+            {
+                ResultRecordCount = top,
+                ResultOffset = skip
+            });
+
+            if (!validationResult.IsValid)
+            {
+                return TypedResults.BadRequest($"Invalid OData query: {validationResult.ErrorMessage}");
+            }
+
+            var validatedParams = validationResult.ValidatedParameters!;
+
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
             var layerEnumerable = layers.AsEnumerable();
 
@@ -151,36 +181,41 @@ public static class ODataEndpoints
                 layerEnumerable = ApplyBasicFilter(layerEnumerable, filter);
             }
 
+            var filteredLayers = layerEnumerable.ToList();
+            long? totalCount = count == true ? filteredLayers.Count : null;
+
             // Apply skip/top pagination
-            if (skip.HasValue)
+            if (validatedParams.ResultOffset.HasValue)
             {
-                layerEnumerable = layerEnumerable.Skip(skip.Value);
+                filteredLayers = filteredLayers.Skip(validatedParams.ResultOffset.Value).ToList();
             }
 
-            if (top.HasValue)
+            if (validatedParams.ResultRecordCount.HasValue)
             {
-                layerEnumerable = layerEnumerable.Take(top.Value);
+                filteredLayers = filteredLayers.Take(validatedParams.ResultRecordCount.Value).ToList();
             }
 
-            var layerData = layerEnumerable.Select(l => new
+            var layerData = filteredLayers.Select(l => new Dictionary<string, object?>
             {
-                Id = l.Id,
-                Name = l.Name,
-                Description = l.Description
+                ["Id"] = l.Id,
+                ["Name"] = l.Name,
+                ["Description"] = l.Description
             }).ToArray();
 
             // Apply field selection if specified
-            var result = string.IsNullOrWhiteSpace(select)
-                ? layerData
+            object[] result = string.IsNullOrWhiteSpace(select)
+                ? layerData.Cast<object>().ToArray()
                 : ApplyFieldSelection(layerData, select);
 
+            var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var response = new ODataResponse
             {
-                Context = "/odata/$metadata#Layers",
+                Context = $"{baseUrl}/odata/$metadata#Layers",
+                Count = totalCount,
                 Value = result
             };
 
-            return Results.Json(response, ODataJsonContext.Default.ODataResponse);
+            return Results.Json(response, ODataJsonContext.Default.ODataResponse, contentType: "application/json;odata.metadata=minimal");
         }
         catch (ArgumentException ex)
         {
@@ -196,17 +231,43 @@ public static class ODataEndpoints
     /// Handles OData features collection request with full query parameter support
     /// </summary>
     private static async Task<IResult> HandleGetFeatures(
+        HttpContext context,
         int layerId,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
-        string? filter = null,
-        string? select = null,
-        int? top = null,
-        int? skip = null,
+        IFeatureQueryValidator queryValidator,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$select")] string? select = null,
+        [FromQuery(Name = "$top")] int? top = null,
+        [FromQuery(Name = "$skip")] int? skip = null,
+        [FromQuery(Name = "$count")] bool? count = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            if (top.HasValue && top.Value <= 0)
+            {
+                return TypedResults.BadRequest("$top must be a positive integer.");
+            }
+
+            if (skip.HasValue && skip.Value < 0)
+            {
+                return TypedResults.BadRequest("$skip must be a non-negative integer.");
+            }
+
+            var validationResult = queryValidator.ValidateQueryLimits(new QueryParameters
+            {
+                ResultRecordCount = top,
+                ResultOffset = skip
+            });
+
+            if (!validationResult.IsValid)
+            {
+                return TypedResults.BadRequest($"Invalid OData query: {validationResult.ErrorMessage}");
+            }
+
+            var validatedParams = validationResult.ValidatedParameters!;
+
             // Verify layer exists
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
@@ -218,35 +279,36 @@ public static class ODataEndpoints
             var featureQuery = new FeatureQuery
             {
                 Where = ConvertODataFilterToSql(filter),
-                Limit = top,
-                Offset = skip
+                Limit = validatedParams.ResultRecordCount,
+                Offset = validatedParams.ResultOffset
             };
 
             // Execute query
             var queryResult = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
 
             // Convert features to OData format
-            var featuresData = queryResult.Items.Select(f => new
+            var featuresData = queryResult.Items.Select(f => new Dictionary<string, object?>
             {
-                ObjectId = f.Id,
-                LayerId = layerId,
-                Geometry = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
-                Attributes = f.Attributes
+                ["ObjectId"] = f.Id,
+                ["LayerId"] = layerId,
+                ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
+                ["Attributes"] = SerializeAttributes(f.Attributes)
             }).ToArray();
 
             // Apply field selection if specified
-            var result = string.IsNullOrWhiteSpace(select)
-                ? featuresData
+            object[] result = string.IsNullOrWhiteSpace(select)
+                ? featuresData.Cast<object>().ToArray()
                 : ApplyFieldSelection(featuresData, select);
 
+            var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var response = new ODataResponse
             {
-                Context = $"/odata/$metadata#Features",
-                Count = (int?)queryResult.TotalCount,
+                Context = $"{baseUrl}/odata/$metadata#Features",
+                Count = count == true ? queryResult.TotalCount : null,
                 Value = result
             };
 
-            return Results.Json(response, ODataJsonContext.Default.ODataResponse);
+            return Results.Json(response, ODataJsonContext.Default.ODataResponse, contentType: "application/json;odata.metadata=minimal");
         }
         catch (ArgumentException ex)
         {
@@ -269,7 +331,45 @@ public static class ODataEndpoints
 
         // Basic OData to SQL conversion
         // This is a simplified implementation - production would use a proper OData parser
-        var sql = odataFilter
+        var sql = odataFilter;
+
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"contains\(\s*(?<field>\w+)\s*,\s*'(?<value>[^']*)'\s*\)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var value = match.Groups["value"].Value;
+                var fieldSql = MapODataField(field);
+                return $"{fieldSql} LIKE '%{value}%'";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"startswith\(\s*(?<field>\w+)\s*,\s*'(?<value>[^']*)'\s*\)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var value = match.Groups["value"].Value;
+                var fieldSql = MapODataField(field);
+                return $"{fieldSql} LIKE '{value}%'";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"endswith\(\s*(?<field>\w+)\s*,\s*'(?<value>[^']*)'\s*\)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var value = match.Groups["value"].Value;
+                var fieldSql = MapODataField(field);
+                return $"{fieldSql} LIKE '%{value}'";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        sql = sql
             .Replace(" eq ", " = ", StringComparison.OrdinalIgnoreCase)
             .Replace(" ne ", " <> ", StringComparison.OrdinalIgnoreCase)
             .Replace(" gt ", " > ", StringComparison.OrdinalIgnoreCase)
@@ -283,11 +383,46 @@ public static class ODataEndpoints
         // Example: name eq 'value' -> attributes->>'name' = 'value'
         sql = System.Text.RegularExpressions.Regex.Replace(
             sql,
-            @"\b(\w+)\s*(=|<>|>|<|>=|<=)\s*'([^']*)'",
-            "attributes->>'$1' $2 '$3'",
+            @"\b(?<field>\w+)\s*(?<op>=|<>|>|<|>=|<=)\s*(?<value>('([^']*)')|(-?\d+(?:\.\d+)?))",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var op = match.Groups["op"].Value;
+                var value = match.Groups["value"].Value;
+                var isNumericValue = !value.StartsWith('\'');
+                var fieldLower = field.Trim().ToLowerInvariant();
+                var isCoreField = fieldLower == "objectid" || fieldLower == "layerid";
+
+                if (isNumericValue && !isCoreField)
+                {
+                    value = $"'{value}'";
+                }
+
+                var fieldSql = MapODataField(field);
+
+                return $"{fieldSql} {op} {value}";
+            },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         return sql;
+    }
+
+    private static string MapODataField(string field)
+    {
+        var fieldName = field.Trim();
+        var fieldLower = fieldName.ToLowerInvariant();
+
+        if (fieldLower == "objectid")
+        {
+            return "objectid";
+        }
+
+        if (fieldLower == "layerid")
+        {
+            return "layer_id";
+        }
+
+        return $"attributes->>'{fieldName}'";
     }
 
     /// <summary>
@@ -318,49 +453,89 @@ public static class ODataEndpoints
     /// <summary>
     /// Applies field selection to result objects (AOT-compatible approach)
     /// </summary>
-    private static object[] ApplyFieldSelection(object[] data, string select)
+    private static object[] ApplyFieldSelection(Dictionary<string, object?>[] data, string select)
     {
         var fields = select.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(f => f.Trim().ToLowerInvariant())
-            .ToHashSet();
+            .Select(f => f.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return data.Select(item =>
         {
             var dict = new Dictionary<string, object?>();
 
-            // For anonymous objects created in this class, we know the structure
-            // This is a simplified approach that works with our specific use case
             if (item is IDictionary<string, object?> existingDict)
             {
                 // If it's already a dictionary, filter based on selected fields
                 foreach (var kvp in existingDict)
                 {
-                    if (fields.Contains(kvp.Key.ToLowerInvariant()))
+                    if (fields.Contains(kvp.Key))
                     {
                         dict[kvp.Key] = kvp.Value;
-                    }
-                }
-            }
-            else
-            {
-                // For simple anonymous objects, convert to string and parse back
-                // This is a fallback that avoids reflection but may not be as efficient
-                var json = System.Text.Json.JsonSerializer.Serialize(item);
-                var jsonDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(json);
-
-                if (jsonDict != null)
-                {
-                    foreach (var kvp in jsonDict)
-                    {
-                        if (fields.Contains(kvp.Key.ToLowerInvariant()))
-                        {
-                            dict[kvp.Key] = kvp.Value;
-                        }
                     }
                 }
             }
 
             return dict;
         }).ToArray();
+    }
+
+    private static string SerializeAttributes(IReadOnlyDictionary<string, object?> attributes)
+    {
+        var normalized = attributes.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
+        return JsonSerializer.Serialize(normalized, ODataJsonContext.Default.DictionaryStringObject);
+    }
+
+    private static object? NormalizeODataValue(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonElement element)
+        {
+            return ConvertJsonElement(element);
+        }
+
+        if (value is IReadOnlyDictionary<string, object?> readOnlyDict)
+        {
+            return readOnlyDict.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
+        }
+
+        if (value is IDictionary<string, object?> dict)
+        {
+            return dict.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
+        }
+
+        if (value is System.Collections.IEnumerable enumerable && value is not string)
+        {
+            var list = new List<object?>();
+            foreach (var item in enumerable)
+            {
+                list.Add(NormalizeODataValue(item));
+            }
+
+            return list.ToArray();
+        }
+
+        return value;
+    }
+
+    private static object? ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
+                element.TryGetDouble(out var doubleVal) ? doubleVal :
+                element.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(prop => prop.Name, prop => ConvertJsonElement(prop.Value)),
+            JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToArray(),
+            _ => element.GetRawText()
+        };
     }
 }

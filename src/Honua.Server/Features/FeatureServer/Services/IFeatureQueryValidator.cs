@@ -6,9 +6,6 @@ using Honua.Server.Features.FeatureServer.Models;
 namespace Honua.Server.Features.FeatureServer.Services;
 
 /// <summary>
-/// Validates and applies limits to feature query parameters
-/// </summary>
-/// <summary>
 /// Result of query parameter validation
 /// </summary>
 public sealed record QueryValidationResult
@@ -74,6 +71,9 @@ public sealed record RelatedRecordsValidationResult
         new() { IsValid = false, ErrorMessage = errorMessage };
 }
 
+/// <summary>
+/// Validates and applies limits to feature query parameters
+/// </summary>
 public interface IFeatureQueryValidator
 {
     /// <summary>

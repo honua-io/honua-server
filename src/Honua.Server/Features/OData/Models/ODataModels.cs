@@ -56,7 +56,7 @@ public sealed class ODataResponse
     /// Total count of items (when $count=true)
     /// </summary>
     [JsonPropertyName("@odata.count")]
-    public int? Count { get; init; }
+    public long? Count { get; init; }
 
     /// <summary>
     /// Next link for pagination

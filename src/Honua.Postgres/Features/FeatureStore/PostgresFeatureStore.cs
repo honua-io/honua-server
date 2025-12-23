@@ -548,7 +548,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var hasMore = query.Offset.HasValue && query.Limit.HasValue &&
                       query.Offset.Value + query.Limit.Value < totalCount;
 
-        return QueryResult<Feature>.Create((int)totalCount, features.ToImmutableArray(), hasMore);
+        return QueryResult<Feature>.Create(totalCount, features.ToImmutableArray(), hasMore);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -378,9 +379,6 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Converts query results to GeoJSON FeatureCollection
     /// </summary>
-    /// <summary>
-    /// Converts query results to GeoJSON FeatureCollection
-    /// </summary>
     private static FeatureCollection ConvertToGeoJsonFeatureCollection(
         QueryResult<Feature> queryResult,
         Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
@@ -406,26 +404,63 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Converts a feature's WKB geometry to GeoJSON format
     /// </summary>
-    /// <summary>
-    /// Converts a feature's WKB geometry to GeoJSON format
-    /// </summary>
-    /// <summary>
-    /// Converts a feature's WKB geometry to GeoJSON format
-    /// </summary>
-    /// <summary>
-    /// Converts a feature's WKB geometry to GeoJSON format
-    /// </summary>
-    /// <summary>
-    /// Converts a feature's WKB geometry to GeoJSON format
-    /// </summary>
-    /// <summary>
-    /// Converts a feature's WKB geometry to GeoJSON format
-    /// </summary>
     private static SimpleGeoJsonGeometry? ConvertFeatureGeometry(byte[]? wkbGeometry, Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
     {
-        // Temporarily return null to avoid AOT serialization issues
-        // This will be properly implemented in a future iteration
-        return null;
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var geoJson = geometryConverter.ConvertWkbToGeoJson(wkbGeometry);
+            if (geoJson == null)
+            {
+                return null;
+            }
+
+            if (geoJson is string geoJsonString)
+            {
+                using var document = JsonDocument.Parse(geoJsonString);
+                return BuildSimpleGeometry(document.RootElement);
+            }
+
+            if (geoJson is JsonElement element)
+            {
+                return BuildSimpleGeometry(element);
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static SimpleGeoJsonGeometry? BuildSimpleGeometry(JsonElement root)
+    {
+        if (!root.TryGetProperty("type", out var typeElement))
+        {
+            return null;
+        }
+
+        var type = typeElement.GetString();
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("coordinates", out var coordinatesElement))
+        {
+            return null;
+        }
+
+        return new SimpleGeoJsonGeometry
+        {
+            Type = type,
+            CoordinatesJson = coordinatesElement.GetRawText()
+        };
     }
 
 

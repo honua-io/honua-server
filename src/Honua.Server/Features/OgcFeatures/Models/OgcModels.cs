@@ -267,18 +267,6 @@ public sealed record TemporalExtent
 }
 
 /// <summary>
-/// GeoJSON FeatureCollection for OGC API Features Items response
-/// </summary>
-/// <summary>
-/// GeoJSON Feature for items response
-/// </summary>
-/// <summary>
-/// Simple GeoJSON geometry representation for AOT compatibility
-/// </summary>
-/// <summary>
-/// Simple GeoJSON geometry representation for AOT compatibility
-/// </summary>
-/// <summary>
 /// JSON converter for raw JSON strings to avoid double encoding
 /// </summary>
 public sealed class RawJsonStringConverter : JsonConverter<string?>
@@ -302,6 +290,9 @@ public sealed class RawJsonStringConverter : JsonConverter<string?>
     }
 }
 
+/// <summary>
+/// Simple GeoJSON geometry representation for AOT compatibility
+/// </summary>
 public sealed record SimpleGeoJsonGeometry
 {
     /// <summary>

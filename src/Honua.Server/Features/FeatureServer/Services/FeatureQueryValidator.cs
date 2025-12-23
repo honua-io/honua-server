@@ -23,7 +23,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
     {
         // Get the effective values (use defaults if not specified)
-        var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.MaxRecordCount;
+        var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.DefaultRecordCount;
         var requestedOffset = queryParams.ResultOffset ?? 0;
 
         // First validate that the original request is within allowed ranges
@@ -62,7 +62,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     public RelatedRecordsValidationResult ValidateRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams)
     {
         // Get the effective value (use default if not specified)
-        var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.MaxRecordCount;
+        var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.DefaultRecordCount;
 
         // First validate that the original request is within allowed ranges
         if (requestedRecordCount > _limitsOptions.Query.MaxRecordCount)

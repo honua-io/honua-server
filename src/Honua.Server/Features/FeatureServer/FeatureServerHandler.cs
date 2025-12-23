@@ -115,6 +115,10 @@ internal sealed class FeatureServerHandler(
                 _ => Results.Json(formattedResponse, FeatureServerJsonContext.Default.QueryResponse, contentType: contentType)
             };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -133,9 +137,6 @@ internal sealed class FeatureServerHandler(
         }
     }
 
-    /// <summary>
-    /// Executes a query for related records with proper validation and formatting.
-    /// </summary>
     /// <summary>
     /// Executes a query for related records with proper validation and formatting.
     /// </summary>
@@ -227,6 +228,10 @@ internal sealed class FeatureServerHandler(
 
             return Results.Json(response, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse, contentType: "application/json");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -309,6 +314,10 @@ internal sealed class FeatureServerHandler(
 
             return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
                 contentType: "application/json");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
