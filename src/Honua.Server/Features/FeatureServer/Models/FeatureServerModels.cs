@@ -1104,6 +1104,7 @@ public class EditError
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

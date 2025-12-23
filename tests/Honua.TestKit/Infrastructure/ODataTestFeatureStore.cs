@@ -430,7 +430,7 @@ public sealed class ODataTestFeatureStore : IFeatureStore
         if (objectIdMatch.Success)
         {
             var op = objectIdMatch.Groups[1].Value;
-            var targetId = long.Parse(objectIdMatch.Groups[2].Value);
+            var targetId = long.Parse(objectIdMatch.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
 
             return features.Where(f => op switch
             {

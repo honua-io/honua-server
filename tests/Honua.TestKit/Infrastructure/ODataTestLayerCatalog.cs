@@ -15,8 +15,8 @@ namespace Honua.TestKit.Infrastructure;
 /// </summary>
 public sealed class ODataTestLayerCatalog : ILayerCatalog
 {
-    private static readonly string[] SupportedFormats = ["JSON", "GeoJSON"];
-    private static readonly string[] Capabilities = ["Query", "Extract"];
+    private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
+    private static readonly string[] _capabilities = ["Query", "Extract"];
 
     private readonly ServiceDefinition _testService;
     private readonly LayerDefinition _testLayer;
@@ -30,7 +30,7 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
             new FieldDefinition("name", FieldType.String, 255, false, null, "City name"),
             new FieldDefinition("population", FieldType.Integer, null, true, null, "City population"),
             new FieldDefinition("area_sq_km", FieldType.Double, null, true, null, "Area in square kilometers"),
-            new FieldDefinition("is_capital", FieldType.SmallInteger, null, true, null, "Whether city is a state capital (0/1)"),
+            new FieldDefinition("is_capital", FieldType.Boolean, null, true, null, "Whether city is a state capital"),
             new FieldDefinition("state", FieldType.String, 100, true, null, "State name"),
             new FieldDefinition("country", FieldType.String, 100, true, null, "Country name"),
             new FieldDefinition("founded_year", FieldType.Integer, null, true, null, "Year the city was founded"),
@@ -59,8 +59,8 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
             Layers: [_testLayer],
             SpatialReference: spatialRef,
             MaxRecordCount: 1000,
-            SupportedFormats: SupportedFormats,
-            Capabilities: Capabilities,
+            SupportedFormats: _supportedFormats,
+            Capabilities: _capabilities,
             ServiceExtent: extent);
     }
 
