@@ -362,6 +362,7 @@ public static class OgcFeaturesEndpoints
                 // OGC API Features Core
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
+                "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
 
                 // OGC API Common
@@ -1914,6 +1915,14 @@ public static class OgcFeaturesEndpoints
                 rel: RelationTypes.Items,
                 type: MediaTypes.GeoJson,
                 title: "Items"
+            ),
+
+            // Data link (OGC API Features requirement)
+            Link.Create(
+                href: $"{baseUrl}/ogc/features/collections/{collectionId}/items",
+                rel: RelationTypes.Data,
+                type: MediaTypes.GeoJson,
+                title: "Data"
             ),
 
             // Parent (collections)

@@ -93,10 +93,7 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeature
     Honua.Server.Features.FeatureServer.Services.FeatureQueryValidator>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 
-// Register OData services (temporarily disabled for Issue 46 performance testing)
-// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQueryParser>();
-// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataResponseFormatter>();
-// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataMetadataGenerator>();
+// OData services use existing FeatureServer services
 
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
@@ -115,6 +112,12 @@ ConfigureSecurityHeaders(builder.Services);
 ConfigureOutputCaching(builder.Services);
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
+
+// Configure JSON serialization for ASP.NET Core (needed for OData route parameter binding)
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolver = Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default;
+});
 
 var app = builder.Build();
 

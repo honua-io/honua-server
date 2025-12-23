@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using Honua.Server.Features.Infrastructure.Models;
 // using Honua.Server.Features.OData.Models; // Temporarily disabled for Issue 46 performance testing
@@ -1061,7 +1062,8 @@ public class EditError
 [JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(QueryParameters))]
 [JsonSerializable(typeof(GeoJsonFeatureSet))]
-[JsonSerializable(typeof(GeoJsonFeature))]
+[JsonSerializable(typeof(GeoJsonFeature), TypeInfoPropertyName = "FeatureServerGeoJsonFeature")]
+[JsonSerializable(typeof(GeoJsonFeature[]), TypeInfoPropertyName = "FeatureServerGeoJsonFeatureArray")]
 [JsonSerializable(typeof(GeoJsonGeometry))]
 [JsonSerializable(typeof(GeoJsonCrs))]
 [JsonSerializable(typeof(ApplyEditsRequest))]
@@ -1104,6 +1106,28 @@ public class EditError
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
+// ASP.NET Core types
+[JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
+// OGC API Features models
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.LandingPage))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.ConformanceDeclaration))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.Link))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.Collections))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.CollectionInfo))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.Extent))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.SpatialExtent))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.TemporalExtent))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.SimpleGeoJsonGeometry))]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.GeoJsonFeature), TypeInfoPropertyName = "OgcGeoJsonFeature")]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.GeoJsonFeature[]), TypeInfoPropertyName = "OgcGeoJsonFeatureArray")]
+[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.FeatureCollection))]
+[JsonSerializable(typeof(ImmutableArray<Honua.Server.Features.OgcFeatures.Models.Link>))]
+[JsonSerializable(typeof(ImmutableArray<Honua.Server.Features.OgcFeatures.Models.CollectionInfo>))]
+[JsonSerializable(typeof(ImmutableArray<string>))]
+[JsonSerializable(typeof(ImmutableArray<ImmutableArray<double>>))]
+[JsonSerializable(typeof(ImmutableArray<ImmutableArray<string?>>))]
+[JsonSerializable(typeof(ImmutableArray<string>?))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
