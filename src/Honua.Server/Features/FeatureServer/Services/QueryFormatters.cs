@@ -10,7 +10,7 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// <summary>
 /// Service for formatting query results into different output formats
 /// </summary>
-public interface IQueryFormatter
+internal interface IQueryFormatter
 {
     /// <summary>
     /// Formats query result into the specified format
@@ -32,7 +32,7 @@ public interface IQueryFormatter
 /// <summary>
 /// Implementation of query formatter service
 /// </summary>
-public sealed class QueryFormatter : IQueryFormatter
+internal sealed class QueryFormatter : IQueryFormatter
 {
     /// <summary>
     /// Formats query result into the specified format

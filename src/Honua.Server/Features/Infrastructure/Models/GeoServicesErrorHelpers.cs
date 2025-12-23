@@ -8,7 +8,7 @@ namespace Honua.Server.Features.Infrastructure.Models;
 /// <summary>
 /// Helper methods for creating GeoServices-compatible error responses
 /// </summary>
-public static class GeoServicesErrorHelpers
+internal static class GeoServicesErrorHelpers
 {
     /// <summary>
     /// Creates a GeoServices-compatible 404 Not Found error response

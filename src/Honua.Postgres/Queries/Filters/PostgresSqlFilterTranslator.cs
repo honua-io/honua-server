@@ -2,13 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Queries.Filters;
 
-namespace Honua.Core.Queries.Filters;
+namespace Honua.Postgres.Queries.Filters;
 
 /// <summary>
-/// Translates filter expressions to parameterized SQL WHERE clauses
+/// Translates filter expressions to parameterized PostgreSQL WHERE clauses
 /// </summary>
-public sealed class SqlFilterTranslator
+public sealed class PostgresSqlFilterTranslator
 {
     private int _paramIndex;
     private readonly List<object?> _parameters = [];
@@ -17,7 +18,7 @@ public sealed class SqlFilterTranslator
     private readonly string _geometryColumn;
     private readonly string _primaryKeyColumn;
 
-    public SqlFilterTranslator(
+    public PostgresSqlFilterTranslator(
         bool useJsonAttributes = false,
         string attributesColumn = "attributes",
         string geometryColumn = "geometry",
@@ -228,10 +229,3 @@ public sealed class SqlFilterTranslator
         };
     }
 }
-
-/// <summary>
-/// Represents a SQL fragment with parameterized values
-/// </summary>
-/// <param name="Sql">The SQL string with parameter placeholders</param>
-/// <param name="Parameters">Parameter values in order</param>
-public record SqlFragment(string Sql, IReadOnlyList<object?> Parameters);

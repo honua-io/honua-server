@@ -9,6 +9,9 @@ namespace Honua.Server.Features.Infrastructure.Models;
 /// </summary>
 public sealed class ApiErrorResponse
 {
+    /// <summary>
+    /// The error details
+    /// </summary>
     public required GeoServicesError Error { get; init; }
 }
 
@@ -17,9 +20,18 @@ public sealed class ApiErrorResponse
 /// </summary>
 public sealed class GeoServicesError
 {
+    /// <summary>
+    /// Error code number
+    /// </summary>
     public required int Code { get; init; }
 
+    /// <summary>
+    /// Error message text
+    /// </summary>
     public required string Message { get; init; }
 
+    /// <summary>
+    /// Optional array of additional error details
+    /// </summary>
     public string[]? Details { get; init; }
 }

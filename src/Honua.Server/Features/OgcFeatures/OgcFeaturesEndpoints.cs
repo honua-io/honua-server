@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
+using Honua.Postgres.Queries.Filters;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NetTopologySuite.Geometries;
@@ -1394,7 +1395,7 @@ public static class OgcFeaturesEndpoints
             FeatureQuery featureQuery;
             if (filterExpression != null)
             {
-                var translator = new SqlFilterTranslator(
+                var translator = new PostgresSqlFilterTranslator(
                     useJsonAttributes: true,
                     attributesColumn: "attributes",
                     geometryColumn: "geometry",

@@ -7,7 +7,7 @@ namespace Honua.Server.Features.Infrastructure.Models;
 /// Standard GeoServices error codes used in GeoServices REST API responses
 /// Based on GeoServices REST error response documentation
 /// </summary>
-public static class GeoServicesErrorCodes
+internal static class GeoServicesErrorCodes
 {
     /// <summary>
     /// Bad Request - Invalid parameters or malformed request
