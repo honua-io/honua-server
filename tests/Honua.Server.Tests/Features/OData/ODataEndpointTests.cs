@@ -14,6 +14,10 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.OData;
 
+/// <summary>
+/// HTTP-level OData endpoint tests verifying basic endpoint behavior.
+/// For comprehensive OData client integration tests, see ODataClientIntegrationTests.
+/// </summary>
 [Collection("Database")]
 [Protocol(Protocols.ODataV4)]
 public sealed class ODataEndpointTests : IAsyncLifetime
@@ -23,8 +27,8 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
+        _fixture.ReplaceService<ILayerCatalog>(new ODataTestLayerCatalog());
+        _fixture.ReplaceService<IFeatureStore>(new ODataTestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
