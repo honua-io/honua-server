@@ -546,19 +546,25 @@ internal sealed class FeatureServerHandler(
             }
         }
 
-        // Parse spatial filter if specified
-        if (!string.IsNullOrEmpty(queryParams.Geometry))
+        // Parse spatial filter if specified (geometry or NearestCount)
+        if (!string.IsNullOrEmpty(queryParams.Geometry) || queryParams.NearestCount.HasValue)
         {
             try
             {
-                SpatialFilter spatialFilter = ParseSpatialFilter(queryParams.Geometry, queryParams.SpatialRel);
+                // For KNN queries without explicit geometry, we need a geometry - use a default point if not provided
+                if (queryParams.NearestCount.HasValue && string.IsNullOrEmpty(queryParams.Geometry))
+                {
+                    throw new InvalidOperationException("Geometry is required for nearest neighbor queries");
+                }
+
+                SpatialFilter spatialFilter = ParseSpatialFilter(queryParams);
                 query = query with { SpatialFilter = spatialFilter };
             }
             catch (ArgumentException ex)
             {
                 throw new InvalidOperationException($"Invalid spatial parameters: {ex.Message}");
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 throw new InvalidOperationException($"Invalid geometry: {ex.Message}");
             }
@@ -570,13 +576,39 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Parses Esri JSON geometry and spatial relationship into a SpatialFilter
     /// </summary>
-    private SpatialFilter ParseSpatialFilter(string geometry, string? spatialRel)
+    private SpatialFilter ParseSpatialFilter(QueryParameters queryParams)
     {
         // Convert Esri JSON geometry to WKB bytes
-        byte[] wkbBytes = ConvertEsriJsonToWkb(geometry);
+        byte[] wkbBytes = ConvertEsriJsonToWkb(queryParams.Geometry!);
+
+        // Check if this is a KNN query (NearestCount specified)
+        if (queryParams.NearestCount.HasValue && queryParams.NearestCount.Value > 0)
+        {
+            return SpatialFilter.CreateKnnFilter(
+                wkbBytes,
+                queryParams.NearestCount.Value,
+                queryParams.ReturnDistance);
+        }
 
         // Map Esri spatial relationship to enum
-        SpatialRelationship relationship = ParseSpatialRelationship(spatialRel);
+        SpatialRelationship relationship = ParseSpatialRelationship(queryParams.SpatialRel);
+
+        // Handle distance-based queries
+        if (relationship == SpatialRelationship.WithinDistance ||
+            relationship == SpatialRelationship.BeyondDistance)
+        {
+            if (!queryParams.Distance.HasValue || queryParams.Distance.Value <= 0)
+            {
+                throw new ArgumentException("Distance parameter is required for distance-based spatial queries");
+            }
+
+            var unit = ParseDistanceUnit(queryParams.Units);
+            return SpatialFilter.CreateDistanceFilter(
+                wkbBytes,
+                queryParams.Distance.Value,
+                unit,
+                relationship == SpatialRelationship.WithinDistance);
+        }
 
         return new SpatialFilter
         {
@@ -596,7 +628,29 @@ internal sealed class FeatureServerHandler(
             "esrispatialrelcontains" => SpatialRelationship.Contains,
             "esrispatialrelwithin" => SpatialRelationship.Within,
             "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,
+            "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
+            "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
             _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
+        };
+    }
+
+    /// <summary>
+    /// Maps Esri distance unit strings to DistanceUnit enum
+    /// </summary>
+    private static DistanceUnit ParseDistanceUnit(string? units)
+    {
+        return units?.ToLowerInvariant() switch
+        {
+            "esrisrunit_meter" or null => DistanceUnit.Meters,
+            "esrisrunit_foot" => DistanceUnit.Feet,
+            "esrisrunit_kilometer" => DistanceUnit.Kilometers,
+            "esrisrunit_statutemile" => DistanceUnit.Miles,
+            // Also support simple unit names
+            "meters" or "m" => DistanceUnit.Meters,
+            "feet" or "ft" => DistanceUnit.Feet,
+            "kilometers" or "km" => DistanceUnit.Kilometers,
+            "miles" or "mi" => DistanceUnit.Miles,
+            _ => DistanceUnit.Meters // Default to meters for unknown units
         };
     }
 

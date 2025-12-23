@@ -312,6 +312,67 @@ public sealed class TestFeatureStore : IFeatureStore
     /// </summary>
     private static IEnumerable<Feature> ApplySpatialFilter(IEnumerable<Feature> features, SpatialFilter spatialFilter)
     {
+        // Handle KNN queries - sort by distance and take K nearest
+        if (spatialFilter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
+        {
+            var filterPoint = ParsePointFromWkb(spatialFilter.Geometry);
+            if (filterPoint == null)
+                return Enumerable.Empty<Feature>();
+
+            var featuresWithDistance = features
+                .Where(f => f.Geometry != null)
+                .Select(f =>
+                {
+                    var point = ParsePointFromWkb(f.Geometry!);
+                    var distance = point.HasValue ? CalculateDistance(filterPoint.Value, point.Value) : double.MaxValue;
+                    return (Feature: f, Distance: distance);
+                })
+                .OrderBy(x => x.Distance);
+
+            var limit = spatialFilter.NearestCount ?? 10;
+            var result = featuresWithDistance.Take(limit);
+
+            // If ReturnDistance is true, add distance to attributes
+            if (spatialFilter.ReturnDistance)
+            {
+                return result.Select(x =>
+                {
+                    var attributesWithDistance = x.Feature.Attributes.SetItem("distance", x.Distance);
+                    return Feature.Create(x.Feature.Id, x.Feature.Geometry, attributesWithDistance);
+                });
+            }
+
+            return result.Select(x => x.Feature);
+        }
+
+        // Handle distance-based queries
+        if (spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance ||
+            spatialFilter.SpatialRelationship == SpatialRelationship.BeyondDistance)
+        {
+            var filterPoint = ParsePointFromWkb(spatialFilter.Geometry);
+            if (filterPoint == null)
+                return Enumerable.Empty<Feature>();
+
+            var distanceMeters = ConvertDistanceToMeters(spatialFilter.Distance ?? 0, spatialFilter.DistanceUnit);
+
+            return features.Where(feature =>
+            {
+                if (feature.Geometry == null)
+                    return false;
+
+                var point = ParsePointFromWkb(feature.Geometry);
+                if (point == null)
+                    return false;
+
+                var actualDistance = CalculateDistance(filterPoint.Value, point.Value);
+
+                return spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance
+                    ? actualDistance <= distanceMeters
+                    : actualDistance > distanceMeters;
+            });
+        }
+
+        // Handle polygon-based spatial relationships
         return features.Where(feature =>
         {
             if (feature.Geometry == null)
@@ -332,9 +393,45 @@ public sealed class TestFeatureStore : IFeatureStore
                 SpatialRelationship.Contains => IsPointInPolygon(point.Value, polygon),
                 SpatialRelationship.Intersects => IsPointInPolygon(point.Value, polygon),
                 SpatialRelationship.Within => IsPointInPolygon(point.Value, polygon),
+                SpatialRelationship.EnvelopeIntersects => IsPointInPolygon(point.Value, polygon),
                 _ => false
             };
         });
+    }
+
+    /// <summary>
+    /// Converts a distance value to meters based on the specified unit
+    /// </summary>
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
+    {
+        return unit switch
+        {
+            DistanceUnit.Meters => distance,
+            DistanceUnit.Feet => distance * 0.3048,
+            DistanceUnit.Kilometers => distance * 1000,
+            DistanceUnit.Miles => distance * 1609.344,
+            _ => distance
+        };
+    }
+
+    /// <summary>
+    /// Calculates approximate distance in meters between two geographic points using Haversine formula
+    /// </summary>
+    private static double CalculateDistance((double x, double y) point1, (double x, double y) point2)
+    {
+        const double EarthRadiusMeters = 6371000; // Earth's radius in meters
+
+        var lat1 = point1.y * Math.PI / 180;
+        var lat2 = point2.y * Math.PI / 180;
+        var deltaLat = (point2.y - point1.y) * Math.PI / 180;
+        var deltaLon = (point2.x - point1.x) * Math.PI / 180;
+
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(deltaLon / 2) * Math.Sin(deltaLon / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+        return EarthRadiusMeters * c;
     }
 
     /// <summary>

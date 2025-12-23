@@ -91,6 +91,28 @@ public readonly record struct SpatialFilter
     public required SpatialRelationship SpatialRelationship { get; init; }
 
     /// <summary>
+    /// Distance value for distance-based spatial queries (WithinDistance, BeyondDistance).
+    /// The unit is determined by the DistanceUnit property.
+    /// </summary>
+    public double? Distance { get; init; }
+
+    /// <summary>
+    /// Unit for distance measurements. Defaults to Meters.
+    /// </summary>
+    public DistanceUnit DistanceUnit { get; init; }
+
+    /// <summary>
+    /// Number of nearest neighbors to return for KNN queries.
+    /// Only applicable when SpatialRelationship is NearestNeighbor.
+    /// </summary>
+    public int? NearestCount { get; init; }
+
+    /// <summary>
+    /// Whether to include the computed distance value in results for KNN queries.
+    /// </summary>
+    public bool ReturnDistance { get; init; }
+
+    /// <summary>
     /// Creates a spatial filter
     /// </summary>
     /// <param name="geometry">Filter geometry in WKB format</param>
@@ -98,6 +120,43 @@ public readonly record struct SpatialFilter
     /// <returns>Spatial filter instance</returns>
     public static SpatialFilter Create(byte[] geometry, SpatialRelationship spatialRelationship)
         => new() { Geometry = geometry, SpatialRelationship = spatialRelationship };
+
+    /// <summary>
+    /// Creates a distance-based spatial filter
+    /// </summary>
+    /// <param name="geometry">Filter geometry in WKB format</param>
+    /// <param name="distance">Distance value</param>
+    /// <param name="unit">Distance unit (defaults to Meters)</param>
+    /// <param name="withinDistance">True for within distance, false for beyond distance</param>
+    /// <returns>Spatial filter instance</returns>
+    public static SpatialFilter CreateDistanceFilter(
+        byte[] geometry,
+        double distance,
+        DistanceUnit unit = DistanceUnit.Meters,
+        bool withinDistance = true)
+        => new()
+        {
+            Geometry = geometry,
+            SpatialRelationship = withinDistance ? SpatialRelationship.WithinDistance : SpatialRelationship.BeyondDistance,
+            Distance = distance,
+            DistanceUnit = unit
+        };
+
+    /// <summary>
+    /// Creates a K-Nearest Neighbor (KNN) spatial filter
+    /// </summary>
+    /// <param name="geometry">Filter geometry in WKB format</param>
+    /// <param name="count">Number of nearest neighbors to return</param>
+    /// <param name="returnDistance">Whether to include distance values in results</param>
+    /// <returns>Spatial filter instance</returns>
+    public static SpatialFilter CreateKnnFilter(byte[] geometry, int count, bool returnDistance = false)
+        => new()
+        {
+            Geometry = geometry,
+            SpatialRelationship = SpatialRelationship.NearestNeighbor,
+            NearestCount = count,
+            ReturnDistance = returnDistance
+        };
 }
 
 /// <summary>
@@ -123,5 +182,46 @@ public enum SpatialRelationship
     /// <summary>
     /// Features whose envelope intersects the filter geometry
     /// </summary>
-    EnvelopeIntersects
+    EnvelopeIntersects,
+
+    /// <summary>
+    /// Features within a specified distance of the filter geometry (ST_DWithin)
+    /// </summary>
+    WithinDistance,
+
+    /// <summary>
+    /// Features beyond a specified distance from the filter geometry
+    /// </summary>
+    BeyondDistance,
+
+    /// <summary>
+    /// K-Nearest Neighbor query - returns K closest features to the filter geometry
+    /// </summary>
+    NearestNeighbor
+}
+
+/// <summary>
+/// Units for distance measurements in spatial queries
+/// </summary>
+public enum DistanceUnit
+{
+    /// <summary>
+    /// Distance in meters (default for geography types)
+    /// </summary>
+    Meters,
+
+    /// <summary>
+    /// Distance in feet
+    /// </summary>
+    Feet,
+
+    /// <summary>
+    /// Distance in kilometers
+    /// </summary>
+    Kilometers,
+
+    /// <summary>
+    /// Distance in miles
+    /// </summary>
+    Miles
 }

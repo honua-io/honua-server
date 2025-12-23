@@ -613,9 +613,34 @@ public sealed class QueryParameters
     public string? GeometryType { get; init; }
 
     /// <summary>
-    /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelContains, esriSpatialRelWithin)
+    /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelContains, esriSpatialRelWithin,
+    /// esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance)
     /// </summary>
     public string? SpatialRel { get; init; }
+
+    /// <summary>
+    /// Distance value for distance-based spatial queries (esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance).
+    /// Required when using distance-based spatial relationships.
+    /// </summary>
+    public double? Distance { get; init; }
+
+    /// <summary>
+    /// Unit of measure for distance queries. Supported values: esriSRUnit_Meter (default),
+    /// esriSRUnit_Foot, esriSRUnit_Kilometer, esriSRUnit_StatuteMile.
+    /// </summary>
+    public string? Units { get; init; }
+
+    /// <summary>
+    /// Number of nearest neighbors to return for KNN queries.
+    /// When specified with a geometry, returns the K closest features to that geometry.
+    /// </summary>
+    public int? NearestCount { get; init; }
+
+    /// <summary>
+    /// Whether to include the computed distance value in results for nearest neighbor queries.
+    /// When true, a "distance" field will be added to each feature's attributes.
+    /// </summary>
+    public bool ReturnDistance { get; init; }
 }
 
 /// <summary>
