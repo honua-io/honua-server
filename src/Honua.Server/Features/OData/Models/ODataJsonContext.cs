@@ -27,6 +27,7 @@ namespace Honua.Server.Features.OData.Models;
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTimeOffset))]
 [JsonSerializable(typeof(object[]))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
