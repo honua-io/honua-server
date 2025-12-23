@@ -64,9 +64,9 @@ COMMENT ON COLUMN honua.relationships.description IS 'Optional description of th
 COMMENT ON COLUMN honua.relationships.created_at IS 'Timestamp when the relationship was created';
 COMMENT ON COLUMN honua.relationships.updated_at IS 'Timestamp when the relationship was last updated';
 
-COMMENT ON INDEX idx_relationships_layer_id IS 'Index for finding relationships by source layer';
-COMMENT ON INDEX idx_relationships_related_layer_id IS 'Index for finding relationships by target layer';
-COMMENT ON INDEX idx_relationships_lookup IS 'Composite index for efficient relationship lookups by layer and relationship ID';
+COMMENT ON INDEX honua.idx_relationships_layer_id IS 'Index for finding relationships by source layer';
+COMMENT ON INDEX honua.idx_relationships_related_layer_id IS 'Index for finding relationships by target layer';
+COMMENT ON INDEX honua.idx_relationships_lookup IS 'Composite index for efficient relationship lookups by layer and relationship ID';
 
 -- Grant permissions (assuming honua_user from 001_CreateHonuaSchema.sql)
 -- GRANT SELECT ON honua.relationships TO honua_user;
