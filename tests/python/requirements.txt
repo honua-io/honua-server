@@ -1,0 +1,28 @@
+# Honua Integration Test Suite Dependencies
+# Python >= 3.11 required
+
+# Core testing framework
+pytest>=8.0.0
+pytest-xdist>=3.5.0  # Parallel test execution
+pytest-asyncio>=0.23.0
+pytest-timeout>=2.3.0
+
+# HTTP client
+httpx>=0.27.0
+requests>=2.31.0
+
+# Database and containers
+testcontainers[postgres]>=4.0.0
+psycopg[binary]>=3.1.0
+
+# Geospatial validation
+shapely>=2.0.0
+geopandas>=0.14.0
+pyproj>=3.6.0
+
+# Optional: PyQGIS integration (for FeatureServer validation)
+# Note: PyQGIS requires separate QGIS installation
+# qgis  # Uncomment if QGIS is installed
+
+# Utilities
+python-dotenv>=1.0.0
