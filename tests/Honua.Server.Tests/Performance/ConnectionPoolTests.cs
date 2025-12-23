@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Xunit;
@@ -128,10 +129,10 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.Equal(iterations, errorCount);
 
         // Verify pool is still functional
-        await using var conn = await _fixture.GetConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT 1";
-        var result = await cmd.ExecuteScalarAsync();
+        await using var verifyConn = await _fixture.GetConnectionAsync();
+        await using var verifyCmd = verifyConn.CreateCommand();
+        verifyCmd.CommandText = "SELECT 1";
+        var result = await verifyCmd.ExecuteScalarAsync();
         Assert.Equal(1, result);
     }
 
@@ -209,7 +210,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
 
         // Assert - there should be active connections
         Assert.NotNull(activeConnections);
-        var count = Convert.ToInt32(activeConnections);
+        var count = Convert.ToInt32(activeConnections, CultureInfo.InvariantCulture);
         Assert.True(count >= 0, "Should be able to query active connections");
     }
 
@@ -237,8 +238,8 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         }
 
         // Assert - pool still functional
-        await using var conn = await _fixture.GetConnectionAsync();
-        Assert.True(conn.State == System.Data.ConnectionState.Open);
+        await using var testConn = await _fixture.GetConnectionAsync();
+        Assert.True(testConn.State == System.Data.ConnectionState.Open);
     }
 
     /// <summary>
@@ -264,8 +265,8 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         }
 
         // Assert - pool still functional
-        await using var conn = await _fixture.GetConnectionAsync();
-        Assert.True(conn.State == System.Data.ConnectionState.Open);
+        await using var testConn = await _fixture.GetConnectionAsync();
+        Assert.True(testConn.State == System.Data.ConnectionState.Open);
     }
 
     /// <summary>
@@ -289,7 +290,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
             var pid = await cmd.ExecuteScalarAsync();
             if (pid != null)
             {
-                connectionIds.Add(Convert.ToInt32(pid));
+                connectionIds.Add(Convert.ToInt32(pid, CultureInfo.InvariantCulture));
             }
         });
 

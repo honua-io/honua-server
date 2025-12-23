@@ -3,6 +3,7 @@
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Diagnosers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Benchmarks;

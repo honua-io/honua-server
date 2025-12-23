@@ -3,6 +3,7 @@
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Diagnosers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -26,7 +27,6 @@ public class MemorySoakBenchmarks : IDisposable
 {
     private WebApplicationFactory<Program>? _factory;
     private HttpClient? _client;
-    private long _baselineMemory;
     private const int QueryIterations = 10_000;
     private const int MixedIterations = 5_000;
     private const int ConnectionIterations = 2_000;
@@ -46,7 +46,6 @@ public class MemorySoakBenchmarks : IDisposable
 
         // Force GC and capture baseline
         ForceGarbageCollection();
-        _baselineMemory = GC.GetTotalMemory(forceFullCollection: true);
     }
 
     [GlobalCleanup]
@@ -154,7 +153,7 @@ public class MemorySoakBenchmarks : IDisposable
             {
                 var response = await _client!.GetAsync(
                     "/rest/services/test/FeatureServer/0/query?where=1=1&resultRecordCount=5&f=json");
-                _ = await response.Content.ReadAsStringAsync();
+                var content = await response.Content.ReadAsStringAsync();
             });
 
             await Task.WhenAll(tasks);
