@@ -6,7 +6,7 @@ namespace Honua.Server.Features.Infrastructure.Services;
 /// <summary>
 /// Service for converting between geometry formats
 /// </summary>
-public interface IGeometryConverter
+internal interface IGeometryConverter
 {
     /// <summary>
     /// Converts GeoServices JSON geometry to Well-Known Binary (WKB) format

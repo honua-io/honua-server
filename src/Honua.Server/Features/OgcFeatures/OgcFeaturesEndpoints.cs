@@ -2292,7 +2292,7 @@ public static class OgcFeaturesEndpoints
             throw new ArgumentException("Geometry type is required");
         }
 
-        var typeJson = JsonSerializer.Serialize(geometry.Type);
+        var typeJson = $"\"{geometry.Type}\"";
         string geoJson;
 
         if (string.Equals(geometry.Type, "GeometryCollection", StringComparison.OrdinalIgnoreCase))
