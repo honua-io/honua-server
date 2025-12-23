@@ -44,6 +44,16 @@ public static class OgcFeaturesEndpoints
             .Produces<ConformanceDeclaration>(200, MediaTypes.Json)
             .Produces(404);
 
+        endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
+            .WithDisplayName("OGC API Features OpenAPI Specification")
+            .WithName("OpenApiSpec")
+            .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")
+            .WithDescription("The OpenAPI specification describes all available endpoints and their parameters")
+            .WithTags("OGC API Features")
+            .CacheOutput("OgcOpenApi")
+            .Produces<object>(200, MediaTypes.OpenApi)
+            .Produces(404);
+
         endpoints.MapGet("/ogc/features/collections", HandleGetCollections)
             .WithDisplayName("OGC API Features Collections")
             .WithName("CollectionInfos")
@@ -73,6 +83,16 @@ public static class OgcFeaturesEndpoints
             .Produces<FeatureCollection>(200, MediaTypes.GeoJson)
             .Produces(400)
             .Produces(404);
+
+        endpoints.MapGet("/ogc/features/collections/{collectionId}/items/{featureId}", HandleGetItem)
+            .WithDisplayName("OGC API Features Item")
+            .WithName("GetItem")
+            .WithSummary("Get a specific feature from a collection")
+            .WithDescription("Get a specific feature by its ID from a collection")
+            .WithTags("OGC API Features")
+            .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
+            .Produces(404)
+            .Produces(400);
 
         return endpoints;
     }
@@ -149,6 +169,407 @@ public static class OgcFeaturesEndpoints
         };
 
         return TypedResults.Ok(conformance);
+    }
+
+    /// <summary>
+    /// Handles the OpenAPI 3.0 specification request
+    /// </summary>
+    private static Ok<object> HandleGetOpenApiSpec(HttpContext context)
+    {
+        var request = context.Request;
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+
+        var openApiSpec = new
+        {
+            openapi = "3.0.3",
+            info = new
+            {
+                title = "Honua OGC API Features",
+                description = "OGC API Features implementation for geospatial data access",
+                version = "1.0.0",
+                contact = new
+                {
+                    name = "Honua Server",
+                    url = $"{baseUrl}"
+                }
+            },
+            servers = new[]
+            {
+                new { url = baseUrl, description = "Honua Server" }
+            },
+            paths = new
+            {
+                @"/ogc/features" = new
+                {
+                    get = new
+                    {
+                        summary = "Get OGC API Features landing page",
+                        description = "The landing page provides links to the API definition and other resources",
+                        tags = new[] { "OGC API Features" },
+                        responses = new
+                        {
+                            @"200" = new
+                            {
+                                description = "Landing page information",
+                                content = new
+                                {
+                                    @"application/json" = new
+                                    {
+                                        schema = new { @"$ref" = "#/components/schemas/LandingPage" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                @"/ogc/features/conformance" = new
+                {
+                    get = new
+                    {
+                        summary = "Get OGC API Features conformance declaration",
+                        description = "Conformance classes that this API conforms to",
+                        tags = new[] { "OGC API Features" },
+                        responses = new
+                        {
+                            @"200" = new
+                            {
+                                description = "Conformance declaration",
+                                content = new
+                                {
+                                    @"application/json" = new
+                                    {
+                                        schema = new { @"$ref" = "#/components/schemas/ConformanceDeclaration" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                @"/ogc/features/collections" = new
+                {
+                    get = new
+                    {
+                        summary = "Get OGC API Features collections",
+                        description = "Lists all available feature collections",
+                        tags = new[] { "OGC API Features" },
+                        responses = new
+                        {
+                            @"200" = new
+                            {
+                                description = "Collections list",
+                                content = new
+                                {
+                                    @"application/json" = new
+                                    {
+                                        schema = new { @"$ref" = "#/components/schemas/Collections" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                @"/ogc/features/collections/{collectionId}" = new
+                {
+                    get = new
+                    {
+                        summary = "Get OGC API Features collection metadata",
+                        description = "Get detailed metadata for a specific collection",
+                        tags = new[] { "OGC API Features" },
+                        parameters = new[]
+                        {
+                            new
+                            {
+                                name = "collectionId",
+                                @in = "path",
+                                required = true,
+                                description = "Collection identifier",
+                                schema = new { type = "string" }
+                            }
+                        },
+                        responses = new
+                        {
+                            @"200" = new
+                            {
+                                description = "Collection metadata",
+                                content = new
+                                {
+                                    @"application/json" = new
+                                    {
+                                        schema = new { @"$ref" = "#/components/schemas/CollectionInfo" }
+                                    }
+                                }
+                            },
+                            @"404" = new
+                            {
+                                description = "Collection not found"
+                            }
+                        }
+                    }
+                },
+                @"/ogc/features/collections/{collectionId}/items" = new
+                {
+                    get = new
+                    {
+                        summary = "Get features from a collection",
+                        description = "Get features from a collection with optional filtering",
+                        tags = new[] { "OGC API Features" },
+                        parameters = new[]
+                        {
+                            new
+                            {
+                                name = "collectionId",
+                                @in = "path",
+                                required = true,
+                                description = "Collection identifier",
+                                schema = new { type = "string" }
+                            },
+                            new
+                            {
+                                name = "limit",
+                                @in = "query",
+                                required = false,
+                                description = "Maximum number of features to return (default: 10, max: 10000)",
+                                schema = new { type = "integer", minimum = 1, maximum = 10000, @default = 10 }
+                            },
+                            new
+                            {
+                                name = "offset",
+                                @in = "query",
+                                required = false,
+                                description = "Number of features to skip",
+                                schema = new { type = "integer", minimum = 0, @default = 0 }
+                            },
+                            new
+                            {
+                                name = "bbox",
+                                @in = "query",
+                                required = false,
+                                description = "Bounding box as 'minx,miny,maxx,maxy'",
+                                schema = new { type = "string", pattern = @"^-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*$" }
+                            },
+                            new
+                            {
+                                name = "datetime",
+                                @in = "query",
+                                required = false,
+                                description = "Temporal filter (ISO 8601 format) - not yet implemented",
+                                schema = new { type = "string" }
+                            },
+                            new
+                            {
+                                name = "filter",
+                                @in = "query",
+                                required = false,
+                                description = "CQL2-Text filter expression",
+                                schema = new { type = "string" }
+                            }
+                        },
+                        responses = new
+                        {
+                            @"200" = new
+                            {
+                                description = "GeoJSON FeatureCollection",
+                                content = new
+                                {
+                                    @"application/geo+json" = new
+                                    {
+                                        schema = new { @"$ref" = "#/components/schemas/FeatureCollection" }
+                                    }
+                                }
+                            },
+                            @"400" = new
+                            {
+                                description = "Bad request (invalid parameters)"
+                            },
+                            @"404" = new
+                            {
+                                description = "Collection not found"
+                            }
+                        }
+                    }
+                },
+                @"/ogc/features/collections/{collectionId}/items/{featureId}" = new
+                {
+                    get = new
+                    {
+                        summary = "Get a specific feature from a collection",
+                        description = "Get a specific feature by its ID from a collection",
+                        tags = new[] { "OGC API Features" },
+                        parameters = new[]
+                        {
+                            new
+                            {
+                                name = "collectionId",
+                                @in = "path",
+                                required = true,
+                                description = "Collection identifier",
+                                schema = new { type = "string" }
+                            },
+                            new
+                            {
+                                name = "featureId",
+                                @in = "path",
+                                required = true,
+                                description = "Feature identifier",
+                                schema = new { type = "string" }
+                            }
+                        },
+                        responses = new
+                        {
+                            @"200" = new
+                            {
+                                description = "GeoJSON Feature",
+                                content = new
+                                {
+                                    @"application/geo+json" = new
+                                    {
+                                        schema = new { @"$ref" = "#/components/schemas/GeoJsonFeature" }
+                                    }
+                                }
+                            },
+                            @"404" = new
+                            {
+                                description = "Feature or collection not found"
+                            }
+                        }
+                    }
+                }
+            },
+            components = new
+            {
+                schemas = new
+                {
+                    LandingPage = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            title = new { type = "string" },
+                            description = new { type = "string" },
+                            links = new
+                            {
+                                type = "array",
+                                items = new { @"$ref" = "#/components/schemas/Link" }
+                            }
+                        }
+                    },
+                    ConformanceDeclaration = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            conformsTo = new
+                            {
+                                type = "array",
+                                items = new { type = "string" }
+                            }
+                        }
+                    },
+                    Collections = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            collections = new
+                            {
+                                type = "array",
+                                items = new { @"$ref" = "#/components/schemas/CollectionInfo" }
+                            },
+                            links = new
+                            {
+                                type = "array",
+                                items = new { @"$ref" = "#/components/schemas/Link" }
+                            }
+                        }
+                    },
+                    CollectionInfo = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            id = new { type = "string" },
+                            title = new { type = "string" },
+                            description = new { type = "string" },
+                            extent = new { @"$ref" = "#/components/schemas/Extent" },
+                            links = new
+                            {
+                                type = "array",
+                                items = new { @"$ref" = "#/components/schemas/Link" }
+                            }
+                        }
+                    },
+                    FeatureCollection = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            type = new { type = "string", @enum = new[] { "FeatureCollection" } },
+                            features = new
+                            {
+                                type = "array",
+                                items = new { @"$ref" = "#/components/schemas/GeoJsonFeature" }
+                            },
+                            numberMatched = new { type = "integer" },
+                            numberReturned = new { type = "integer" },
+                            timeStamp = new { type = "string", format = "date-time" },
+                            links = new
+                            {
+                                type = "array",
+                                items = new { @"$ref" = "#/components/schemas/Link" }
+                            }
+                        }
+                    },
+                    GeoJsonFeature = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            type = new { type = "string", @enum = new[] { "Feature" } },
+                            id = new { },
+                            geometry = new { },
+                            properties = new { type = "object" }
+                        }
+                    },
+                    Link = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            href = new { type = "string", format = "uri" },
+                            rel = new { type = "string" },
+                            type = new { type = "string" },
+                            title = new { type = "string" }
+                        },
+                        required = new[] { "href", "rel" }
+                    },
+                    Extent = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            spatial = new
+                            {
+                                type = "object",
+                                properties = new
+                                {
+                                    bbox = new
+                                    {
+                                        type = "array",
+                                        items = new
+                                        {
+                                            type = "array",
+                                            items = new { type = "number" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        return TypedResults.Ok<object>(openApiSpec);
     }
 
     /// <summary>
@@ -263,8 +684,11 @@ public static class OgcFeaturesEndpoints
     private static async Task<IResult> HandleGetItems(
         string collectionId,
         string? filter,
+        string? bbox,
+        string? datetime,
         int? limit,
         int? offset,
+        HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
@@ -318,6 +742,31 @@ public static class OgcFeaturesEndpoints
                 }
             }
 
+            // Parse bbox parameter if provided (format: "minx,miny,maxx,maxy")
+            SpatialFilter? spatialFilter = null;
+            if (!string.IsNullOrWhiteSpace(bbox))
+            {
+                try
+                {
+                    spatialFilter = ParseBboxParameter(bbox, geometryConverter);
+                }
+                catch (ArgumentException ex)
+                {
+                    return TypedResults.BadRequest($"Invalid bbox parameter: {ex.Message}");
+                }
+            }
+
+            // Parse datetime parameter if provided (ISO 8601 format or interval)
+            // TODO: Implement temporal filtering based on datetime parameter
+            // For now, log a warning if datetime is provided but not yet supported
+            if (!string.IsNullOrWhiteSpace(datetime))
+            {
+                // TODO: Implement temporal filtering
+                // This would require adding temporal filter support to FeatureQuery
+                // and the underlying data store implementation
+                return TypedResults.BadRequest("Datetime parameter filtering is not yet implemented");
+            }
+
             var whereClause = string.IsNullOrWhiteSpace(filter) ? null : filter;
 
             // Create feature query with proper parameterized filter support
@@ -332,7 +781,8 @@ public static class OgcFeaturesEndpoints
                 {
                     Where = whereClause,
                     SqlFilter = sqlFragment,
-                    Limit = limit ?? 1000, // Default limit per OGC spec
+                    SpatialFilter = spatialFilter,
+                    Limit = limit ?? 10, // OGC spec default limit is 10, not 1000
                     Offset = offset
                 };
             }
@@ -341,7 +791,8 @@ public static class OgcFeaturesEndpoints
                 featureQuery = new FeatureQuery
                 {
                     Where = whereClause,
-                    Limit = limit ?? 1000, // Default limit per OGC spec
+                    SpatialFilter = spatialFilter,
+                    Limit = limit ?? 10, // OGC spec default limit is 10, not 1000
                     Offset = offset
                 };
             }
@@ -349,8 +800,8 @@ public static class OgcFeaturesEndpoints
             // Query features
             var result = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
 
-            // Convert to GeoJSON FeatureCollection
-            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter);
+            // Convert to GeoJSON FeatureCollection with enhanced metadata
+            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter, context, collectionId, limit, offset);
 
             return Results.Json(featureCollection, OgcJsonContext.Default.FeatureCollection, contentType: MediaTypes.GeoJson);
         }
@@ -377,12 +828,141 @@ public static class OgcFeaturesEndpoints
     }
 
     /// <summary>
+    /// Handles the OGC API Features single item request
+    /// </summary>
+    private static async Task<IResult> HandleGetItem(
+        string collectionId,
+        string featureId,
+        ILayerCatalog layerCatalog,
+        IFeatureStore featureStore,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Parse collection ID to layer ID
+            if (!int.TryParse(collectionId, out var layerId))
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Verify collection/layer exists
+            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            if (layer == null)
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Parse feature ID
+            if (!long.TryParse(featureId, out var featureIdLong))
+            {
+                return TypedResults.BadRequest("Invalid feature ID format");
+            }
+
+            // Get the feature
+            var feature = await featureStore.GetAsync(layerId, featureIdLong, cancellationToken);
+            if (feature == null)
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Convert to GeoJSON feature
+            var geoJsonFeature = new GeoJsonFeature
+            {
+                Type = "Feature",
+                Id = feature.Id,
+                Geometry = ConvertFeatureGeometry(feature.Geometry, geometryConverter),
+                Properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+            };
+
+            return Results.Json(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Server errors - log details but don't expose to client
+            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error processing OGC single item request"))
+            _ = ex; // Suppress unused variable warning until logging is implemented
+            return TypedResults.Problem(
+                title: "Internal server error",
+                detail: "An error occurred while processing the request.",
+                statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// Parses OGC API Features bbox parameter into a SpatialFilter
+    /// </summary>
+    /// <param name="bbox">Bbox parameter in format "minx,miny,maxx,maxy"</param>
+    /// <param name="geometryConverter">Geometry converter service</param>
+    /// <returns>SpatialFilter for bbox intersection queries</returns>
+    private static SpatialFilter ParseBboxParameter(string bbox, Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    {
+        // Parse bbox format: "minx,miny,maxx,maxy"
+        var bboxParts = bbox.Split(',');
+        if (bboxParts.Length != 4)
+        {
+            throw new ArgumentException("Bbox parameter must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
+        }
+
+        if (!double.TryParse(bboxParts[0], out var minx) ||
+            !double.TryParse(bboxParts[1], out var miny) ||
+            !double.TryParse(bboxParts[2], out var maxx) ||
+            !double.TryParse(bboxParts[3], out var maxy))
+        {
+            throw new ArgumentException("Bbox parameter values must be valid numbers");
+        }
+
+        // Validate bbox bounds
+        if (minx >= maxx || miny >= maxy)
+        {
+            throw new ArgumentException("Invalid bbox: minimum values must be less than maximum values");
+        }
+
+        // Validate coordinate ranges (assuming WGS84/CRS84)
+        if (minx < -180 || maxx > 180 || miny < -90 || maxy > 90)
+        {
+            throw new ArgumentException("Bbox coordinates are out of valid range for CRS84 (-180 to 180 for longitude, -90 to 90 for latitude)");
+        }
+
+        // Convert to Esri envelope format for the geometry converter
+        var envelopeJson = $"{{\"xmin\":{minx},\"ymin\":{miny},\"xmax\":{maxx},\"ymax\":{maxy}}}";
+        
+        try
+        {
+            // Use the geometry converter to create WKB from the envelope
+            var wkbGeometry = geometryConverter.ConvertEsriJsonToWkb(envelopeJson);
+
+            return new SpatialFilter
+            {
+                Geometry = wkbGeometry,
+                SpatialRelationship = SpatialRelationship.Intersects
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new ArgumentException($"Failed to create spatial filter from bbox: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
     /// Converts query results to GeoJSON FeatureCollection
     /// </summary>
     private static FeatureCollection ConvertToGeoJsonFeatureCollection(
         QueryResult<Feature> queryResult,
         Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
-        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        HttpContext httpContext,
+        string collectionId,
+        int? limit,
+        int? offset)
     {
         var features = queryResult.Items.Select(feature => new GeoJsonFeature
         {
@@ -392,13 +972,132 @@ public static class OgcFeaturesEndpoints
             Properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
         }).ToArray();
 
+        // Generate paging links
+        var links = GeneratePagingLinks(httpContext, collectionId, limit, offset, queryResult.TotalCount, queryResult.Items.Length);
+
         return new FeatureCollection
         {
             Type = "FeatureCollection",
             Features = features,
             NumberMatched = queryResult.TotalCount,
-            NumberReturned = queryResult.Items.Length
+            NumberReturned = queryResult.Items.Length,
+            TimeStamp = DateTimeOffset.UtcNow,
+            Links = links
         };
+    }
+
+    /// <summary>
+    /// Generates paging links for OGC API Features responses
+    /// </summary>
+    private static ImmutableArray<Link> GeneratePagingLinks(
+        HttpContext httpContext,
+        string collectionId,
+        int? requestedLimit,
+        int? requestedOffset,
+        long totalCount,
+        int returnedCount)
+    {
+        var request = httpContext.Request;
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
+        
+        var links = new List<Link>();
+        
+        // Parse query parameters to preserve filters
+        var queryParams = new Dictionary<string, string>();
+        foreach (var param in request.Query)
+        {
+            if (param.Key != "limit" && param.Key != "offset")
+            {
+                queryParams[param.Key] = param.Value.ToString();
+            }
+        }
+
+        var effectiveLimit = requestedLimit ?? 10; // Default OGC limit
+        var effectiveOffset = requestedOffset ?? 0;
+
+        // Helper to build URL with query parameters
+        string BuildUrl(int? limit, int? offset)
+        {
+            var queryBuilder = new List<string>();
+            
+            foreach (var kvp in queryParams)
+            {
+                if (!string.IsNullOrEmpty(kvp.Value))
+                {
+                    queryBuilder.Add($"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}");
+                }
+            }
+            
+            if (limit.HasValue)
+                queryBuilder.Add($"limit={limit}");
+                
+            if (offset.HasValue && offset > 0)
+                queryBuilder.Add($"offset={offset}");
+                
+            return queryBuilder.Count > 0 ? $"{basePath}?{string.Join("&", queryBuilder)}" : basePath;
+        }
+
+        // Self link (current request)
+        links.Add(Link.Create(
+            href: BuildUrl(effectiveLimit, effectiveOffset),
+            rel: RelationTypes.Self,
+            type: MediaTypes.GeoJson,
+            title: "This document"
+        ));
+
+        // Next link (if there are more results)
+        var nextOffset = effectiveOffset + returnedCount;
+        if (nextOffset < totalCount)
+        {
+            links.Add(Link.Create(
+                href: BuildUrl(effectiveLimit, nextOffset),
+                rel: "next",
+                type: MediaTypes.GeoJson,
+                title: "Next page"
+            ));
+        }
+
+        // Previous link (if not on first page)
+        if (effectiveOffset > 0)
+        {
+            var prevOffset = Math.Max(0, effectiveOffset - effectiveLimit);
+            links.Add(Link.Create(
+                href: BuildUrl(effectiveLimit, prevOffset > 0 ? prevOffset : null),
+                rel: "prev",
+                type: MediaTypes.GeoJson,
+                title: "Previous page"
+            ));
+        }
+
+        // First page link (if not on first page)
+        if (effectiveOffset > 0)
+        {
+            links.Add(Link.Create(
+                href: BuildUrl(effectiveLimit, null), // offset=0 is implied when null
+                rel: "first",
+                type: MediaTypes.GeoJson,
+                title: "First page"
+            ));
+        }
+
+        // Last page link (if not on last page and we know the total count)
+        if (totalCount > 0 && nextOffset < totalCount)
+        {
+            // Calculate the offset for the last page
+            var lastPageOffset = ((totalCount - 1) / effectiveLimit) * effectiveLimit;
+            if (lastPageOffset != effectiveOffset)
+            {
+                links.Add(Link.Create(
+                    href: BuildUrl(effectiveLimit, lastPageOffset > 0 ? lastPageOffset : null),
+                    rel: "last",
+                    type: MediaTypes.GeoJson,
+                    title: "Last page"
+                ));
+            }
+        }
+
+        return links.ToImmutableArray();
     }
 
     /// <summary>
