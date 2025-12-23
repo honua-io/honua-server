@@ -16,11 +16,11 @@ namespace Honua.Benchmarks;
 /// - Mixed workload scenarios
 /// - Sustained load over time
 ///
-/// Targets from performance-testing.md:
-/// - Simple queries: greater than 1000 RPS at p95 less than 150ms
-/// - Spatial queries: greater than 500 RPS at p95 less than 300ms
-/// - Mixed workload: greater than 800 RPS at p95 less than 200ms
-/// - Sustained load: greater than 500 RPS for 5 minutes (stable)
+/// Targets (Issue #46 AC):
+/// - Simple queries: greater than 1000 RPS at p95 less than 100ms
+/// - Spatial queries: greater than 500 RPS at p95 less than 100ms
+/// - Mixed workload: greater than 800 RPS at p95 less than 150ms
+/// - Sustained load: greater than 500 RPS stable over duration
 /// </summary>
 [MemoryDiagnoser]
 [ThreadingDiagnoser]

@@ -8,10 +8,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace Honua.Benchmarks;
 
 /// <summary>
-/// Query endpoint benchmarks targeting performance baselines:
-/// - p50 less than 50ms (100 features)
-/// - p95 less than 150ms (100 features)
-/// - p99 less than 300ms (100 features)
+/// Query endpoint benchmarks targeting performance baselines (Issue #46):
+/// - p50 less than 30ms (basic queries)
+/// - p95 less than 100ms (basic queries) - AC requirement from Issue #46
+/// - p99 less than 200ms (basic queries)
 /// - Throughput greater than 1k rps
 ///
 /// These benchmarks use the real Honua Server application via WebApplicationFactory
@@ -56,8 +56,8 @@ public class QueryBenchmarks : IDisposable
     }
 
     /// <summary>
-    /// Baseline query benchmark - simple where clause returning approximately 100 features
-    /// Target: p50 less than 50ms, p99 less than 300ms
+    /// Baseline query benchmark - simple where clause returning approximately 100 features.
+    /// Target: p50 less than 30ms, p95 less than 100ms, p99 less than 200ms
     /// </summary>
     [Benchmark(Description = "Simple WHERE clause query")]
     public async Task<string> SimpleWhereQuery()
@@ -70,8 +70,8 @@ public class QueryBenchmarks : IDisposable
     }
 
     /// <summary>
-    /// Spatial query benchmark - bbox intersection returning approximately 100 features
-    /// Target: p50 less than 50ms, p99 less than 300ms
+    /// Spatial query benchmark - bbox intersection returning approximately 100 features.
+    /// Target: p50 less than 30ms, p95 less than 100ms, p99 less than 200ms
     /// </summary>
     [Benchmark(Description = "Spatial bbox query")]
     public async Task<string> SpatialBboxQuery()
