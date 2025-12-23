@@ -20,15 +20,12 @@ public sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    IConfiguration configuration,
-    IWebHostEnvironment environment) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    IOptions<ApiKeyAuthenticationOptions> authOptions) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     private const string ApiKeyHeader = "X-API-Key";
-    private const string DevAuthBypassEnvVar = "HONUA_DEV_AUTH";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
 
-    private readonly IConfiguration _configuration = configuration;
-    private readonly IWebHostEnvironment _environment = environment;
+    private readonly ApiKeyAuthenticationOptions _authOptions = authOptions?.Value ?? throw new ArgumentNullException(nameof(authOptions));
 
     /// <summary>
     /// Handles API key authentication with development bypass support
@@ -57,7 +54,7 @@ public sealed class ApiKeyAuthenticationHandler(
         }
 
         // Get configured admin password
-        string? configuredPassword = _configuration[AdminPasswordEnvVar];
+        string? configuredPassword = _authOptions.AdminPassword;
         if (string.IsNullOrEmpty(configuredPassword))
         {
             AuthenticationLog.NoAdminPasswordConfigured(Logger, AdminPasswordEnvVar);
@@ -83,16 +80,16 @@ public sealed class ApiKeyAuthenticationHandler(
     private bool IsDevelopmentBypassEnabled()
     {
         // Check if HONUA_DEV_AUTH is explicitly set to true
-        string? devAuthBypass = _configuration[DevAuthBypassEnvVar];
+        string? devAuthBypass = _authOptions.DevAuthBypass;
         if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         // Check if we're in development environment AND admin password is empty/not configured
-        if (_environment.IsDevelopment())
+        if (_authOptions.IsDevelopmentMode)
         {
-            string? adminPassword = _configuration[AdminPasswordEnvVar];
+            string? adminPassword = _authOptions.AdminPassword;
             if (string.IsNullOrEmpty(adminPassword))
             {
                 AuthenticationLog.DevelopmentEnvironmentAuthBypass(Logger);

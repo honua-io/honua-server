@@ -10,6 +10,7 @@ using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -74,16 +75,36 @@ RegisterInfrastructureServices(builder.Services, builder.Configuration);
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);
 
+// Configure tile options
+ConfigureTileOptions(builder.Services, builder.Configuration);
+
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 
-// Register FeatureServer services
-builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IGeometryConverter,
-    Honua.Server.Features.FeatureServer.Services.GeometryConverter>();
+// Register shared Infrastructure services
+builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
+    Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
+
+// Register FeatureServer services - they will use the shared geometry converter
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFormatter,
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeatureQueryValidator,
+    Honua.Server.Features.FeatureServer.Services.FeatureQueryValidator>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
+
+// Register OData services (temporarily disabled for Issue 46 performance testing)
+// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQueryParser>();
+// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataResponseFormatter>();
+// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataMetadataGenerator>();
+
+// Configure authentication options
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
+{
+    options.IsDevelopmentMode = builder.Environment.IsDevelopment();
+    options.AdminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
+    options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
+});
 
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
@@ -158,6 +179,9 @@ app.MapAttachmentEndpoints();
 
 // Configure OGC API Features endpoints
 app.MapOgcFeaturesEndpoints();
+
+// Configure OData v4 endpoints
+app.MapODataEndpoints();
 
 // Configure file import endpoints
 app.MapImportEndpoints();
@@ -366,10 +390,37 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.Tag("ogc-metadata", "metadata");
         });
 
+        // MVT tile caching policy
+        options.AddPolicy("MvtTile", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1)); // Cache tiles for 1 hour by default
+            policy.SetVaryByRouteValue("layerId", "z", "x", "y");
+            policy.SetVaryByQuery("where"); // Support for WHERE clause filtering
+            policy.Tag("mvt-tiles", "tiles");
+        });
+
+        // OData features caching policy (temporarily disabled for Issue 46 performance testing)
+        // options.AddPolicy("ODataFeatures", policy =>
+        // {
+        //     policy.Expire(TimeSpan.FromMinutes(10)); // Cache feature queries for 10 minutes
+        //     policy.SetVaryByRouteValue("layerId");
+        //     policy.SetVaryByQuery("$filter", "$select", "$top", "$skip", "$orderby", "$count");
+        //     policy.Tag("odata-features", "features");
+        // });
+
         // Note: No default base policy - endpoints must explicitly opt into caching for security
     });
 }
 
+// Configure tile options with validation
+static void ConfigureTileOptions(IServiceCollection services, IConfiguration configuration)
+{
+    // Bind configuration with default values
+    services.Configure<Honua.Core.Features.Tiles.TileOptions>(options =>
+    {
+        configuration.GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName).Bind(options);
+    });
+}
 
 // Make Program accessible to WebApplicationFactory
 public partial class Program { }

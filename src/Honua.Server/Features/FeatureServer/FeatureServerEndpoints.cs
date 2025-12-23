@@ -6,7 +6,9 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Tiles;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -99,6 +101,19 @@ public static class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         // .Produces<QueryRelatedRecordsResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
+
+        _ = endpoints.Map("/tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt", HandleGetTile)
+            .WithDisplayName("Get MVT Tile")
+            .WithName("GetMvtTile")
+            .WithSummary("Get MVT (Mapbox Vector Tile) for a layer")
+            .WithDescription("Generates vector tiles using PostGIS ST_AsMVT with proper clipping and simplification")
+            .WithTags("Tiles")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .CacheOutput("MvtTile");
+        // .Produces<byte[]>(200, "application/vnd.mapbox-vector-tile")
+        // .Produces(204)
         // .Produces(400)
         // .Produces(404);
 
@@ -435,7 +450,7 @@ public static class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -486,7 +501,7 @@ public static class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -947,5 +962,102 @@ public static class FeatureServerEndpoints
         {
             return (false, null, $"Failed to parse request: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Handles MVT tile requests
+    /// </summary>
+    /// <param name="layerId">Layer identifier</param>
+    /// <param name="z">Zoom level</param>
+    /// <param name="x">Tile X coordinate</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="where">Optional WHERE clause for filtering</param>
+    /// <param name="response">HTTP response for setting headers</param>
+    /// <param name="featureStore">Feature store service</param>
+    /// <param name="layerCatalog">Layer catalog service</param>
+    /// <param name="tileOptions">Tile configuration options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>MVT tile data or 204 if empty</returns>
+    private static async Task<IResult> HandleGetTile(
+        int layerId,
+        int z,
+        int x,
+        int y,
+        string? where,
+        HttpResponse response,
+        IFeatureStore featureStore,
+        ILayerCatalog layerCatalog,
+        IOptions<TileOptions> tileOptions,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Validate tile configuration
+            var options = tileOptions.Value;
+            if (z < options.MinZoom || z > options.MaxZoom)
+            {
+                return Results.BadRequest($"Zoom level {z} is outside supported range ({options.MinZoom}-{options.MaxZoom})");
+            }
+
+            // Validate tile coordinates
+            if (!TileMath.ValidateTileCoordinates(x, y, z))
+            {
+                return Results.BadRequest($"Invalid tile coordinates: x={x}, y={y}, z={z}");
+            }
+
+            // Verify layer exists
+            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            if (layer == null)
+            {
+                return Results.NotFound($"Layer {layerId} not found");
+            }
+
+            // Create feature query with optional WHERE clause
+            var query = new FeatureQuery
+            {
+                Where = where
+            };
+
+            // Generate MVT tile using TileOptions
+            var mvtData = await featureStore.GetMvtTileAsync(layerId, x, y, z, query, options, cancellationToken);
+
+            if (mvtData == null || mvtData.Length == 0)
+            {
+                // Return 204 No Content for empty tiles
+                return Results.NoContent();
+            }
+
+            // Return MVT with appropriate content type
+            response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
+            return Results.Bytes(mvtData, "application/vnd.mapbox-vector-tile");
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(
+                detail: ex.Message,
+                statusCode: 500,
+                title: "Tile generation failed");
+        }
+    }
+
+    /// <summary>
+    /// Gets the timeout-aware cancellation token from middleware, falling back to request cancellation token
+    /// </summary>
+    /// <param name="context">HTTP context</param>
+    /// <returns>Cancellation token that respects timeout limits</returns>
+    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    {
+        // Try to get the timeout token from LimitsEnforcementMiddleware
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            return timeoutToken;
+        }
+
+        // Fallback to request cancellation token
+        return context.RequestAborted;
     }
 }

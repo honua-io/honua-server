@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -261,10 +262,15 @@ public sealed class TestFeatureStore : IFeatureStore
     {
         // Simple WHERE clause parsing for testing
         // This is a simplified version, real implementation would be more robust
-        return whereClause.ToLowerInvariant() switch
+        var normalized = Regex.Replace(whereClause, @"\s*=\s*", "=", RegexOptions.CultureInvariant);
+        var lowerClause = normalized.Trim().ToLowerInvariant();
+
+        return lowerClause switch
         {
             "name='test feature'" => features.Where(f => f.Attributes.TryGetValue("name", out var nameValue) &&
                                                          nameValue?.ToString()?.Equals("Test Feature", StringComparison.OrdinalIgnoreCase) == true),
+            "category='test'" => features.Where(f => f.Attributes.TryGetValue("category", out var categoryValue) &&
+                                                     categoryValue?.ToString()?.Equals("test", StringComparison.OrdinalIgnoreCase) == true),
             var clause when clause.Contains("drop", StringComparison.OrdinalIgnoreCase) || clause.Contains(';') || clause.Contains("--", StringComparison.OrdinalIgnoreCase) =>
                 throw new ArgumentException("WHERE clause contains dangerous pattern: " + clause.Split(' ').First(w => new[] { "drop", ";", "--" }.Contains(w.ToLower(System.Globalization.CultureInfo.InvariantCulture))), nameof(whereClause)),
             "invalid syntax here" =>
@@ -387,5 +393,30 @@ public sealed class TestFeatureStore : IFeatureStore
     {
         // Basic implementation returns empty result - tests that need related features should use TestFeatureStoreWithRelationships
         return Task.FromResult(QueryResult<Feature>.Empty());
+    }
+
+    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    {
+        // Return a simple mock MVT tile for testing
+        if (!_layerFeatures.TryGetValue(layerId, out var features) || features.Count == 0)
+        {
+            return Task.FromResult<byte[]?>(null); // Empty tile
+        }
+
+        // Return a mock MVT tile with basic header
+        var mockMvt = new byte[]
+        {
+            0x1A, 0x04, 0x6C, 0x61, 0x79, 0x65, 0x72, // Basic MVT header
+            0x12, 0x02, 0x08, 0x01, // Mock feature data
+            0x18, 0x03, 0x22, 0x02, 0x08, 0x01
+        };
+
+        return Task.FromResult<byte[]?>(mockMvt);
+    }
+
+    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query, Honua.Core.Features.Tiles.TileOptions tileOptions, CancellationToken cancellationToken = default)
+    {
+        // Call the existing method - tile options are used by the real PostgreSQL implementation but not needed for test mocks
+        return GetMvtTileAsync(layerId, x, y, z, query, cancellationToken);
     }
 }

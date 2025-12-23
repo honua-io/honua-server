@@ -2,7 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 
@@ -13,6 +18,7 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 public static class OgcFeaturesEndpoints
 {
+
     /// <summary>
     /// Maps OGC API Features endpoints for Core and Conformance
     /// </summary>
@@ -44,7 +50,7 @@ public static class OgcFeaturesEndpoints
             .WithSummary("Get OGC API Features collections")
             .WithDescription("Lists all available feature collections")
             .WithTags("OGC API Features")
-            .CacheOutput("CollectionInfos")
+            .CacheOutput("OgcCollections")
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces(404);
 
@@ -54,8 +60,18 @@ public static class OgcFeaturesEndpoints
             .WithSummary("Get OGC API Features collection metadata")
             .WithDescription("Get detailed metadata for a specific collection")
             .WithTags("OGC API Features")
-            .CacheOutput("CollectionInfo")
+            .CacheOutput("OgcCollection")
             .Produces<CollectionInfo>(200, MediaTypes.Json)
+            .Produces(404);
+
+        endpoints.MapGet("/ogc/features/collections/{collectionId}/items", HandleGetItems)
+            .WithDisplayName("OGC API Features Items")
+            .WithName("GetItems")
+            .WithSummary("Get features from a collection")
+            .WithDescription("Get features from a collection with optional filtering using CQL2-Text")
+            .WithTags("OGC API Features")
+            .Produces<FeatureCollection>(200, MediaTypes.GeoJson)
+            .Produces(400)
             .Produces(404);
 
         return endpoints;
@@ -138,7 +154,7 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features collections list request
     /// </summary>
-    private static async Task<Results<Ok<Collections>, NotFound>> HandleGetCollections(
+    private static async Task<Results<Ok<Collections>, NotFound, BadRequest<string>, ProblemHttpResult>> HandleGetCollections(
         HttpContext context, ILayerCatalog layerCatalog)
     {
         var request = context.Request;
@@ -173,16 +189,30 @@ public static class OgcFeaturesEndpoints
 
             return TypedResults.Ok(response);
         }
-        catch
+        catch (ArgumentException ex)
         {
-            return TypedResults.NotFound();
+            return TypedResults.BadRequest($"Invalid request parameters: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Log the actual error for debugging while not exposing internal details
+            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error retrieving collections"))
+            _ = ex; // Suppress unused variable warning until logging is implemented
+            return TypedResults.Problem(
+                title: "Internal server error",
+                detail: "An error occurred while retrieving collections.",
+                statusCode: 500);
         }
     }
 
     /// <summary>
     /// Handles the OGC API Features single collection request
     /// </summary>
-    private static async Task<Results<Ok<CollectionInfo>, NotFound>> HandleGetCollection(
+    private static async Task<Results<Ok<CollectionInfo>, NotFound, BadRequest<string>, ProblemHttpResult>> HandleGetCollection(
         string collectionId, HttpContext context, ILayerCatalog layerCatalog)
     {
         var request = context.Request;
@@ -206,11 +236,233 @@ public static class OgcFeaturesEndpoints
             var collection = CreateCollection(layer, baseUrl);
             return TypedResults.Ok(collection);
         }
-        catch
+        catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
+            return TypedResults.BadRequest($"Invalid collection ID: {ex.Message}");
+        }
+        catch (InvalidOperationException)
+        {
+            // Layer not found is a legitimate 404 case
             return TypedResults.NotFound();
         }
+        catch (Exception ex)
+        {
+            // Log the actual error for debugging while not exposing internal details
+            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error retrieving collection {CollectionId}", collectionId))
+            _ = ex; // Suppress unused variable warning until logging is implemented
+            return TypedResults.Problem(
+                title: "Internal server error",
+                detail: "An error occurred while retrieving the collection.",
+                statusCode: 500);
+        }
     }
+
+    /// <summary>
+    /// Handles the OGC API Features items request with optional CQL filtering
+    /// </summary>
+    private static async Task<IResult> HandleGetItems(
+        string collectionId,
+        string? filter,
+        int? limit,
+        int? offset,
+        ILayerCatalog layerCatalog,
+        IFeatureStore featureStore,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Validate limit and offset parameters
+            if (limit.HasValue && limit.Value <= 0)
+            {
+                return TypedResults.BadRequest("Limit must be a positive integer");
+            }
+
+            if (offset.HasValue && offset.Value < 0)
+            {
+                return TypedResults.BadRequest("Offset must be non-negative");
+            }
+
+            // Apply reasonable maximum limit to prevent unbounded queries
+            const int maxLimit = 10000;
+            if (limit.HasValue && limit.Value > maxLimit)
+            {
+                return TypedResults.BadRequest($"Limit cannot exceed {maxLimit}");
+            }
+
+            // Parse collection ID to layer ID
+            if (!int.TryParse(collectionId, out var layerId))
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Verify collection/layer exists
+            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            if (layer == null)
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Parse CQL filter if provided
+            FilterExpression? filterExpression = null;
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                try
+                {
+                    var parser = new Cql2Parser();
+                    filterExpression = parser.Parse(filter);
+                }
+                catch (ArgumentException ex)
+                {
+                    return TypedResults.BadRequest($"Invalid CQL filter: {ex.Message}");
+                }
+            }
+
+            var whereClause = string.IsNullOrWhiteSpace(filter) ? null : filter;
+
+            // Create feature query with proper parameterized filter support
+            FeatureQuery featureQuery;
+            if (filterExpression != null)
+            {
+                var translator = new SqlFilterTranslator();
+                var sqlFragment = translator.Translate(filterExpression, layer);
+
+                // Use parameterized SQL filter to preserve parameters
+                featureQuery = new FeatureQuery
+                {
+                    Where = whereClause,
+                    SqlFilter = sqlFragment,
+                    Limit = limit ?? 1000, // Default limit per OGC spec
+                    Offset = offset
+                };
+            }
+            else
+            {
+                featureQuery = new FeatureQuery
+                {
+                    Where = whereClause,
+                    Limit = limit ?? 1000, // Default limit per OGC spec
+                    Offset = offset
+                };
+            }
+
+            // Query features
+            var result = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
+
+            // Convert to GeoJSON FeatureCollection
+            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter);
+
+            return Results.Json(featureCollection, OgcJsonContext.Default.FeatureCollection, contentType: MediaTypes.GeoJson);
+        }
+        catch (ArgumentException ex)
+        {
+            // Client errors - invalid parameters, filters, etc.
+            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Client errors - invalid operations like layer not found
+            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Server errors - log details but don't expose to client
+            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error processing OGC features request"))
+            _ = ex; // Suppress unused variable warning until logging is implemented
+            return TypedResults.Problem(
+                title: "Internal server error",
+                detail: "An error occurred while processing the request.",
+                statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// Converts query results to GeoJSON FeatureCollection
+    /// </summary>
+    private static FeatureCollection ConvertToGeoJsonFeatureCollection(
+        QueryResult<Feature> queryResult,
+        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    {
+        var features = queryResult.Items.Select(feature => new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = feature.Id,
+            Geometry = ConvertFeatureGeometry(feature.Geometry, geometryConverter),
+            Properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+        }).ToArray();
+
+        return new FeatureCollection
+        {
+            Type = "FeatureCollection",
+            Features = features,
+            NumberMatched = queryResult.TotalCount,
+            NumberReturned = queryResult.Items.Length
+        };
+    }
+
+    /// <summary>
+    /// Converts a feature's WKB geometry to GeoJSON format
+    /// </summary>
+    private static SimpleGeoJsonGeometry? ConvertFeatureGeometry(byte[]? wkbGeometry, Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    {
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var geoJson = geometryConverter.ConvertWkbToGeoJson(wkbGeometry);
+            if (geoJson == null)
+            {
+                return null;
+            }
+
+            if (geoJson is string geoJsonString)
+            {
+                using var document = JsonDocument.Parse(geoJsonString);
+                return BuildSimpleGeometry(document.RootElement);
+            }
+
+            if (geoJson is JsonElement element)
+            {
+                return BuildSimpleGeometry(element);
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static SimpleGeoJsonGeometry? BuildSimpleGeometry(JsonElement root)
+    {
+        if (!root.TryGetProperty("type", out var typeElement))
+        {
+            return null;
+        }
+
+        var type = typeElement.GetString();
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("coordinates", out var coordinatesElement))
+        {
+            return null;
+        }
+
+        return new SimpleGeoJsonGeometry
+        {
+            Type = type,
+            CoordinatesJson = coordinatesElement.GetRawText()
+        };
+    }
+
 
     /// <summary>
     /// Converts a layer definition to OGC API Features collection
