@@ -100,10 +100,13 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features landing page request
     /// </summary>
-    private static Ok<LandingPage> HandleGetLandingPage(HttpContext context)
+    private static IResult HandleGetLandingPage(HttpContext context, string? f = null)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
+        
+        // Determine output format
+        var (outputFormat, contentType) = DetermineOutputFormat(context, f);
 
         var landingPage = new LandingPage
         {
@@ -134,7 +137,7 @@ public static class OgcFeaturesEndpoints
                     title: "Conformance declaration"
                 ),
 
-                // Collections (will be implemented in issue #16)
+                // Collections
                 Link.Create(
                     href: $"{baseUrl}/ogc/features/collections",
                     rel: RelationTypes.Data,
@@ -144,14 +147,23 @@ public static class OgcFeaturesEndpoints
             )
         };
 
-        return TypedResults.Ok(landingPage);
+        // Return format-specific response
+        return outputFormat switch
+        {
+            "html" => TypedResults.BadRequest("HTML format is not yet implemented"),
+            "json" or "geojson" => Results.Json(landingPage, OgcJsonContext.Default.LandingPage, contentType: contentType),
+            _ => Results.Json(landingPage, OgcJsonContext.Default.LandingPage, contentType: MediaTypes.Json)
+        };
     }
 
     /// <summary>
     /// Handles the OGC API Features conformance declaration request
     /// </summary>
-    private static Ok<ConformanceDeclaration> HandleGetConformance()
+    private static IResult HandleGetConformance(HttpContext context, string? f = null)
     {
+        // Determine output format
+        var (outputFormat, contentType) = DetermineOutputFormat(context, f);
+
         var conformance = new ConformanceDeclaration
         {
             ConformsTo = ImmutableArray.Create(
@@ -168,7 +180,13 @@ public static class OgcFeaturesEndpoints
             )
         };
 
-        return TypedResults.Ok(conformance);
+        // Return format-specific response
+        return outputFormat switch
+        {
+            "html" => TypedResults.BadRequest("HTML format is not yet implemented"),
+            "json" or "geojson" => Results.Json(conformance, OgcJsonContext.Default.ConformanceDeclaration, contentType: contentType),
+            _ => Results.Json(conformance, OgcJsonContext.Default.ConformanceDeclaration, contentType: MediaTypes.Json)
+        };
     }
 
     /// <summary>
@@ -575,11 +593,14 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features collections list request
     /// </summary>
-    private static async Task<Results<Ok<Collections>, NotFound, BadRequest<string>, ProblemHttpResult>> HandleGetCollections(
-        HttpContext context, ILayerCatalog layerCatalog)
+    private static async Task<IResult> HandleGetCollections(
+        HttpContext context, ILayerCatalog layerCatalog, string? f = null)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
+        
+        // Determine output format
+        var (outputFormat, contentType) = DetermineOutputFormat(context, f);
 
         try
         {
@@ -608,7 +629,13 @@ public static class OgcFeaturesEndpoints
                 )
             };
 
-            return TypedResults.Ok(response);
+            // Return format-specific response
+            return outputFormat switch
+            {
+                "html" => TypedResults.BadRequest("HTML format is not yet implemented"),
+                "json" or "geojson" => Results.Json(response, OgcJsonContext.Default.Collections, contentType: contentType),
+                _ => Results.Json(response, OgcJsonContext.Default.Collections, contentType: MediaTypes.Json)
+            };
         }
         catch (ArgumentException ex)
         {
@@ -633,11 +660,14 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features single collection request
     /// </summary>
-    private static async Task<Results<Ok<CollectionInfo>, NotFound, BadRequest<string>, ProblemHttpResult>> HandleGetCollection(
-        string collectionId, HttpContext context, ILayerCatalog layerCatalog)
+    private static async Task<IResult> HandleGetCollection(
+        string collectionId, HttpContext context, ILayerCatalog layerCatalog, string? f = null)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
+        
+        // Determine output format
+        var (outputFormat, contentType) = DetermineOutputFormat(context, f);
 
         try
         {
@@ -655,7 +685,14 @@ public static class OgcFeaturesEndpoints
             }
 
             var collection = CreateCollection(layer, baseUrl);
-            return TypedResults.Ok(collection);
+            
+            // Return format-specific response
+            return outputFormat switch
+            {
+                "html" => TypedResults.BadRequest("HTML format is not yet implemented"),
+                "json" or "geojson" => Results.Json(collection, OgcJsonContext.Default.CollectionInfo, contentType: contentType),
+                _ => Results.Json(collection, OgcJsonContext.Default.CollectionInfo, contentType: MediaTypes.Json)
+            };
         }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
@@ -686,6 +723,7 @@ public static class OgcFeaturesEndpoints
         string? filter,
         string? bbox,
         string? datetime,
+        string? f,
         int? limit,
         int? offset,
         HttpContext context,
@@ -696,6 +734,15 @@ public static class OgcFeaturesEndpoints
     {
         try
         {
+            // Determine output format through content negotiation
+            var (outputFormat, contentType) = DetermineOutputFormat(context, f);
+            
+            // Validate format support
+            if (outputFormat == "html")
+            {
+                return TypedResults.BadRequest("HTML format is not yet implemented");
+            }
+
             // Validate limit and offset parameters
             if (limit.HasValue && limit.Value <= 0)
             {
@@ -800,10 +847,13 @@ public static class OgcFeaturesEndpoints
             // Query features
             var result = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
 
-            // Convert to GeoJSON FeatureCollection with enhanced metadata
-            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter, context, collectionId, limit, offset);
-
-            return Results.Json(featureCollection, OgcJsonContext.Default.FeatureCollection, contentType: MediaTypes.GeoJson);
+            // Return format-specific response
+            return outputFormat switch
+            {
+                "json" => await FormatAsJsonResponse(result, layer, geometryConverter, context, collectionId, limit, offset),
+                "geojson" => await FormatAsGeoJsonResponse(result, layer, geometryConverter, context, collectionId, limit, offset),
+                _ => await FormatAsGeoJsonResponse(result, layer, geometryConverter, context, collectionId, limit, offset) // Default to GeoJSON
+            };
         }
         catch (ArgumentException ex)
         {
@@ -828,18 +878,159 @@ public static class OgcFeaturesEndpoints
     }
 
     /// <summary>
+    /// Determines the output format based on the 'f' parameter and Accept header
+    /// </summary>
+    private static (string format, string contentType) DetermineOutputFormat(HttpContext context, string? f)
+    {
+        // Format parameter takes precedence over Accept header
+        if (!string.IsNullOrWhiteSpace(f))
+        {
+            return f.ToLowerInvariant() switch
+            {
+                "json" => ("json", MediaTypes.Json),
+                "geojson" => ("geojson", MediaTypes.GeoJson),
+                "html" => ("html", "text/html"),
+                _ => ("geojson", MediaTypes.GeoJson) // Default to GeoJSON for invalid formats
+            };
+        }
+
+        // Check Accept header for content negotiation
+        var request = context.Request;
+        var acceptHeader = request.Headers["Accept"].FirstOrDefault();
+        
+        if (!string.IsNullOrWhiteSpace(acceptHeader))
+        {
+            // Simple content negotiation - in practice, you'd want more sophisticated parsing
+            if (acceptHeader.Contains("application/geo+json", StringComparison.OrdinalIgnoreCase))
+            {
+                return ("geojson", MediaTypes.GeoJson);
+            }
+            
+            if (acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                return ("json", MediaTypes.Json);
+            }
+            
+            if (acceptHeader.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+            {
+                return ("html", "text/html");
+            }
+        }
+
+        // Default to GeoJSON (OGC API Features default)
+        return ("geojson", MediaTypes.GeoJson);
+    }
+
+    /// <summary>
+    /// Formats the response as GeoJSON FeatureCollection
+    /// </summary>
+    private static async Task<IResult> FormatAsGeoJsonResponse(
+        QueryResult<Feature> result,
+        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        HttpContext context,
+        string collectionId,
+        int? limit,
+        int? offset)
+    {
+        var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter, context, collectionId, limit, offset);
+        return Results.Json(featureCollection, OgcJsonContext.Default.FeatureCollection, contentType: MediaTypes.GeoJson);
+    }
+
+    /// <summary>
+    /// Formats the response as plain JSON (simplified format without GeoJSON geometry)
+    /// </summary>
+    private static async Task<IResult> FormatAsJsonResponse(
+        QueryResult<Feature> result,
+        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        HttpContext context,
+        string collectionId,
+        int? limit,
+        int? offset)
+    {
+        // Create a simplified JSON response (without full GeoJSON geometry objects)
+        var features = result.Items.Select(feature => new
+        {
+            id = feature.Id,
+            properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            geometry = feature.Geometry != null ? "Present" : null // Simplified geometry indication
+        }).ToArray();
+
+        var links = GeneratePagingLinks(context, collectionId, limit, offset, result.TotalCount, result.Items.Length);
+
+        var response = new
+        {
+            type = "FeatureCollection",
+            features = features,
+            numberMatched = result.TotalCount,
+            numberReturned = result.Items.Length,
+            timeStamp = DateTimeOffset.UtcNow,
+            links = links.Select(link => new
+            {
+                href = link.Href,
+                rel = link.Rel,
+                type = link.Type,
+                title = link.Title
+            }).ToArray()
+        };
+
+        return Results.Json(response, contentType: MediaTypes.Json);
+    }
+
+    /// <summary>
+    /// Formats a single feature as GeoJSON
+    /// </summary>
+    private static async Task<IResult> FormatSingleFeatureAsGeoJsonResponse(
+        Feature feature,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    {
+        var geoJsonFeature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = feature.Id,
+            Geometry = ConvertFeatureGeometry(feature.Geometry, geometryConverter),
+            Properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+        };
+
+        return Results.Json(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
+    }
+
+    /// <summary>
+    /// Formats a single feature as simplified JSON
+    /// </summary>
+    private static async Task<IResult> FormatSingleFeatureAsJsonResponse(
+        Feature feature,
+        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    {
+        var response = new
+        {
+            id = feature.Id,
+            properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            geometry = feature.Geometry != null ? "Present" : null // Simplified geometry indication
+        };
+
+        return Results.Json(response, contentType: MediaTypes.Json);
+    }
+
+    /// <summary>
     /// Handles the OGC API Features single item request
     /// </summary>
     private static async Task<IResult> HandleGetItem(
         string collectionId,
         string featureId,
+        HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        string? f = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            // Determine output format
+            var (outputFormat, contentType) = DetermineOutputFormat(context, f);
+            
             // Parse collection ID to layer ID
             if (!int.TryParse(collectionId, out var layerId))
             {
@@ -866,16 +1057,14 @@ public static class OgcFeaturesEndpoints
                 return TypedResults.NotFound();
             }
 
-            // Convert to GeoJSON feature
-            var geoJsonFeature = new GeoJsonFeature
+            // Return format-specific response
+            return outputFormat switch
             {
-                Type = "Feature",
-                Id = feature.Id,
-                Geometry = ConvertFeatureGeometry(feature.Geometry, geometryConverter),
-                Properties = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                "html" => TypedResults.BadRequest("HTML format is not yet implemented"),
+                "json" => await FormatSingleFeatureAsJsonResponse(feature, geometryConverter),
+                "geojson" => await FormatSingleFeatureAsGeoJsonResponse(feature, geometryConverter),
+                _ => await FormatSingleFeatureAsGeoJsonResponse(feature, geometryConverter) // Default to GeoJSON
             };
-
-            return Results.Json(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
         }
         catch (ArgumentException ex)
         {
