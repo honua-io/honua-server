@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
@@ -71,6 +72,24 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AttachmentInfos.Should().HaveCount(2);
         result.AttachmentInfos.Should().Contain(a => a.Name == "test1.txt");
         result.AttachmentInfos.Should().Contain(a => a.Name == "test2.jpg");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
+    public async Task QueryAttachments_WithPost_ReturnsAttachments()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}",
+            new StringContent(string.Empty, Encoding.UTF8, "application/json"));
+
+        response.Should().BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
+
+        result.Should().NotBeNull();
+        result!.AttachmentInfos.Should().NotBeEmpty();
     }
 
     [IntegrationTest]

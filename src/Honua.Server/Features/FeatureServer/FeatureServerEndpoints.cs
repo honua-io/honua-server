@@ -20,8 +20,12 @@ namespace Honua.Server.Features.FeatureServer;
 /// <summary>
 /// Extension methods to register FeatureServer endpoints
 /// </summary>
-public static class FeatureServerEndpoints
+public static partial class FeatureServerEndpoints
 {
+    internal sealed class FeatureServerEndpointsLog
+    {
+    }
+
     /// <summary>
     /// Maps FeatureServer REST API endpoints for layer metadata using AOT-compatible routing
     /// </summary>
@@ -144,7 +148,7 @@ public static class FeatureServerEndpoints
             catalog,
             limitsOptions.Value.Query,
             logger,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -180,7 +184,7 @@ public static class FeatureServerEndpoints
         catch (Exception ex)
         {
             FeatureServerLog.ServiceMetadataFailed(logger, serviceId, ex.Message, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Service metadata retrieval failed", [ex.Message]);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Service metadata retrieval failed");
         }
     }
 
@@ -215,7 +219,7 @@ public static class FeatureServerEndpoints
             catalog,
             limitsOptions.Value.Query,
             logger,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -261,7 +265,7 @@ public static class FeatureServerEndpoints
         catch (Exception ex)
         {
             FeatureServerLog.LayerMetadataFailed(logger, serviceId, layerId, ex.Message, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Layer metadata retrieval failed", [ex.Message]);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Layer metadata retrieval failed");
         }
     }
 
@@ -688,12 +692,14 @@ public static class FeatureServerEndpoints
         }
 
         var handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
 
         var result = await handler.HandleApplyEditsAsync(
             serviceId,
             layerId,
             editsRequest,
-            context.RequestAborted);
+            limitsOptions.Value.Edits,
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -731,7 +737,7 @@ public static class FeatureServerEndpoints
             serviceId,
             layerId,
             relatedParams,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -776,7 +782,7 @@ public static class FeatureServerEndpoints
             serviceId,
             layerId,
             relatedParams,
-            context.RequestAborted);
+            GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
     }
@@ -876,7 +882,7 @@ public static class FeatureServerEndpoints
         try
         {
             // First, try to deserialize as a generic JSON object to handle string-based objectIds
-            using var jsonDoc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            using var jsonDoc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: GetTimeoutAwareCancellationToken(context));
             JsonElement root = jsonDoc.RootElement;
 
             // Extract and parse objectIds (can be string or array)
@@ -1002,9 +1008,9 @@ public static class FeatureServerEndpoints
         {
             return (false, null, "Invalid JSON payload");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return (false, null, $"Failed to parse request: {ex.Message}");
+            return (false, null, "Failed to parse request");
         }
     }
 
@@ -1016,11 +1022,11 @@ public static class FeatureServerEndpoints
     /// <param name="x">Tile X coordinate</param>
     /// <param name="y">Tile Y coordinate</param>
     /// <param name="where">Optional WHERE clause for filtering</param>
-    /// <param name="response">HTTP response for setting headers</param>
+    /// <param name="context">HTTP context for response headers and timeouts</param>
     /// <param name="featureStore">Feature store service</param>
     /// <param name="layerCatalog">Layer catalog service</param>
     /// <param name="tileOptions">Tile configuration options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="logger">Logger for tile failures</param>
     /// <returns>MVT tile data or 204 if empty</returns>
     private static async Task<IResult> HandleGetTile(
         int layerId,
@@ -1028,14 +1034,16 @@ public static class FeatureServerEndpoints
         int x,
         int y,
         string? where,
-        HttpResponse response,
+        HttpContext context,
         IFeatureStore featureStore,
         ILayerCatalog layerCatalog,
         IOptions<TileOptions> tileOptions,
-        CancellationToken cancellationToken)
+        ILogger<FeatureServerEndpointsLog> logger)
     {
         try
         {
+            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
             // Validate tile configuration
             var options = tileOptions.Value;
             if (z < options.MinZoom || z > options.MaxZoom)
@@ -1072,7 +1080,7 @@ public static class FeatureServerEndpoints
             }
 
             // Return MVT with appropriate content type
-            response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
+            context.Response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
             return Results.Bytes(mvtData, "application/vnd.mapbox-vector-tile");
         }
         catch (ArgumentException ex)
@@ -1081,11 +1089,18 @@ public static class FeatureServerEndpoints
         }
         catch (Exception ex)
         {
+            Log.TileGenerationFailed(logger, layerId, z, x, y, ex);
             return Results.Problem(
-                detail: ex.Message,
+                detail: "An error occurred while generating the tile.",
                 statusCode: 500,
                 title: "Tile generation failed");
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 3200, Level = LogLevel.Error, Message = "Tile generation failed for layer {LayerId} at {Z}/{X}/{Y}")]
+        public static partial void TileGenerationFailed(ILogger logger, int layerId, int z, int x, int y, Exception exception);
     }
 
     /// <summary>

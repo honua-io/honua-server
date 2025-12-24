@@ -347,7 +347,8 @@ public sealed record GeoJsonFeature
     /// Feature identifier
     /// </summary>
     [JsonPropertyName("id")]
-    public object? Id { get; init; }
+    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+    public long? Id { get; init; }
 
     /// <summary>
     /// Feature geometry in GeoJSON format
@@ -436,4 +437,3 @@ public static class MediaTypes
     /// </summary>
     public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
 }
-

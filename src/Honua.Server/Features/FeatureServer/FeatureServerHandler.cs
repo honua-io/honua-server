@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -132,8 +133,7 @@ internal sealed class FeatureServerHandler(
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
             return GeoServicesErrorHelpers.CreateInternalServerError(
-                "Query execution failed",
-                [ex.Message]);
+                "Query execution failed");
         }
     }
 
@@ -205,17 +205,16 @@ internal sealed class FeatureServerHandler(
                     $"Related layer {relationship.RelatedLayerId} not found in service '{serviceId}'");
             }
 
-            // Convert long[] to int[] for the RelatedQuery
-            int[] objectIdsAsInt = [.. queryParams.ObjectIds.Select(id => (int)id)];
+            var objectIds = queryParams.ObjectIds;
 
             // Build related query from validated parameters
-            RelatedQuery relatedQuery = BuildRelatedQuery(validatedParams, objectIdsAsInt, (Relationship)relationship);
+            RelatedQuery relatedQuery = BuildRelatedQuery(validatedParams, objectIds, (Relationship)relationship);
 
             // Execute related query
             QueryResult<Feature> result = await ExecuteRelatedQueryWithValidation(layerId, relatedQuery, cancellationToken);
 
             // Group results by origin object ID
-            RelatedRecordGroup[] relatedRecordGroups = GroupRelatedRecords(result, objectIdsAsInt, (Relationship)relationship, validatedParams.ReturnGeometry);
+            RelatedRecordGroup[] relatedRecordGroups = GroupRelatedRecords(result, objectIds, (Relationship)relationship, validatedParams.ReturnGeometry);
 
             // Build response
             var response = new QueryRelatedRecordsResponse
@@ -245,8 +244,7 @@ internal sealed class FeatureServerHandler(
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
             return GeoServicesErrorHelpers.CreateInternalServerError(
-                "Related records query execution failed",
-                [ex.Message]);
+                "Related records query execution failed");
         }
     }
 
@@ -257,6 +255,7 @@ internal sealed class FeatureServerHandler(
         string serviceId,
         int layerId,
         ApplyEditsRequest request,
+        Honua.Core.Configuration.EditLimits editLimits,
         CancellationToken cancellationToken = default)
     {
         try
@@ -281,38 +280,181 @@ internal sealed class FeatureServerHandler(
                 return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
-            var response = new ApplyEditsResponse();
-            var allSuccess = true;
+            var addCount = request.Adds?.Length ?? 0;
+            var updateCount = request.Updates?.Length ?? 0;
+            var deleteCount = request.Deletes?.Length ?? 0;
+            var totalCount = addCount + updateCount + deleteCount;
 
-            // Process add operations
-            if (request.Adds != null && request.Adds.Length > 0)
+            if (addCount > editLimits.MaxFeaturesPerEdit ||
+                updateCount > editLimits.MaxFeaturesPerEdit ||
+                deleteCount > editLimits.MaxFeaturesPerEdit)
             {
-                var addResults = await ProcessAddOperationsAsync(layer, request.Adds, cancellationToken);
-                response.AddResults = addResults;
-                allSuccess = allSuccess && addResults.All(r => r.Success);
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Too many features in a single edit operation",
+                    [$"Maximum per operation: {editLimits.MaxFeaturesPerEdit}"]);
             }
 
-            // Process update operations
-            if (request.Updates != null && request.Updates.Length > 0)
+            if (totalCount > editLimits.MaxEditsPerTransaction)
             {
-                var updateResults = await ProcessUpdateOperationsAsync(layer, request.Updates, cancellationToken);
-                response.UpdateResults = updateResults;
-                allSuccess = allSuccess && updateResults.All(r => r.Success);
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Too many edits in a single request",
+                    [$"Maximum per request: {editLimits.MaxEditsPerTransaction}"]);
             }
 
-            // Process delete operations
-            if (request.Deletes != null && request.Deletes.Length > 0)
+            if (totalCount == 0)
             {
-                var deleteResults = await ProcessDeleteOperationsAsync(layer, request.Deletes, cancellationToken);
-                response.DeleteResults = deleteResults;
-                allSuccess = allSuccess && deleteResults.All(r => r.Success);
+                return Results.Json(new ApplyEditsResponse { Success = true },
+                    FeatureServerJsonContext.Default.ApplyEditsResponse,
+                    contentType: "application/json");
             }
 
-            response.Success = allSuccess;
+            EditResult?[]? addResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null;
+            EditResult?[]? updateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null;
+            EditResult?[]? deleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null;
+
+            var createFeatures = new List<Feature>();
+            var createIndexes = new List<int>();
+            var updateFeatures = new List<Feature>();
+            var updateIndexes = new List<int>();
+            var updateObjectIds = new List<long>();
+            var deleteIds = new List<long>();
+            var deleteIndexes = new List<int>();
+
+            var hasValidationErrors = false;
+
+            if (request.Adds != null)
+            {
+                for (var i = 0; i < request.Adds.Length; i++)
+                {
+                    try
+                    {
+                        var newFeature = BuildFeatureFromGeoServices(request.Adds[i], 0);
+                        createFeatures.Add(newFeature);
+                        createIndexes.Add(i);
+                    }
+                    catch (Exception)
+                    {
+                        hasValidationErrors = true;
+                        addResults![i] = CreateFailureResult(
+                            code: 1000,
+                            description: "Failed to add feature");
+                    }
+                }
+            }
+
+            if (request.Updates != null)
+            {
+                for (var i = 0; i < request.Updates.Length; i++)
+                {
+                    var update = request.Updates[i];
+                    if (!TryGetObjectId(update.Attributes, out var objectId))
+                    {
+                        hasValidationErrors = true;
+                        updateResults![i] = CreateFailureResult(
+                            code: 1001,
+                            description: "ObjectId is required for update operations");
+                        continue;
+                    }
+
+                    try
+                    {
+                        var updateFeature = BuildFeatureFromGeoServices(update, objectId);
+                        updateFeatures.Add(updateFeature);
+                        updateIndexes.Add(i);
+                        updateObjectIds.Add(objectId);
+                    }
+                    catch (Exception)
+                    {
+                        hasValidationErrors = true;
+                        updateResults![i] = CreateFailureResult(
+                            code: 1002,
+                            description: "Failed to update feature",
+                            objectId: objectId);
+                    }
+                }
+            }
+
+            if (request.Deletes != null)
+            {
+                for (var i = 0; i < request.Deletes.Length; i++)
+                {
+                    if (!TryConvertToLong(request.Deletes[i], out var objectId))
+                    {
+                        hasValidationErrors = true;
+                        deleteResults![i] = CreateFailureResult(
+                            code: 1003,
+                            description: "Invalid ObjectId for delete operation");
+                        continue;
+                    }
+
+                    deleteIds.Add(objectId);
+                    deleteIndexes.Add(i);
+                }
+            }
+
+            if (hasValidationErrors && request.RollbackOnFailure)
+            {
+                var rollbackError = new EditError
+                {
+                    Code = 1000,
+                    Description = "Operation rolled back due to validation failure"
+                };
+
+                ApplyRollbackResults(addResults, createIndexes, null, rollbackError);
+                ApplyRollbackResults(updateResults, updateIndexes, updateObjectIds, rollbackError);
+                ApplyRollbackResults(deleteResults, deleteIndexes, deleteIds, rollbackError);
+
+                var response = new ApplyEditsResponse
+                {
+                    AddResults = FinalizeResults(addResults),
+                    UpdateResults = FinalizeResults(updateResults),
+                    DeleteResults = FinalizeResults(deleteResults),
+                    Success = false
+                };
+
+                FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, false);
+
+                return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
+                    contentType: "application/json");
+            }
+
+            FeatureEditResult editResult = FeatureEditResult.Success(0, 0, 0);
+            if (createFeatures.Count > 0 || updateFeatures.Count > 0 || deleteIds.Count > 0)
+            {
+                var editBatch = FeatureEditBatch.Create(
+                    creates: createFeatures.ToImmutableArray(),
+                    updates: updateFeatures.ToImmutableArray(),
+                    deletes: deleteIds.ToImmutableArray(),
+                    rollbackOnFailure: request.RollbackOnFailure,
+                    useGlobalIds: request.UseGlobalIds);
+
+                editResult = await _featureStore.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
+
+                ApplyResults(addResults, createIndexes, editResult.CreateResults);
+                ApplyResults(updateResults, updateIndexes, editResult.UpdateResults);
+                ApplyResults(deleteResults, deleteIndexes, editResult.DeleteResults);
+            }
+
+            var finalAddResults = FinalizeResults(addResults);
+            var finalUpdateResults = FinalizeResults(updateResults);
+            var finalDeleteResults = FinalizeResults(deleteResults);
+            var allSuccess = AreAllResultsSuccessful(finalAddResults) &&
+                             AreAllResultsSuccessful(finalUpdateResults) &&
+                             AreAllResultsSuccessful(finalDeleteResults) &&
+                             !editResult.WasRolledBack &&
+                             !hasValidationErrors;
+
+            var finalResponse = new ApplyEditsResponse
+            {
+                AddResults = finalAddResults,
+                UpdateResults = finalUpdateResults,
+                DeleteResults = finalDeleteResults,
+                Success = allSuccess
+            };
 
             FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, allSuccess);
 
-            return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
+            return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
                 contentType: "application/json");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -322,198 +464,188 @@ internal sealed class FeatureServerHandler(
         catch (Exception ex)
         {
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Apply edits failed", [ex.Message]);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Apply edits failed");
         }
     }
 
-    /// <summary>
-    /// Process add operations for new features
-    /// </summary>
-    private async Task<EditResult[]> ProcessAddOperationsAsync(
-        LayerDefinition layer,
-        GeoServicesFeature[] features,
-        CancellationToken cancellationToken)
+    private Feature BuildFeatureFromGeoServices(GeoServicesFeature feature, long objectId)
     {
-        var results = new EditResult[features.Length];
-
-        for (int i = 0; i < features.Length; i++)
+        byte[]? geometry = null;
+        if (feature.Geometry != null)
         {
-            try
-            {
-                var feature = features[i];
-
-                // Convert GeoServices geometry to WKB if present
-                byte[]? geometry = null;
-                if (feature.Geometry != null)
-                {
-                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
-                    geometry = ConvertGeoServicesJsonToWkb(geometryJson);
-                }
-
-                // Create feature object
-                var newFeature = new Feature
-                {
-                    Id = 0, // Will be assigned by the database
-                    Attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary(),
-                    Geometry = geometry
-                };
-
-                // Add the feature
-                var createdFeature = await _featureStore.CreateAsync(layer.Id, newFeature, cancellationToken);
-                var objectId = createdFeature.Id;
-
-                results[i] = new EditResult
-                {
-                    ObjectId = objectId,
-                    Success = true
-                };
-            }
-            catch (Exception ex)
-            {
-                FeatureServerLog.FeatureAddFailed(_logger, i, ex.Message, ex);
-                results[i] = new EditResult
-                {
-                    Success = false,
-                    Error = new EditError
-                    {
-                        Code = 1000,
-                        Description = $"Failed to add feature: {ex.Message}"
-                    }
-                };
-            }
+            var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+            geometry = ConvertGeoServicesJsonToWkb(geometryJson);
         }
 
-        return results;
+        var attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary();
+        return Feature.Create(objectId, geometry, attributes);
     }
 
-    /// <summary>
-    /// Process update operations for existing features
-    /// </summary>
-    private async Task<EditResult[]> ProcessUpdateOperationsAsync(
-        LayerDefinition layer,
-        GeoServicesFeature[] features,
-        CancellationToken cancellationToken)
+    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, out long objectId)
     {
-        var results = new EditResult[features.Length];
+        objectId = 0;
 
-        for (int i = 0; i < features.Length; i++)
+        if (attributes == null || attributes.Count == 0)
         {
-            try
+            return false;
+        }
+
+        foreach (var entry in attributes)
+        {
+            if (string.Equals(entry.Key, "objectid", StringComparison.OrdinalIgnoreCase))
             {
-                var feature = features[i];
-
-                // Extract objectId from attributes
-                if (feature.Attributes?.TryGetValue("objectid", out var objectIdObj) != true ||
-                    !long.TryParse(objectIdObj?.ToString(), out var objectId))
-                {
-                    results[i] = new EditResult
-                    {
-                        Success = false,
-                        Error = new EditError
-                        {
-                            Code = 1001,
-                            Description = "ObjectId is required for update operations"
-                        }
-                    };
-                    continue;
-                }
-
-                // Convert GeoServices geometry to WKB if present
-                byte[]? geometry = null;
-                if (feature.Geometry != null)
-                {
-                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
-                    geometry = ConvertGeoServicesJsonToWkb(geometryJson);
-                }
-
-                // Create feature object for update
-                var updateFeature = new Feature
-                {
-                    Id = objectId,
-                    Attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary(),
-                    Geometry = geometry
-                };
-
-                // Update the feature
-                await _featureStore.UpdateAsync(layer.Id, updateFeature, cancellationToken);
-
-                results[i] = new EditResult
-                {
-                    ObjectId = objectId,
-                    Success = true
-                };
-            }
-            catch (Exception ex)
-            {
-                FeatureServerLog.FeatureUpdateFailed(_logger, i, ex.Message, ex);
-                results[i] = new EditResult
-                {
-                    Success = false,
-                    Error = new EditError
-                    {
-                        Code = 1002,
-                        Description = $"Failed to update feature: {ex.Message}"
-                    }
-                };
+                return TryConvertToLong(entry.Value, out objectId);
             }
         }
 
-        return results;
+        return false;
     }
 
-    /// <summary>
-    /// Process delete operations for existing features
-    /// </summary>
-    private async Task<EditResult[]> ProcessDeleteOperationsAsync(
-        LayerDefinition layer,
-        object[] objectIds,
-        CancellationToken cancellationToken)
+    private static bool TryConvertToLong(object? value, out long result)
     {
-        var results = new EditResult[objectIds.Length];
+        result = 0;
 
-        for (int i = 0; i < objectIds.Length; i++)
+        if (value == null)
         {
-            try
-            {
-                if (!long.TryParse(objectIds[i]?.ToString(), out var objectId))
-                {
-                    results[i] = new EditResult
-                    {
-                        Success = false,
-                        Error = new EditError
-                        {
-                            Code = 1003,
-                            Description = "Invalid ObjectId for delete operation"
-                        }
-                    };
-                    continue;
-                }
-
-                // Delete the feature
-                await _featureStore.DeleteAsync(layer.Id, objectId, cancellationToken);
-
-                results[i] = new EditResult
-                {
-                    ObjectId = objectId,
-                    Success = true
-                };
-            }
-            catch (Exception ex)
-            {
-                FeatureServerLog.FeatureDeleteFailed(_logger, i, ex.Message, ex);
-                results[i] = new EditResult
-                {
-                    Success = false,
-                    Error = new EditError
-                    {
-                        Code = 1004,
-                        Description = $"Failed to delete feature: {ex.Message}"
-                    }
-                };
-            }
+            return false;
         }
 
-        return results;
+        switch (value)
+        {
+            case long longValue:
+                result = longValue;
+                return true;
+            case int intValue:
+                result = intValue;
+                return true;
+            case short shortValue:
+                result = shortValue;
+                return true;
+            case byte byteValue:
+                result = byteValue;
+                return true;
+            case uint uintValue:
+                result = uintValue;
+                return true;
+            case ulong ulongValue when ulongValue <= long.MaxValue:
+                result = (long)ulongValue;
+                return true;
+            case string stringValue:
+                return long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+            case JsonElement element:
+                if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var elementLong))
+                {
+                    result = elementLong;
+                    return true;
+                }
+
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return long.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+                }
+
+                return false;
+            default:
+                return long.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+        }
+    }
+
+    private static EditResult CreateFailureResult(int code, string description, long? objectId = null, string? globalId = null)
+    {
+        return new EditResult
+        {
+            ObjectId = objectId,
+            GlobalId = globalId,
+            Success = false,
+            Error = new EditError
+            {
+                Code = code,
+                Description = description
+            }
+        };
+    }
+
+    private static EditResult ConvertEditOperationResult(EditOperationResult result)
+    {
+        if (result.IsSuccess)
+        {
+            return new EditResult
+            {
+                ObjectId = result.ObjectId,
+                GlobalId = result.GlobalId,
+                Success = true
+            };
+        }
+
+        return CreateFailureResult(
+            result.ErrorCode,
+            result.ErrorMessage ?? "Operation failed",
+            result.ObjectId,
+            result.GlobalId);
+    }
+
+    private static void ApplyRollbackResults(EditResult?[]? results, List<int> indexes, List<long>? objectIds, EditError rollbackError)
+    {
+        if (results == null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < indexes.Count; i++)
+        {
+            long? objectId = null;
+            if (objectIds != null && i < objectIds.Count)
+            {
+                objectId = objectIds[i];
+            }
+
+            results[indexes[i]] = CreateFailureResult(rollbackError.Code, rollbackError.Description, objectId);
+        }
+    }
+
+    private static void ApplyResults(EditResult?[]? results, List<int> indexes, ImmutableArray<EditOperationResult> operationResults)
+    {
+        if (results == null)
+        {
+            return;
+        }
+
+        var count = Math.Min(indexes.Count, operationResults.Length);
+        for (var i = 0; i < count; i++)
+        {
+            results[indexes[i]] = ConvertEditOperationResult(operationResults[i]);
+        }
+
+        for (var i = count; i < indexes.Count; i++)
+        {
+            results[indexes[i]] ??= CreateFailureResult(1000, "Operation failed");
+        }
+    }
+
+    private static EditResult[]? FinalizeResults(EditResult?[]? results)
+    {
+        if (results == null)
+        {
+            return null;
+        }
+
+        var finalized = new EditResult[results.Length];
+        for (var i = 0; i < results.Length; i++)
+        {
+            finalized[i] = results[i] ?? CreateFailureResult(1000, "Operation failed");
+        }
+
+        return finalized;
+    }
+
+    private static bool AreAllResultsSuccessful(EditResult[]? results)
+    {
+        if (results == null)
+        {
+            return true;
+        }
+
+        return results.All(result => result.Success);
     }
 
 
@@ -687,7 +819,7 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Builds a FeatureQuery for related records from query parameters
     /// </summary>
-    private static RelatedQuery BuildRelatedQuery(QueryRelatedRecordsParameters queryParams, int[] objectIds, Relationship relationship)
+    private static RelatedQuery BuildRelatedQuery(QueryRelatedRecordsParameters queryParams, long[] objectIds, Relationship relationship)
     {
         var query = new RelatedQuery
         {
@@ -743,28 +875,37 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Groups related records by their origin object IDs
     /// </summary>
-    private static RelatedRecordGroup[] GroupRelatedRecords(QueryResult<Feature> result, int[] objectIds, Relationship relationship, bool returnGeometry = true)
+    private static RelatedRecordGroup[] GroupRelatedRecords(QueryResult<Feature> result, long[] objectIds, Relationship relationship, bool returnGeometry = true)
     {
-        // Group features by their foreign key values (which correspond to origin object IDs)
-        var featuresByOriginId = result.Items
-            .GroupBy(feature =>
-                // Get the foreign key value from the feature
-                feature.Attributes?.TryGetValue(relationship.DestinationForeignKeyField, out object? fkValue) == true ? (fkValue?.ToString()) : null)
-            .Where(group => group.Key != null)
-            .ToDictionary(group => int.Parse(group.Key!), group => group.ToArray());
+        var featuresByOriginId = new Dictionary<long, List<Feature>>();
+
+        foreach (var feature in result.Items)
+        {
+            if (feature.Attributes?.TryGetValue(relationship.DestinationForeignKeyField, out object? fkValue) == true &&
+                TryConvertToLong(fkValue, out var originId))
+            {
+                if (!featuresByOriginId.TryGetValue(originId, out var bucket))
+                {
+                    bucket = [];
+                    featuresByOriginId[originId] = bucket;
+                }
+
+                bucket.Add(feature);
+            }
+        }
 
         // Create a related record group for each requested object ID
         return [.. objectIds.Select(objectId =>
         {
-            bool hasRelatedFeatures = featuresByOriginId.TryGetValue(objectId, out Feature[]? relatedFeatures);
+            bool hasRelatedFeatures = featuresByOriginId.TryGetValue(objectId, out List<Feature>? relatedFeatures);
 
             return new RelatedRecordGroup
             {
                 ObjectId = objectId,
-                RelatedRecords = hasRelatedFeatures && relatedFeatures!.Length > 0
+                RelatedRecords = hasRelatedFeatures && relatedFeatures!.Count > 0
                     ? new RelatedRecords
                     {
-                        Features = [.. relatedFeatures.Select(f => ConvertToGeoServicesFeature(f, returnGeometry))]
+                        Features = [.. relatedFeatures!.Select(f => ConvertToGeoServicesFeature(f, returnGeometry))]
                     }
                     : null
             };

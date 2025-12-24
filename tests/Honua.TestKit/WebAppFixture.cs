@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -87,7 +88,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                     // Register all PostgreSQL services manually with test implementations
                     services.AddScoped<IFeatureStore, Honua.Postgres.Features.FeatureStore.PostgresFeatureStore>();
-                    services.AddScoped(_ => new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
+                    services.AddScoped<ISqlFilterTranslator>(_ => new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
                         useJsonAttributes: true,
                         attributesColumn: "attributes",
                         geometryColumn: "geometry",

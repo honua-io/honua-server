@@ -692,8 +692,10 @@ WHERE layer_id = $1");
             // Append the converted SQL
             sql.Append(CultureInfo.InvariantCulture, $" AND ({convertedSql})");
 
-            // Add the parameters to our parameter list, filtering out nulls
-            parameters.AddRange(sqlFragment.Parameters.Where(p => p != null)!);
+            foreach (var param in sqlFragment.Parameters)
+            {
+                parameters.Add(param ?? DBNull.Value);
+            }
         }
         // Fall back to legacy string WHERE clause for backward compatibility
         else if (!string.IsNullOrWhiteSpace(query.Where))
@@ -1103,7 +1105,7 @@ WHERE layer_id = $1");
         // Add WHERE clause parameters (these come after layerId but before spatial/pagination params)
         foreach (var param in whereParameters)
         {
-            command.Parameters.AddWithValue(param);
+            command.Parameters.AddWithValue(param ?? DBNull.Value);
         }
 
         // Add spatial filter parameters if present

@@ -12,7 +12,6 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
-using Honua.Postgres.Queries.Filters;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NetTopologySuite.Geometries;
@@ -23,8 +22,11 @@ namespace Honua.Server.Features.OgcFeatures;
 /// <summary>
 /// Extension methods to register OGC API Features endpoints
 /// </summary>
-public static class OgcFeaturesEndpoints
+public static partial class OgcFeaturesEndpoints
 {
+    internal sealed class OgcFeaturesEndpointsLog
+    {
+    }
 
     /// <summary>
     /// Maps OGC API Features endpoints for Core and Conformance
@@ -1142,7 +1144,8 @@ public static class OgcFeaturesEndpoints
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog)
+        ILayerCatalog layerCatalog,
+        ILogger<OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -1160,7 +1163,8 @@ public static class OgcFeaturesEndpoints
                 return formatError!;
             }
 
-            var layers = await layerCatalog.ListLayersAsync();
+            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
             var collections = layers.Select(layer => CreateCollection(layer, baseUrl)).ToImmutableArray();
 
             var selfHref = $"{baseUrl}/ogc/features/collections{request.QueryString}";
@@ -1190,17 +1194,17 @@ public static class OgcFeaturesEndpoints
         }
         catch (ArgumentException ex)
         {
-            return TypedResults.BadRequest($"Invalid request parameters: {ex.Message}");
+            Log.InvalidCollectionsRequest(logger, ex);
+            return TypedResults.BadRequest("Invalid request parameters.");
         }
         catch (InvalidOperationException ex)
         {
-            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+            Log.InvalidCollectionsOperation(logger, ex);
+            return TypedResults.BadRequest("Invalid operation.");
         }
         catch (Exception ex)
         {
-            // Log the actual error for debugging while not exposing internal details
-            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error retrieving collections"))
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.CollectionsQueryFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while retrieving collections.",
@@ -1215,7 +1219,8 @@ public static class OgcFeaturesEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog)
+        ILayerCatalog layerCatalog,
+        ILogger<OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -1240,7 +1245,8 @@ public static class OgcFeaturesEndpoints
                 return Results.NotFound();
             }
 
-            var layer = await layerCatalog.GetLayerAsync(layerId);
+            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
                 return Results.NotFound();
@@ -1259,7 +1265,8 @@ public static class OgcFeaturesEndpoints
         }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
-            return TypedResults.BadRequest($"Invalid collection ID: {ex.Message}");
+            Log.InvalidCollectionId(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid collection ID.");
         }
         catch (InvalidOperationException)
         {
@@ -1268,9 +1275,7 @@ public static class OgcFeaturesEndpoints
         }
         catch (Exception ex)
         {
-            // Log the actual error for debugging while not exposing internal details
-            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error retrieving collection {CollectionId}", collectionId))
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.CollectionQueryFailed(logger, collectionId, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while retrieving the collection.",
@@ -1293,6 +1298,8 @@ public static class OgcFeaturesEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        ISqlFilterTranslator sqlFilterTranslator,
+        ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
@@ -1346,7 +1353,8 @@ public static class OgcFeaturesEndpoints
             }
 
             // Verify collection/layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return TypedResults.NotFound();
@@ -1395,12 +1403,7 @@ public static class OgcFeaturesEndpoints
             FeatureQuery featureQuery;
             if (filterExpression != null)
             {
-                var translator = new PostgresSqlFilterTranslator(
-                    useJsonAttributes: true,
-                    attributesColumn: "attributes",
-                    geometryColumn: "geometry",
-                    primaryKeyColumn: "objectid");
-                var sqlFragment = translator.Translate(filterExpression, layer);
+                var sqlFragment = sqlFilterTranslator.Translate(filterExpression, layer);
 
                 // Use parameterized SQL filter to preserve parameters
                 featureQuery = new FeatureQuery
@@ -1428,7 +1431,7 @@ public static class OgcFeaturesEndpoints
             }
 
             // Query features
-            var result = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
+            var result = await featureStore.QueryAsync(layerId, featureQuery, effectiveToken);
 
             // Convert to GeoJSON FeatureCollection with enhanced metadata
             var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter, context, collectionId, effectiveLimit, offset, outputFormat);
@@ -1439,18 +1442,18 @@ public static class OgcFeaturesEndpoints
         catch (ArgumentException ex)
         {
             // Client errors - invalid parameters, filters, etc.
-            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+            Log.InvalidItemsRequest(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid request.");
         }
         catch (InvalidOperationException ex)
         {
             // Client errors - invalid operations like layer not found
-            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+            Log.InvalidItemsOperation(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid operation.");
         }
         catch (Exception ex)
         {
-            // Server errors - log details but don't expose to client
-            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error processing OGC features request"))
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.ItemsQueryFailed(logger, collectionId, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while processing the request.",
@@ -1469,6 +1472,7 @@ public static class OgcFeaturesEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
@@ -1491,7 +1495,8 @@ public static class OgcFeaturesEndpoints
             }
 
             // Verify collection/layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return TypedResults.NotFound();
@@ -1504,7 +1509,7 @@ public static class OgcFeaturesEndpoints
             }
 
             // Get the feature
-            var feature = await featureStore.GetAsync(layerId, featureIdLong, cancellationToken);
+            var feature = await featureStore.GetAsync(layerId, featureIdLong, effectiveToken);
             if (feature == null)
             {
                 return TypedResults.NotFound();
@@ -1542,17 +1547,17 @@ public static class OgcFeaturesEndpoints
         }
         catch (ArgumentException ex)
         {
-            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+            Log.InvalidItemRequest(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid request.");
         }
         catch (InvalidOperationException ex)
         {
-            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+            Log.InvalidItemOperation(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid operation.");
         }
         catch (Exception ex)
         {
-            // Server errors - log details but don't expose to client
-            // TODO: Add proper logging here (ex: logger.LogError(ex, "Error processing OGC single item request"))
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.ItemQueryFailed(logger, collectionId, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while processing the request.",
@@ -1975,6 +1980,7 @@ public static class OgcFeaturesEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
@@ -1992,7 +1998,8 @@ public static class OgcFeaturesEndpoints
             }
 
             // Get layer information
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return TypedResults.NotFound();
@@ -2008,7 +2015,7 @@ public static class OgcFeaturesEndpoints
             var internalFeature = ConvertGeoJsonFeatureToInternal(feature, ignoreId: true);
 
             // Create the feature
-            var createdFeature = await featureStore.CreateAsync(layerId, internalFeature, cancellationToken);
+            var createdFeature = await featureStore.CreateAsync(layerId, internalFeature, effectiveToken);
 
             // Convert back to GeoJSON
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
@@ -2040,17 +2047,18 @@ public static class OgcFeaturesEndpoints
         }
         catch (ArgumentException ex)
         {
-            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+            Log.InvalidCreateRequest(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid request.");
         }
         catch (InvalidOperationException ex)
         {
             // Could be duplicate ID or other business logic error
-            return TypedResults.Conflict($"Cannot create feature: {ex.Message}");
+            Log.InvalidCreateOperation(logger, collectionId, ex);
+            return TypedResults.Conflict("Cannot create feature.");
         }
         catch (Exception ex)
         {
-            // Server errors - log details but don't expose to client
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.CreateFailed(logger, collectionId, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while creating the feature.",
@@ -2069,6 +2077,7 @@ public static class OgcFeaturesEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+        ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
@@ -2092,7 +2101,8 @@ public static class OgcFeaturesEndpoints
             }
 
             // Get layer information
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return TypedResults.NotFound();
@@ -2105,13 +2115,13 @@ public static class OgcFeaturesEndpoints
             }
 
             // Ensure the feature ID in the URL matches the feature data
-            if (feature.Id != null && feature.Id.ToString() != featureId)
+            if (feature.Id.HasValue && feature.Id.Value != longFeatureId)
             {
                 return TypedResults.BadRequest("Feature ID in URL does not match feature ID in data");
             }
 
             // Check if feature exists (no upsert behavior)
-            var existingFeature = await featureStore.GetAsync(layerId, longFeatureId, cancellationToken);
+            var existingFeature = await featureStore.GetAsync(layerId, longFeatureId, effectiveToken);
             if (existingFeature == null)
             {
                 return TypedResults.NotFound();
@@ -2121,7 +2131,7 @@ public static class OgcFeaturesEndpoints
             var internalFeature = ConvertGeoJsonFeatureToInternal(feature, overrideId: longFeatureId);
 
             // Update the feature
-            var updatedFeature = await featureStore.UpdateAsync(layerId, internalFeature, cancellationToken);
+            var updatedFeature = await featureStore.UpdateAsync(layerId, internalFeature, effectiveToken);
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var responseFeature = new GeoJsonFeature
@@ -2150,16 +2160,17 @@ public static class OgcFeaturesEndpoints
         }
         catch (ArgumentException ex)
         {
-            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+            Log.InvalidUpdateRequest(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid request.");
         }
         catch (InvalidOperationException ex)
         {
-            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+            Log.InvalidUpdateOperation(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid operation.");
         }
         catch (Exception ex)
         {
-            // Server errors - log details but don't expose to client
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.UpdateFailed(logger, collectionId, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while updating the feature.",
@@ -2176,6 +2187,7 @@ public static class OgcFeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
@@ -2199,14 +2211,15 @@ public static class OgcFeaturesEndpoints
             }
 
             // Get layer information
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return TypedResults.NotFound();
             }
 
             // Delete the feature
-            var deleted = await featureStore.DeleteAsync(layerId, longFeatureId, cancellationToken);
+            var deleted = await featureStore.DeleteAsync(layerId, longFeatureId, effectiveToken);
 
             if (!deleted)
             {
@@ -2218,16 +2231,17 @@ public static class OgcFeaturesEndpoints
         }
         catch (ArgumentException ex)
         {
-            return TypedResults.BadRequest($"Invalid request: {ex.Message}");
+            Log.InvalidDeleteRequest(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid request.");
         }
         catch (InvalidOperationException ex)
         {
-            return TypedResults.BadRequest($"Invalid operation: {ex.Message}");
+            Log.InvalidDeleteOperation(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid operation.");
         }
         catch (Exception ex)
         {
-            // Server errors - log details but don't expose to client
-            _ = ex; // Suppress unused variable warning until logging is implemented
+            Log.DeleteFailed(logger, collectionId, ex);
             return TypedResults.Problem(
                 title: "Internal server error",
                 detail: "An error occurred while deleting the feature.",
@@ -2260,29 +2274,12 @@ public static class OgcFeaturesEndpoints
 
     private static long ExtractFeatureId(GeoJsonFeature geoJsonFeature)
     {
-        if (geoJsonFeature.Id is null)
+        if (!geoJsonFeature.Id.HasValue)
         {
             throw new ArgumentException("Feature ID is required");
         }
 
-        return geoJsonFeature.Id switch
-        {
-            long longId => longId,
-            int intId => intId,
-            string strId when long.TryParse(strId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            JsonElement element => ExtractFeatureId(element),
-            _ => throw new ArgumentException("Feature ID must be a valid integer")
-        };
-    }
-
-    private static long ExtractFeatureId(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.Number when element.TryGetInt64(out var parsed) => parsed,
-            JsonValueKind.String when long.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => throw new ArgumentException("Feature ID must be a valid integer")
-        };
+        return geoJsonFeature.Id.Value;
     }
 
     private static byte[] ConvertGeoJsonGeometryToWkb(SimpleGeoJsonGeometry geometry)
@@ -2496,6 +2493,79 @@ public static class OgcFeaturesEndpoints
 
         var contentType = outputFormat == MediaTypes.Json ? MediaTypes.Json : MediaTypes.GeoJson;
         return Results.Json(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature, contentType: contentType);
+    }
+
+    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    {
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            return timeoutToken;
+        }
+
+        return context.RequestAborted;
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 3100, Level = LogLevel.Warning, Message = "Invalid OGC collections request.")]
+        public static partial void InvalidCollectionsRequest(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3101, Level = LogLevel.Warning, Message = "Invalid OGC collections operation.")]
+        public static partial void InvalidCollectionsOperation(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3102, Level = LogLevel.Error, Message = "Error retrieving OGC collections.")]
+        public static partial void CollectionsQueryFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3103, Level = LogLevel.Warning, Message = "Invalid OGC collection ID {CollectionId}.")]
+        public static partial void InvalidCollectionId(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3104, Level = LogLevel.Error, Message = "Error retrieving OGC collection {CollectionId}.")]
+        public static partial void CollectionQueryFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3105, Level = LogLevel.Warning, Message = "Invalid OGC items request for collection {CollectionId}.")]
+        public static partial void InvalidItemsRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3106, Level = LogLevel.Warning, Message = "Invalid OGC items operation for collection {CollectionId}.")]
+        public static partial void InvalidItemsOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3107, Level = LogLevel.Error, Message = "Error processing OGC items request for collection {CollectionId}.")]
+        public static partial void ItemsQueryFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3108, Level = LogLevel.Warning, Message = "Invalid OGC item request for collection {CollectionId}.")]
+        public static partial void InvalidItemRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3109, Level = LogLevel.Warning, Message = "Invalid OGC item operation for collection {CollectionId}.")]
+        public static partial void InvalidItemOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3110, Level = LogLevel.Error, Message = "Error processing OGC item request for collection {CollectionId}.")]
+        public static partial void ItemQueryFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3111, Level = LogLevel.Warning, Message = "Invalid OGC create feature request for collection {CollectionId}.")]
+        public static partial void InvalidCreateRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3112, Level = LogLevel.Warning, Message = "Invalid OGC create feature operation for collection {CollectionId}.")]
+        public static partial void InvalidCreateOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3113, Level = LogLevel.Error, Message = "Error creating OGC feature for collection {CollectionId}.")]
+        public static partial void CreateFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3114, Level = LogLevel.Warning, Message = "Invalid OGC update request for collection {CollectionId}.")]
+        public static partial void InvalidUpdateRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3115, Level = LogLevel.Warning, Message = "Invalid OGC update operation for collection {CollectionId}.")]
+        public static partial void InvalidUpdateOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3116, Level = LogLevel.Error, Message = "Error updating OGC feature for collection {CollectionId}.")]
+        public static partial void UpdateFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3117, Level = LogLevel.Warning, Message = "Invalid OGC delete request for collection {CollectionId}.")]
+        public static partial void InvalidDeleteRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3118, Level = LogLevel.Warning, Message = "Invalid OGC delete operation for collection {CollectionId}.")]
+        public static partial void InvalidDeleteOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3119, Level = LogLevel.Error, Message = "Error deleting OGC feature for collection {CollectionId}.")]
+        public static partial void DeleteFailed(ILogger logger, string collectionId, Exception exception);
     }
 
     private static string BuildHtmlDocument(string title, string json)

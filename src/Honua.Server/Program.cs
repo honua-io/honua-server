@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Text.Json.Serialization.Metadata;
 using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Features.Admin;
@@ -81,6 +82,15 @@ if (!isTestEnvironment)
 {
     RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
+else
+{
+    builder.Services.AddScoped<Honua.Core.Queries.Filters.ISqlFilterTranslator>(_ =>
+        new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
+            useJsonAttributes: true,
+            attributesColumn: "attributes",
+            geometryColumn: "geometry",
+            primaryKeyColumn: "objectid"));
+}
 
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);
@@ -124,10 +134,13 @@ ConfigureOutputCaching(builder.Services);
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
-// Configure JSON serialization for ASP.NET Core (needed for OData route parameter binding)
+// Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolver = Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default;
+    options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
+        Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
+        Honua.Server.Features.OData.Models.ODataJsonContext.Default,
+        Honua.Server.Features.OgcFeatures.OgcJsonContext.Default);
 });
 
 var app = builder.Build();

@@ -231,8 +231,16 @@ public sealed class TestFeatureStore : IFeatureStore
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
+        List<Feature>? snapshot = null;
+        if (editBatch.RollbackOnFailure && _layerFeatures.TryGetValue(layerId, out var existingFeatures))
+        {
+            snapshot = existingFeatures.ToList();
+        }
+
         var createdIds = new List<long>();
         var createResults = new List<EditOperationResult>();
+        var updateResults = new List<EditOperationResult>();
+        var deleteResults = new List<EditOperationResult>();
 
         // Process creates
         var createdCount = 0;
@@ -251,31 +259,72 @@ public sealed class TestFeatureStore : IFeatureStore
             }
         }
 
+        // Process updates
+        var updatedCount = 0;
+        foreach (var feature in editBatch.Updates)
+        {
+            try
+            {
+                var updated = await UpdateAsync(layerId, feature, cancellationToken);
+                updatedCount++;
+                updateResults.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            }
+            catch (Exception ex)
+            {
+                updateResults.Add(EditOperationResult.Failure($"Failed to update feature {feature.Id}: {ex.Message}", objectId: feature.Id));
+            }
+        }
+
+        // Process deletes
+        var deletedCount = 0;
+        foreach (var featureId in editBatch.Deletes)
+        {
+            try
+            {
+                var deleted = await DeleteAsync(layerId, featureId, cancellationToken);
+                if (deleted)
+                {
+                    deletedCount++;
+                    deleteResults.Add(EditOperationResult.Success(featureId));
+                }
+                else
+                {
+                    deleteResults.Add(EditOperationResult.Failure($"Feature {featureId} not found", objectId: featureId));
+                }
+            }
+            catch (Exception ex)
+            {
+                deleteResults.Add(EditOperationResult.Failure($"Failed to delete feature {featureId}: {ex.Message}", objectId: featureId));
+            }
+        }
+
         // Check if any operations failed
-        var hasErrors = createResults.Any(r => !r.IsSuccess);
+        var hasErrors = createResults.Any(r => !r.IsSuccess) ||
+                        updateResults.Any(r => !r.IsSuccess) ||
+                        deleteResults.Any(r => !r.IsSuccess);
 
         if (hasErrors && editBatch.RollbackOnFailure)
         {
             // Rollback all operations
-            return FeatureEditResult.Rollback(createResults.ToImmutableArray());
-        }
-        else if (hasErrors && !editBatch.RollbackOnFailure)
-        {
-            // Return partial success - count only successful operations
-            return FeatureEditResult.Success(
-                createdCount: createResults.Count(r => r.IsSuccess),
-                updatedCount: 0,
-                deletedCount: 0,
-                createdIds: createdIds.ToImmutableArray(),
-                createResults: createResults.ToImmutableArray());
+            if (snapshot != null)
+            {
+                _layerFeatures[layerId] = snapshot;
+            }
+
+            return FeatureEditResult.Rollback(
+                createResults.ToImmutableArray(),
+                updateResults.ToImmutableArray(),
+                deleteResults.ToImmutableArray());
         }
 
         return FeatureEditResult.Success(
-            createdCount: createdCount,
-            updatedCount: 0,
-            deletedCount: 0,
+            createdCount: hasErrors ? createResults.Count(r => r.IsSuccess) : createdCount,
+            updatedCount: hasErrors ? updateResults.Count(r => r.IsSuccess) : updatedCount,
+            deletedCount: hasErrors ? deleteResults.Count(r => r.IsSuccess) : deletedCount,
             createdIds: createdIds.ToImmutableArray(),
-            createResults: createResults.ToImmutableArray());
+            createResults: createResults.ToImmutableArray(),
+            updateResults: updateResults.ToImmutableArray(),
+            deleteResults: deleteResults.ToImmutableArray());
     }
 
     private static IEnumerable<Feature> ApplyWhereFilter(IEnumerable<Feature> features, string whereClause)
