@@ -439,7 +439,7 @@ public sealed class TestFeatureStore : IFeatureStore
     /// </summary>
     private static double CalculateDistance((double x, double y) point1, (double x, double y) point2)
     {
-        const double EarthRadiusMeters = 6371000; // Earth's radius in meters
+        const double earthRadiusMeters = 6371000; // Earth's radius in meters
 
         var lat1 = point1.y * Math.PI / 180;
         var lat2 = point2.y * Math.PI / 180;
@@ -451,7 +451,7 @@ public sealed class TestFeatureStore : IFeatureStore
                 Math.Sin(deltaLon / 2) * Math.Sin(deltaLon / 2);
         var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
 
-        return EarthRadiusMeters * c;
+        return earthRadiusMeters * c;
     }
 
     /// <summary>

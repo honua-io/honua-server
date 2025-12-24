@@ -514,9 +514,16 @@ public static class FeatureServerEndpoints
         string? geometry = TryGetQueryValue(query, "geometry");
         string? geometryType = TryGetQueryValue(query, "geometryType");
         string? spatialRel = TryGetQueryValue(query, "spatialRel");
+        string? units = TryGetQueryValue(query, "units");
         string format = TryGetQueryValue(query, "f") ?? "json";
 
         if (!TryParseQueryBool(query, "returnGeometry", true, out bool returnGeometry, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnDistance", false, out bool returnDistance, out error))
         {
             queryParams = new QueryParameters();
             return false;
@@ -534,17 +541,33 @@ public static class FeatureServerEndpoints
             return false;
         }
 
+        if (!TryParseQueryInt(query, "nearestCount", out int? nearestCount, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryDouble(query, "distance", out double? distance, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
         queryParams = new QueryParameters
         {
             Where = where,
             OutFields = outFields,
             ReturnGeometry = returnGeometry,
+            ReturnDistance = returnDistance,
             F = format,
             ResultOffset = resultOffset,
             ResultRecordCount = resultRecordCount,
+            NearestCount = nearestCount,
             Geometry = geometry,
             GeometryType = geometryType,
-            SpatialRel = spatialRel
+            SpatialRel = spatialRel,
+            Distance = distance,
+            Units = units
         };
 
         return true;
@@ -596,6 +619,27 @@ public static class FeatureServerEndpoints
         if (!bool.TryParse(raw, out bool parsed))
         {
             error = $"{key} must be a boolean.";
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool TryParseQueryDouble(IQueryCollection query, string key, out double? value, out string? error)
+    {
+        value = null;
+        error = null;
+
+        string? raw = TryGetQueryValue(query, key);
+        if (raw is null)
+        {
+            return true;
+        }
+
+        if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+        {
+            error = $"{key} must be a number.";
             return false;
         }
 

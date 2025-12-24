@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OData.Models;
@@ -480,6 +481,7 @@ public static class ODataEndpoints
             }
 
             // Build feature query from OData parameters
+            var (sqlFragment, whereClause) = ConvertODataFilterToSqlFragment(filter);
             var featureQuery = new FeatureQuery
             {
                 Where = ConvertODataFilterToSql(filter),
@@ -539,6 +541,7 @@ public static class ODataEndpoints
     }
 
     /// <summary>
+<<<<<<< HEAD
     /// Handles getting a single feature by ID
     /// </summary>
     private static async Task<IResult> HandleGetSingleFeature(
@@ -830,14 +833,60 @@ public static class ODataEndpoints
     /// Converts basic OData $filter expressions to SQL WHERE clauses
     /// Supports: eq, ne, gt, lt, ge, le, contains, startswith, endswith, geo.distance, geo.intersects
     /// </summary>
-    private static string? ConvertODataFilterToSql(string? odataFilter)
+    private static (SqlFragment? sqlFragment, string? whereClause) ConvertODataFilterToSqlFragment(string? odataFilter)
     {
         if (string.IsNullOrWhiteSpace(odataFilter))
-            return null;
+            return (null, null);
 
-        // Basic OData to SQL conversion
-        // This is a simplified implementation - production would use a proper OData parser
         var sql = odataFilter;
+        var parameters = new List<object?>();
+        var paramIndex = 0; // Start from 0 for @p0, @p1, etc.
+
+        // Handle spatial functions first
+        // geo.distance(Geometry, geography'POINT(x y)') lt/gt value
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"geo\.distance\(\s*(?<field>\w+)\s*,\s*geography'(?<geometry>[^']+)'\s*\)\s*(?<op>lt|gt|le|ge|eq|ne)\s*(?<distance>\d+(?:\.\d+)?)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var geometry = match.Groups["geometry"].Value;
+                var op = match.Groups["op"].Value;
+                var distance = match.Groups["distance"].Value;
+
+                var fieldSql = MapODataField(field);
+                var sqlOp = ConvertODataOperator(op);
+
+                // Add parameters for geometry and distance
+                var geometryParamIndex = paramIndex++;
+                var distanceParamIndex = paramIndex++;
+                parameters.Add(geometry);
+                parameters.Add(double.Parse(distance));
+
+                // Return parameterized SQL
+                return $"ST_Distance({fieldSql}::geography, ST_GeomFromText(@p{geometryParamIndex})::geography) {sqlOp} @p{distanceParamIndex}";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // geo.intersects(Geometry, geography'POLYGON(...)')
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"geo\.intersects\(\s*(?<field>\w+)\s*,\s*geography'(?<geometry>[^']+)'\s*\)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var geometry = match.Groups["geometry"].Value;
+
+                var fieldSql = MapODataField(field);
+
+                // Add parameter for geometry
+                var geometryParamIndex = paramIndex++;
+                parameters.Add(geometry);
+
+                // Return parameterized SQL
+                return $"ST_Intersects({fieldSql}, ST_GeomFromText(@p{geometryParamIndex}))";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         // Handle geo.distance(geometry, geography'POINT(lon lat)') comparisons
         // Example: geo.distance(geometry, geography'POINT(-122.4 37.8)') lt 1000
@@ -887,7 +936,12 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var value = match.Groups["value"].Value;
                 var fieldSql = MapODataField(field);
-                return $"{fieldSql} LIKE '%{value}%'";
+
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                parameters.Add($"%{value}%");
+
+                return $"{fieldSql} LIKE @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -899,7 +953,12 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var value = match.Groups["value"].Value;
                 var fieldSql = MapODataField(field);
-                return $"{fieldSql} LIKE '{value}%'";
+
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                parameters.Add($"{value}%");
+
+                return $"{fieldSql} LIKE @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -911,7 +970,12 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var value = match.Groups["value"].Value;
                 var fieldSql = MapODataField(field);
-                return $"{fieldSql} LIKE '%{value}'";
+
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                parameters.Add($"%{value}");
+
+                return $"{fieldSql} LIKE @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -925,8 +989,8 @@ public static class ODataEndpoints
             .Replace(" and ", " AND ", StringComparison.OrdinalIgnoreCase)
             .Replace(" or ", " OR ", StringComparison.OrdinalIgnoreCase);
 
-        // Convert OData field references to JSONB queries
-        // Example: name eq 'value' -> attributes->>'name' = 'value'
+        // Convert OData field references to JSONB queries with parameterization
+        // Example: name eq 'value' -> attributes->>'name' = $n
         sql = System.Text.RegularExpressions.Regex.Replace(
             sql,
             @"\b(?<field>\w+)\s*(?<op>=|<>|>|<|>=|<=)\s*(?<value>('([^']*)')|(-?\d+(?:\.\d+)?))",
@@ -935,22 +999,42 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var op = match.Groups["op"].Value;
                 var value = match.Groups["value"].Value;
-                var isNumericValue = !value.StartsWith('\'');
                 var fieldLower = field.Trim().ToLowerInvariant();
                 var isCoreField = fieldLower == "objectid" || fieldLower == "layerid";
 
-                if (isNumericValue && !isCoreField)
-                {
-                    value = $"'{value}'";
-                }
-
                 var fieldSql = MapODataField(field);
 
-                return $"{fieldSql} {op} {value}";
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                if (value.StartsWith('\'') && value.EndsWith('\''))
+                {
+                    // Remove quotes and add as string parameter
+                    parameters.Add(value.Substring(1, value.Length - 2));
+                }
+                else
+                {
+                    // Numeric value
+                    if (double.TryParse(value, out var numValue))
+                    {
+                        parameters.Add(numValue);
+                    }
+                    else
+                    {
+                        parameters.Add(value);
+                    }
+                }
+
+                return $"{fieldSql} {op} @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-        return sql;
+        // If we have parameters, return SqlFragment; otherwise fallback to string
+        if (parameters.Count > 0)
+        {
+            return (new SqlFragment(sql, parameters), null);
+        }
+
+        return (null, sql);
     }
 
     private static string MapODataField(string field)
@@ -968,7 +1052,26 @@ public static class ODataEndpoints
             return "layer_id";
         }
 
+        if (fieldLower == "geometry")
+        {
+            return "geometry";
+        }
+
         return $"attributes->>'{fieldName}'";
+    }
+
+    private static string ConvertODataOperator(string odataOp)
+    {
+        return odataOp.ToLowerInvariant() switch
+        {
+            "eq" => "=",
+            "ne" => "<>",
+            "gt" => ">",
+            "ge" => ">=",
+            "lt" => "<",
+            "le" => "<=",
+            _ => odataOp
+        };
     }
 
     /// <summary>

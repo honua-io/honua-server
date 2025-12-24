@@ -498,6 +498,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
     /// Tests that simple unit names (meters, feet, km, miles) are properly supported
     /// </summary>
     [Theory]
+    [Trait("Category", "Integration")]
     [InlineData("meters", 10000)]
     [InlineData("m", 10000)]
     [InlineData("feet", 32808)]
