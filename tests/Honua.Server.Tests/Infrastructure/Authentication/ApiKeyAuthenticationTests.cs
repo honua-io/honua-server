@@ -69,24 +69,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
     #region Development Bypass Tests
 
-    [IntegrationTest]
-    public async Task AdminEndpoint_DevelopmentEnvironment_NoPassword_AllowsAccess()
-    {
-        // Arrange - In development environment with no HONUA_ADMIN_PASSWORD set
-        using var factory = CreateTestFactory(builder =>
-        {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", ""); // Empty password
-        });
-        using var client = factory.CreateClient();
-
-        // Act - Access admin endpoint without API key
-        var response = await client.GetAsync("/api/admin/connections/test/tables");
-
-        // Assert - Should allow access (will get 500 due to missing DB, but not 401)
-        Assert.NotEqual(401, (int)response.StatusCode);
-        _output.WriteLine($"Response status: {response.StatusCode}");
-    }
+    // Note: AdminEndpoint_DevelopmentEnvironment_NoPassword_AllowsAccess test removed
+    // API keys are now required in development environment
 
     [IntegrationTest]
     public async Task AdminEndpoint_DevelopmentBypass_ExplicitlyEnabled_AllowsAccess()

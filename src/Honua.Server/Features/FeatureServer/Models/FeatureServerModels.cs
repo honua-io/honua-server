@@ -1128,6 +1128,9 @@ public class EditError
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<double>>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<string?>>))]
 [JsonSerializable(typeof(ImmutableArray<string>?))]
+// Interface types for AOT compatibility
+[JsonSerializable(typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureStore))]
+[JsonSerializable(typeof(Honua.Core.Features.Catalog.Abstractions.ILayerCatalog))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
