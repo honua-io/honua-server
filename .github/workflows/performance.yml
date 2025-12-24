@@ -1,8 +1,6 @@
 name: Performance Benchmarks
 
 on:
-  pull_request:
-    branches: [ trunk ]
   schedule:
     # Run nightly to track performance trends
     - cron: '0 6 * * *'

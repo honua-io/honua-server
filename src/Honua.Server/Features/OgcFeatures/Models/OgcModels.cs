@@ -436,3 +436,4 @@ public static class MediaTypes
     /// </summary>
     public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
 }
+

@@ -1,0 +1,110 @@
+name: Security Scans
+
+on:
+  schedule:
+    # Run nightly to check for new vulnerabilities
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      include_transitive:
+        description: 'Include transitive dependencies'
+        type: boolean
+        default: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  security-vulnerability-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Scan for Vulnerable NuGet Packages
+        id: nuget-scan
+        run: |
+          echo "Scanning for vulnerable NuGet packages..."
+
+          # Run vulnerability scan and capture output
+          if dotnet list package --vulnerable --include-transitive > vulnerability-report.txt 2>&1; then
+            echo "scan_result=success" >> $GITHUB_OUTPUT
+          else
+            echo "scan_result=failure" >> $GITHUB_OUTPUT
+          fi
+
+          # Display the results
+          cat vulnerability-report.txt
+
+          # Check if any high or critical vulnerabilities were found
+          if grep -E "(High|Critical)" vulnerability-report.txt; then
+            echo "vulnerable_packages=true" >> $GITHUB_OUTPUT
+            echo "::error::High or Critical vulnerabilities found in NuGet packages"
+            exit 1
+          else
+            echo "vulnerable_packages=false" >> $GITHUB_OUTPUT
+            echo "No high or critical vulnerabilities found"
+          fi
+
+      - name: Upload Vulnerability Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vulnerability-report-${{ github.run_number }}
+          path: vulnerability-report.txt
+          retention-days: 30
+
+      - name: Create Issue on Vulnerabilities
+        if: steps.nuget-scan.outputs.vulnerable_packages == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = 'Security Alert: High/Critical vulnerabilities detected';
+            const body = `## Security Vulnerability Alert
+
+            The nightly security scan detected high or critical vulnerabilities in project dependencies.
+
+            **Scan Date**: ${{ github.run_id }}
+            **Report**: Available in workflow artifacts
+
+            ### Next Steps
+            1. Review the vulnerability report in the workflow artifacts
+            2. Update affected packages to patched versions
+            3. Test updated dependencies
+            4. Monitor for additional security updates
+
+            This issue was created automatically by the nightly security scan.
+            `;
+
+            // Check if similar issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,automated'
+            });
+
+            const existingIssue = issues.data.find(issue =>
+              issue.title.includes('Security Alert') &&
+              issue.title.includes('vulnerabilities detected')
+            );
+
+            if (!existingIssue) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['security', 'automated', 'high-priority']
+              });
+            }
