@@ -42,7 +42,7 @@ public sealed record SpatialPredicate(
     GeometryLiteral Geometry) : FilterExpression;
 
 /// <summary>
-/// Geometry literal in WKB format (normalized from WKT, GeoJSON, Esri JSON)
+/// Geometry literal in WKB format (normalized from WKT, GeoJSON, GeoServices JSON)
 /// </summary>
 public sealed record GeometryLiteral(
     byte[] Wkb,

@@ -17,13 +17,13 @@ public class GeometryConverterTests
     #region Point Geometry Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithPointGeometry_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithPointGeometry_ShouldReturnValidWkb()
     {
         // Arrange
-        var esriJson = """{"x": -122.4194, "y": 37.7749}""";
+        var geoServicesJson = """{"x": -122.4194, "y": 37.7749}""";
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -42,13 +42,13 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithPointGeometryAndIntegerCoords_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithPointGeometryAndIntegerCoords_ShouldReturnValidWkb()
     {
         // Arrange
-        var esriJson = """{"x": -122, "y": 38}""";
+        var geoServicesJson = """{"x": -122, "y": 38}""";
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -65,10 +65,10 @@ public class GeometryConverterTests
     #region LineString Geometry Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithLineStringGeometry_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithLineStringGeometry_ShouldReturnValidWkb()
     {
         // Arrange - Simple linestring with 3 points
-        var esriJson = """
+        var geoServicesJson = """
         {
             "paths": [
                 [[-122.4, 37.8], [-122.3, 37.9], [-122.2, 38.0]]
@@ -77,7 +77,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -93,10 +93,10 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithMultiLineStringGeometry_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithMultiLineStringGeometry_ShouldReturnValidWkb()
     {
         // Arrange - Multi-path linestring
-        var esriJson = """
+        var geoServicesJson = """
         {
             "paths": [
                 [[-122.4, 37.8], [-122.3, 37.9]],
@@ -106,7 +106,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -122,13 +122,13 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithEmptyPathsArray_ShouldThrowArgumentException()
+    public void ConvertGeoServicesJsonToWkb_WithEmptyPathsArray_ShouldThrowArgumentException()
     {
         // Arrange
-        var esriJson = """{"paths": []}""";
+        var geoServicesJson = """{"paths": []}""";
 
         // Act & Assert
-        var action = () => _converter.ConvertEsriJsonToWkb(esriJson);
+        var action = () => _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
         action.Should().Throw<ArgumentException>()
             .WithMessage("No valid paths found in linestring geometry");
     }
@@ -138,10 +138,10 @@ public class GeometryConverterTests
     #region MultiPoint Geometry Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithMultiPointGeometry_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithMultiPointGeometry_ShouldReturnValidWkb()
     {
         // Arrange
-        var esriJson = """
+        var geoServicesJson = """
         {
             "points": [
                 [-122.4, 37.8],
@@ -152,7 +152,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -168,10 +168,10 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithSinglePointInMultiPoint_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithSinglePointInMultiPoint_ShouldReturnValidWkb()
     {
         // Arrange
-        var esriJson = """
+        var geoServicesJson = """
         {
             "points": [
                 [-122.4, 37.8]
@@ -180,7 +180,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -192,13 +192,13 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithEmptyPointsArray_ShouldThrowArgumentException()
+    public void ConvertGeoServicesJsonToWkb_WithEmptyPointsArray_ShouldThrowArgumentException()
     {
         // Arrange
-        var esriJson = """{"points": []}""";
+        var geoServicesJson = """{"points": []}""";
 
         // Act & Assert
-        var action = () => _converter.ConvertEsriJsonToWkb(esriJson);
+        var action = () => _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
         action.Should().Throw<ArgumentException>()
             .WithMessage("No valid points found in multipoint geometry");
     }
@@ -208,10 +208,10 @@ public class GeometryConverterTests
     #region Polygon Geometry Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithPolygonGeometry_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithPolygonGeometry_ShouldReturnValidWkb()
     {
         // Arrange - Simple polygon (square)
-        var esriJson = """
+        var geoServicesJson = """
         {
             "rings": [
                 [
@@ -226,7 +226,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -242,10 +242,10 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithPolygonWithHole_ShouldReturnValidWkb()
+    public void ConvertGeoServicesJsonToWkb_WithPolygonWithHole_ShouldReturnValidWkb()
     {
         // Arrange - Polygon with a hole (outer ring + inner ring)
-        var esriJson = """
+        var geoServicesJson = """
         {
             "rings": [
                 [
@@ -267,7 +267,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -283,10 +283,10 @@ public class GeometryConverterTests
     #region Envelope Geometry Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithEnvelopeGeometry_ShouldReturnValidPolygonWkb()
+    public void ConvertGeoServicesJsonToWkb_WithEnvelopeGeometry_ShouldReturnValidPolygonWkb()
     {
         // Arrange
-        var esriJson = """
+        var geoServicesJson = """
         {
             "xmin": -122.5,
             "ymin": 37.7,
@@ -296,7 +296,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -316,10 +316,10 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithEnvelopeGeometryIntegerCoords_ShouldReturnValidPolygonWkb()
+    public void ConvertGeoServicesJsonToWkb_WithEnvelopeGeometryIntegerCoords_ShouldReturnValidPolygonWkb()
     {
         // Arrange
-        var esriJson = """
+        var geoServicesJson = """
         {
             "xmin": -123,
             "ymin": 37,
@@ -329,7 +329,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert
         result.Should().NotBeNull();
@@ -345,46 +345,46 @@ public class GeometryConverterTests
     #region Error Handling Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithInvalidJson_ShouldThrowArgumentException()
+    public void ConvertGeoServicesJsonToWkb_WithInvalidJson_ShouldThrowArgumentException()
     {
         // Arrange
         var invalidJson = """{invalid json}""";
 
         // Act & Assert
-        var action = () => _converter.ConvertEsriJsonToWkb(invalidJson);
+        var action = () => _converter.ConvertGeoServicesJsonToWkb(invalidJson);
         action.Should().Throw<ArgumentException>()
             .WithMessage("Invalid JSON format in geometry parameter");
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithUnsupportedGeometry_ShouldThrowArgumentException()
+    public void ConvertGeoServicesJsonToWkb_WithUnsupportedGeometry_ShouldThrowArgumentException()
     {
         // Arrange
         var unsupportedJson = """{"unsupported": "geometry"}""";
 
         // Act & Assert
-        var action = () => _converter.ConvertEsriJsonToWkb(unsupportedJson);
+        var action = () => _converter.ConvertGeoServicesJsonToWkb(unsupportedJson);
         action.Should().Throw<ArgumentException>()
-            .WithMessage("Invalid Esri JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)");
+            .WithMessage("Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)");
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithEmptyRingsArray_ShouldThrowArgumentException()
+    public void ConvertGeoServicesJsonToWkb_WithEmptyRingsArray_ShouldThrowArgumentException()
     {
         // Arrange
-        var esriJson = """{"rings": []}""";
+        var geoServicesJson = """{"rings": []}""";
 
         // Act & Assert
-        var action = () => _converter.ConvertEsriJsonToWkb(esriJson);
+        var action = () => _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
         action.Should().Throw<ArgumentException>()
             .WithMessage("No valid rings found in polygon geometry");
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_WithMalformedCoordinates_ShouldHandleGracefully()
+    public void ConvertGeoServicesJsonToWkb_WithMalformedCoordinates_ShouldHandleGracefully()
     {
         // Arrange - Points with insufficient coordinates
-        var esriJson = """
+        var geoServicesJson = """
         {
             "points": [
                 [-122.4],
@@ -394,7 +394,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert - Should only process valid points
         result.Should().NotBeNull();
@@ -410,10 +410,10 @@ public class GeometryConverterTests
     #region Integration with Spatial Query Tests
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_LineStringForSpatialQuery_ShouldProduceCompatibleWkb()
+    public void ConvertGeoServicesJsonToWkb_LineStringForSpatialQuery_ShouldProduceCompatibleWkb()
     {
         // Arrange - LineString that could be used in spatial queries
-        var esriJson = """
+        var geoServicesJson = """
         {
             "paths": [
                 [
@@ -426,7 +426,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert - Basic WKB structure validation
         result.Should().NotBeNull();
@@ -438,10 +438,10 @@ public class GeometryConverterTests
     }
 
     [UnitTest]
-    public void ConvertEsriJsonToWkb_EnvelopeForBoundingBoxQuery_ShouldProduceCompatibleWkb()
+    public void ConvertGeoServicesJsonToWkb_EnvelopeForBoundingBoxQuery_ShouldProduceCompatibleWkb()
     {
         // Arrange - Envelope representing a bounding box
-        var esriJson = """
+        var geoServicesJson = """
         {
             "xmin": -123.0,
             "ymin": 37.0,
@@ -451,7 +451,7 @@ public class GeometryConverterTests
         """;
 
         // Act
-        var result = _converter.ConvertEsriJsonToWkb(esriJson);
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
 
         // Assert - Should be converted to a rectangular polygon
         result.Should().NotBeNull();

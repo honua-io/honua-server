@@ -127,7 +127,7 @@ public sealed class LimitsEnforcementMiddleware(
 
         var errorResponse = new ApiErrorResponse
         {
-            Error = new EsriError
+            Error = new GeoServicesError
             {
                 Code = statusCode,
                 Message = error,
