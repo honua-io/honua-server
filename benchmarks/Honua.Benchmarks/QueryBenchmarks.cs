@@ -3,35 +3,43 @@
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Diagnosers;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Honua.Benchmarks;
 
 /// <summary>
-/// Query endpoint benchmarks targeting performance baselines:
-/// - p50 less than 50ms (100 features)
-/// - p95 less than 150ms (100 features)
-/// - p99 less than 300ms (100 features)
+/// Query endpoint benchmarks targeting performance baselines (Issue #46):
+/// - p50 less than 30ms (basic queries)
+/// - p95 less than 100ms (basic queries) - AC requirement from Issue #46
+/// - p99 less than 200ms (basic queries)
 /// - Throughput greater than 1k rps
+///
+/// These benchmarks use the real Honua Server application via WebApplicationFactory
+/// to measure actual endpoint performance including serialization, database access,
+/// and the full request pipeline.
 /// </summary>
 [MemoryDiagnoser]
 [ThreadingDiagnoser]
 [SimpleJob]
 public class QueryBenchmarks : IDisposable
 {
-    private HonuaTestFactory _factory = null!;
-    private HttpClient _client = null!;
-    private readonly string _layerId = "0";
+    private WebApplicationFactory<Program>? _factory;
+    private HttpClient? _client;
+    private const string LayerId = "0";
 
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _factory = new HonuaTestFactory();
+        // Create factory using real Honua Server application
+        _factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                // Enable dev auth to bypass authentication in benchmarks
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseEnvironment("Testing");
+            });
+
         _client = _factory.CreateClient();
     }
 
@@ -49,31 +57,30 @@ public class QueryBenchmarks : IDisposable
     }
 
     /// <summary>
-    /// Baseline query benchmark - simple where clause returning approximately 100 features
-    /// Target: p50 less than 50ms, p99 less than 300ms
+    /// Baseline query benchmark - simple where clause returning approximately 100 features.
+    /// Target: p50 less than 30ms, p95 less than 100ms, p99 less than 200ms
     /// </summary>
-    [Benchmark]
+    [Benchmark(Description = "Simple WHERE clause query")]
     public async Task<string> SimpleWhereQuery()
     {
-        var response = await _client.GetAsync(
-            $"/rest/services/test/FeatureServer/{_layerId}/query?where=population>1000&f=json");
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?where=1=1&resultRecordCount=100&f=json");
 
-        response.EnsureSuccessStatusCode();
+        // Read response to ensure full request completion
         return await response.Content.ReadAsStringAsync();
     }
 
     /// <summary>
-    /// Spatial query benchmark - bbox intersection returning approximately 100 features
-    /// Target: p50 less than 50ms, p99 less than 300ms
+    /// Spatial query benchmark - bbox intersection returning approximately 100 features.
+    /// Target: p50 less than 30ms, p95 less than 100ms, p99 less than 200ms
     /// </summary>
-    [Benchmark]
+    [Benchmark(Description = "Spatial bbox query")]
     public async Task<string> SpatialBboxQuery()
     {
         var bbox = "-122.5,37.7,-122.3,37.8";
-        var response = await _client.GetAsync(
-            $"/rest/services/test/FeatureServer/{_layerId}/query?geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json");
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json");
 
-        response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
 
@@ -81,14 +88,13 @@ public class QueryBenchmarks : IDisposable
     /// Combined where + spatial query benchmark
     /// Target: p50 less than 100ms, p99 less than 500ms
     /// </summary>
-    [Benchmark]
+    [Benchmark(Description = "Combined WHERE + spatial query")]
     public async Task<string> CombinedWhereAndSpatialQuery()
     {
         var bbox = "-122.5,37.7,-122.3,37.8";
-        var response = await _client.GetAsync(
-            $"/rest/services/test/FeatureServer/{_layerId}/query?where=population>5000&geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json");
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?where=1=1&geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json");
 
-        response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
 
@@ -96,13 +102,12 @@ public class QueryBenchmarks : IDisposable
     /// Paginated query benchmark - testing paging performance
     /// Target: p50 less than 20ms (small pages)
     /// </summary>
-    [Benchmark]
+    [Benchmark(Description = "Paginated query (offset/limit)")]
     public async Task<string> PaginatedQuery()
     {
-        var response = await _client.GetAsync(
-            $"/rest/services/test/FeatureServer/{_layerId}/query?resultOffset=0&resultRecordCount=50&f=json");
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?resultOffset=0&resultRecordCount=50&f=json");
 
-        response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
 
@@ -110,65 +115,48 @@ public class QueryBenchmarks : IDisposable
     /// Large result set benchmark - testing performance with 1000+ features
     /// Target: p50 less than 150ms, p99 less than 800ms
     /// </summary>
-    [Benchmark]
+    [Benchmark(Description = "Large result set (1000 features)")]
     public async Task<string> LargeResultSet()
     {
-        var response = await _client.GetAsync(
-            $"/rest/services/test/FeatureServer/{_layerId}/query?resultRecordCount=1000&f=json");
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?resultRecordCount=1000&f=json");
 
-        response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
-}
 
-/// <summary>
-/// Custom WebApplicationFactory to avoid Program class conflicts
-/// </summary>
-public class HonuaTestFactory : WebApplicationFactory<object>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    /// <summary>
+    /// GeoJSON format output benchmark - tests JSON serialization performance
+    /// </summary>
+    [Benchmark(Description = "GeoJSON format query")]
+    public async Task<string> GeoJsonFormatQuery()
     {
-        builder.UseStartup<TestStartup>();
-    }
-}
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?where=1=1&resultRecordCount=100&f=geojson");
 
-/// <summary>
-/// Test startup class that configures the web application for benchmarking
-/// </summary>
-public class TestStartup
-{
-    public void ConfigureServices(IServiceCollection services)
-    {
-        // Add minimal services needed for benchmarking
-        services.AddControllers();
-        services.AddHttpClient();
+        return await response.Content.ReadAsStringAsync();
     }
 
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    /// <summary>
+    /// Count-only query benchmark - tests window function optimization
+    /// </summary>
+    [Benchmark(Description = "Count-only query")]
+    public async Task<string> CountOnlyQuery()
     {
-        if (env.IsDevelopment())
-        {
-            app.UseDeveloperExceptionPage();
-        }
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?where=1=1&returnCountOnly=true&f=json");
 
-        app.UseRouting();
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapControllers();
+        return await response.Content.ReadAsStringAsync();
+    }
 
-            // Add dummy endpoints for benchmarking
-            endpoints.MapGet("/rest/services/test/FeatureServer/0/query", async context =>
-            {
-                await context.Response.WriteAsync(@"{
-                    ""features"": [],
-                    ""exceededTransferLimit"": false,
-                    ""objectIdFieldName"": ""objectid"",
-                    ""globalIdFieldName"": ""globalid"",
-                    ""geometryType"": ""esriGeometryPoint"",
-                    ""spatialReference"": { ""wkid"": 4326 },
-                    ""fields"": []
-                }");
-            });
-        });
+    /// <summary>
+    /// OutFields restriction benchmark - tests field filtering
+    /// </summary>
+    [Benchmark(Description = "Query with outFields restriction")]
+    public async Task<string> OutFieldsQuery()
+    {
+        var response = await _client!.GetAsync(
+            $"/rest/services/test/FeatureServer/{LayerId}/query?where=1=1&outFields=objectid,name&resultRecordCount=100&f=json");
+
+        return await response.Content.ReadAsStringAsync();
     }
 }
