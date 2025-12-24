@@ -52,6 +52,11 @@ public readonly record struct FeatureQuery
     public int? Limit { get; init; }
 
     /// <summary>
+    /// Order by clauses for sorting results (e.g., "name asc", "population desc")
+    /// </summary>
+    public ImmutableArray<OrderByClause>? OrderBy { get; init; }
+
+    /// <summary>
     /// Creates a simple WHERE clause query
     /// </summary>
     /// <param name="where">WHERE clause expression</param>
@@ -143,6 +148,49 @@ public readonly record struct SpatialFilter
     /// <returns>Spatial filter instance</returns>
     public static SpatialFilter Create(byte[] geometry, SpatialRelationship spatialRelationship)
         => new() { Geometry = geometry, SpatialRelationship = spatialRelationship };
+}
+
+/// <summary>
+/// Represents an order by clause for sorting results
+/// </summary>
+public readonly record struct OrderByClause
+{
+    /// <summary>
+    /// Field name to sort by
+    /// </summary>
+    public required string Field { get; init; }
+
+    /// <summary>
+    /// Sort direction (true = ascending, false = descending)
+    /// </summary>
+    public bool Ascending { get; init; } = true;
+
+    /// <summary>
+    /// Initializes a new instance of the OrderByClause struct
+    /// </summary>
+    /// <param name="field">Field name to sort by</param>
+    /// <param name="ascending">Sort direction (true = ascending, false = descending)</param>
+    public OrderByClause(string field, bool ascending = true)
+    {
+        Field = field;
+        Ascending = ascending;
+    }
+
+    /// <summary>
+    /// Creates an ascending order by clause
+    /// </summary>
+    /// <param name="field">Field to sort by</param>
+    /// <returns>Order by clause instance</returns>
+    public static OrderByClause Asc(string field)
+        => new() { Field = field, Ascending = true };
+
+    /// <summary>
+    /// Creates a descending order by clause
+    /// </summary>
+    /// <param name="field">Field to sort by</param>
+    /// <returns>Order by clause instance</returns>
+    public static OrderByClause Desc(string field)
+        => new() { Field = field, Ascending = false };
 }
 
 /// <summary>
