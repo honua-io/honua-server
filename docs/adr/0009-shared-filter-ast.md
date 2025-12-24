@@ -38,7 +38,7 @@ Implement a **shared Filter AST (Abstract Syntax Tree)** in `Honua.Core` that al
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Protocol Layer                               │
 ├─────────────────┬─────────────────┬─────────────────────────────┤
-│ EsriWhereParser │ Cql2TextParser  │ ODataFilterParser           │
+│ GeoServicesWhereParser │ Cql2TextParser  │ ODataFilterParser           │
 │ (FeatureServer) │ (OGC Features)  │ (OData v4)                  │
 └────────┬────────┴────────┬────────┴──────────────┬──────────────┘
          │                 │                       │
@@ -93,7 +93,7 @@ public sealed record SpatialPredicate(
     PropertyReference GeometryProperty,
     GeometryLiteral Geometry) : FilterExpression;
 
-/// <summary>Geometry literal in WKB format (normalized from WKT, GeoJSON, Esri JSON)</summary>
+/// <summary>Geometry literal in WKB format (normalized from WKT, GeoJSON, GeoServices JSON)</summary>
 public sealed record GeometryLiteral(
     byte[] Wkb,
     int Srid,

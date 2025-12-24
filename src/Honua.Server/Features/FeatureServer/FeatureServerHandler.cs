@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -11,7 +10,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -21,22 +19,21 @@ namespace Honua.Server.Features.FeatureServer;
 /// </summary>
 /// <remarks>
 /// Initializes a new FeatureServerHandler with required dependencies.
-/// Note: This handler has 6 dependencies (exceeding 4-handler limit) but reduces
-/// endpoint dependency count from 6 to 1, meeting the 5-endpoint limit.
+/// Note: This handler has 6 dependencies (meets the refactored limit with IFeatureQueryValidator service).
 /// </remarks>
 internal sealed class FeatureServerHandler(
     ILayerCatalog layerCatalog,
     IFeatureStore featureStore,
-    IGeometryConverter geometryConverter,
+    Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
     IQueryFormatter queryFormatter,
-    IOptions<LimitsOptions> limitsOptions,
+    IFeatureQueryValidator queryValidator,
     ILogger<FeatureServerHandler> logger)
 {
     private readonly ILayerCatalog _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
     private readonly IFeatureStore _featureStore = featureStore ?? throw new ArgumentNullException(nameof(featureStore));
-    private readonly IGeometryConverter _geometryConverter = geometryConverter ?? throw new ArgumentNullException(nameof(geometryConverter));
+    private readonly Honua.Server.Features.Infrastructure.Services.IGeometryConverter _geometryConverter = geometryConverter ?? throw new ArgumentNullException(nameof(geometryConverter));
     private readonly IQueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
-    private readonly LimitsOptions _limitsOptions = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
+    private readonly IFeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
     private readonly ILogger<FeatureServerHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -57,38 +54,40 @@ internal sealed class FeatureServerHandler(
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             LayerDefinition? layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
             if (queryParams.ResultRecordCount is < 1)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Invalid query parameters",
                     [$"{nameof(QueryParameters.ResultRecordCount)} must be greater than 0"]);
             }
 
             if (queryParams.ResultOffset is < 0)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Invalid query parameters",
                     [$"{nameof(QueryParameters.ResultOffset)} must be 0 or greater"]);
             }
 
             // Apply limits enforcement
-            QueryParameters? validatedParams = ApplyQueryLimits(queryParams, _limitsOptions.Query);
-            if (validatedParams == null)
+            QueryValidationResult validationResult = _queryValidator.ValidateQueryLimits(queryParams);
+            if (!validationResult.IsValid)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Query parameters exceed configured limits",
-                    [$"Maximum record count: {_limitsOptions.Query.MaxRecordCount}, Maximum offset: {_limitsOptions.Query.MaxOffset}"]);
+                    [validationResult.ErrorMessage!]);
             }
+
+            QueryParameters validatedParams = validationResult.ValidatedParameters!;
 
             // Build query from validated parameters
             FeatureQuery query = BuildFeatureQuery(validatedParams, service);
@@ -116,11 +115,15 @@ internal sealed class FeatureServerHandler(
                 _ => Results.Json(formattedResponse, FeatureServerJsonContext.Default.QueryResponse, contentType: contentType)
             };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return EsriErrorHelpers.CreateBadRequestError(
+            return GeoServicesErrorHelpers.CreateBadRequestError(
                 "Invalid query parameters",
                 [ex.Message]);
         }
@@ -128,15 +131,12 @@ internal sealed class FeatureServerHandler(
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return EsriErrorHelpers.CreateInternalServerError(
+            return GeoServicesErrorHelpers.CreateInternalServerError(
                 "Query execution failed",
                 [ex.Message]);
         }
     }
 
-    /// <summary>
-    /// Executes a query for related records with proper validation and formatting.
-    /// </summary>
     /// <summary>
     /// Executes a query for related records with proper validation and formatting.
     /// </summary>
@@ -156,20 +156,20 @@ internal sealed class FeatureServerHandler(
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             LayerDefinition? layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
             // Validate required parameters (these should already be validated by parameter parsing)
             if (queryParams.ObjectIds.Length == 0)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Invalid query parameters",
                     ["objectIds parameter is required"]);
             }
@@ -179,27 +179,29 @@ internal sealed class FeatureServerHandler(
             if (relationshipMaybe == null)
             {
                 FeatureServerLog.RelationshipNotFound(_logger, layerId, queryParams.RelationshipId);
-                return EsriErrorHelpers.CreateNotFoundError(
+                return GeoServicesErrorHelpers.CreateNotFoundError(
                     $"Relationship {queryParams.RelationshipId} not found for layer {layerId}");
             }
 
             var relationship = relationshipMaybe.Value;
 
             // Apply limits enforcement
-            QueryRelatedRecordsParameters? validatedParams = ApplyRelatedRecordsLimits(queryParams, _limitsOptions.Query);
-            if (validatedParams == null)
+            RelatedRecordsValidationResult validationResult = _queryValidator.ValidateRelatedRecordsLimits(queryParams);
+            if (!validationResult.IsValid)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Query parameters exceed configured limits",
-                    [$"Maximum record count: {_limitsOptions.Query.MaxRecordCount}"]);
+                    [validationResult.ErrorMessage!]);
             }
+
+            QueryRelatedRecordsParameters validatedParams = validationResult.ValidatedParameters!;
 
             // Get related layer information
             var relatedLayer = service.Layers.FirstOrDefault(l => l.Id == relationship!.RelatedLayerId);
             if (relatedLayer == null)
             {
                 FeatureServerLog.LayerNotFound(_logger, serviceId, relationship.RelatedLayerId);
-                return EsriErrorHelpers.CreateNotFoundError(
+                return GeoServicesErrorHelpers.CreateNotFoundError(
                     $"Related layer {relationship.RelatedLayerId} not found in service '{serviceId}'");
             }
 
@@ -226,11 +228,15 @@ internal sealed class FeatureServerHandler(
 
             return Results.Json(response, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse, contentType: "application/json");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return EsriErrorHelpers.CreateBadRequestError(
+            return GeoServicesErrorHelpers.CreateBadRequestError(
                 "Invalid query parameters",
                 [ex.Message]);
         }
@@ -238,7 +244,7 @@ internal sealed class FeatureServerHandler(
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return EsriErrorHelpers.CreateInternalServerError(
+            return GeoServicesErrorHelpers.CreateInternalServerError(
                 "Related records query execution failed",
                 [ex.Message]);
         }
@@ -265,14 +271,14 @@ internal sealed class FeatureServerHandler(
             if (service == null)
             {
                 FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                return EsriErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
             }
 
             var layer = service.GetLayer(layerId);
             if (layer == null)
             {
                 FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                return EsriErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
             var response = new ApplyEditsResponse();
@@ -309,10 +315,14 @@ internal sealed class FeatureServerHandler(
             return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
                 contentType: "application/json");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
-            return EsriErrorHelpers.CreateInternalServerError("Apply edits failed", [ex.Message]);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Apply edits failed", [ex.Message]);
         }
     }
 
@@ -321,7 +331,7 @@ internal sealed class FeatureServerHandler(
     /// </summary>
     private async Task<EditResult[]> ProcessAddOperationsAsync(
         LayerDefinition layer,
-        EsriFeature[] features,
+        GeoServicesFeature[] features,
         CancellationToken cancellationToken)
     {
         var results = new EditResult[features.Length];
@@ -332,12 +342,12 @@ internal sealed class FeatureServerHandler(
             {
                 var feature = features[i];
 
-                // Convert Esri geometry to WKB if present
+                // Convert GeoServices geometry to WKB if present
                 byte[]? geometry = null;
                 if (feature.Geometry != null)
                 {
-                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.EsriGeometry);
-                    geometry = ConvertEsriJsonToWkb(geometryJson);
+                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+                    geometry = ConvertGeoServicesJsonToWkb(geometryJson);
                 }
 
                 // Create feature object
@@ -381,7 +391,7 @@ internal sealed class FeatureServerHandler(
     /// </summary>
     private async Task<EditResult[]> ProcessUpdateOperationsAsync(
         LayerDefinition layer,
-        EsriFeature[] features,
+        GeoServicesFeature[] features,
         CancellationToken cancellationToken)
     {
         var results = new EditResult[features.Length];
@@ -408,12 +418,12 @@ internal sealed class FeatureServerHandler(
                     continue;
                 }
 
-                // Convert Esri geometry to WKB if present
+                // Convert GeoServices geometry to WKB if present
                 byte[]? geometry = null;
                 if (feature.Geometry != null)
                 {
-                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.EsriGeometry);
-                    geometry = ConvertEsriJsonToWkb(geometryJson);
+                    var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+                    geometry = ConvertGeoServicesJsonToWkb(geometryJson);
                 }
 
                 // Create feature object for update
@@ -506,39 +516,6 @@ internal sealed class FeatureServerHandler(
         return results;
     }
 
-    /// <summary>
-    /// Applies query limits enforcement and returns validated parameters or null if limits exceeded.
-    /// </summary>
-    private static QueryParameters? ApplyQueryLimits(QueryParameters queryParams, QueryLimits limits)
-    {
-        // Validate and apply record count limits
-        int recordCount = queryParams.ResultRecordCount ?? limits.DefaultRecordCount;
-        if (recordCount > limits.MaxRecordCount)
-        {
-            return null;
-        }
-
-        // Validate offset limits
-        int offset = queryParams.ResultOffset ?? 0;
-        if (offset > limits.MaxOffset)
-        {
-            return null;
-        }
-
-        // Return validated parameters with applied defaults
-        return new QueryParameters
-        {
-            Where = queryParams.Where,
-            OutFields = queryParams.OutFields,
-            ReturnGeometry = queryParams.ReturnGeometry,
-            F = queryParams.F,
-            ResultOffset = offset,
-            ResultRecordCount = recordCount,
-            Geometry = queryParams.Geometry,
-            GeometryType = queryParams.GeometryType,
-            SpatialRel = queryParams.SpatialRel
-        };
-    }
 
     /// <summary>
     /// Builds a FeatureQuery from query parameters
@@ -591,14 +568,14 @@ internal sealed class FeatureServerHandler(
     }
 
     /// <summary>
-    /// Parses Esri JSON geometry and spatial relationship into a SpatialFilter
+    /// Parses GeoServices JSON geometry and spatial relationship into a SpatialFilter
     /// </summary>
     private SpatialFilter ParseSpatialFilter(string geometry, string? spatialRel)
     {
-        // Convert Esri JSON geometry to WKB bytes
-        byte[] wkbBytes = ConvertEsriJsonToWkb(geometry);
+        // Convert GeoServices JSON geometry to WKB bytes
+        byte[] wkbBytes = ConvertGeoServicesJsonToWkb(geometry);
 
-        // Map Esri spatial relationship to enum
+        // Map GeoServices spatial relationship to enum
         SpatialRelationship relationship = ParseSpatialRelationship(spatialRel);
 
         return new SpatialFilter
@@ -609,7 +586,7 @@ internal sealed class FeatureServerHandler(
     }
 
     /// <summary>
-    /// Maps Esri spatial relationship strings to SpatialRelationship enum
+    /// Maps GeoServices spatial relationship strings to SpatialRelationship enum
     /// </summary>
     private static SpatialRelationship ParseSpatialRelationship(string? spatialRel)
     {
@@ -624,9 +601,9 @@ internal sealed class FeatureServerHandler(
     }
 
     /// <summary>
-    /// Converts Esri JSON geometry to WKB bytes using the geometry converter service
+    /// Converts GeoServices JSON geometry to WKB bytes using the geometry converter service
     /// </summary>
-    private byte[] ConvertEsriJsonToWkb(string esriJsonGeometry) => _geometryConverter.ConvertEsriJsonToWkb(esriJsonGeometry);
+    private byte[] ConvertGeoServicesJsonToWkb(string geoServicesJsonGeometry) => _geometryConverter.ConvertGeoServicesJsonToWkb(geoServicesJsonGeometry);
 
     /// <summary>
     /// Executes a query with validation error handling
@@ -652,30 +629,6 @@ internal sealed class FeatureServerHandler(
     }
 
 
-    /// <summary>
-    /// Applies related records query limits enforcement and returns validated parameters or null if limits exceeded.
-    /// </summary>
-    private static QueryRelatedRecordsParameters? ApplyRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams, QueryLimits limits)
-    {
-        // Validate and apply record count limits
-        int recordCount = queryParams.ResultRecordCount ?? limits.DefaultRecordCount;
-        if (recordCount > limits.MaxRecordCount)
-        {
-            return null;
-        }
-
-        // Return validated parameters with applied defaults
-        return new QueryRelatedRecordsParameters
-        {
-            ObjectIds = queryParams.ObjectIds,
-            RelationshipId = queryParams.RelationshipId,
-            OutFields = queryParams.OutFields,
-            ReturnGeometry = queryParams.ReturnGeometry,
-            F = queryParams.F,
-            ResultRecordCount = recordCount,
-            Where = queryParams.Where
-        };
-    }
 
     /// <summary>
     /// Builds a FeatureQuery for related records from query parameters
@@ -757,7 +710,7 @@ internal sealed class FeatureServerHandler(
                 RelatedRecords = hasRelatedFeatures && relatedFeatures!.Length > 0
                     ? new RelatedRecords
                     {
-                        Features = [.. relatedFeatures.Select(f => ConvertToEsriFeature(f, returnGeometry))]
+                        Features = [.. relatedFeatures.Select(f => ConvertToGeoServicesFeature(f, returnGeometry))]
                     }
                     : null
             };
@@ -765,23 +718,23 @@ internal sealed class FeatureServerHandler(
     }
 
     /// <summary>
-    /// Converts a Feature to EsriFeature for API responses
+    /// Converts a Feature to GeoServicesFeature for API responses
     /// </summary>
-    private static EsriFeature ConvertToEsriFeature(Feature feature, bool returnGeometry)
+    private static GeoServicesFeature ConvertToGeoServicesFeature(Feature feature, bool returnGeometry)
     {
         var attributes = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-        return new EsriFeature
+        return new GeoServicesFeature
         {
             Attributes = attributes,
-            Geometry = returnGeometry ? ConvertGeometryToEsriFormat(feature.Geometry) : null
+            Geometry = returnGeometry ? ConvertGeometryToGeoServicesFormat(feature.Geometry) : null
         };
     }
 
     /// <summary>
-    /// Converts WKB geometry to Esri format
+    /// Converts WKB geometry to GeoServices format
     /// </summary>
-    private static EsriGeometry? ConvertGeometryToEsriFormat(byte[]? wkbGeometry)
+    private static GeoServicesGeometry? ConvertGeometryToGeoServicesFormat(byte[]? wkbGeometry)
     {
         if (wkbGeometry == null || wkbGeometry.Length < 21)
             return null;
@@ -823,11 +776,11 @@ internal sealed class FeatureServerHandler(
         // For now, use Web Mercator (3857) if coordinates suggest projected data, otherwise WGS84 (4326)
         int srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
 
-        return new EsriGeometry
+        return new GeoServicesGeometry
         {
             X = x,
             Y = y,
-            SpatialReference = new EsriSpatialReference { Wkid = srid }
+            SpatialReference = new GeoServicesSpatialReference { Wkid = srid }
         };
     }
 

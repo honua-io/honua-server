@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -16,6 +17,11 @@ public readonly record struct FeatureQuery
     public string? Where { get; init; }
 
     /// <summary>
+    /// Parameterized SQL filter with parameters (takes precedence over Where if provided)
+    /// </summary>
+    public SqlFragment? SqlFilter { get; init; }
+
+    /// <summary>
     /// Fields to return (null means all fields)
     /// </summary>
     public ImmutableArray<string>? OutFields { get; init; }
@@ -24,6 +30,16 @@ public readonly record struct FeatureQuery
     /// Spatial filter for geometry-based queries
     /// </summary>
     public SpatialFilter? SpatialFilter { get; init; }
+
+    /// <summary>
+    /// Temporal filter for time-based queries
+    /// </summary>
+    public TemporalFilter? TemporalFilter { get; init; }
+
+    /// <summary>
+    /// Include features without geometry when a spatial filter is provided
+    /// </summary>
+    public bool IncludeNullGeometry { get; init; }
 
     /// <summary>
     /// Number of records to skip for pagination
@@ -44,6 +60,14 @@ public readonly record struct FeatureQuery
         => new() { Where = where };
 
     /// <summary>
+    /// Creates a parameterized SQL filter query
+    /// </summary>
+    /// <param name="sqlFilter">Parameterized SQL filter with parameters</param>
+    /// <returns>Feature query instance</returns>
+    public static FeatureQuery WithSqlFilter(SqlFragment sqlFilter)
+        => new() { SqlFilter = sqlFilter };
+
+    /// <summary>
     /// Creates a query with pagination
     /// </summary>
     /// <param name="offset">Number of records to skip</param>
@@ -59,6 +83,41 @@ public readonly record struct FeatureQuery
     /// <returns>Feature query instance</returns>
     public static FeatureQuery WithSpatialFilter(SpatialFilter spatialFilter)
         => new() { SpatialFilter = spatialFilter };
+}
+
+/// <summary>
+/// Temporal filtering criteria
+/// </summary>
+public readonly record struct TemporalFilter
+{
+    /// <summary>
+    /// Name of the temporal property to filter on
+    /// </summary>
+    public required string PropertyName { get; init; }
+
+    /// <summary>
+    /// Type of the temporal property
+    /// </summary>
+    public required TemporalPropertyType PropertyType { get; init; }
+
+    /// <summary>
+    /// Inclusive start of the temporal interval (null for open start)
+    /// </summary>
+    public DateTimeOffset? Start { get; init; }
+
+    /// <summary>
+    /// Inclusive end of the temporal interval (null for open end)
+    /// </summary>
+    public DateTimeOffset? End { get; init; }
+}
+
+/// <summary>
+/// Temporal property type for filtering
+/// </summary>
+public enum TemporalPropertyType
+{
+    DateTime,
+    Date
 }
 
 /// <summary>

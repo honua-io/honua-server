@@ -76,7 +76,7 @@ tests/
 
 **✅ Error Handling:**
 - Global exception middleware with structured logging
-- API-specific error codes (Esri compatibility)
+- API-specific error codes (GeoServices compatibility)
 - Comprehensive cancellation token support
 
 ---

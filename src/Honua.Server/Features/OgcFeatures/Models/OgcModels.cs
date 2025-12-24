@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.OgcFeatures.Models;
@@ -115,6 +116,11 @@ public static class RelationTypes
     public const string Data = "data";
 
     /// <summary>
+    /// Refers to the items (features) of a collection
+    /// </summary>
+    public const string Items = "items";
+
+    /// <summary>
     /// Indicates the link target provides service documentation
     /// </summary>
     public const string ServiceDoc = "service-doc";
@@ -133,6 +139,11 @@ public static class RelationTypes
     /// Indicates the link target provides collections metadata
     /// </summary>
     public const string Collections = "data";
+
+    /// <summary>
+    /// Indicates the link target provides the collection containing a feature
+    /// </summary>
+    public const string Collection = "collection";
 
     /// <summary>
     /// Indicates the link target provides next page of results
@@ -263,6 +274,141 @@ public sealed record TemporalExtent
     /// </summary>
     [JsonPropertyName("trs")]
     public string Trs { get; init; } = "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian";
+}
+
+/// <summary>
+/// JSON converter for raw JSON strings to avoid double encoding
+/// </summary>
+public sealed class RawJsonStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.ParseValue(ref reader);
+        return document.RootElement.GetRawText();
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            // Write the string as raw JSON without quotes
+            writer.WriteRawValue(value);
+        }
+    }
+}
+
+/// <summary>
+/// Simple GeoJSON geometry representation for AOT compatibility
+/// </summary>
+public sealed record SimpleGeoJsonGeometry
+{
+    /// <summary>
+    /// Geometry type (Point, LineString, Polygon, etc.)
+    /// </summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    /// <summary>
+    /// Geometry coordinates as raw JSON string for AOT compatibility
+    /// </summary>
+    [JsonPropertyName("coordinates")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? CoordinatesJson { get; init; }
+
+    /// <summary>
+    /// Geometry collection members as raw JSON string for AOT compatibility
+    /// </summary>
+    [JsonPropertyName("geometries")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? GeometriesJson { get; init; }
+}
+
+/// <summary>
+/// GeoJSON Feature for items response
+/// </summary>
+public sealed record GeoJsonFeature
+{
+    /// <summary>
+    /// GeoJSON object type (always "Feature")
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "Feature";
+
+    /// <summary>
+    /// Feature identifier
+    /// </summary>
+    [JsonPropertyName("id")]
+    public object? Id { get; init; }
+
+    /// <summary>
+    /// Feature geometry in GeoJSON format
+    /// </summary>
+    [JsonPropertyName("geometry")]
+    public SimpleGeoJsonGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// Feature properties (attributes)
+    /// </summary>
+    [JsonPropertyName("properties")]
+    public Dictionary<string, object?> Properties { get; init; } = new();
+
+    /// <summary>
+    /// Links to related resources (self, collection, etc.)
+    /// </summary>
+    [JsonPropertyName("links")]
+    public ImmutableArray<Link>? Links { get; init; }
+}
+
+/// <summary>
+/// GeoJSON FeatureCollection for OGC API Features Items response
+/// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "FeatureCollection is the standard GeoJSON type name")]
+public sealed record FeatureCollection
+{
+    /// <summary>
+    /// GeoJSON object type (always "FeatureCollection")
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "FeatureCollection";
+
+    /// <summary>
+    /// Array of GeoJSON Feature objects
+    /// </summary>
+    [JsonPropertyName("features")]
+    public required GeoJsonFeature[] Features { get; init; }
+
+    /// <summary>
+    /// Number of features matched by the query (before pagination)
+    /// </summary>
+    [JsonPropertyName("numberMatched")]
+    public long? NumberMatched { get; init; }
+
+    /// <summary>
+    /// Number of features returned in this response (after pagination)
+    /// </summary>
+    [JsonPropertyName("numberReturned")]
+    public int NumberReturned { get; init; }
+
+    /// <summary>
+    /// Links to related resources (pagination, etc.)
+    /// </summary>
+    [JsonPropertyName("links")]
+    public ImmutableArray<Link>? Links { get; init; }
+
+    /// <summary>
+    /// Timestamp when the collection was generated
+    /// </summary>
+    [JsonPropertyName("timeStamp")]
+    public DateTimeOffset? TimeStamp { get; init; }
 }
 
 /// <summary>

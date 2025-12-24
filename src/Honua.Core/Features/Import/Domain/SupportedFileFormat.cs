@@ -17,7 +17,7 @@ public enum SupportedFileFormat
     GeoJson,
 
     /// <summary>
-    /// Esri Shapefile format (.shp + .shx + .dbf)
+    /// Shapefile format (.shp + .shx + .dbf)
     /// </summary>
     Shapefile,
 

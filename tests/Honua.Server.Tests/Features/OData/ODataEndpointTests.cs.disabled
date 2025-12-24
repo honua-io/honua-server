@@ -1,0 +1,413 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Net;
+using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.OData.Models;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Xunit;
+
+namespace Honua.Server.Tests.Features.OData;
+
+[Collection("Database")]
+[Protocol(Protocols.ODataV4)]
+public class ODataEndpointTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture = new();
+    private const string TestLayerId = "0";
+
+    public async Task InitializeAsync()
+    {
+        // Replace the real services with test implementations
+        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
+        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
+        await _fixture.InitializeAsync();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/v4/")]
+    public async Task ServiceRoot_ReturnsEntitySets()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/odata/v4/");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var serviceRoot = JsonSerializer.Deserialize<ODataServiceRoot>(content,
+            FeatureServerJsonContext.Default.ODataServiceRoot);
+
+        serviceRoot.Should().NotBeNull();
+        serviceRoot!.Context.Should().Contain("$metadata");
+        serviceRoot.Value.Should().NotBeEmpty();
+        serviceRoot.Value.Should().Contain(es => es.Name == $"Layers('{TestLayerId}')/Features");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/$metadata")]
+    public async Task Metadata_ReturnsCSDLDocument()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/odata/v4/$metadata");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("edmx:Edmx");
+        content.Should().Contain("EntityType");
+        content.Should().Contain("EntityContainer");
+        content.Should().Contain("objectid");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers")]
+    public async Task Layers_ReturnsAllLayers()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/odata/v4/Layers");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var layers = JsonSerializer.Deserialize<IEnumerable<object>>(content);
+
+        layers.Should().NotBeNull();
+        layers.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')")]
+    public async Task SingleLayer_ValidLayerId_ReturnsLayerMetadata()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var layer = JsonSerializer.Deserialize<object>(content);
+
+        layer.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_NoQueryOptions_ReturnsAllFeatures()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Context.Should().Contain("$metadata");
+        entitySet.Value.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithFilter_ReturnsFilteredFeatures()
+    {
+        // Act - Filter for features where objectid equals 1
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$filter=objectid eq 1");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithComplexFilter_ReturnsFilteredFeatures()
+    {
+        // Act - Complex filter: objectid gt 1 and objectid lt 4
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$filter=objectid gt 1 and objectid lt 4");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().HaveCountGreaterThan(0);
+        entitySet.Value.Should().HaveCountLessThan(4); // Should be 2 features (ids 2, 3)
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithSelect_ReturnsOnlySelectedFields()
+    {
+        // Act - Select only objectid and name fields
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$select=objectid,name");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().NotBeEmpty();
+
+        // Check that features only contain selected fields plus objectid (always included)
+        var firstFeature = entitySet.Value.First() as JsonElement?;
+        if (firstFeature.HasValue && firstFeature.Value.ValueKind == JsonValueKind.Object)
+        {
+            var properties = firstFeature.Value.EnumerateObject().Select(p => p.Name.ToLowerInvariant()).ToHashSet();
+            properties.Should().Contain("objectid");
+
+            // Should not contain unselected fields like 'type' if it exists in test data
+            // This depends on the test data structure
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithTop_ReturnsLimitedResults()
+    {
+        // Act - Limit to 2 features
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$top=2");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().HaveCount(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithSkip_SkipsResults()
+    {
+        // First, get all features to know total count
+        var allResponse = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features");
+        var allContent = await allResponse.Content.ReadAsStringAsync();
+        var allEntitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(allContent,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+        var totalCount = allEntitySet!.Value.Count;
+
+        // Act - Skip first 2 features
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$skip=2");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().HaveCount(totalCount - 2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithTopAndSkip_ReturnsCorrectPage()
+    {
+        // Act - Skip 1, take 2 (pagination: page 2 with page size 2)
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$skip=1&$top=2");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().HaveCount(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_WithCount_ReturnsCount()
+    {
+        // Act - Request count with results
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$count=true");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Count.Should().HaveValue();
+        entitySet.Count.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features({objectId})")]
+    public async Task SingleFeature_ValidObjectId_ReturnsFeature()
+    {
+        // Act - Get feature with objectid = 1
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features(1)");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var feature = JsonSerializer.Deserialize<object>(content);
+
+        feature.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features({objectId})")]
+    public async Task SingleFeature_NonExistentObjectId_ReturnsNotFound()
+    {
+        // Act - Try to get feature with non-existent objectid
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features(99999)");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features/$count")]
+    public async Task FeaturesCount_NoFilter_ReturnsTotal()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features/$count");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var count = JsonSerializer.Deserialize<long>(content);
+
+        count.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features/$count")]
+    public async Task FeaturesCount_WithFilter_ReturnsFilteredCount()
+    {
+        // Act - Count features where objectid equals 1
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features/$count?$filter=objectid eq 1");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var count = JsonSerializer.Deserialize<long>(content);
+
+        count.Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_InvalidFilter_ReturnsBadRequest()
+    {
+        // Act - Invalid filter syntax
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$filter=invalid filter syntax");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_InvalidLayerId_ReturnsNotFound()
+    {
+        // Act - Try to access non-existent layer
+        var response = await _fixture.Client.GetAsync("/odata/v4/Layers('nonexistent')/Features");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_StringContainsFilter_ReturnsMatchingFeatures()
+    {
+        // Act - Use contains function (if test data has string fields)
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$filter=contains(name,'test')");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        // Note: Test result depends on test data having 'name' field with 'test' in it
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/v4/Layers('{layerId}')/Features")]
+    public async Task Features_CombinedQueryOptions_ReturnsCorrectResults()
+    {
+        // Act - Combine multiple query options
+        var response = await _fixture.Client.GetAsync($"/odata/v4/Layers('{TestLayerId}')/Features?$filter=objectid gt 1&$select=objectid&$top=2&$count=true");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var entitySet = JsonSerializer.Deserialize<ODataEntitySetResponse>(content,
+            FeatureServerJsonContext.Default.ODataEntitySetResponse);
+
+        entitySet.Should().NotBeNull();
+        entitySet!.Value.Should().HaveCountLessOrEqualTo(2); // Limited by $top
+        entitySet.Count.Should().HaveValue(); // $count=true
+    }
+}

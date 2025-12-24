@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -11,40 +12,40 @@ namespace Honua.Server.Features.FeatureServer.Services;
 internal sealed class GeometryConverter : IGeometryConverter
 {
     /// <summary>
-    /// Converts Esri JSON geometry to Well-Known Binary (WKB) format
+    /// Converts GeoServices JSON geometry to Well-Known Binary (WKB) format
     /// </summary>
-    /// <param name="esriJsonGeometry">Geometry in Esri JSON format</param>
+    /// <param name="geoServicesJsonGeometry">Geometry in GeoServices JSON format</param>
     /// <returns>Geometry in WKB format</returns>
     /// <exception cref="ArgumentException">Thrown when geometry format is invalid</exception>
-    public byte[] ConvertEsriJsonToWkb(string esriJsonGeometry)
+    public byte[] ConvertGeoServicesJsonToWkb(string geoServicesJsonGeometry)
     {
         try
         {
-            using var jsonDoc = JsonDocument.Parse(esriJsonGeometry);
+            using var jsonDoc = JsonDocument.Parse(geoServicesJsonGeometry);
             JsonElement root = jsonDoc.RootElement;
 
             // Handle POINT geometry format
             if (root.TryGetProperty("x", out JsonElement xElement) && root.TryGetProperty("y", out JsonElement yElement))
             {
-                return ConvertEsriPointToWkb(xElement.GetDouble(), yElement.GetDouble());
+                return ConvertGeoServicesPointToWkb(xElement.GetDouble(), yElement.GetDouble());
             }
 
             // Handle POLYGON/MULTIPOLYGON geometry format (rings)
             if (root.TryGetProperty("rings", out JsonElement ringsElement) && ringsElement.ValueKind == JsonValueKind.Array)
             {
-                return ConvertEsriPolygonToWkb(ringsElement);
+                return ConvertGeoServicesPolygonToWkb(ringsElement);
             }
 
             // Handle LINESTRING/POLYLINE geometry format (paths)
             if (root.TryGetProperty("paths", out JsonElement pathsElement) && pathsElement.ValueKind == JsonValueKind.Array)
             {
-                return ConvertEsriLineStringToWkb(pathsElement);
+                return ConvertGeoServicesLineStringToWkb(pathsElement);
             }
 
             // Handle MULTIPOINT geometry format (points)
             if (root.TryGetProperty("points", out JsonElement pointsElement) && pointsElement.ValueKind == JsonValueKind.Array)
             {
-                return ConvertEsriMultiPointToWkb(pointsElement);
+                return ConvertGeoServicesMultiPointToWkb(pointsElement);
             }
 
             // Handle ENVELOPE/EXTENT geometry format
@@ -52,12 +53,12 @@ internal sealed class GeometryConverter : IGeometryConverter
                 root.TryGetProperty("ymin", out JsonElement yminElement) &&
                 root.TryGetProperty("xmax", out JsonElement xmaxElement) &&
                 root.TryGetProperty("ymax", out JsonElement ymaxElement)
-                ? ConvertEsriEnvelopeToWkb(
+                ? ConvertGeoServicesEnvelopeToWkb(
                     xminElement.GetDouble(),
                     yminElement.GetDouble(),
                     xmaxElement.GetDouble(),
                     ymaxElement.GetDouble())
-                : throw new ArgumentException("Invalid Esri JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)");
+                : throw new ArgumentException("Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)");
         }
         catch (JsonException)
         {
@@ -66,9 +67,41 @@ internal sealed class GeometryConverter : IGeometryConverter
     }
 
     /// <summary>
-    /// Converts Esri JSON polygon rings to WKB format
+    /// Converts Well-Known Binary (WKB) geometry to GeoJSON format
     /// </summary>
-    private static byte[] ConvertEsriPolygonToWkb(JsonElement ringsElement)
+    /// <param name="wkbGeometry">Geometry in WKB format</param>
+    /// <returns>Geometry in GeoJSON format as a JSON object</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    public object? ConvertWkbToGeoJson(byte[] wkbGeometry)
+    {
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
+            return null;
+
+        try
+        {
+            var reader = new WKBReader();
+            var geometry = reader.Read(wkbGeometry);
+
+            if (geometry == null)
+                return null;
+
+            var writer = new GeoJsonWriter();
+            var geoJsonString = writer.Write(geometry);
+
+            // Parse the GeoJSON string to return as an object
+            using var jsonDoc = JsonDocument.Parse(geoJsonString);
+            return JsonSerializer.Deserialize<JsonElement>(jsonDoc.RootElement.GetRawText());
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
+        {
+            throw new ArgumentException($"Invalid WKB geometry format: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Converts GeoServices JSON polygon rings to WKB format
+    /// </summary>
+    private static byte[] ConvertGeoServicesPolygonToWkb(JsonElement ringsElement)
     {
         var rings = new List<List<(double x, double y)>>();
 
@@ -121,7 +154,7 @@ internal sealed class GeometryConverter : IGeometryConverter
     /// <summary>
     /// Converts a point coordinate to WKB format
     /// </summary>
-    private static byte[] ConvertEsriPointToWkb(double x, double y)
+    private static byte[] ConvertGeoServicesPointToWkb(double x, double y)
     {
         // Create WKB for a POINT geometry (little-endian format)
         // WKB format: [endian][type][x][y]
@@ -135,9 +168,9 @@ internal sealed class GeometryConverter : IGeometryConverter
     }
 
     /// <summary>
-    /// Converts Esri JSON linestring/polyline paths to WKB format
+    /// Converts GeoServices JSON linestring/polyline paths to WKB format
     /// </summary>
-    private static byte[] ConvertEsriLineStringToWkb(JsonElement pathsElement)
+    private static byte[] ConvertGeoServicesLineStringToWkb(JsonElement pathsElement)
     {
         var paths = new List<List<(double x, double y)>>();
 
@@ -168,9 +201,9 @@ internal sealed class GeometryConverter : IGeometryConverter
     }
 
     /// <summary>
-    /// Converts Esri JSON multipoint to WKB format
+    /// Converts GeoServices JSON multipoint to WKB format
     /// </summary>
-    private static byte[] ConvertEsriMultiPointToWkb(JsonElement pointsElement)
+    private static byte[] ConvertGeoServicesMultiPointToWkb(JsonElement pointsElement)
     {
         var points = new List<(double x, double y)>();
 
@@ -188,9 +221,9 @@ internal sealed class GeometryConverter : IGeometryConverter
     }
 
     /// <summary>
-    /// Converts Esri JSON envelope to WKB polygon format
+    /// Converts GeoServices JSON envelope to WKB polygon format
     /// </summary>
-    private static byte[] ConvertEsriEnvelopeToWkb(double xmin, double ymin, double xmax, double ymax)
+    private static byte[] ConvertGeoServicesEnvelopeToWkb(double xmin, double ymin, double xmax, double ymax)
     {
         // Convert envelope to a polygon (rectangle)
         var rectanglePoints = new List<(double x, double y)>

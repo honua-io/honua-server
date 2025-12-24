@@ -28,6 +28,11 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
+
+        new("GET", "/odata"),
+        new("GET", "/odata/$metadata"),
+        new("GET", "/odata/Layers"),
+        new("GET", "/odata/Features({layerId})"),
     ];
 }
 

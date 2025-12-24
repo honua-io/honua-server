@@ -347,7 +347,7 @@ graph LR
         SPATIAL[PostGIS Spatial<br/><i>ST_Intersects(...)</i>]
     end
 
-    ESRI --> AST
+    GEOSERVICES --> AST
     CQL --> AST
     ODATA --> AST
 
@@ -366,7 +366,7 @@ FilterExpression
 ├── PropertyReference (field name)
 ├── Literal (string, number, boolean, null)
 ├── SpatialPredicate (INTERSECTS, CONTAINS, WITHIN)
-├── GeometryLiteral (WKT, GeoJSON, Esri JSON)
+├── GeometryLiteral (WKT, GeoJSON, GeoServices JSON)
 └── FunctionCall (UPPER, LOWER, etc.)
 ```
 

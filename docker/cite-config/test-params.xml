@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<form xmlns="http://www.occamlab.com/te/parsers">
+  <parsers:session xmlns:parsers="http://www.occamlab.com/te/parsers">
+    <parsers:test>ets-ogcapi-features10</parsers:test>
+    <parsers:profile>default</parsers:profile>
+  </parsers:session>
+
+  <!-- OGC API Features endpoint configuration -->
+  <entry key="landing-page-uri">http://honua-server:8080/ogc/features</entry>
+  <entry key="iut-uri">http://honua-server:8080/ogc/features</entry>
+  <entry key="conformance-uri">http://honua-server:8080/ogc/features/conformance</entry>
+  <entry key="collections-uri">http://honua-server:8080/ogc/features/collections</entry>
+
+  <!-- Authentication (if required) -->
+  <!-- <entry key="auth-username">testuser</entry> -->
+  <!-- <entry key="auth-password">testpass</entry> -->
+
+  <!-- Collection specific tests -->
+  <entry key="collection-id">test-collection</entry>
+
+  <!-- Coordinate reference system tests -->
+  <entry key="bbox">-180,-90,180,90</entry>
+  <entry key="crs">http://www.opengis.net/def/crs/OGC/1.3/CRS84</entry>
+
+  <!-- Features query parameters -->
+  <entry key="limit">100</entry>
+  <entry key="offset">0</entry>
+
+  <!-- Feature specific tests (if features exist) -->
+  <!-- <entry key="feature-id">feature-001</entry> -->
+
+  <!-- Content negotiation -->
+  <entry key="media-types">application/geo+json,application/json</entry>
+
+  <!-- Conformance classes to test -->
+  <entry key="conf-classes">
+    http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core,
+    http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30,
+    http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html,
+    http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson
+  </entry>
+
+  <!-- Optional conformance classes -->
+  <!-- <entry key="optional-conf-classes">
+    http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs
+  </entry> -->
+</form>

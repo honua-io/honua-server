@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -24,27 +26,32 @@ public sealed class TestFeatureStore : IFeatureStore
                 .Add("objectid", 1)
                 .Add("name", "Test Feature")
                 .Add("description", "A test feature for integration tests")
-                .Add("category", "test")),
+                .Add("category", "test")
+                .Add("timestamp", new DateTimeOffset(2023, 01, 02, 0, 0, 0, TimeSpan.Zero))),
             Feature.Create(2, CreatePointWkb(-122.7, 37.7), ImmutableDictionary<string, object?>.Empty
                 .Add("objectid", 2)
                 .Add("name", "Another Feature")
                 .Add("description", "Another test feature")
-                .Add("category", "sample")),
+                .Add("category", "sample")
+                .Add("timestamp", new DateTimeOffset(2023, 01, 05, 12, 0, 0, TimeSpan.Zero))),
             Feature.Create(3, null, ImmutableDictionary<string, object?>.Empty
                 .Add("objectid", 3)
                 .Add("name", "Third Feature")
                 .Add("description", "Third test feature")
-                .Add("category", "test")),
+                .Add("category", "test")
+                .Add("timestamp", new DateTimeOffset(2023, 02, 10, 0, 0, 0, TimeSpan.Zero))),
             Feature.Create(4, CreatePointWkb(-121.9, 37.3), ImmutableDictionary<string, object?>.Empty
                 .Add("objectid", 4)
                 .Add("name", "Fourth Feature")
                 .Add("description", "Fourth test feature")
-                .Add("category", "sample")),
+                .Add("category", "sample")
+                .Add("timestamp", new DateTimeOffset(2022, 12, 31, 23, 0, 0, TimeSpan.Zero))),
             Feature.Create(5, CreatePointWkb(-122.3, 37.8), ImmutableDictionary<string, object?>.Empty
                 .Add("objectid", 5)
                 .Add("name", "Fifth Feature")
                 .Add("description", "Fifth test feature")
-                .Add("category", "test"))
+                .Add("category", "test")
+                .Add("timestamp", new DateTimeOffset(2023, 01, 20, 0, 0, 0, TimeSpan.Zero)))
         };
     }
 
@@ -53,8 +60,11 @@ public sealed class TestFeatureStore : IFeatureStore
         if (!_layerFeatures.TryGetValue(layerId, out var features))
             return Task.FromResult<Feature?>(null);
 
-        var feature = features.FirstOrDefault(f => f.Id == featureId);
-        return Task.FromResult<Feature?>(feature);
+        var index = features.FindIndex(f => f.Id == featureId);
+        if (index == -1)
+            return Task.FromResult<Feature?>(null);
+
+        return Task.FromResult<Feature?>(features[index]);
     }
 
     public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
@@ -76,6 +86,12 @@ public sealed class TestFeatureStore : IFeatureStore
         if (query.SpatialFilter != null)
         {
             filteredFeatures = ApplySpatialFilter(filteredFeatures, query.SpatialFilter.Value);
+        }
+
+        // Apply temporal filtering
+        if (query.TemporalFilter.HasValue)
+        {
+            filteredFeatures = ApplyTemporalFilter(filteredFeatures, query.TemporalFilter.Value);
         }
 
         var allFilteredFeatures = filteredFeatures.ToList();
@@ -130,6 +146,11 @@ public sealed class TestFeatureStore : IFeatureStore
         if (!string.IsNullOrEmpty(query.Where))
         {
             filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
+        }
+
+        if (query.TemporalFilter.HasValue)
+        {
+            filteredFeatures = ApplyTemporalFilter(filteredFeatures, query.TemporalFilter.Value);
         }
 
         return Task.FromResult((long)filteredFeatures.Count());
@@ -261,10 +282,15 @@ public sealed class TestFeatureStore : IFeatureStore
     {
         // Simple WHERE clause parsing for testing
         // This is a simplified version, real implementation would be more robust
-        return whereClause.ToLowerInvariant() switch
+        var normalized = Regex.Replace(whereClause, @"\s*=\s*", "=", RegexOptions.CultureInvariant);
+        var lowerClause = normalized.Trim().ToLowerInvariant();
+
+        return lowerClause switch
         {
             "name='test feature'" => features.Where(f => f.Attributes.TryGetValue("name", out var nameValue) &&
                                                          nameValue?.ToString()?.Equals("Test Feature", StringComparison.OrdinalIgnoreCase) == true),
+            "category='test'" => features.Where(f => f.Attributes.TryGetValue("category", out var categoryValue) &&
+                                                     categoryValue?.ToString()?.Equals("test", StringComparison.OrdinalIgnoreCase) == true),
             var clause when clause.Contains("drop", StringComparison.OrdinalIgnoreCase) || clause.Contains(';') || clause.Contains("--", StringComparison.OrdinalIgnoreCase) =>
                 throw new ArgumentException("WHERE clause contains dangerous pattern: " + clause.Split(' ').First(w => new[] { "drop", ";", "--" }.Contains(w.ToLower(System.Globalization.CultureInfo.InvariantCulture))), nameof(whereClause)),
             "invalid syntax here" =>
@@ -332,6 +358,110 @@ public sealed class TestFeatureStore : IFeatureStore
     }
 
     /// <summary>
+    /// Applies temporal filtering for test scenarios
+    /// </summary>
+    private static IEnumerable<Feature> ApplyTemporalFilter(IEnumerable<Feature> features, TemporalFilter temporalFilter)
+    {
+        return features.Where(feature =>
+        {
+            if (!feature.Attributes.TryGetValue(temporalFilter.PropertyName, out var rawValue) || rawValue == null)
+            {
+                return false;
+            }
+
+            if (temporalFilter.PropertyType == TemporalPropertyType.Date)
+            {
+                if (!TryGetDate(rawValue, out var dateValue))
+                {
+                    return false;
+                }
+
+                var startDate = temporalFilter.Start?.Date;
+                var endDate = temporalFilter.End?.Date;
+
+                if (startDate.HasValue && dateValue < startDate.Value)
+                {
+                    return false;
+                }
+
+                if (endDate.HasValue && dateValue > endDate.Value)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (!TryGetDateTimeOffset(rawValue, out var instant))
+            {
+                return false;
+            }
+
+            if (temporalFilter.Start.HasValue && instant < temporalFilter.Start.Value)
+            {
+                return false;
+            }
+
+            if (temporalFilter.End.HasValue && instant > temporalFilter.End.Value)
+            {
+                return false;
+            }
+
+            return true;
+        });
+    }
+
+    private static bool TryGetDateTimeOffset(object value, out DateTimeOffset parsed)
+    {
+        switch (value)
+        {
+            case DateTimeOffset dto:
+                parsed = dto;
+                return true;
+            case DateTime dt:
+            {
+                var normalized = dt.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+                    : dt.ToUniversalTime();
+                parsed = new DateTimeOffset(normalized);
+                return true;
+            }
+            case string text:
+                return DateTimeOffset.TryParse(
+                    text,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out parsed);
+            default:
+                parsed = default;
+                return false;
+        }
+    }
+
+    private static bool TryGetDate(object value, out DateTime date)
+    {
+        switch (value)
+        {
+            case DateTimeOffset dto:
+                date = dto.Date;
+                return true;
+            case DateTime dt:
+                date = dt.Date;
+                return true;
+            case string text when DateTimeOffset.TryParse(
+                    text,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var parsed):
+                date = parsed.Date;
+                return true;
+            default:
+                date = default;
+                return false;
+        }
+    }
+
+    /// <summary>
     /// Simple point-in-polygon algorithm for testing
     /// </summary>
     private static bool IsPointInPolygon((double x, double y) point, List<(double x, double y)> polygon)
@@ -387,5 +517,30 @@ public sealed class TestFeatureStore : IFeatureStore
     {
         // Basic implementation returns empty result - tests that need related features should use TestFeatureStoreWithRelationships
         return Task.FromResult(QueryResult<Feature>.Empty());
+    }
+
+    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    {
+        // Return a simple mock MVT tile for testing
+        if (!_layerFeatures.TryGetValue(layerId, out var features) || features.Count == 0)
+        {
+            return Task.FromResult<byte[]?>(null); // Empty tile
+        }
+
+        // Return a mock MVT tile with basic header
+        var mockMvt = new byte[]
+        {
+            0x1A, 0x04, 0x6C, 0x61, 0x79, 0x65, 0x72, // Basic MVT header
+            0x12, 0x02, 0x08, 0x01, // Mock feature data
+            0x18, 0x03, 0x22, 0x02, 0x08, 0x01
+        };
+
+        return Task.FromResult<byte[]?>(mockMvt);
+    }
+
+    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query, Honua.Core.Features.Tiles.TileOptions tileOptions, CancellationToken cancellationToken = default)
+    {
+        // Call the existing method - tile options are used by the real PostgreSQL implementation but not needed for test mocks
+        return GetMvtTileAsync(layerId, x, y, z, query, cancellationToken);
     }
 }

@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -14,36 +14,24 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// across client-provided IDs, OpenTelemetry integration, and fallback generation.
 /// </summary>
 [Collection("Database")]
-public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
+public class CorrelationIdMiddlewareTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly HttpClient _client;
+    private readonly WebAppFixture _fixture = new();
 
     public CorrelationIdMiddlewareTests(ITestOutputHelper output)
     {
         _output = output;
-        _factory = new WebApplicationFactory<Program>();
-        _client = _factory.CreateClient();
     }
 
     public async Task InitializeAsync()
     {
-        // No specific initialization needed for these tests
-        await Task.CompletedTask;
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-        GC.SuppressFinalize(this);
+        await _fixture.InitializeAsync();
     }
 
     public async Task DisposeAsync()
     {
-        _client.Dispose();
-        await _factory.DisposeAsync();
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -55,7 +43,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
         // Act
         var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", clientCorrelationId);
-        var response = await _client.SendAsync(request);
+        var response = await _fixture.Client.SendAsync(request);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -67,7 +55,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
     public async Task CorrelationIdMiddleware_WithoutClientId_GeneratesCorrelationId()
     {
         // Act
-        var response = await _client.GetAsync("/healthz/live");
+        var response = await _fixture.Client.GetAsync("/healthz/live");
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -92,7 +80,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
         // Act
         var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", invalidClientId);
-        var response = await _client.SendAsync(request);
+        var response = await _fixture.Client.SendAsync(request);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -110,7 +98,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
         // Act
         var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", "   "); // Empty/whitespace
-        var response = await _client.SendAsync(request);
+        var response = await _fixture.Client.SendAsync(request);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -131,7 +119,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
         // Act
         var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", tooLongClientId);
-        var response = await _client.SendAsync(request);
+        var response = await _fixture.Client.SendAsync(request);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -147,9 +135,9 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
     {
         // Act - make multiple requests without client correlation IDs
         var responses = await Task.WhenAll(
-            _client.GetAsync("/healthz/live"),
-            _client.GetAsync("/healthz/live"),
-            _client.GetAsync("/healthz/live")
+            _fixture.Client.GetAsync("/healthz/live"),
+            _fixture.Client.GetAsync("/healthz/live"),
+            _fixture.Client.GetAsync("/healthz/live")
         );
 
         // Assert
@@ -179,7 +167,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
         {
             _output.WriteLine($"Testing correlation ID on {endpoint}");
 
-            var response = await _client.GetAsync(endpoint);
+            var response = await _fixture.Client.GetAsync(endpoint);
             response.EnsureSuccessStatusCode();
 
             Assert.True(response.Headers.TryGetValues("X-Correlation-ID", out var values),
@@ -203,7 +191,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
         // Act
         var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", clientCorrelationId);
-        var response = await _client.SendAsync(request);
+        var response = await _fixture.Client.SendAsync(request);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -220,7 +208,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime, IDisposable
 
         // Act - make request without client correlation ID
         // Middleware should prefer Activity.Current.Id if no client ID provided
-        var response = await _client.GetAsync("/healthz/live");
+        var response = await _fixture.Client.GetAsync("/healthz/live");
 
         // Assert
         response.EnsureSuccessStatusCode();

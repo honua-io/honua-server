@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  honua-server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite;User Id=postgres;Password=cite_password;
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cite-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      - POSTGRES_DB=honua_cite
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=cite_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "5433:5432"
+    networks:
+      - cite-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cite-engine:
+    image: ogccite/ets-ogcapi-features10:latest
+    ports:
+      - "8081:8080"
+    environment:
+      - JAVA_OPTS=-Xmx2g
+      - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine
+    volumes:
+      - cite-logs:/root/te_base/users/cite/logs
+      - ./cite-config:/cite-config:ro
+    networks:
+      - cite-network
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/teamengine"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  cite-runner:
+    image: ogccite/ets-ogcapi-features10:latest
+    command: >
+      bash -c "
+        echo 'Waiting for services to be ready...' &&
+        sleep 30 &&
+        echo 'Starting CITE conformance tests...' &&
+        java -jar /opt/te-install/lib/teamengine-console-*.jar \
+          -source=/opt/te-install/scripts/ets-ogcapi-features10.ctl \
+          -form=/cite-config/test-params.xml \
+          -logdir=/cite-results \
+          -session=cite-session-$(date +%Y%m%d-%H%M%S) &&
+        echo 'CITE tests completed. Check results in /cite-results' &&
+        tail -f /dev/null
+      "
+    volumes:
+      - cite-results:/cite-results
+      - ./cite-config:/cite-config:ro
+    networks:
+      - cite-network
+    depends_on:
+      cite-engine:
+        condition: service_healthy
+    profiles:
+      - test
+
+volumes:
+  cite-logs:
+    driver: local
+  cite-results:
+    driver: local
+
+networks:
+  cite-network:
+    driver: bridge

@@ -27,7 +27,9 @@ public sealed class TestLayerCatalog : ILayerCatalog
         {
             new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
             new FieldDefinition("name", FieldType.String, 255, true, null, "Name field"),
-            new FieldDefinition("description", FieldType.String, 500, true, null, "Description")
+            new FieldDefinition("description", FieldType.String, 500, true, null, "Description"),
+            new FieldDefinition("category", FieldType.String, 255, true, null, "Category"),
+            new FieldDefinition("timestamp", FieldType.DateTime, null, true, null, "Timestamp")
         };
 
         var spatialRef = new SpatialReference(4326); // WGS84

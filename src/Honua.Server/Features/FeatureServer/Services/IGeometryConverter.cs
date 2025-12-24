@@ -9,10 +9,18 @@ namespace Honua.Server.Features.FeatureServer.Services;
 internal interface IGeometryConverter
 {
     /// <summary>
-    /// Converts Esri JSON geometry to Well-Known Binary (WKB) format
+    /// Converts GeoServices JSON geometry to Well-Known Binary (WKB) format
     /// </summary>
-    /// <param name="esriJsonGeometry">Geometry in Esri JSON format</param>
+    /// <param name="geoServicesJsonGeometry">Geometry in GeoServices JSON format</param>
     /// <returns>Geometry in WKB format</returns>
     /// <exception cref="ArgumentException">Thrown when geometry format is invalid</exception>
-    byte[] ConvertEsriJsonToWkb(string esriJsonGeometry);
+    byte[] ConvertGeoServicesJsonToWkb(string geoServicesJsonGeometry);
+
+    /// <summary>
+    /// Converts Well-Known Binary (WKB) geometry to GeoJSON format
+    /// </summary>
+    /// <param name="wkbGeometry">Geometry in WKB format</param>
+    /// <returns>Geometry in GeoJSON format as a JSON object</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    object? ConvertWkbToGeoJson(byte[] wkbGeometry);
 }
