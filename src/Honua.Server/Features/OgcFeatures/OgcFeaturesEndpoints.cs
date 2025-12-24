@@ -282,11 +282,7 @@ public static class OgcFeaturesEndpoints
     /// <summary>
     /// Handles the OGC API Features landing page request
     /// </summary>
-<<<<<<< HEAD
-    private static IResult HandleGetLandingPage(HttpContext context)
-=======
     private static IResult HandleGetLandingPage(HttpContext context, string? f)
->>>>>>> trunk
     {
         var validationError = ValidateQueryParameters(context.Request, AllowedQueryParameters.Metadata);
         if (validationError is not null)
@@ -342,21 +338,13 @@ public static class OgcFeaturesEndpoints
             )
         };
 
-<<<<<<< HEAD
-        return Results.Json(landingPage, OgcJsonContext.Default.LandingPage);
-=======
         return FormatMetadataResponse(landingPage, OgcJsonContext.Default.LandingPage, outputFormat, "Landing page");
->>>>>>> trunk
     }
 
     /// <summary>
     /// Handles the OGC API Features conformance declaration request
     /// </summary>
-<<<<<<< HEAD
-    private static IResult HandleGetConformance()
-=======
     private static IResult HandleGetConformance(HttpContext context, string? f)
->>>>>>> trunk
     {
         var validationError = ValidateQueryParameters(context.Request, AllowedQueryParameters.Metadata);
         if (validationError is not null)
@@ -387,9 +375,6 @@ public static class OgcFeaturesEndpoints
             )
         };
 
-<<<<<<< HEAD
-        return Results.Json(conformance, OgcJsonContext.Default.ConformanceDeclaration);
-=======
         return FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
     }
 
@@ -1149,20 +1134,15 @@ public static class OgcFeaturesEndpoints
             }
         };
         return Results.Json(openApiSpec, contentType: MediaTypes.OpenApi);
->>>>>>> trunk
     }
 
     /// <summary>
     /// Handles the OGC API Features collections list request
     /// </summary>
     private static async Task<IResult> HandleGetCollections(
-<<<<<<< HEAD
-        HttpContext context, ILayerCatalog layerCatalog)
-=======
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog)
->>>>>>> trunk
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -1206,17 +1186,10 @@ public static class OgcFeaturesEndpoints
                 )
             };
 
-<<<<<<< HEAD
-            return Results.Json(response, OgcJsonContext.Default.Collections);
-=======
             return FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
->>>>>>> trunk
         }
         catch (ArgumentException ex)
         {
-<<<<<<< HEAD
-            return Results.NotFound();
-=======
             return TypedResults.BadRequest($"Invalid request parameters: {ex.Message}");
         }
         catch (InvalidOperationException ex)
@@ -1232,7 +1205,6 @@ public static class OgcFeaturesEndpoints
                 title: "Internal server error",
                 detail: "An error occurred while retrieving collections.",
                 statusCode: 500);
->>>>>>> trunk
         }
     }
 
@@ -1240,14 +1212,10 @@ public static class OgcFeaturesEndpoints
     /// Handles the OGC API Features single collection request
     /// </summary>
     private static async Task<IResult> HandleGetCollection(
-<<<<<<< HEAD
-        string collectionId, HttpContext context, ILayerCatalog layerCatalog)
-=======
         string collectionId,
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog)
->>>>>>> trunk
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -1279,9 +1247,6 @@ public static class OgcFeaturesEndpoints
             }
 
             var collection = CreateCollection(layer, baseUrl);
-<<<<<<< HEAD
-            return Results.Json(collection, OgcJsonContext.Default.CollectionInfo);
-=======
             var selfHref = $"{baseUrl}/ogc/features/collections/{collectionId}{request.QueryString}";
             var updatedLinks = collection.Links.Select(link =>
                     string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
@@ -1291,20 +1256,15 @@ public static class OgcFeaturesEndpoints
 
             collection = collection with { Links = updatedLinks };
             return FormatMetadataResponse(collection, OgcJsonContext.Default.CollectionInfo, outputFormat, "Collection");
->>>>>>> trunk
         }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
-<<<<<<< HEAD
-            return Results.NotFound();
-=======
             return TypedResults.BadRequest($"Invalid collection ID: {ex.Message}");
         }
         catch (InvalidOperationException)
         {
             // Layer not found is a legitimate 404 case
             return TypedResults.NotFound();
->>>>>>> trunk
         }
         catch (Exception ex)
         {
