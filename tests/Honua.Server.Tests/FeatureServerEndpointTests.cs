@@ -843,14 +843,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_WithOutFieldsParam_FiltersAttributesInBothFormats()
     {
         // Test GeoServices REST JSON format
-        var esriResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=objectid,name");
-        esriResponse.Should().BeSuccessful();
+        var geoServicesResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=objectid,name");
+        geoServicesResponse.Should().BeSuccessful();
 
-        var esriContent = await esriResponse.Content.ReadAsStringAsync();
-        var esriQueryResponse = JsonSerializer.Deserialize<QueryResponse>(
-            esriContent, FeatureServerJsonContext.Default.QueryResponse);
+        var geoServicesContent = await geoServicesResponse.Content.ReadAsStringAsync();
+        var geoServicesQueryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            geoServicesContent, FeatureServerJsonContext.Default.QueryResponse);
 
-        esriQueryResponse!.Features.Should().AllSatisfy(f =>
+        geoServicesQueryResponse!.Features.Should().AllSatisfy(f =>
         {
             f.Attributes.Keys.Should().Contain("objectid");
             f.Attributes.Keys.Should().Contain("name");
@@ -884,14 +884,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_WithReturnGeometryFalse_OmitsGeometryInBothFormats()
     {
         // Test GeoServices REST JSON format
-        var esriResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&returnGeometry=false");
-        esriResponse.Should().BeSuccessful();
+        var geoServicesResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&returnGeometry=false");
+        geoServicesResponse.Should().BeSuccessful();
 
-        var esriContent = await esriResponse.Content.ReadAsStringAsync();
-        var esriQueryResponse = JsonSerializer.Deserialize<QueryResponse>(
-            esriContent, FeatureServerJsonContext.Default.QueryResponse);
+        var geoServicesContent = await geoServicesResponse.Content.ReadAsStringAsync();
+        var geoServicesQueryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            geoServicesContent, FeatureServerJsonContext.Default.QueryResponse);
 
-        esriQueryResponse!.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
+        geoServicesQueryResponse!.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
 
         // Test GeoJSON format
         var geoJsonResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&returnGeometry=false");
@@ -1209,14 +1209,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Adds = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
                         ["name"] = "Test Added Feature",
                         ["description"] = "Added via ApplyEdits test"
                     },
-                    Geometry = new EsriGeometry
+                    Geometry = new GeoServicesGeometry
                     {
                         X = -122.4194,
                         Y = 37.7749
@@ -1257,7 +1257,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Adds = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1282,7 +1282,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Updates = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1324,7 +1324,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Adds = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1380,7 +1380,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Adds = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1388,7 +1388,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                         ["description"] = "Setup feature"
                     }
                 },
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1414,7 +1414,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Adds = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1425,7 +1425,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             },
             Updates = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {
@@ -1478,7 +1478,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         {
             Updates = new[]
             {
-                new EsriFeature
+                new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>
                     {

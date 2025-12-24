@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Server.Features.FeatureServer.Models;
 
 namespace Honua.Server.Features.OData.Models;
 
@@ -26,9 +27,11 @@ namespace Honua.Server.Features.OData.Models;
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTimeOffset))]
 [JsonSerializable(typeof(object[]))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
+[JsonSerializable(typeof(QueryParameters))]
 internal partial class ODataJsonContext : JsonSerializerContext
 {
 }

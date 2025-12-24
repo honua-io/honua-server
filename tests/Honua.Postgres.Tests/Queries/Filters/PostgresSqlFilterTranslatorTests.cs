@@ -4,16 +4,17 @@
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Postgres.Queries.Filters;
 using Xunit;
 
-namespace Honua.Core.Tests.Queries.Filters;
+namespace Honua.Postgres.Tests.Queries.Filters;
 
-public class SqlFilterTranslatorTests
+public class PostgresSqlFilterTranslatorTests
 {
-    private readonly SqlFilterTranslator _translator = new();
+    private readonly PostgresSqlFilterTranslator _translator = new();
     private readonly LayerDefinition _layer;
 
-    public SqlFilterTranslatorTests()
+    public PostgresSqlFilterTranslatorTests()
     {
         _layer = new LayerDefinition(
             Id: 1,

@@ -27,7 +27,7 @@ public readonly record struct FeatureEditBatch
 
     /// <summary>
     /// Whether to rollback all changes on failure
-    /// Default is false (Esri default behavior)
+    /// Default is false (GeoServices default behavior)
     /// </summary>
     public bool RollbackOnFailure { get; init; } = false;
 

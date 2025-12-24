@@ -235,14 +235,18 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
     if find "$CITE_RESULTS_DIR" -name "*.xml" -o -name "*.html" | grep -q .; then
         echo -e "${GREEN}✅ Test result files found${NC}"
 
-        # Count test results
-        TOTAL_TESTS=$(find "$CITE_RESULTS_DIR" -name "*.xml" -exec grep -l "test" {} \; 2>/dev/null | wc -l || echo "0")
-        FAILED_TESTS=$(find "$CITE_RESULTS_DIR" -name "*.xml" -exec grep -l "failure\|error" {} \; 2>/dev/null | wc -l || echo "0")
-        PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS))
+        # Count test results from CITE output files
+        PASSED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/passed-tests.txt" 2>/dev/null || echo "0")
+        FAILED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/failed-tests.txt" 2>/dev/null || echo "0")
+        SKIPPED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/skipped-tests.txt" 2>/dev/null || echo "0")
+        CANTTELL_TESTS=$(wc -l < "$CITE_RESULTS_DIR/canttell-tests.txt" 2>/dev/null || echo "0")
+        TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS + SKIPPED_TESTS + CANTTELL_TESTS))
 
         echo "Total tests executed: $TOTAL_TESTS"
         echo "Tests passed: $PASSED_TESTS"
         echo "Tests failed: $FAILED_TESTS"
+        echo "Tests skipped: $SKIPPED_TESTS"
+        echo "Tests canttell: $CANTTELL_TESTS"
 
         if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
             echo -e "${GREEN}🎉 All CITE conformance tests passed!${NC}"
@@ -281,6 +285,8 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 - **Total Tests**: $TOTAL_TESTS
 - **Passed**: $PASSED_TESTS
 - **Failed**: $FAILED_TESTS
+- **Skipped**: $SKIPPED_TESTS
+- **CantTell**: $CANTTELL_TESTS
 - **Success Rate**: $(( TOTAL_TESTS > 0 ? (PASSED_TESTS * 100) / TOTAL_TESTS : 0 ))%
 
 ## Test Environment

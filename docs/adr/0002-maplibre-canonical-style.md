@@ -12,18 +12,18 @@ Honua serves layers via multiple protocols (FeatureServer, OGC API Features, ODa
 Need a single source of truth for layer styles that can be converted to protocol-specific formats.
 
 ## Decision
-Store MapLibre Style Spec v8 as the canonical format. Convert to Esri `drawingInfo` on-the-fly for FeatureServer responses.
+Store MapLibre Style Spec v8 as the canonical format. Convert to GeoServices `drawingInfo` on-the-fly for FeatureServer responses.
 
 **One style per layer, stored as MapLibre JSON:**
 ```sql
 ALTER TABLE honua.layers ADD COLUMN maplibre_style JSONB;
-ALTER TABLE honua.layers ADD COLUMN esri_drawing_info JSONB; -- Cache
+ALTER TABLE honua.layers ADD COLUMN geoservices_drawing_info JSONB; -- Cache
 ```
 
 **Rationale:**
 - MapLibre is open standard, well-documented, widely adopted
-- Esri format is proprietary and more complex
-- MapLibre → Esri conversion is straightforward for Simple/UniqueValue/ClassBreaks
+- GeoServices renderer format is more complex
+- MapLibre → GeoServices conversion is straightforward for Simple/UniqueValue/ClassBreaks
 - Admin UI uses MapLibre (Maputnik editor), so native format avoids conversion
 
 ## Consequences
@@ -35,11 +35,11 @@ ALTER TABLE honua.layers ADD COLUMN esri_drawing_info JSONB; -- Cache
 - Embedded Maputnik editor works without conversion
 
 ### Negative
-- Esri-specific advanced renderer features may not round-trip perfectly
-- Must implement and maintain MapLibre → Esri converter
-- Importing GeoServices REST services requires Esri → MapLibre conversion
+- Advanced GeoServices renderer features may not round-trip perfectly
+- Must implement and maintain MapLibre → GeoServices converter
+- Importing GeoServices REST services requires GeoServices → MapLibre conversion
 
 ### Mitigation
-- Cache Esri `drawingInfo` in layer table to avoid repeated conversion
+- Cache GeoServices `drawingInfo` in layer table to avoid repeated conversion
 - Support Simple, UniqueValue, ClassBreaks renderers (covers 95% of use cases)
-- Document unsupported Esri renderer types
+- Document unsupported GeoServices renderer types
