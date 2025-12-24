@@ -737,7 +737,7 @@ public sealed class ODataTestFeatureStore : IFeatureStore
 
     private static double HaversineMeters(double lat1, double lon1, double lat2, double lon2)
     {
-        const double EarthRadiusMeters = 6371000.0;
+        const double earthRadiusMeters = 6371000.0;
 
         var dLat = DegreesToRadians(lat2 - lat1);
         var dLon = DegreesToRadians(lon2 - lon1);
@@ -749,7 +749,7 @@ public sealed class ODataTestFeatureStore : IFeatureStore
                 Math.Pow(Math.Sin(dLon / 2.0), 2.0);
 
         var c = 2.0 * Math.Asin(Math.Sqrt(a));
-        return EarthRadiusMeters * c;
+        return earthRadiusMeters * c;
     }
 
     private static double DegreesToRadians(double degrees) => degrees * (Math.PI / 180.0);
