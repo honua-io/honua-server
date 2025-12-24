@@ -29,8 +29,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Skip Aspire configuration during testing to avoid connection string conflicts
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
+var useAspire = !isTestEnvironment && !builder.Environment.IsDevelopment();
 
-if (!isTestEnvironment)
+if (useAspire)
 {
     // Add Aspire service defaults (OTel, health, resilience)
     builder.AddServiceDefaults();
@@ -213,8 +214,8 @@ app.MapODataEndpoints();
 // Configure file import endpoints
 app.MapImportEndpoints();
 
-// Map health endpoints for Aspire dashboard (only in non-test environments)
-if (!isTestEnvironment)
+// Map health endpoints for Aspire dashboard (only when Aspire is enabled)
+if (useAspire)
 {
     app.MapDefaultEndpoints();
 }
