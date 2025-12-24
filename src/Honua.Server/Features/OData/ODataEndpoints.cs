@@ -484,7 +484,7 @@ public static class ODataEndpoints
             var (sqlFragment, whereClause) = ConvertODataFilterToSqlFragment(filter);
             var featureQuery = new FeatureQuery
             {
-                Where = ConvertODataFilterToSql(filter),
+                Where = whereClause,
                 OrderBy = ParseODataOrderBy(orderby),
                 Limit = validatedParams.ResultRecordCount,
                 Offset = validatedParams.ResultOffset
@@ -541,7 +541,6 @@ public static class ODataEndpoints
     }
 
     /// <summary>
-<<<<<<< HEAD
     /// Handles getting a single feature by ID
     /// </summary>
     private static async Task<IResult> HandleGetSingleFeature(
