@@ -17,13 +17,23 @@ using Microsoft.AspNetCore.Mvc;
 namespace Honua.Server.Features.OData;
 
 /// <summary>
-/// Simplified OData v4 endpoints for basic query operations
-/// Supports $filter, $select, $top, $skip parameters
+/// OData v4 endpoints providing intermediate conformance level.
+/// Supports $filter, $select, $orderby, $top, $skip, $count, and CRUD operations.
 /// </summary>
 public static class ODataEndpoints
 {
     /// <summary>
-    /// Maps simplified OData v4 endpoints
+    /// OData protocol version
+    /// </summary>
+    private const string ODataVersion = "4.0";
+
+    /// <summary>
+    /// OData JSON content type with minimal metadata
+    /// </summary>
+    private const string ODataContentType = "application/json;odata.metadata=minimal";
+
+    /// <summary>
+    /// Maps OData v4 endpoints
     /// </summary>
     public static IEndpointRouteBuilder MapODataEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -132,16 +142,31 @@ public static class ODataEndpoints
             }
         };
 
-        return Results.Json(serviceDocument, ODataJsonContext.Default.ServiceDocument, contentType: "application/json;odata.metadata=minimal");
+        SetODataHeaders(context);
+        return Results.Json(serviceDocument, ODataJsonContext.Default.ServiceDocument, contentType: ODataContentType);
+    }
+
+    /// <summary>
+    /// Sets required OData headers on the response
+    /// </summary>
+    private static void SetODataHeaders(HttpContext context, string? etag = null)
+    {
+        context.Response.Headers["OData-Version"] = ODataVersion;
+        if (etag != null)
+        {
+            context.Response.Headers.ETag = $"\"{etag}\"";
+        }
     }
 
     /// <summary>
     /// Handles OData metadata document request
     /// </summary>
     private static async Task<IResult> HandleGetMetadata(
+        HttpContext context,
         ILayerCatalog layerCatalog,
         CancellationToken cancellationToken = default)
     {
+        SetODataHeaders(context);
         try
         {
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
@@ -329,12 +354,12 @@ public static class ODataEndpoints
         {
             if (top.HasValue && top.Value <= 0)
             {
-                return CreateODataError("InvalidQueryOption", "$top must be a positive integer.");
+                return CreateODataError(context, "InvalidQueryOption", "$top must be a positive integer.");
             }
 
             if (skip.HasValue && skip.Value < 0)
             {
-                return CreateODataError("InvalidQueryOption", "$skip must be a non-negative integer.");
+                return CreateODataError(context, "InvalidQueryOption", "$skip must be a non-negative integer.");
             }
 
             var validationResult = queryValidator.ValidateQueryLimits(new QueryParameters
@@ -345,7 +370,7 @@ public static class ODataEndpoints
 
             if (!validationResult.IsValid)
             {
-                return CreateODataError("InvalidQueryOption", $"Invalid OData query: {validationResult.ErrorMessage}");
+                return CreateODataError(context, "InvalidQueryOption", $"Invalid OData query: {validationResult.ErrorMessage}");
             }
 
             var validatedParams = validationResult.ValidatedParameters!;
@@ -393,15 +418,16 @@ public static class ODataEndpoints
                 Value = result
             };
 
-            return Results.Json(response, ODataJsonContext.Default.ODataResponse, contentType: "application/json;odata.metadata=minimal");
+            SetODataHeaders(context);
+            return Results.Json(response, ODataJsonContext.Default.ODataResponse, contentType: ODataContentType);
         }
         catch (ArgumentException ex)
         {
-            return CreateODataError("InvalidQuery", $"Invalid OData query: {ex.Message}");
+            return CreateODataError(context, "InvalidQuery", $"Invalid OData query: {ex.Message}");
         }
         catch (Exception)
         {
-            return CreateODataError("InternalServerError", "An error occurred processing the OData request", 500);
+            return CreateODataError(context, "InternalServerError", "An error occurred processing the OData request", 500);
         }
     }
 
@@ -426,12 +452,12 @@ public static class ODataEndpoints
         {
             if (top.HasValue && top.Value <= 0)
             {
-                return CreateODataError("InvalidQueryOption", "$top must be a positive integer.");
+                return CreateODataError(context, "InvalidQueryOption", "$top must be a positive integer.");
             }
 
             if (skip.HasValue && skip.Value < 0)
             {
-                return CreateODataError("InvalidQueryOption", "$skip must be a non-negative integer.");
+                return CreateODataError(context, "InvalidQueryOption", "$skip must be a non-negative integer.");
             }
 
             var validationResult = queryValidator.ValidateQueryLimits(new QueryParameters
@@ -442,7 +468,7 @@ public static class ODataEndpoints
 
             if (!validationResult.IsValid)
             {
-                return CreateODataError("InvalidQueryOption", $"Invalid OData query: {validationResult.ErrorMessage}");
+                return CreateODataError(context, "InvalidQueryOption", $"Invalid OData query: {validationResult.ErrorMessage}");
             }
 
             var validatedParams = validationResult.ValidatedParameters!;
@@ -451,7 +477,7 @@ public static class ODataEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return CreateODataError("ResourceNotFound", $"Layer {layerId} not found", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Build feature query from OData parameters
@@ -500,15 +526,16 @@ public static class ODataEndpoints
                 Value = result
             };
 
-            return Results.Json(response, ODataJsonContext.Default.ODataResponse, contentType: "application/json;odata.metadata=minimal");
+            SetODataHeaders(context);
+            return Results.Json(response, ODataJsonContext.Default.ODataResponse, contentType: ODataContentType);
         }
         catch (ArgumentException ex)
         {
-            return CreateODataError("InvalidQuery", $"Invalid OData query: {ex.Message}");
+            return CreateODataError(context, "InvalidQuery", $"Invalid OData query: {ex.Message}");
         }
         catch (Exception)
         {
-            return CreateODataError("InternalServerError", "An error occurred processing the OData request", 500);
+            return CreateODataError(context, "InternalServerError", "An error occurred processing the OData request", 500);
         }
     }
 
@@ -529,14 +556,14 @@ public static class ODataEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return CreateODataError("ResourceNotFound", $"Layer {layerId} not found", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Get the feature
             var feature = await featureStore.GetAsync(layerId, objectId, cancellationToken);
             if (feature == null)
             {
-                return CreateODataError("ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
             }
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
@@ -549,11 +576,14 @@ public static class ODataEndpoints
                 Attributes = SerializeAttributes(feature.Attributes)
             };
 
-            return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: "application/json;odata.metadata=minimal");
+            // Generate ETag from feature ID
+            var etag = $"W/\"{feature.Id}\"";
+            SetODataHeaders(context, feature.Id.ToString());
+            return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType);
         }
         catch (Exception)
         {
-            return CreateODataError("InternalServerError", "An error occurred processing the OData request", 500);
+            return CreateODataError(context, "InternalServerError", "An error occurred processing the OData request", 500);
         }
     }
 
@@ -574,7 +604,7 @@ public static class ODataEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return CreateODataError("ResourceNotFound", $"Layer {layerId} not found", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Parse geometry from Base64 WKB if provided
@@ -587,7 +617,7 @@ public static class ODataEndpoints
                 }
                 catch (FormatException)
                 {
-                    return CreateODataError("InvalidRequest", "Geometry must be a valid Base64-encoded WKB string");
+                    return CreateODataError(context, "InvalidRequest", "Geometry must be a valid Base64-encoded WKB string");
                 }
             }
 
@@ -608,13 +638,15 @@ public static class ODataEndpoints
                 Attributes = SerializeAttributes(createdFeature.Attributes)
             };
 
-            // Return 201 Created with Location header
+            // Return 201 Created with Location header and OData-EntityId
+            SetODataHeaders(context, createdFeature.Id.ToString());
             context.Response.Headers.Location = $"{baseUrl}/odata/Features({layerId},{createdFeature.Id})";
-            return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: "application/json;odata.metadata=minimal", statusCode: 201);
+            context.Response.Headers["OData-EntityId"] = $"{baseUrl}/odata/Features({layerId},{createdFeature.Id})";
+            return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType, statusCode: 201);
         }
         catch (Exception)
         {
-            return CreateODataError("InternalServerError", "An error occurred creating the feature", 500);
+            return CreateODataError(context, "InternalServerError", "An error occurred creating the feature", 500);
         }
     }
 
@@ -636,14 +668,14 @@ public static class ODataEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return CreateODataError("ResourceNotFound", $"Layer {layerId} not found", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Get existing feature to merge with update
             var existingFeature = await featureStore.GetAsync(layerId, objectId, cancellationToken);
             if (existingFeature == null)
             {
-                return CreateODataError("ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
             }
 
             // Parse geometry from Base64 WKB if provided, otherwise keep existing
@@ -656,7 +688,7 @@ public static class ODataEndpoints
                 }
                 catch (FormatException)
                 {
-                    return CreateODataError("InvalidRequest", "Geometry must be a valid Base64-encoded WKB string");
+                    return CreateODataError(context, "InvalidRequest", "Geometry must be a valid Base64-encoded WKB string");
                 }
             }
 
@@ -684,15 +716,16 @@ public static class ODataEndpoints
                 Attributes = SerializeAttributes(result.Attributes)
             };
 
-            return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: "application/json;odata.metadata=minimal");
+            SetODataHeaders(context, result.Id.ToString());
+            return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
         {
-            return CreateODataError("ResourceNotFound", ex.Message, 404);
+            return CreateODataError(context, "ResourceNotFound", ex.Message, 404);
         }
         catch (Exception)
         {
-            return CreateODataError("InternalServerError", "An error occurred updating the feature", 500);
+            return CreateODataError(context, "InternalServerError", "An error occurred updating the feature", 500);
         }
     }
 
@@ -700,6 +733,7 @@ public static class ODataEndpoints
     /// Handles deleting a feature
     /// </summary>
     private static async Task<IResult> HandleDeleteFeature(
+        HttpContext context,
         int layerId,
         long objectId,
         ILayerCatalog layerCatalog,
@@ -712,21 +746,22 @@ public static class ODataEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return CreateODataError("ResourceNotFound", $"Layer {layerId} not found", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Delete the feature
             var deleted = await featureStore.DeleteAsync(layerId, objectId, cancellationToken);
             if (!deleted)
             {
-                return CreateODataError("ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
+                return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
             }
 
+            SetODataHeaders(context);
             return Results.NoContent();
         }
         catch (Exception)
         {
-            return CreateODataError("InternalServerError", "An error occurred deleting the feature", 500);
+            return CreateODataError(context, "InternalServerError", "An error occurred deleting the feature", 500);
         }
     }
 
@@ -734,7 +769,7 @@ public static class ODataEndpoints
     /// Creates an OData v4 compliant error response.
     /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.01/odata-json-format-v4.01.html#sec_ErrorResponseBody
     /// </summary>
-    private static IResult CreateODataError(string code, string message, int statusCode = 400, string? target = null, ErrorDetail[]? details = null)
+    private static IResult CreateODataError(HttpContext context, string code, string message, int statusCode = 400, string? target = null, ErrorDetail[]? details = null)
     {
         var error = new ODataError
         {
@@ -746,8 +781,9 @@ public static class ODataEndpoints
             }
         };
 
+        SetODataHeaders(context);
         return Results.Json(error, ODataJsonContext.Default.ODataError,
-            contentType: "application/json;odata.metadata=minimal",
+            contentType: ODataContentType,
             statusCode: statusCode);
     }
 

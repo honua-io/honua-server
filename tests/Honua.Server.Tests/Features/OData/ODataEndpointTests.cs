@@ -51,6 +51,30 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata")]
+    public async Task ServiceDocument_ReturnsODataVersionHeader()
+    {
+        var response = await _fixture.Client.GetAsync("/odata");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
+        values.Should().Contain("4.0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Features_ReturnsODataVersionHeader()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
+        values.Should().Contain("4.0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ReturnsXmlDocument()
     {
