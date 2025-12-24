@@ -6,10 +6,10 @@
   </parsers:session>
 
   <!-- OGC API Features endpoint configuration -->
-  <entry key="landing-page-uri">http://honua-server:8080</entry>
-  <entry key="iut-uri">http://honua-server:8080</entry>
-  <entry key="conformance-uri">http://honua-server:8080/conformance</entry>
-  <entry key="collections-uri">http://honua-server:8080/collections</entry>
+  <entry key="landing-page-uri">http://honua-server:8080/ogc/features</entry>
+  <entry key="iut-uri">http://honua-server:8080/ogc/features</entry>
+  <entry key="conformance-uri">http://honua-server:8080/ogc/features/conformance</entry>
+  <entry key="collections-uri">http://honua-server:8080/ogc/features/collections</entry>
 
   <!-- Authentication (if required) -->
   <!-- <entry key="auth-username">testuser</entry> -->

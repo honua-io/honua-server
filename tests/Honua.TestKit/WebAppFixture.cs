@@ -1,8 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -45,32 +50,62 @@ public sealed class WebAppFixture : IAsyncLifetime
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                // Configure test environment
+                builder.UseEnvironment("Test");
+
                 // Configure authentication bypass for test environment
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
 
+                // Configure application configuration with test connection string BEFORE app startup
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:honua"] = _postgres.ConnectionString
+                    });
+                });
+
                 builder.ConfigureTestServices(services =>
                 {
-                    // Remove the default PostgreSQL services to avoid DefaultConnection dependency
+                    // Remove and re-register all PostgreSQL services with test connection string
                     services.RemoveAll<NpgsqlDataSource>();
+                    services.RemoveAll<IFeatureStore>();
+                    services.RemoveAll<IAttachmentStore>();
+                    services.RemoveAll<ILayerCatalog>();
+                    services.RemoveAll<ITableDiscoveryService>();
+                    services.RemoveAll<IDatabaseHealthChecker>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
+                    services.RemoveAll<ICrsDetectionService>();
+                    services.RemoveAll<IFileImportService>();
 
-                    // Create test configuration with our test connection string
-                    var testConfig = new ConfigurationBuilder()
-                        .AddInMemoryCollection(new Dictionary<string, string?>
-                        {
-                            ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString
-                        })
-                        .Build();
+                    // Register NpgsqlDataSource with test connection string
+                    services.AddSingleton<NpgsqlDataSource>(_ =>
+                    {
+                        var dataSourceBuilder = new NpgsqlDataSourceBuilder(_postgres.ConnectionString);
+                        return dataSourceBuilder.Build();
+                    });
 
-                    // Add PostgreSQL services using the standard registration method with test config
-                    services.AddPostgreSqlServices(testConfig);
-
-                    // Override the database connection provider with test-specific implementation
-                    services.RemoveAll<IDatabaseConnectionProvider>();
+                    // Register all PostgreSQL services manually with test implementations
+                    services.AddScoped<IFeatureStore, Honua.Postgres.Features.FeatureStore.PostgresFeatureStore>();
+                    services.AddScoped(_ => new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
+                        useJsonAttributes: true,
+                        attributesColumn: "attributes",
+                        geometryColumn: "geometry",
+                        primaryKeyColumn: "objectid"));
+                    services.AddScoped<IAttachmentStore, Honua.Postgres.Features.Attachments.PostgresAttachmentStore>();
+                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite>();
+                    services.AddScoped<ITableDiscoveryService, Honua.Postgres.Features.Admin.PostgreSqlTableDiscoveryService>();
+                    services.AddScoped<IDatabaseHealthChecker, Honua.Postgres.Features.HealthCheck.PostgresDatabaseHealthChecker>();
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
                     {
                         var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
                         return new TestDatabaseConnectionProvider(dataSource);
+                    });
+                    services.AddScoped<ICrsDetectionService>(_ => new Honua.Postgres.Features.Import.CrsDetectionService(_postgres.ConnectionString));
+                    services.AddScoped<IFileImportService>(serviceProvider =>
+                    {
+                        var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
+                        return new Honua.Postgres.Features.Import.FileImportService(_postgres.ConnectionString, crsDetectionService);
                     });
 
                     // Apply custom service configurations
@@ -79,8 +114,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                         configure(services);
                     }
                 });
-
-                builder.UseEnvironment("Test");
             });
 
         Client = _factory.CreateClient();

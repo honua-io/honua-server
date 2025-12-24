@@ -563,7 +563,7 @@ public static class CatalogEndpoint
             fields = layer.Fields.Select(f => new
             {
                 name = f.Name,
-                type = f.EsriFieldType,
+                type = f.GeoServicesType,
                 alias = f.Alias,
                 nullable = f.IsNullable,
                 editable = f.IsEditable,
@@ -728,7 +728,7 @@ MVP supports importing common vector formats without GDAL dependency to stay lig
 
 ### Not Supported (Requires GDAL)
 
-- FileGDB (Esri proprietary format)
+- FileGDB (proprietary format)
 - MapInfo TAB
 - Raster formats (GeoTIFF, etc.)
 - Exotic vector formats
@@ -1533,7 +1533,7 @@ public static class VectorTileEndpoint
 {
     public static void Map(IEndpointRouteBuilder app)
     {
-        // Esri-style VectorTileServer
+        // GeoServices-style VectorTileServer
         app.MapGet("/rest/services/{serviceId}/VectorTileServer/tile/{z}/{x}/{y}.pbf",
             HandleTile)
             .WithName("GetVectorTile")
@@ -3320,11 +3320,11 @@ window.maplibreInterop = {
 │                                                                 │
 │  Layer                                                          │
 │  └── maplibre_style (JSONB) ← canonical                         │
-│  └── esri_drawing_info (JSONB) ← cached conversion OR import    │
+│  └── geoservices_drawing_info (JSONB) ← cached conversion OR import    │
 │                                                                 │
 │  Protocol requests:                                             │
 │  ──────────────────                                             │
-│  FeatureServer → Return esri_drawing_info (convert if stale)    │
+│  FeatureServer → Return geoservices_drawing_info (convert if stale)    │
 │  OGC API       → Link to /api/styles/{id}.json                  │
 │  MVT/TileJSON  → Embed maplibre_style                           │
 │  Admin preview → Use maplibre_style directly                    │
@@ -3343,7 +3343,7 @@ window.maplibreInterop = {
 - JSON, not XML
 
 **GeoServices REST format compatibility:**
-- Convert MapLibre → Esri drawingInfo on first request, cache it
+- Convert MapLibre → GeoServices drawingInfo on first request, cache it
 - When importing from GeoServices server, store original AND derive MapLibre
 - Cache invalidated when style is edited
 
@@ -3365,21 +3365,21 @@ window.maplibreInterop = {
 ```sql
 -- Layer styling columns
 ALTER TABLE honua.layers ADD COLUMN maplibre_style JSONB;      -- Canonical
-ALTER TABLE honua.layers ADD COLUMN esri_drawing_info JSONB;   -- Cache/import
+ALTER TABLE honua.layers ADD COLUMN geoservices_drawing_info JSONB;   -- Cache/import
 ALTER TABLE honua.layers ADD COLUMN style_version INT DEFAULT 1;
 ```
 
 **On style edit (Maputnik, API):**
 1. Update `maplibre_style`
 2. Increment `style_version`
-3. Set `esri_drawing_info = NULL` (invalidate cache)
+3. Set `geoservices_drawing_info = NULL` (invalidate cache)
 
 **On FeatureServer request:**
-1. If `esri_drawing_info` is NULL → convert from `maplibre_style`, cache it
-2. Return cached `esri_drawing_info`
+1. If `geoservices_drawing_info` is NULL → convert from `maplibre_style`, cache it
+2. Return cached `geoservices_drawing_info`
 
 **On GeoServices REST import:**
-1. Store original in `esri_drawing_info`
+1. Store original in `geoservices_drawing_info`
 2. Convert to MapLibre, store in `maplibre_style`
 3. MapLibre becomes canonical for future edits
 
@@ -3408,7 +3408,7 @@ ALTER TABLE honua.layers ADD COLUMN style_version INT DEFAULT 1;
   }]
 }
 
-// esri_drawing_info (cached conversion)
+// geoservices_drawing_info (cached conversion)
 {
   "renderer": {
     "type": "simple",
@@ -3424,13 +3424,13 @@ ALTER TABLE honua.layers ADD COLUMN style_version INT DEFAULT 1;
 
 ### Style Converters (Bidirectional)
 
-#### Esri → MapLibre (for import and preview)
+#### GeoServices → MapLibre (for import and preview)
 
 ```csharp
-// Features/Styling/EsriToMapLibreConverter.cs
+// Features/Styling/GeoServicesToMapLibreConverter.cs
 namespace Honua.Server.Features.Styling;
 
-public static class EsriToMapLibreConverter
+public static class GeoServicesToMapLibreConverter
 {
     public static MapLibreStyle Convert(JsonElement drawingInfo, string layerId, GeometryType geomType)
     {
@@ -3454,7 +3454,7 @@ public static class EsriToMapLibreConverter
 
         if (geomType is GeometryType.Polygon or GeometryType.MultiPolygon)
         {
-            var color = ParseEsriColor(symbol.GetProperty("color"));
+            var color = ParseGeoServicesColor(symbol.GetProperty("color"));
             var outline = symbol.TryGetProperty("outline", out var o) ? o : default;
 
             layers.Add(new MapLibreLayer
@@ -3472,7 +3472,7 @@ public static class EsriToMapLibreConverter
 
             if (outline.ValueKind != JsonValueKind.Undefined)
             {
-                var outlineColor = ParseEsriColor(outline.GetProperty("color"));
+                var outlineColor = ParseGeoServicesColor(outline.GetProperty("color"));
                 var width = outline.TryGetProperty("width", out var w) ? w.GetDouble() : 1;
 
                 layers.Add(new MapLibreLayer
@@ -3492,7 +3492,7 @@ public static class EsriToMapLibreConverter
         }
         else if (geomType is GeometryType.LineString or GeometryType.MultiLineString)
         {
-            var color = ParseEsriColor(symbol.GetProperty("color"));
+            var color = ParseGeoServicesColor(symbol.GetProperty("color"));
             var width = symbol.TryGetProperty("width", out var w) ? w.GetDouble() : 2;
 
             layers.Add(new MapLibreLayer
@@ -3511,7 +3511,7 @@ public static class EsriToMapLibreConverter
         }
         else // Point
         {
-            var color = ParseEsriColor(symbol.GetProperty("color"));
+            var color = ParseGeoServicesColor(symbol.GetProperty("color"));
             var size = symbol.TryGetProperty("size", out var s) ? s.GetDouble() : 8;
 
             layers.Add(new MapLibreLayer
@@ -3545,14 +3545,14 @@ public static class EsriToMapLibreConverter
         foreach (var uv in uniqueValues)
         {
             var value = uv.GetProperty("value").GetString();
-            var color = ParseEsriColor(uv.GetProperty("symbol").GetProperty("color"));
+            var color = ParseGeoServicesColor(uv.GetProperty("symbol").GetProperty("color"));
             matchExpr.Add(value);
             matchExpr.Add(color.Rgb);
         }
 
         // Default color
         var defaultColor = defaultSymbol.ValueKind != JsonValueKind.Undefined
-            ? ParseEsriColor(defaultSymbol.GetProperty("color")).Rgb
+            ? ParseGeoServicesColor(defaultSymbol.GetProperty("color")).Rgb
             : "#888888";
         matchExpr.Add(defaultColor);
 
@@ -3588,13 +3588,13 @@ public static class EsriToMapLibreConverter
         var stepExpr = new List<object> { "step", new object[] { "get", field } };
 
         // First color (below first break)
-        var firstColor = ParseEsriColor(classBreaks[0].GetProperty("symbol").GetProperty("color"));
+        var firstColor = ParseGeoServicesColor(classBreaks[0].GetProperty("symbol").GetProperty("color"));
         stepExpr.Add(firstColor.Rgb);
 
         foreach (var cb in classBreaks)
         {
             var maxValue = cb.GetProperty("classMaxValue").GetDouble();
-            var color = ParseEsriColor(cb.GetProperty("symbol").GetProperty("color"));
+            var color = ParseGeoServicesColor(cb.GetProperty("symbol").GetProperty("color"));
             stepExpr.Add(maxValue);
             stepExpr.Add(color.Rgb);
         }
@@ -3621,9 +3621,9 @@ public static class EsriToMapLibreConverter
         return new MapLibreStyle { Layers = layers };
     }
 
-    private static (string Rgb, double Alpha) ParseEsriColor(JsonElement color)
+    private static (string Rgb, double Alpha) ParseGeoServicesColor(JsonElement color)
     {
-        // Esri color: [r, g, b, a] where a is 0-255
+        // GeoServices color: [r, g, b, a] where a is 0-255
         var arr = color.EnumerateArray().Select(x => x.GetInt32()).ToArray();
         var rgb = $"rgb({arr[0]}, {arr[1]}, {arr[2]})";
         var alpha = arr.Length > 3 ? arr[3] / 255.0 : 1.0;
@@ -3681,22 +3681,22 @@ public class MapLibreLayer
 }
 ```
 
-#### MapLibre → Esri (for FeatureServer responses)
+#### MapLibre → GeoServices (for FeatureServer responses)
 
-Converts MapLibre style back to Esri drawingInfo for FeatureServer responses.
+Converts MapLibre style back to GeoServices drawingInfo for FeatureServer responses.
 
 ```csharp
-// Features/Styling/MapLibreToEsriConverter.cs
+// Features/Styling/MapLibreToGeoServicesConverter.cs
 namespace Honua.Server.Features.Styling;
 
-public static class MapLibreToEsriConverter
+public static class MapLibreToGeoServicesConverter
 {
     public static JsonElement Convert(MapLibreStyle style, GeometryType geomType)
     {
         // Find the primary layer (fill for polygon, line for line, circle for point)
         var primaryLayer = FindPrimaryLayer(style, geomType);
         if (primaryLayer is null)
-            return GetDefaultEsriRenderer(geomType);
+            return GetDefaultGeoServicesRenderer(geomType);
 
         var paint = primaryLayer.Paint;
 
@@ -3712,7 +3712,7 @@ public static class MapLibreToEsriConverter
         if (HasStepExpression(paint))
             return ConvertToClassBreaksRenderer(paint, geomType);
 
-        return GetDefaultEsriRenderer(geomType);
+        return GetDefaultGeoServicesRenderer(geomType);
     }
 
     private static JsonElement ConvertToSimpleRenderer(
@@ -3781,7 +3781,7 @@ public static class MapLibreToEsriConverter
 ```
 
 **Conversion limitations:**
-- MapLibre expressions more powerful than Esri → falls back to simple renderer
+- MapLibre expressions more powerful than GeoServices → falls back to simple renderer
 - Complex interpolations → step functions
 - Custom fonts/icons → defaults
 
@@ -3835,12 +3835,12 @@ public static class StyleEndpoint
     {
         if (layer.DrawingInfo is { } di)
         {
-            var mlStyle = EsriToMapLibreConverter.Convert(di, layer.Id, layer.GeometryType!.Value);
+            var mlStyle = GeoServicesToMapLibreConverter.Convert(di, layer.Id, layer.GeometryType!.Value);
             return mlStyle.Layers.Cast<object>().ToList();
         }
 
         // Default styling
-        var defaultStyle = EsriToMapLibreConverter.GetDefaultStyle(layer.Id, layer.GeometryType!.Value);
+        var defaultStyle = GeoServicesToMapLibreConverter.GetDefaultStyle(layer.Id, layer.GeometryType!.Value);
         return defaultStyle.Layers.Cast<object>().ToList();
     }
 }
@@ -3851,12 +3851,12 @@ public static class StyleEndpoint
 | Standard | MVP Support | Notes |
 |----------|-------------|-------|
 | **Mapbox/MapLibre Style Spec v8** | ✅ Primary | Native format for MapLibre GL, industry standard |
-| **Esri Renderer JSON** | ✅ Storage | Stored verbatim, converted to MapLibre on-the-fly |
+| **GeoServices Renderer JSON** | ✅ Storage | Stored verbatim, converted to MapLibre on-the-fly |
 | **OGC SLD (Styled Layer Descriptor)** | ❌ | XML-based, legacy — deferred |
 | **OGC API Styles** | ❌ | REST API for style management — planned for Beta |
 | **CartoCSS** | ❌ | Mapbox legacy — no plans |
 
-**Primary standard is Mapbox/MapLibre Style Specification v8** — the de facto standard for web maps. Esri JSON is supported for GeoServices REST protocol compatibility, converted server-side.
+**Primary standard is Mapbox/MapLibre Style Specification v8** — the de facto standard for web maps. GeoServices JSON is supported for protocol compatibility, converted server-side.
 
 ### Embedded Style Editor (Maputnik)
 
@@ -4059,7 +4059,7 @@ app.MapPut("/api/styles/{layerId}", async (
     if (!maplibreStyle.TryGetProperty("version", out var v) || v.GetInt32() != 8)
         return Results.BadRequest("Invalid MapLibre style: version must be 8");
 
-    // Store as MapLibre JSON (separate from Esri renderer)
+    // Store as MapLibre JSON (separate from GeoServices renderer)
     await styleService.SaveMapLibreStyleAsync(layerId, maplibreStyle, ct);
 
     return Results.NoContent();
@@ -4068,7 +4068,7 @@ app.MapPut("/api/styles/{layerId}", async (
 // Export style in different formats
 app.MapGet("/api/styles/{layerId}", async (
     string layerId,
-    [FromQuery] string format, // "maplibre" (default), "esri"
+    [FromQuery] string format, // "maplibre" (default), "geoservices"
     IStyleService styleService,
     CancellationToken ct) =>
 {
@@ -4077,7 +4077,7 @@ app.MapGet("/api/styles/{layerId}", async (
 
     return format?.ToLower() switch
     {
-        "esri" => Results.Json(style.EsriDrawingInfo),
+        "geoservices" => Results.Json(style.GeoServicesDrawingInfo),
         _ => Results.Json(style.MapLibreStyle)
     };
 });
@@ -4101,7 +4101,7 @@ app.MapGet("/api/styles/{layerId}", async (
 1. **Import from GeoServices REST**: Renderer JSON preserved, converted to MapLibre (canonical)
 2. **New layer (no style)**: Apply sensible defaults by geometry type
 3. **Edit style**: Open embedded Maputnik, edit visually, save
-4. **FeatureServer response**: Return cached Esri JSON (convert from MapLibre if stale)
+4. **FeatureServer response**: Return cached GeoServices JSON (convert from MapLibre if stale)
 5. **OGC/MVT response**: Return MapLibre style directly
 6. **Admin preview**: MapLibre GL map with live style
 
@@ -4240,7 +4240,7 @@ public record ImportResult(long FeatureCount, string Message);
 ┌─────────────────────────────────────────────────────────────────┐
 │  Protocol Conformance (Integration)                             │
 │  - FeatureServer query/edit response format validation          │
-│  - Esri JSON structure assertions                               │
+│  - GeoServices JSON structure assertions                               │
 │  - ~15% of tests                                                │
 └─────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
@@ -4635,7 +4635,7 @@ Week 7-10
 | **CRS/Reprojection** | ✅ | Any EPSG via PostGIS ST_Transform |
 | **Styling** | ✅ | Simple/UniqueValue/ClassBreaks → MapLibre |
 | **MapServer** (raster export) | ❌ | Deferred to Beta |
-| **OGC API Tiles** | ❌ | Deferred (Esri-style only) |
+| **OGC API Tiles** | ❌ | Deferred (GeoServices-style only) |
 | **OGC API Maps** | ❌ | Deferred |
 | **WFS/WMS/WMTS** | ❌ | Legacy, deferred |
 | **Advanced renderers** | ❌ | Heatmap, DotDensity, PictureSymbols |
@@ -4977,7 +4977,7 @@ Each protocol has its own error response format. The global exception handler de
 private string DetectProtocol(HttpContext context)
 {
     var path = context.Request.Path.Value ?? "";
-    if (path.StartsWith("/rest/services")) return "esri";
+    if (path.StartsWith("/rest/services")) return "geoservices";
     if (path.StartsWith("/ogc/")) return "ogc";
     if (path.StartsWith("/odata/")) return "odata";
     return "rfc7807"; // Default to Problem Details
@@ -5183,7 +5183,7 @@ CREATE TABLE honua.layers (
     srid INT NOT NULL DEFAULT 4326,
     enabled BOOLEAN NOT NULL DEFAULT true,
     maplibre_style JSONB,
-    esri_drawing_info JSONB,
+    geoservices_drawing_info JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(service_id, layer_index)
@@ -5780,7 +5780,7 @@ app.UseResponseCompression();
 |---------------|--------------|------------|-----------|
 | GeoJSON (1000 features) | ~500KB | ~50KB | 90% |
 | MVT tile | ~100KB | ~20KB | 80% |
-| Esri JSON | ~400KB | ~40KB | 90% |
+| GeoServices JSON | ~400KB | ~40KB | 90% |
 
 #### Static File Compression (MVT Cache)
 

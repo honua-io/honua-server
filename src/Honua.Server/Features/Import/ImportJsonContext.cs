@@ -15,7 +15,7 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(FilePreview))]
 [JsonSerializable(typeof(ImportResult))]
 [JsonSerializable(typeof(ApiErrorResponse))]
-[JsonSerializable(typeof(EsriError))]
+[JsonSerializable(typeof(GeoServicesError))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(object))]
