@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -13,43 +13,31 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// are applied to all responses per MVP security requirements.
 /// </summary>
 [Collection("Database")]
-public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
+public class SecurityHeadersMiddlewareTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly HttpClient _client;
+    private readonly WebAppFixture _fixture = new();
 
     public SecurityHeadersMiddlewareTests(ITestOutputHelper output)
     {
         _output = output;
-        _factory = new WebApplicationFactory<Program>();
-        _client = _factory.CreateClient();
     }
 
     public async Task InitializeAsync()
     {
-        // No specific initialization needed for these tests
-        await Task.CompletedTask;
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-        GC.SuppressFinalize(this);
+        await _fixture.InitializeAsync();
     }
 
     public async Task DisposeAsync()
     {
-        _client.Dispose();
-        await _factory.DisposeAsync();
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]
     public async Task SecurityHeaders_HealthEndpoint_AppliesAllRequiredHeaders()
     {
         // Act
-        var response = await _client.GetAsync("/healthz/live");
+        var response = await _fixture.Client.GetAsync("/healthz/live");
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -91,7 +79,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
     public async Task SecurityHeaders_FeatureServerEndpoint_AppliesSecurityHeaders()
     {
         // Act - Test with a FeatureServer endpoint that should return 400 (no serviceId provided)
-        var response = await _client.GetAsync("/rest/services/1/FeatureServer");
+        var response = await _fixture.Client.GetAsync("/rest/services/1/FeatureServer");
 
         // Assert - Even error responses should have security headers
         Assert.True(response.Headers.TryGetValues("X-Content-Type-Options", out var contentTypeValues));
@@ -108,7 +96,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
     public async Task SecurityHeaders_AdminEndpoint_AppliesSecurityHeaders()
     {
         // Act - Test with admin endpoint - use an endpoint that should return 400 but still have headers
-        var response = await _client.GetAsync("/api/admin/connections/test/tables");
+        var response = await _fixture.Client.GetAsync("/api/admin/connections/test/tables");
 
         // Assert - Even error responses should have security headers
         Assert.True(response.Headers.TryGetValues("X-Content-Type-Options", out var contentTypeValues));
@@ -125,8 +113,8 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
     {
         // Act - Make multiple requests to health endpoints (guaranteed to work)
         var responses = await Task.WhenAll(
-            _client.GetAsync("/healthz/live"),
-            _client.GetAsync("/healthz/ready")
+            _fixture.Client.GetAsync("/healthz/live"),
+            _fixture.Client.GetAsync("/healthz/ready")
         );
 
         // Assert - All responses should have consistent security headers
@@ -150,7 +138,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
     public async Task SecurityHeaders_ContentSecurityPolicy_HasStrictDirectives()
     {
         // Act
-        var response = await _client.GetAsync("/healthz/live");
+        var response = await _fixture.Client.GetAsync("/healthz/live");
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -177,7 +165,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
     public async Task SecurityHeaders_PermissionsPolicy_HasSecureDefaults()
     {
         // Act
-        var response = await _client.GetAsync("/healthz/live");
+        var response = await _fixture.Client.GetAsync("/healthz/live");
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -198,7 +186,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime, IDisposable
     public async Task SecurityHeaders_AllEndpoints_HaveBasicSecurityHeaders(string endpoint)
     {
         // Act
-        var response = await _client.GetAsync(endpoint);
+        var response = await _fixture.Client.GetAsync(endpoint);
 
         // Assert - Basic security headers should be present on all endpoints
         Assert.True(response.Headers.TryGetValues("X-Content-Type-Options", out var contentTypeValues),

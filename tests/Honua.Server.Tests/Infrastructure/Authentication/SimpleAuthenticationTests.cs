@@ -3,6 +3,7 @@
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -24,13 +25,20 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseEnvironment("Production");
+                // Configure test-specific settings
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+                builder.UseSetting("HONUA_DEV_AUTH", "false"); // Disable dev bypass to test real auth
 
-                // Override configuration to disable problematic endpoints
-                builder.ConfigureServices(services =>
+                // Configure test environment to bypass Aspire configuration (must be last)
+                builder.UseEnvironment("Test");
+
+                // Configure test connection string to avoid connection string errors (must be last)
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
-                    // Keep only essential services for auth testing
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test"
+                    });
                 });
             });
         _client = _factory.CreateClient();

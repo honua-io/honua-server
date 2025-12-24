@@ -26,14 +26,20 @@ using Serilog.Enrichers.Span;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add Aspire service defaults (OTel, health, resilience)
-builder.AddServiceDefaults();
+// Skip Aspire configuration during testing to avoid connection string conflicts
+var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 
-// Add Npgsql with connection from Aspire
-builder.AddNpgsqlDataSource("honua");
+if (!isTestEnvironment)
+{
+    // Add Aspire service defaults (OTel, health, resilience)
+    builder.AddServiceDefaults();
 
-// Add Redis if configured
-builder.AddRedisDistributedCache("redis");
+    // Add Npgsql with connection from Aspire
+    builder.AddNpgsqlDataSource("honua");
+
+    // Add Redis if configured
+    builder.AddRedisDistributedCache("redis");
+}
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -70,7 +76,11 @@ builder.Host.UseSerilog((context, services, config) =>
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure
 // Rest of Server code uses only Core abstractions (IFeatureStore, IDatabaseHealthChecker)
-RegisterInfrastructureServices(builder.Services, builder.Configuration);
+// Skip infrastructure registration in test environment - WebAppFixture handles it
+if (!isTestEnvironment)
+{
+    RegisterInfrastructureServices(builder.Services, builder.Configuration);
+}
 
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);
@@ -91,12 +101,10 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFo
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeatureQueryValidator,
     Honua.Server.Features.FeatureServer.Services.FeatureQueryValidator>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.FeatureServerServices>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 
-// Register OData services (temporarily disabled for Issue 46 performance testing)
-// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQueryParser>();
-// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataResponseFormatter>();
-// builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataMetadataGenerator>();
+// OData services use existing FeatureServer services
 
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
@@ -115,6 +123,12 @@ ConfigureSecurityHeaders(builder.Services);
 ConfigureOutputCaching(builder.Services);
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
+
+// Configure JSON serialization for ASP.NET Core (needed for OData route parameter binding)
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolver = Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default;
+});
 
 var app = builder.Build();
 
@@ -186,8 +200,11 @@ app.MapODataEndpoints();
 // Configure file import endpoints
 app.MapImportEndpoints();
 
-// Map health endpoints for Aspire dashboard
-app.MapDefaultEndpoints();
+// Map health endpoints for Aspire dashboard (only in non-test environments)
+if (!isTestEnvironment)
+{
+    app.MapDefaultEndpoints();
+}
 
 app.Run();
 
@@ -365,6 +382,8 @@ static void ConfigureOutputCaching(IServiceCollection services)
         options.AddPolicy("OgcLandingPage", policy =>
         {
             policy.Expire(TimeSpan.FromMinutes(30));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -372,6 +391,8 @@ static void ConfigureOutputCaching(IServiceCollection services)
         options.AddPolicy("OgcConformance", policy =>
         {
             policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -379,6 +400,8 @@ static void ConfigureOutputCaching(IServiceCollection services)
         options.AddPolicy("OgcCollections", policy =>
         {
             policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -387,6 +410,16 @@ static void ConfigureOutputCaching(IServiceCollection services)
         {
             policy.Expire(TimeSpan.FromMinutes(10));
             policy.SetVaryByRouteValue("collectionId");
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-metadata", "metadata");
+        });
+
+        options.AddPolicy("OgcOpenApi", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
             policy.Tag("ogc-metadata", "metadata");
         });
 
@@ -423,4 +456,7 @@ static void ConfigureTileOptions(IServiceCollection services, IConfiguration con
 }
 
 // Make Program accessible to WebApplicationFactory
+/// <summary>
+/// Application entry point for test hosting.
+/// </summary>
 public partial class Program { }

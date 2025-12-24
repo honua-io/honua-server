@@ -9,7 +9,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// </summary>
 /// <remarks>
 /// Relationships enable querying related features across layers using foreign key relationships.
-/// Supports both one-to-many and many-to-one relationship types as defined by Esri GeoServices.
+/// Supports both one-to-many and many-to-one relationship types as defined by the GeoServices REST specification.
 /// </remarks>
 public readonly record struct Relationship
 {

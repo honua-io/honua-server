@@ -61,7 +61,7 @@ public static class ImportEndpoints
         {
             [".geojson"] = "GeoJSON - Web-standard JSON format",
             [".json"] = "JSON - May contain GeoJSON data",
-            [".shp"] = "Shapefile - Esri vector format (requires .shx, .dbf)",
+            [".shp"] = "Shapefile - vector format (requires .shx, .dbf)",
             [".gpkg"] = "GeoPackage - OGC SQLite-based format",
             [".gpx"] = "GPX - GPS Exchange format",
             [".kml"] = "KML - Keyhole Markup Language (Google Earth)",
@@ -228,9 +228,9 @@ public static class ImportEndpoints
     {
         var error = new ApiErrorResponse
         {
-            Error = new EsriError
+            Error = new GeoServicesError
             {
-                Code = EsriErrorCodes.FromHttpStatusCode(statusCode),
+                Code = GeoServicesErrorCodes.FromHttpStatusCode(statusCode),
                 Message = message
             }
         };

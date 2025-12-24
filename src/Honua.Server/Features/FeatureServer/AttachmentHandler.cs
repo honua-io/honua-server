@@ -74,14 +74,14 @@ internal static partial class AttachmentHandler
             // Validate file size
             if (file.Length > limits.MaxAttachmentSize)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"File size ({file.Length:N0} bytes) exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
             }
 
             // Validate MIME type
             if (!IsAllowedMimeType(file.ContentType, limits.AllowedMimeTypes))
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"File type '{file.ContentType}' is not allowed");
             }
 
@@ -89,7 +89,7 @@ internal static partial class AttachmentHandler
             var existingAttachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
             if (existingAttachments.Length >= limits.MaxAttachmentsPerFeature)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"Feature already has the maximum number of attachments ({limits.MaxAttachmentsPerFeature})");
             }
 
@@ -97,7 +97,7 @@ internal static partial class AttachmentHandler
             var totalExistingSize = existingAttachments.Sum(a => a.Size);
             if (totalExistingSize + file.Length > limits.MaxTotalAttachmentSize)
             {
-                return EsriErrorHelpers.CreateBadRequestError(
+                return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
             }
 
@@ -150,7 +150,7 @@ internal static partial class AttachmentHandler
             var existingAttachment = await attachmentStore.GetAsync(layerId, featureId, attachmentId, cancellationToken);
             if (!existingAttachment.HasValue)
             {
-                return EsriErrorHelpers.CreateNotFoundError(
+                return GeoServicesErrorHelpers.CreateNotFoundError(
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 
@@ -250,7 +250,7 @@ internal static partial class AttachmentHandler
             var attachmentContent = await attachmentStore.DownloadAsync(layerId, featureId, attachmentId, cancellationToken);
             if (attachmentContent == null)
             {
-                return EsriErrorHelpers.CreateNotFoundError(
+                return GeoServicesErrorHelpers.CreateNotFoundError(
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 

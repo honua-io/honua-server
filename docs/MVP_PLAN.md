@@ -336,7 +336,7 @@ await foreach (var row in cmd.ExecuteReaderAsync(ct))
 **Design Principles:**
 - Single database = simple transactions (no distributed TX complexity)
 - All-or-nothing for ApplyEdits batches
-- Savepoints for partial success scenarios (Esri compatibility)
+- Savepoints for partial success scenarios (GeoServices compatibility)
 - Connection-per-request with explicit transaction scope
 
 **Transaction Abstraction:**
@@ -358,7 +358,7 @@ public interface ITransactionScope : IAsyncDisposable
     Task CommitAsync(CancellationToken ct = default);
     Task RollbackAsync(CancellationToken ct = default);
 
-    // Savepoints for partial rollback (Esri ApplyEdits compatibility)
+    // Savepoints for partial rollback (GeoServices ApplyEdits compatibility)
     Task<ISavepoint> CreateSavepointAsync(string name, CancellationToken ct = default);
 }
 
@@ -520,12 +520,12 @@ public sealed class ApplyEditsHandler
 **ApplyEdits Handler (Partial Success with Savepoints):**
 
 ```csharp
-// Esri-compatible: report individual failures, commit successes
+// GeoServices-compatible: report individual failures, commit successes
 public sealed class ApplyEditsPartialHandler
 {
     public async Task<ApplyEditsResponse> HandleAsync(
         ApplyEditsRequest request,
-        bool rollbackOnFailure, // Esri 'rollbackOnFailure' parameter
+        bool rollbackOnFailure, // GeoServices 'rollbackOnFailure' parameter
         CancellationToken ct)
     {
         if (rollbackOnFailure)
@@ -1573,7 +1573,7 @@ tests/
 │   │   ├── SoakTests.cs
 │   │   └── ConcurrencyTests.cs
 │   ├── Conformance/                     # Protocol conformance
-│   │   ├── EsriCompatibilityTests.cs
+│   │   ├── GeoServicesCompatibilityTests.cs
 │   │   └── OgcCiteTests.cs
 │   └── Fixtures/
 │       ├── PostgresFixture.cs
@@ -1672,7 +1672,7 @@ public class ConformanceAttribute : Attribute, ITraitAttribute
 
 public static class Specs
 {
-    public const string EsriFeatureServer = "Esri:FeatureServer";
+    public const string GeoServicesFeatureServer = "GeoServices:FeatureServer";
     public const string OgcApiFeatures = "OGC:API-Features";
     public const string OgcCql2 = "OGC:CQL2";
     public const string ODataV4 = "OData:v4";
@@ -1744,10 +1744,10 @@ public class QueryEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Conformance(Specs.EsriFeatureServer)]
-    public async Task Query_MatchesEsriResponseFormat()
+    [Conformance(Specs.GeoServicesFeatureServer)]
+    public async Task Query_MatchesGeoServicesResponseFormat()
     {
-        // Validates Esri JSON structure
+        // Validates GeoServices JSON structure
     }
 }
 ```
@@ -1770,7 +1770,7 @@ dotnet test --filter "Operation=Query"
 dotnet test --filter "Operation=Create|Operation=Update|Operation=Delete"
 
 # By spec conformance
-dotnet test --filter "Spec=Esri:FeatureServer"
+dotnet test --filter "Spec=GeoServices:FeatureServer"
 dotnet test --filter "Spec=OGC:API-Features"
 
 # Combinations
@@ -2030,7 +2030,7 @@ dotnet_diagnostic.IL2072.severity = error         # Trim warnings
 ```ini
 # .editorconfig - intentional suppressions
 dotnet_diagnostic.CA1848.severity = none          # LoggerMessage perf - we use source gen
-dotnet_diagnostic.CA2234.severity = none          # Pass Uri - we use strings for Esri compat
+dotnet_diagnostic.CA2234.severity = none          # Pass Uri - we use strings for GeoServices compat
 dotnet_diagnostic.MA0004.severity = none          # Use ConfigureAwait - not needed in ASP.NET
 dotnet_diagnostic.RCS1090.severity = suggestion   # ConfigureAwait - not needed in ASP.NET
 ```
@@ -2073,7 +2073,7 @@ dotnet_diagnostic.CA2007.severity = none   # ConfigureAwait (not needed in ASP.N
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │  E2E / Contract Tests                                    │   │
 │  │  - OGC API Features conformance                          │   │
-│  │  - Esri FeatureServer compatibility                      │   │
+│  │  - GeoServices FeatureServer compatibility                      │   │
 │  │  - ~10% of tests                                         │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │                                                                 │
@@ -2145,14 +2145,14 @@ Critical paths include:
 | Query endpoint | `/FeatureServer/{layerId}/query` |
 | Query parsing | `where`, `outFields`, `geometry`, `spatialRel` |
 | Paging | `resultOffset`, `resultRecordCount`, `exceededTransferLimit` |
-| Output formats | Esri JSON, GeoJSON |
-| Error handling | Esri-compatible error responses |
+| Output formats | GeoServices JSON, GeoJSON |
+| Error handling | GeoServices-compatible error responses |
 
 **Exit Criteria:**
 - [ ] Query with `where` clause returns filtered results
 - [ ] Spatial queries (bbox, intersects) work
 - [ ] Paging returns correct pages
-- [ ] Error responses match Esri format
+- [ ] Error responses match GeoServices format
 - [ ] esri-leaflet FeatureLayer smoke tests pass against real ArcGIS Server and Honua
 - [ ] 80%+ coverage on query paths
 - [ ] **Coverage checkpoint:** 85%+ line coverage on `Honua.Core`, 80%+ on `Features/Query/`
@@ -2257,7 +2257,7 @@ Critical paths include:
 | Table discovery | List tables/views with geometry, PK detection, row-count estimate |
 | Layer publishing | Create layer from table |
 | Service management | Enable/disable layers |
-| Esri Import Wizard | Parse Esri service URL, import |
+| GeoServices Import Wizard | Parse GeoServices service URL, import |
 | **File Import** | GeoJSON, Shapefile, GeoPackage, CSV, KML readers |
 | **CRS Detection** | Auto-detect from .prj, GeoPackage metadata |
 | **Reprojection** | PostGIS ST_Transform, any EPSG code |
@@ -2269,7 +2269,7 @@ Critical paths include:
 - [ ] Can add PostGIS connection and discover tables
 - [ ] Table discovery excludes system tables, includes geometry type, SRID, PK detection, and row-count estimate
 - [ ] Can publish table as FeatureServer layer
-- [ ] Can import layer from Esri service URL
+- [ ] Can import layer from GeoServices service URL
 - [ ] Can import GeoJSON/Shapefile/GeoPackage/CSV/KML files
 - [ ] CRS auto-detected or manually specified
 - [ ] Can enable/disable services
@@ -2367,7 +2367,7 @@ Critical paths include:
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
 | **Scope creep** | High | High | Strict MVP boundary, defer to backlog |
-| **Esri compatibility edge cases** | Medium | Medium | Test against real Esri services, document gaps |
+| **GeoServices compatibility edge cases** | Medium | Medium | Test against real GeoServices services, document gaps |
 | **Solo dev burnout** | Medium | High | Sustainable pace, quality over speed |
 | **PostGIS complexity** | Low | Medium | Leverage existing Honua code as reference |
 | **Blazor WASM learning curve** | Medium | Low | Server-rendered fallback if needed |
@@ -2444,9 +2444,9 @@ The following components from the existing Honua.Server can be used as reference
 |-----------|----------|----------------------|
 | Query parsing | `src/domain/geoservices/featureserver/` | FeatureServer query syntax |
 | Geometry handling | `src/platform/core/Geometry/` | PostGIS geometry operations |
-| Esri JSON serialization | `src/domain/geoservices/` | Output format |
+| GeoServices JSON serialization | `src/domain/geoservices/` | Output format |
 | OGC API Features | `src/apps/host/OgcApi/` | Endpoint structure, CQL |
-| Import wizard | `src/apps/host/Admin/` | Esri service parsing |
+| Import wizard | `src/apps/host/Admin/` | GeoServices service parsing |
 | **Shared Filter AST** | `src/platform/core/Query/Filter/` | Protocol-agnostic filter parsing |
 | CQL Filter Parser | `src/platform/core/Query/Filter/CqlFilterParser.cs` | CQL2 text/JSON parsing |
 | OData Filter Parser | `src/platform/core/Query/Filter/ODataFilterParser.cs` | OData $filter parsing |
@@ -2454,7 +2454,7 @@ The following components from the existing Honua.Server can be used as reference
 | Spatial Filter Translators | `src/platform/core/Data/Postgres/PostgresSpatialFilterTranslator.cs` | PostGIS spatial operations |
 
 **Architecture Note:** The existing codebase has a unified filter infrastructure where:
-- Each protocol parser (CQL, OData, Esri WHERE) produces a common filter AST
+- Each protocol parser (CQL, OData, GeoServices WHERE) produces a common filter AST
 - `SqlFilterTranslator` converts the AST to SQL WHERE clauses
 - Database-specific translators handle spatial operations
 
