@@ -166,6 +166,17 @@ public readonly record struct OrderByClause
     public bool Ascending { get; init; } = true;
 
     /// <summary>
+    /// Initializes a new instance of the OrderByClause struct
+    /// </summary>
+    /// <param name="field">Field name to sort by</param>
+    /// <param name="ascending">Sort direction (true = ascending, false = descending)</param>
+    public OrderByClause(string field, bool ascending = true)
+    {
+        Field = field;
+        Ascending = ascending;
+    }
+
+    /// <summary>
     /// Creates an ascending order by clause
     /// </summary>
     /// <param name="field">Field to sort by</param>

@@ -11,7 +11,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OData.Models;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
@@ -566,19 +565,21 @@ public static class ODataEndpoints
                 return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
             }
 
+            // Feature is guaranteed to be non-null after the null check
+            var featureValue = feature.Value;
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var response = new ODataFeatureResponse
             {
                 Context = $"{baseUrl}/odata/$metadata#Features/$entity",
-                ObjectId = feature.Id,
+                ObjectId = featureValue.Id,
                 LayerId = layerId,
-                Geometry = feature.Geometry != null ? Convert.ToBase64String(feature.Geometry) : null,
-                Attributes = SerializeAttributes(feature.Attributes)
+                Geometry = featureValue.Geometry != null ? Convert.ToBase64String(featureValue.Geometry) : null,
+                Attributes = SerializeAttributes(featureValue.Attributes)
             };
 
             // Generate ETag from feature ID
-            var etag = $"W/\"{feature.Id}\"";
-            SetODataHeaders(context, feature.Id.ToString());
+            var etag = $"W/\"{featureValue.Id}\"";
+            SetODataHeaders(context, featureValue.Id.ToString());
             return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType);
         }
         catch (Exception)
@@ -678,8 +679,11 @@ public static class ODataEndpoints
                 return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
             }
 
+            // Feature is guaranteed to be non-null after the null check
+            var existingFeatureValue = existingFeature.Value;
+
             // Parse geometry from Base64 WKB if provided, otherwise keep existing
-            byte[]? geometry = existingFeature.Geometry;
+            byte[]? geometry = existingFeatureValue.Geometry;
             if (!string.IsNullOrWhiteSpace(request.Geometry))
             {
                 try
@@ -693,7 +697,7 @@ public static class ODataEndpoints
             }
 
             // Merge attributes - new values override existing
-            var attributes = existingFeature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            var attributes = existingFeatureValue.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             if (request.Attributes != null)
             {
                 foreach (var kvp in request.Attributes)
