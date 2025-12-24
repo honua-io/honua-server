@@ -483,14 +483,15 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private ParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query)
     {
-        var isKnnQuery = query.SpatialFilter.HasValue &&
-                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
 
         var sql = new StringBuilder();
         var paramIndex = 2;
         var parameters = new List<object>();
 
-        if (isKnnQuery && query.SpatialFilter.Value.ReturnDistance)
+        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
             // KNN query with distance calculation
             sql.Append(CultureInfo.InvariantCulture,
@@ -512,7 +513,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             sql.Append(CultureInfo.InvariantCulture, $" ORDER BY geometry <-> ST_GeomFromWKB(${paramIndex++})");
 
             // For KNN, use NearestCount as LIMIT if specified, otherwise use regular Limit
-            var limit = query.SpatialFilter.Value.NearestCount ?? query.Limit;
+            var limit = spatialFilter!.Value.NearestCount ?? query.Limit;
             if (limit.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
