@@ -490,6 +490,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
+        AppendOrderByClause(sql, query);
 
         if (query.Limit.HasValue)
         {
@@ -573,6 +574,7 @@ WHERE layer_id = $1");
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
+        AppendOrderByClause(sql, query);
 
         if (query.Limit.HasValue)
         {
@@ -955,6 +957,69 @@ WHERE layer_id = $1");
                 sql.Append(CultureInfo.InvariantCulture, $" AND {spatialPredicate}");
             }
         }
+    }
+
+    private static void AppendOrderByClause(StringBuilder sql, FeatureQuery query)
+    {
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var orderClauses = new List<string>();
+        foreach (var orderBy in query.OrderBy.Value)
+        {
+            var fieldSql = MapOrderByField(orderBy.Field);
+            var direction = orderBy.Ascending ? "ASC" : "DESC";
+            orderClauses.Add($"{fieldSql} {direction}");
+        }
+
+        if (orderClauses.Count > 0)
+        {
+            sql.Append(" ORDER BY ");
+            sql.Append(string.Join(", ", orderClauses));
+        }
+    }
+
+    /// <summary>
+    /// Maps field names to SQL column expressions for ORDER BY clause.
+    /// Core fields (objectid) are mapped directly, others are treated as JSONB attributes.
+    /// </summary>
+    private static string MapOrderByField(string fieldName)
+    {
+        // Validate field name to prevent SQL injection
+        if (!IsValidFieldName(fieldName))
+        {
+            throw new ArgumentException($"Invalid field name for ordering: {fieldName}");
+        }
+
+        var fieldLower = fieldName.ToLowerInvariant();
+
+        // Core fields that exist as columns
+        if (fieldLower == "objectid")
+        {
+            return "objectid";
+        }
+
+        if (fieldLower == "layerid" || fieldLower == "layer_id")
+        {
+            return "layer_id";
+        }
+
+        // For attribute fields, use JSONB extraction
+        // Use ->> for text extraction which allows proper sorting
+        return $"attributes->>'{fieldName}'";
+    }
+
+    private static bool IsValidFieldName(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return false;
+        }
+
+        // Allow only alphanumeric characters and underscores, must start with letter or underscore
+        return Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant);
     }
 
     private void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId, List<object> whereParameters)

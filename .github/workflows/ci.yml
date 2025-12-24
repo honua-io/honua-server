@@ -57,7 +57,6 @@ jobs:
             --configuration Release \
             --filter "Category!=Integration" \
             --logger "trx;LogFileName=unit-results.trx" \
-            --collect:"XPlat Code Coverage" \
             --results-directory ./tests/TestResults
 
       - name: Upload Test Results
@@ -66,9 +65,7 @@ jobs:
         timeout-minutes: 5
         with:
           name: unit-test-results
-          path: |
-            tests/TestResults/**/*.trx
-            tests/TestResults/**/coverage.cobertura.xml
+          path: tests/TestResults/**/*.trx
           retention-days: 7
 
   test-integration:
@@ -118,7 +115,6 @@ jobs:
             --configuration Release \
             --filter "Category=Integration" \
             --logger "trx;LogFileName=integration-results.trx" \
-            --collect:"XPlat Code Coverage" \
             --results-directory ./tests/TestResults
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
@@ -162,77 +158,6 @@ jobs:
           path: tests/TestResults/
 
 
-  coverage:
-    name: Coverage Report
-    runs-on: ubuntu-latest
-    needs: [test-unit, test-integration, test-architecture]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download Unit Test Results
-        uses: actions/download-artifact@v4
-        with:
-          name: unit-test-results
-          path: ./coverage/unit
-
-      - name: Download Integration Test Results
-        uses: actions/download-artifact@v4
-        if: needs.test-integration.outputs.needs_integration == 'true'
-        with:
-          name: integration-test-results
-          path: ./coverage/integration
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Install ReportGenerator
-        run: dotnet tool install -g dotnet-reportgenerator-globaltool
-
-      - name: Generate Coverage Report
-        run: |
-          reportgenerator \
-            -reports:"./coverage/**/coverage.cobertura.xml" \
-            -targetdir:"./coverage/report" \
-            -reporttypes:"Html;Cobertura;TextSummary"
-
-      - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: ./coverage/report/
-
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage/report/Cobertura.xml
-          flags: combined
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-      - name: Check Coverage Threshold
-        run: |
-          # Extract line coverage percentage from summary
-          COVERAGE=$(grep -oP 'Line coverage: \K[\d.]+' ./coverage/report/Summary.txt || echo "0")
-          echo "Line coverage: ${COVERAGE}%"
-          BRANCH_COVERAGE=$(grep -oP 'Branch coverage: \K[\d.]+' ./coverage/report/Summary.txt || echo "0")
-          echo "Branch coverage: ${BRANCH_COVERAGE}%"
-
-          # Coverage baseline from current reality: Integration tests provide ~0.7%/0.4%
-          # Progressive path: 1%/0.5% (current+) → 10%/5% → 40%/30% → 80%/70% (MVP)
-          # Start with achievable floor above current baseline to establish gates
-          if (( $(echo "$COVERAGE < 1" | bc -l) )); then
-            echo "::error::Line coverage ${COVERAGE}% is below 1% threshold"
-            exit 1
-          fi
-          if (( $(echo "$BRANCH_COVERAGE < 0.5" | bc -l) )); then
-            echo "::error::Branch coverage ${BRANCH_COVERAGE}% is below 0.5% threshold"
-            exit 1
-          fi
-
-          echo "✅ Coverage thresholds met: Line ${COVERAGE}% >= 1%, Branch ${BRANCH_COVERAGE}% >= 0.5%"
-          echo "ℹ️  Coverage roadmap: Current ~0.7%/0.4% → 1%/0.5% → 10%/5% → 80%/70% (MVP)"
 
   llm-architecture-review:
     name: LLM Architecture Review

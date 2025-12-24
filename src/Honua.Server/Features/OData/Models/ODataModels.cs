@@ -130,3 +130,57 @@ public sealed class ErrorDetail
     [JsonPropertyName("target")]
     public string? Target { get; init; }
 }
+
+/// <summary>
+/// OData feature request for create/update operations
+/// </summary>
+public sealed class ODataFeatureRequest
+{
+    /// <summary>
+    /// Feature geometry in Base64-encoded WKB format
+    /// </summary>
+    [JsonPropertyName("Geometry")]
+    public string? Geometry { get; init; }
+
+    /// <summary>
+    /// Feature attributes as key-value pairs
+    /// </summary>
+    [JsonPropertyName("Attributes")]
+    public Dictionary<string, object?>? Attributes { get; init; }
+}
+
+/// <summary>
+/// OData single feature response
+/// </summary>
+public sealed class ODataFeatureResponse
+{
+    /// <summary>
+    /// OData context URL
+    /// </summary>
+    [JsonPropertyName("@odata.context")]
+    public required string Context { get; init; }
+
+    /// <summary>
+    /// Feature Object ID
+    /// </summary>
+    [JsonPropertyName("ObjectId")]
+    public long ObjectId { get; init; }
+
+    /// <summary>
+    /// Layer ID
+    /// </summary>
+    [JsonPropertyName("LayerId")]
+    public int LayerId { get; init; }
+
+    /// <summary>
+    /// Feature geometry in Base64-encoded WKB format
+    /// </summary>
+    [JsonPropertyName("Geometry")]
+    public string? Geometry { get; init; }
+
+    /// <summary>
+    /// Feature attributes as JSON string
+    /// </summary>
+    [JsonPropertyName("Attributes")]
+    public string? Attributes { get; init; }
+}
