@@ -47,7 +47,7 @@ public interface IFileImportService
 public interface ICrsDetectionService
 {
     /// <summary>
-    /// Detect CRS from a .prj file content (Esri projection file format)
+    /// Detect CRS from a .prj file content (shapefile projection file format)
     /// </summary>
     /// <param name="prjContent">Content of a .prj file</param>
     /// <returns>Detected SRID or null if not recognized</returns>

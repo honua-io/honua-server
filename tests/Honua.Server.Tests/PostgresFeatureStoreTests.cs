@@ -335,7 +335,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
             creates: ImmutableArray.Create(feature1, feature2),
             rollbackOnFailure: true);
 
-        // Test with rollbackOnFailure: false (default Esri behavior)
+        // Test with rollbackOnFailure: false (default GeoServices behavior)
         var editBatchWithoutRollback = FeatureEditBatch.Create(
             creates: ImmutableArray.Create(feature1, feature2),
             rollbackOnFailure: false);

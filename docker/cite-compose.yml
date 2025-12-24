@@ -17,7 +17,7 @@ services:
     networks:
       - cite-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
