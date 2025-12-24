@@ -21,6 +21,8 @@ namespace Honua.Server.Features.OData.Models;
 [JsonSerializable(typeof(ErrorDetails))]
 [JsonSerializable(typeof(ErrorDetail))]
 [JsonSerializable(typeof(ErrorDetail[]))]
+[JsonSerializable(typeof(ODataFeatureRequest))]
+[JsonSerializable(typeof(ODataFeatureResponse))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
