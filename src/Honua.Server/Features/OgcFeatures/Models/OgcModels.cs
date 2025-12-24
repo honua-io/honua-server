@@ -437,26 +437,3 @@ public static class MediaTypes
     public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
 }
 
-/// <summary>
-/// JSON source generation context for OGC API Features models (AOT compatibility)
-/// </summary>
-[JsonSerializable(typeof(LandingPage))]
-[JsonSerializable(typeof(ConformanceDeclaration))]
-[JsonSerializable(typeof(Collections))]
-[JsonSerializable(typeof(CollectionInfo))]
-[JsonSerializable(typeof(Link))]
-[JsonSerializable(typeof(Extent))]
-[JsonSerializable(typeof(SpatialExtent))]
-[JsonSerializable(typeof(TemporalExtent))]
-[JsonSerializable(typeof(ImmutableArray<Link>))]
-[JsonSerializable(typeof(ImmutableArray<string>))]
-[JsonSerializable(typeof(ImmutableArray<CollectionInfo>))]
-[JsonSerializable(typeof(ImmutableArray<double>))]
-[JsonSerializable(typeof(ImmutableArray<ImmutableArray<double>>))]
-[JsonSerializable(typeof(ImmutableArray<ImmutableArray<string?>>))]
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-public sealed partial class OgcJsonContext : JsonSerializerContext
-{
-}

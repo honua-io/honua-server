@@ -21,6 +21,7 @@ namespace Honua.Server.Features.OgcFeatures;
 [JsonSerializable(typeof(ImmutableArray<Link>))]
 [JsonSerializable(typeof(ImmutableArray<CollectionInfo>))]
 [JsonSerializable(typeof(ImmutableArray<string>))]
+[JsonSerializable(typeof(ImmutableArray<double>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<double>>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<string?>>))]
 [JsonSerializable(typeof(FeatureCollection))]
