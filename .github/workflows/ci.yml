@@ -63,9 +63,13 @@ jobs:
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         if: always()
+        timeout-minutes: 5
         with:
           name: unit-test-results
-          path: tests/TestResults/
+          path: |
+            tests/TestResults/**/*.trx
+            tests/TestResults/**/coverage.cobertura.xml
+          retention-days: 7
 
   test-integration:
     name: Integration Tests (Testcontainers + PostGIS)
@@ -201,6 +205,7 @@ jobs:
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
+        timeout-minutes: 3
         with:
           files: ./coverage/report/Cobertura.xml
           flags: combined
