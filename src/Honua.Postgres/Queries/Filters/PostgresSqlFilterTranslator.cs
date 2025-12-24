@@ -9,7 +9,7 @@ namespace Honua.Postgres.Queries.Filters;
 /// <summary>
 /// Translates filter expressions to parameterized PostgreSQL WHERE clauses
 /// </summary>
-internal sealed class PostgresSqlFilterTranslator
+internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 {
     private int _paramIndex;
     private readonly List<object?> _parameters = [];

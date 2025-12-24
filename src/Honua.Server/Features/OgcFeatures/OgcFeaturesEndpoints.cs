@@ -1237,13 +1237,13 @@ public static class OgcFeaturesEndpoints
             // For now, try to parse the string as an integer
             if (!int.TryParse(collectionId, out var layerId))
             {
-                return TypedResults.NotFound();
+                return Results.NotFound();
             }
 
             var layer = await layerCatalog.GetLayerAsync(layerId);
             if (layer == null)
             {
-                return TypedResults.NotFound();
+                return Results.NotFound();
             }
 
             var collection = CreateCollection(layer, baseUrl);
@@ -2292,7 +2292,7 @@ public static class OgcFeaturesEndpoints
             throw new ArgumentException("Geometry type is required");
         }
 
-        var typeJson = JsonSerializer.Serialize(geometry.Type);
+        var typeJson = $"\"{geometry.Type}\"";
         string geoJson;
 
         if (string.Equals(geometry.Type, "GeometryCollection", StringComparison.OrdinalIgnoreCase))

@@ -481,7 +481,19 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
         var ids = features
-            .Select(feature => feature.GetProperty("id").GetInt64())
+            .Select(feature =>
+            {
+                var idProperty = feature.GetProperty("id");
+                // Handle both string and number cases for id field
+                if (idProperty.ValueKind == JsonValueKind.String)
+                {
+                    return long.Parse(idProperty.GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    return idProperty.GetInt64();
+                }
+            })
             .OrderBy(id => id)
             .ToArray();
 

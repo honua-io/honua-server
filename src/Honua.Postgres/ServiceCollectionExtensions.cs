@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
@@ -15,6 +16,7 @@ using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
 using Honua.Postgres.Features.Infrastructure;
+using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -65,6 +67,9 @@ internal static class ServiceCollectionExtensions
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
+
+        // Register SQL filter translator
+        services.AddScoped<ISqlFilterTranslator, PostgresSqlFilterTranslator>();
 
         // Register database connection provider with resilience policies
         services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();

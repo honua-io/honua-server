@@ -26,14 +26,20 @@ using Serilog.Enrichers.Span;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add Aspire service defaults (OTel, health, resilience)
-builder.AddServiceDefaults();
+// Skip Aspire configuration during testing to avoid connection string conflicts
+var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 
-// Add Npgsql with connection from Aspire
-builder.AddNpgsqlDataSource("honua");
+if (!isTestEnvironment)
+{
+    // Add Aspire service defaults (OTel, health, resilience)
+    builder.AddServiceDefaults();
 
-// Add Redis if configured
-builder.AddRedisDistributedCache("redis");
+    // Add Npgsql with connection from Aspire
+    builder.AddNpgsqlDataSource("honua");
+
+    // Add Redis if configured
+    builder.AddRedisDistributedCache("redis");
+}
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -70,7 +76,11 @@ builder.Host.UseSerilog((context, services, config) =>
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure
 // Rest of Server code uses only Core abstractions (IFeatureStore, IDatabaseHealthChecker)
-RegisterInfrastructureServices(builder.Services, builder.Configuration);
+// Skip infrastructure registration in test environment - WebAppFixture handles it
+if (!isTestEnvironment)
+{
+    RegisterInfrastructureServices(builder.Services, builder.Configuration);
+}
 
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);
@@ -91,6 +101,7 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFo
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeatureQueryValidator,
     Honua.Server.Features.FeatureServer.Services.FeatureQueryValidator>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.FeatureServerServices>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 
 // OData services use existing FeatureServer services
@@ -189,8 +200,11 @@ app.MapODataEndpoints();
 // Configure file import endpoints
 app.MapImportEndpoints();
 
-// Map health endpoints for Aspire dashboard
-app.MapDefaultEndpoints();
+// Map health endpoints for Aspire dashboard (only in non-test environments)
+if (!isTestEnvironment)
+{
+    app.MapDefaultEndpoints();
+}
 
 app.Run();
 
@@ -442,4 +456,7 @@ static void ConfigureTileOptions(IServiceCollection services, IConfiguration con
 }
 
 // Make Program accessible to WebApplicationFactory
+/// <summary>
+/// Application entry point for test hosting.
+/// </summary>
 public partial class Program { }

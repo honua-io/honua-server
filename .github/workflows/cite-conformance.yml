@@ -1,10 +1,6 @@
 name: OGC CITE Conformance Tests
 
 on:
-  push:
-    branches: [ trunk ]
-  pull_request:
-    branches: [ trunk ]
   schedule:
     # Run weekly to catch conformance regressions
     - cron: '0 6 * * 1'
