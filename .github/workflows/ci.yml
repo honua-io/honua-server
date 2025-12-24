@@ -70,7 +70,7 @@ jobs:
   test-integration:
     name: Integration Tests (Testcontainers + PostGIS)
     runs-on: ubuntu-latest
-    needs: [build, test-unit, test-architecture, security-scan]  # Run after cheap tests
+    needs: [build, test-unit, test-architecture, security-scan, aot-build]  # Run after all other tests except LLM
     outputs:
       needs_integration: ${{ steps.changes.outputs.integration }}
     services:
