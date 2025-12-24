@@ -8,7 +8,6 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -71,7 +70,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                     // Remove and re-register all PostgreSQL services with test connection string
                     services.RemoveAll<NpgsqlDataSource>();
                     services.RemoveAll<IFeatureStore>();
-                    services.RemoveAll<ISqlFilterTranslator>();
                     services.RemoveAll<IAttachmentStore>();
                     services.RemoveAll<ILayerCatalog>();
                     services.RemoveAll<ITableDiscoveryService>();
@@ -89,7 +87,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                     // Register all PostgreSQL services manually with test implementations
                     services.AddScoped<IFeatureStore, Honua.Postgres.Features.FeatureStore.PostgresFeatureStore>();
-                    services.AddScoped<ISqlFilterTranslator>(_ => new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
+                    services.AddScoped(_ => new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
                         useJsonAttributes: true,
                         attributesColumn: "attributes",
                         geometryColumn: "geometry",
