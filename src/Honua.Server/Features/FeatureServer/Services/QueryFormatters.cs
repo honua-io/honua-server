@@ -158,9 +158,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         string[]? outFields)
     {
         if (outFields == null || outFields.Length == 0)
-            return attributes is Dictionary<string, object?> dict
-                ? new Dictionary<string, object?>(dict)
-                : attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            return attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
         var filtered = new Dictionary<string, object?>();
 
