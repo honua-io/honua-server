@@ -2891,16 +2891,6 @@ internal static partial class OgcFeaturesEndpoints
         public static partial void DeleteFailed(ILogger logger, string collectionId, Exception exception);
     }
 
-    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            return timeoutToken;
-        }
-
-        return context.RequestAborted;
-    }
-
     private static string BuildHtmlDocument(string title, string json)
     {
         var encodedTitle = WebUtility.HtmlEncode(title);
