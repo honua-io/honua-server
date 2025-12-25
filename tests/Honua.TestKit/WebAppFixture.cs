@@ -202,39 +202,6 @@ public sealed class WebAppFixture : IAsyncLifetime
         return _currentSchema;
     }
 
-    /// <summary>
-    /// Registers PostgreSQL services via reflection to avoid direct dependency on Postgres types.
-    /// </summary>
-    private static void RegisterPostgreSqlServicesViaReflection(IServiceCollection services, IConfiguration configuration)
-    {
-        // Use reflection to call Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices
-        // This maintains architectural separation while enabling required infrastructure services
-        var postgresAssembly = System.Reflection.Assembly.LoadFrom("Honua.Postgres.dll");
-        var serviceCollectionExtensionsType = postgresAssembly.GetType("Honua.Postgres.ServiceCollectionExtensions");
-        var addPostgreSqlServicesMethod = serviceCollectionExtensionsType?.GetMethod("AddPostgreSqlServices",
-            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
-
-        addPostgreSqlServicesMethod?.Invoke(null, new object[] { services, configuration });
-    }
-
-    /// <summary>
-    /// Registers CITE layer catalog via reflection to avoid direct dependency on Postgres types.
-    /// </summary>
-    private static void RegisterCiteLayerCatalogViaReflection(IServiceCollection services)
-    {
-        // Use reflection to register PostgresLayerCatalogForCite without direct type dependency
-        var postgresAssembly = System.Reflection.Assembly.LoadFrom("Honua.Postgres.dll");
-        var citeLayerCatalogType = postgresAssembly.GetType("Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite");
-
-        if (citeLayerCatalogType != null)
-        {
-            // Find the ILayerCatalog interface from Core
-            var layerCatalogInterface = typeof(ILayerCatalog);
-
-            // Register the concrete type as implementing the interface
-            services.AddScoped(layerCatalogInterface, citeLayerCatalogType);
-        }
-    }
 
     /// <summary>
     /// Reset database state in the public schema (legacy method).
