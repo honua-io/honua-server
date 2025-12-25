@@ -67,8 +67,7 @@ internal static class GeoServicesGeometryConverter
     /// </summary>
     public static byte[] ConvertGeoServicesGeometryToWkb(GeoServicesGeometry geometry)
     {
-        if (geometry == null)
-            throw new ArgumentNullException(nameof(geometry));
+        ArgumentNullException.ThrowIfNull(geometry);
 
         return ConvertPointToWkb(geometry.X, geometry.Y);
     }

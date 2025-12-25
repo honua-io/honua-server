@@ -153,7 +153,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// Filters attributes based on outFields parameter
     /// </summary>
     private static Dictionary<string, object?> FilterAttributes(
-        IReadOnlyDictionary<string, object?> attributes,
+        ImmutableDictionary<string, object?> attributes,
         string[]? outFields)
     {
         if (outFields == null || outFields.Length == 0)

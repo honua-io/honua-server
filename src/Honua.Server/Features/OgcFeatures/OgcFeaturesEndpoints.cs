@@ -1407,9 +1407,6 @@ internal static partial class OgcFeaturesEndpoints
             case MultiPolygon multiPolygon:
                 WriteMultiPolygonCoordinates(writer, multiPolygon);
                 break;
-            case LinearRing linearRing:
-                WriteLineStringCoordinates(writer, linearRing);
-                break;
             default:
                 throw new ArgumentException($"Unsupported geometry type: {geometry.GeometryType}");
         }
