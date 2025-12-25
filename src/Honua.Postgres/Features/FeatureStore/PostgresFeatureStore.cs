@@ -1019,6 +1019,26 @@ WHERE layer_id = $1");
                 sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
+            case SpatialRelationship.Crosses:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Crosses(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.Touches:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Touches(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.Overlaps:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Overlaps(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.Disjoint:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Disjoint(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.Equals:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Equals(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
             case SpatialRelationship.WithinDistance:
                 // Use ST_DWithin with geography type for accurate geodesic distance calculations
                 // Convert distance to meters based on the unit

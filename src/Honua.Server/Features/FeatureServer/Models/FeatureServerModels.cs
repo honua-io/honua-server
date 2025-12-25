@@ -615,7 +615,8 @@ public sealed class QueryParameters
 
     /// <summary>
     /// Spatial relationship for filter (esriSpatialRelIntersects, esriSpatialRelContains, esriSpatialRelWithin,
-    /// esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance)
+    /// esriSpatialRelCrosses, esriSpatialRelTouches, esriSpatialRelOverlaps, esriSpatialRelDisjoint,
+    /// esriSpatialRelEquals, esriSpatialRelWithinDistance, esriSpatialRelBeyondDistance)
     /// </summary>
     public string? SpatialRel { get; init; }
 

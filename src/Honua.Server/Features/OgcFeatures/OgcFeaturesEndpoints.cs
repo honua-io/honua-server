@@ -14,6 +14,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -84,6 +85,17 @@ internal static partial class OgcFeaturesEndpoints
             .WithTags("OGC API Features")
             .CacheOutput("OgcCollection")
             .Produces<CollectionInfo>(200, MediaTypes.Json)
+            .Produces<string>(200, MediaTypes.Html)
+            .Produces(404);
+
+        endpoints.MapGet("/ogc/features/collections/{collectionId}/queryables", HandleGetQueryables)
+            .WithDisplayName("OGC API Features Queryables")
+            .WithName("GetQueryables")
+            .WithSummary("Get queryable properties for a collection")
+            .WithDescription("Get the JSON Schema describing the queryable properties for filtering features in this collection")
+            .WithTags("OGC API Features")
+            .CacheOutput("OgcQueryables")
+            .Produces<QueryablesSchema>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
@@ -160,11 +172,14 @@ internal static partial class OgcFeaturesEndpoints
         {
             "f",
             "bbox",
+            "bbox-crs",
+            "crs",
             "datetime",
             "limit",
             "offset",
             "filter",
-            "filter-lang"
+            "filter-lang",
+            "filter-crs"
         };
 
         public static readonly ISet<string> Item = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -367,6 +382,9 @@ internal static partial class OgcFeaturesEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
+
+                // OGC API Features CRS
+                "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
                 // OGC API Common
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
@@ -729,6 +747,38 @@ internal static partial class OgcFeaturesEndpoints
                                     ["type"] = "string",
                                     ["enum"] = new[] { "cql2-text" }
                                 }
+                            },
+                            new Dictionary<string, object?>
+                            {
+                                ["name"] = "crs",
+                                ["in"] = "query",
+                                ["required"] = false,
+                                ["description"] = "Output coordinate reference system",
+                                ["schema"] = new Dictionary<string, object?>
+                                {
+                                    ["type"] = "string",
+                                    ["enum"] = new[]
+                                    {
+                                        "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                                        "http://www.opengis.net/def/crs/EPSG/0/4326"
+                                    }
+                                }
+                            },
+                            new Dictionary<string, object?>
+                            {
+                                ["name"] = "bbox-crs",
+                                ["in"] = "query",
+                                ["required"] = false,
+                                ["description"] = "Coordinate reference system for bbox parameter",
+                                ["schema"] = new Dictionary<string, object?>
+                                {
+                                    ["type"] = "string",
+                                    ["enum"] = new[]
+                                    {
+                                        "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                                        "http://www.opengis.net/def/crs/EPSG/0/4326"
+                                    }
+                                }
                             }
                         },
                         ["responses"] = new Dictionary<string, object?>
@@ -1040,6 +1090,7 @@ internal static partial class OgcFeaturesEndpoints
                             ["description"] = StringSchema(),
                             ["itemType"] = StringSchema(),
                             ["crs"] = ArraySchema(StringSchema()),
+                            ["storageCrs"] = StringSchema(),
                             ["extent"] = Ref("#/components/schemas/Extent"),
                             ["links"] = ArraySchema(Ref("#/components/schemas/Link"))
                         }
@@ -1284,12 +1335,79 @@ internal static partial class OgcFeaturesEndpoints
     }
 
     /// <summary>
+    /// Handles the OGC API Features queryables request
+    /// Returns JSON Schema describing filterable properties for the collection
+    /// </summary>
+    private static async Task<IResult> HandleGetQueryables(
+        string collectionId,
+        string? f,
+        HttpContext context,
+        ILayerCatalog layerCatalog,
+        ILogger<OgcFeaturesEndpointsLog> logger,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var validationError = ValidateQueryParameters(context.Request, AllowedQueryParameters.Metadata);
+            if (validationError is not null)
+            {
+                return validationError;
+            }
+
+            if (!TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+            {
+                return formatError!;
+            }
+
+            // Parse collection ID to layer ID
+            if (!int.TryParse(collectionId, out var layerId))
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Verify collection/layer exists
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
+            if (layer == null)
+            {
+                return TypedResults.NotFound();
+            }
+
+            // Build queryables schema from layer fields
+            var queryables = CreateQueryablesSchema(layer);
+
+            return FormatMetadataResponse(queryables, OgcJsonContext.Default.QueryablesSchema, outputFormat, "Queryables");
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
+        {
+            Log.InvalidCollectionId(logger, collectionId, ex);
+            return TypedResults.BadRequest("Invalid collection ID.");
+        }
+        catch (InvalidOperationException)
+        {
+            // Layer not found is a legitimate 404 case
+            return TypedResults.NotFound();
+        }
+        catch (Exception ex)
+        {
+            Log.CollectionQueryFailed(logger, collectionId, ex);
+            return TypedResults.Problem(
+                title: "Internal server error",
+                detail: "An error occurred while retrieving the queryables schema.",
+                statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// Handles the OGC API Features items request with optional CQL filtering
     /// </summary>
     private static async Task<IResult> HandleGetItems(
         string collectionId,
         string? filter,
+        [FromQuery(Name = "filter-crs")] string? filterCrs,
         string? bbox,
+        [FromQuery(Name = "bbox-crs")] string? bboxCrs,
+        string? crs,
         string? datetime,
         string? f,
         int? limit,
@@ -1375,6 +1493,53 @@ internal static partial class OgcFeaturesEndpoints
                 }
             }
 
+            // Validate CRS parameters
+            if (!string.IsNullOrWhiteSpace(crs))
+            {
+                var supportedCrs = new[]
+                {
+                    "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                    "http://www.opengis.net/def/crs/EPSG/0/4326"
+                };
+                if (!supportedCrs.Contains(crs, StringComparer.OrdinalIgnoreCase))
+                {
+                    return TypedResults.BadRequest($"Unsupported CRS '{crs}'. Supported CRS: {string.Join(", ", supportedCrs)}");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(bboxCrs))
+            {
+                var supportedCrs = new[]
+                {
+                    "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                    "http://www.opengis.net/def/crs/EPSG/0/4326"
+                };
+                if (!supportedCrs.Contains(bboxCrs, StringComparer.OrdinalIgnoreCase))
+                {
+                    return TypedResults.BadRequest($"Unsupported bbox-crs '{bboxCrs}'. Supported CRS: {string.Join(", ", supportedCrs)}");
+                }
+            }
+
+            // Validate filter-crs parameter (OGC API Features Part 3)
+            if (!string.IsNullOrWhiteSpace(filterCrs))
+            {
+                // filter-crs requires a filter parameter to be present
+                if (string.IsNullOrWhiteSpace(filter))
+                {
+                    return TypedResults.BadRequest("filter-crs parameter requires a filter parameter");
+                }
+
+                var supportedCrs = new[]
+                {
+                    "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                    "http://www.opengis.net/def/crs/EPSG/0/4326"
+                };
+                if (!supportedCrs.Contains(filterCrs, StringComparer.OrdinalIgnoreCase))
+                {
+                    return TypedResults.BadRequest($"Unsupported filter-crs '{filterCrs}'. Supported CRS: {string.Join(", ", supportedCrs)}");
+                }
+            }
+
             // Parse bbox parameter if provided (format: "minx,miny,maxx,maxy")
             SpatialFilter? spatialFilter = null;
             if (!string.IsNullOrWhiteSpace(bbox))
@@ -1437,7 +1602,7 @@ internal static partial class OgcFeaturesEndpoints
             var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter, context, collectionId, effectiveLimit, offset, outputFormat);
 
             // Return response in requested format
-            return FormatFeatureCollectionResponse(featureCollection, outputFormat);
+            return FormatFeatureCollectionResponse(featureCollection, outputFormat, crs);
         }
         catch (ArgumentException ex)
         {
@@ -1899,6 +2064,114 @@ internal static partial class OgcFeaturesEndpoints
 
 
     /// <summary>
+    /// Creates queryables schema from layer definition
+    /// Returns JSON Schema describing filterable properties for CQL2 queries
+    /// </summary>
+    private static QueryablesSchema CreateQueryablesSchema(Honua.Core.Features.Catalog.Domain.LayerDefinition layer)
+    {
+        var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();
+        var requiredFields = new List<string>();
+
+        // Add properties for all non-geometry fields
+        foreach (var field in layer.AttributeFields)
+        {
+            var jsonSchemaProperty = ConvertFieldToJsonSchemaProperty(field);
+            properties[field.Name] = jsonSchemaProperty;
+
+            // Add to required array if field is not nullable
+            if (!field.Nullable)
+            {
+                requiredFields.Add(field.Name);
+            }
+        }
+
+        // Add special geometry property if layer has geometry
+        if (layer.HasGeometry && layer.GeometryField != null)
+        {
+            // Geometry uses GeoJSON schema reference
+            var geometryProperty = new JsonSchemaProperty
+            {
+                Type = "object", // GeoJSON geometry is an object
+                Title = layer.GeometryField.DisplayName,
+                Description = layer.GeometryField.Description ?? "Geometry property for spatial filtering",
+                Ref = "https://geojson.org/schema/Geometry.json"
+            };
+
+            properties[layer.GeometryField.Name] = geometryProperty;
+
+            // Add geometry field to required if not nullable
+            if (!layer.GeometryField.Nullable)
+            {
+                requiredFields.Add(layer.GeometryField.Name);
+            }
+        }
+
+        return new QueryablesSchema
+        {
+            Title = $"Queryable properties for {layer.Name}",
+            Description = $"JSON Schema describing the queryable properties for collection '{layer.Name}'. " +
+                         "These properties can be used in CQL2 filter expressions.",
+            Properties = properties.ToImmutable(),
+            Required = requiredFields.Count > 0 ? requiredFields.ToImmutableArray() : null
+        };
+    }
+
+    /// <summary>
+    /// Converts a FieldDefinition to a JSON Schema property
+    /// </summary>
+    private static JsonSchemaProperty ConvertFieldToJsonSchemaProperty(Honua.Core.Features.Catalog.Domain.FieldDefinition field)
+    {
+        var (jsonType, format) = GetJsonSchemaTypeAndFormat(field.Type);
+
+        var property = new JsonSchemaProperty
+        {
+            Type = jsonType,
+            Title = field.DisplayName,
+            Description = field.Description,
+            Format = format,
+            Default = field.DefaultValue
+        };
+
+        // Add string-specific properties
+        if (field.Type == Honua.Core.Features.Catalog.Domain.FieldType.String && field.Length.HasValue)
+        {
+            property = property with { MaxLength = field.Length.Value };
+        }
+
+        // Handle boolean fields that may use 0/1 encoding for GeoServices compatibility
+        if (field.Type == Honua.Core.Features.Catalog.Domain.FieldType.Boolean)
+        {
+            property = property with { Enum = ImmutableArray.Create<object>(0, 1, false, true) };
+        }
+
+        return property;
+    }
+
+    /// <summary>
+    /// Maps FieldType to JSON Schema type and format
+    /// </summary>
+    private static (string type, string? format) GetJsonSchemaTypeAndFormat(Honua.Core.Features.Catalog.Domain.FieldType fieldType)
+    {
+        return fieldType switch
+        {
+            Honua.Core.Features.Catalog.Domain.FieldType.String => ("string", null),
+            Honua.Core.Features.Catalog.Domain.FieldType.Integer => ("integer", "int32"),
+            Honua.Core.Features.Catalog.Domain.FieldType.BigInteger => ("integer", "int64"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Double => ("number", "double"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Float => ("number", "float"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Boolean => ("boolean", null),
+            Honua.Core.Features.Catalog.Domain.FieldType.DateTime => ("string", "date-time"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Date => ("string", "date"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Time => ("string", "time"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Json => ("object", null), // JSONB as generic object
+            Honua.Core.Features.Catalog.Domain.FieldType.Binary => ("string", "byte"), // Base64 encoded
+            Honua.Core.Features.Catalog.Domain.FieldType.Uuid => ("string", "uuid"),
+            Honua.Core.Features.Catalog.Domain.FieldType.Geometry => ("object", null), // Handled specially with $ref
+            _ => ("string", null) // Fallback to string
+        };
+    }
+
+    /// <summary>
     /// Converts a layer definition to OGC API Features collection
     /// </summary>
     private static CollectionInfo CreateCollection(
@@ -1937,6 +2210,14 @@ internal static partial class OgcFeaturesEndpoints
                 rel: "parent",
                 type: MediaTypes.Json,
                 title: "Collections"
+            ),
+
+            // Queryables (OGC API Features Part 3)
+            Link.Create(
+                href: $"{baseUrl}/ogc/features/collections/{collectionId}/queryables",
+                rel: RelationTypes.Queryables,
+                type: MediaTypes.Json,
+                title: "Queryables"
             )
         );
 
@@ -1966,7 +2247,8 @@ internal static partial class OgcFeaturesEndpoints
             Crs = ImmutableArray.Create(
                 "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
                 "http://www.opengis.net/def/crs/EPSG/0/4326"
-            )
+            ),
+            StorageCrs = "http://www.opengis.net/def/crs/EPSG/0/4326"
         };
     }
 
@@ -2469,30 +2751,71 @@ internal static partial class OgcFeaturesEndpoints
         return Results.Json(payload, typeInfo, contentType: MediaTypes.Json);
     }
 
-    private static IResult FormatFeatureCollectionResponse(FeatureCollection featureCollection, string outputFormat)
+#pragma warning disable CA1859 // Use concrete types when possible for improved performance
+    private static IResult FormatFeatureCollectionResponse(FeatureCollection featureCollection, string outputFormat, string? crs = null)
     {
-        if (outputFormat == MediaTypes.Html)
-        {
-            var json = JsonSerializer.Serialize(featureCollection, OgcJsonContext.Default.FeatureCollection);
-            var html = BuildHtmlDocument("Feature collection", json);
-            return Results.Text(html, MediaTypes.Html);
-        }
+        // Default CRS to WGS84 longitude/latitude (CRS84) as per OGC spec
+        var responseCrs = crs ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
-        var contentType = outputFormat == MediaTypes.Json ? MediaTypes.Json : MediaTypes.GeoJson;
-        return Results.Json(featureCollection, OgcJsonContext.Default.FeatureCollection, contentType: contentType);
+        return new ContentCrsResult(responseCrs, () =>
+        {
+            if (outputFormat == MediaTypes.Html)
+            {
+                var json = JsonSerializer.Serialize(featureCollection, OgcJsonContext.Default.FeatureCollection);
+                var html = BuildHtmlDocument("Feature collection", json);
+                return Results.Text(html, MediaTypes.Html);
+            }
+
+            var contentType = outputFormat == MediaTypes.Json ? MediaTypes.Json : MediaTypes.GeoJson;
+            return Results.Json(featureCollection, OgcJsonContext.Default.FeatureCollection, contentType: contentType);
+        });
     }
 
-    private static IResult FormatFeatureResponse(GeoJsonFeature geoJsonFeature, string outputFormat)
+#pragma warning disable CA1859 // Use concrete types when possible for improved performance
+    private static IResult FormatFeatureResponse(GeoJsonFeature geoJsonFeature, string outputFormat, string? crs = null)
     {
-        if (outputFormat == MediaTypes.Html)
+        // Default CRS to WGS84 longitude/latitude (CRS84) as per OGC spec
+        var responseCrs = crs ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
+
+        return new ContentCrsResult(responseCrs, () =>
         {
-            var json = JsonSerializer.Serialize(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature);
-            var html = BuildHtmlDocument("Feature", json);
-            return Results.Text(html, MediaTypes.Html);
+            if (outputFormat == MediaTypes.Html)
+            {
+                var json = JsonSerializer.Serialize(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature);
+                var html = BuildHtmlDocument("Feature", json);
+                return Results.Text(html, MediaTypes.Html);
+            }
+
+            var contentType = outputFormat == MediaTypes.Json ? MediaTypes.Json : MediaTypes.GeoJson;
+            return Results.Json(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature, contentType: contentType);
+        });
+    }
+
+
+    /// <summary>
+    /// Custom IResult implementation that adds Content-Crs header to geometry responses
+    /// as required by OGC API Features Part 2
+    /// </summary>
+    private sealed class ContentCrsResult : IResult
+    {
+        private readonly string _crs;
+        private readonly Func<IResult> _resultFactory;
+
+        public ContentCrsResult(string crs, Func<IResult> resultFactory)
+        {
+            _crs = crs;
+            _resultFactory = resultFactory;
         }
 
-        var contentType = outputFormat == MediaTypes.Json ? MediaTypes.Json : MediaTypes.GeoJson;
-        return Results.Json(geoJsonFeature, OgcJsonContext.Default.GeoJsonFeature, contentType: contentType);
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            // Add Content-Crs header before executing the underlying result
+            httpContext.Response.Headers.Append("Content-Crs", $"<{_crs}>");
+
+            // Execute the underlying result
+            var result = _resultFactory();
+            await result.ExecuteAsync(httpContext);
+        }
     }
 
     private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)

@@ -867,6 +867,11 @@ internal sealed class FeatureServerHandler(
             "esrispatialrelcontains" => SpatialRelationship.Contains,
             "esrispatialrelwithin" => SpatialRelationship.Within,
             "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,
+            "esrispatialrelcrosses" => SpatialRelationship.Crosses,
+            "esrispatialreltouches" => SpatialRelationship.Touches,
+            "esrispatialreloverlaps" => SpatialRelationship.Overlaps,
+            "esrispatialreldisjoint" => SpatialRelationship.Disjoint,
+            "esrispatialrelequals" => SpatialRelationship.Equals,
             "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
             "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
             _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")

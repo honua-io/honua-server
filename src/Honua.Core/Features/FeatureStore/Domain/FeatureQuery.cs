@@ -278,6 +278,31 @@ public enum SpatialRelationship
     EnvelopeIntersects,
 
     /// <summary>
+    /// Features that cross the filter geometry (lines through polygons)
+    /// </summary>
+    Crosses,
+
+    /// <summary>
+    /// Features that touch but don't overlap the filter geometry (adjacent parcels)
+    /// </summary>
+    Touches,
+
+    /// <summary>
+    /// Features that partially overlap the filter geometry
+    /// </summary>
+    Overlaps,
+
+    /// <summary>
+    /// Features that don't touch the filter geometry at all
+    /// </summary>
+    Disjoint,
+
+    /// <summary>
+    /// Features that are geometrically identical to the filter geometry
+    /// </summary>
+    Equals,
+
+    /// <summary>
     /// Features within a specified distance of the filter geometry (ST_DWithin)
     /// </summary>
     WithinDistance,
