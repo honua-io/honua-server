@@ -16,7 +16,7 @@ namespace Honua.Server.Features.Infrastructure.Authentication;
 /// <remarks>
 /// Initializes a new instance of the ApiKeyAuthenticationHandler
 /// </remarks>
-public sealed class ApiKeyAuthenticationHandler(
+internal sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,

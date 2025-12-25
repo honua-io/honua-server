@@ -2,16 +2,19 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OData.Models;
 using Microsoft.AspNetCore.Mvc;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.OData;
 
@@ -19,8 +22,12 @@ namespace Honua.Server.Features.OData;
 /// OData v4 endpoints providing intermediate conformance level.
 /// Supports $filter, $select, $orderby, $top, $skip, $count, and CRUD operations.
 /// </summary>
-public static class ODataEndpoints
+internal static partial class ODataEndpoints
 {
+    internal sealed class ODataEndpointsLog
+    {
+    }
+
     /// <summary>
     /// OData protocol version
     /// </summary>
@@ -163,17 +170,20 @@ public static class ODataEndpoints
     private static async Task<IResult> HandleGetMetadata(
         HttpContext context,
         ILayerCatalog layerCatalog,
+        ILogger<ODataEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         SetODataHeaders(context);
         try
         {
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layers = await layerCatalog.ListLayersAsync(effectiveToken);
             var metadata = GenerateODataMetadata(layers.ToArray());
             return TypedResults.Content(metadata, "application/xml");
         }
-        catch
+        catch (Exception ex)
         {
+            Log.MetadataFallback(logger, ex);
             // Fall back to static metadata if layer retrieval fails
             var staticMetadata = GetStaticMetadata();
             return TypedResults.Content(staticMetadata, "application/xml");
@@ -209,7 +219,7 @@ public static class ODataEndpoints
         sb.AppendLine("        </Key>");
         sb.AppendLine("        <Property Name=\"ObjectId\" Type=\"Edm.Int64\" Nullable=\"false\"/>");
         sb.AppendLine("        <Property Name=\"LayerId\" Type=\"Edm.Int32\" Nullable=\"false\"/>");
-        sb.AppendLine("        <Property Name=\"Geometry\" Type=\"Edm.GeographyPoint\"/>");
+        sb.AppendLine("        <Property Name=\"Geometry\" Type=\"Edm.Binary\"/>");
         sb.AppendLine("        <Property Name=\"Attributes\" Type=\"Edm.String\"/>");
         sb.AppendLine("      </EntityType>");
 
@@ -327,7 +337,7 @@ public static class ODataEndpoints
             FieldType.DateTime => "Edm.DateTimeOffset",
             FieldType.Date => "Edm.Date",
             FieldType.Time => "Edm.TimeOfDay",
-            FieldType.Geometry => "Edm.GeographyPoint",
+            FieldType.Geometry => "Edm.Binary",
             FieldType.Json => "Edm.String",
             FieldType.Binary => "Edm.Binary",
             FieldType.Uuid => "Edm.Guid",
@@ -342,6 +352,7 @@ public static class ODataEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureQueryValidator queryValidator,
+        ILogger<ODataEndpointsLog> logger,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$top")] int? top = null,
@@ -374,7 +385,8 @@ public static class ODataEndpoints
 
             var validatedParams = validationResult.ValidatedParameters!;
 
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var layers = await layerCatalog.ListLayersAsync(effectiveToken);
             var layerEnumerable = layers.AsEnumerable();
 
             // Apply basic filtering if specified
@@ -422,10 +434,12 @@ public static class ODataEndpoints
         }
         catch (ArgumentException ex)
         {
-            return CreateODataError(context, "InvalidQuery", $"Invalid OData query: {ex.Message}");
+            Log.InvalidLayersQuery(logger, ex);
+            return CreateODataError(context, "InvalidQuery", "Invalid OData query.");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.LayersQueryFailed(logger, ex);
             return CreateODataError(context, "InternalServerError", "An error occurred processing the OData request", 500);
         }
     }
@@ -439,6 +453,7 @@ public static class ODataEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         IFeatureQueryValidator queryValidator,
+        ILogger<ODataEndpointsLog> logger,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$orderby")] string? orderby = null,
@@ -472,24 +487,44 @@ public static class ODataEndpoints
 
             var validatedParams = validationResult.ValidatedParameters!;
 
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
             // Verify layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Build feature query from OData parameters
+            SpatialFilter? spatialFilter = null;
+            var remainingFilter = filter;
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                if (TryExtractSpatialFilter(filter, out var parsedSpatialFilter, out var nonSpatialFilter, out var spatialError))
+                {
+                    spatialFilter = parsedSpatialFilter;
+                    remainingFilter = nonSpatialFilter;
+                }
+                else if (spatialError != null)
+                {
+                    return CreateODataError(context, "InvalidQuery", spatialError);
+                }
+            }
+
+            var (sqlFragment, whereClause) = ConvertODataFilterToSqlFragment(remainingFilter);
             var featureQuery = new FeatureQuery
             {
-                Where = ConvertODataFilterToSql(filter),
+                Where = whereClause,
+                SqlFilter = sqlFragment,
+                SpatialFilter = spatialFilter,
                 OrderBy = ParseODataOrderBy(orderby),
                 Limit = validatedParams.ResultRecordCount,
                 Offset = validatedParams.ResultOffset
             };
 
             // Execute query
-            var queryResult = await featureStore.QueryAsync(layerId, featureQuery, cancellationToken);
+            var queryResult = await featureStore.QueryAsync(layerId, featureQuery, effectiveToken);
 
             // Convert features to OData format
             var featuresData = queryResult.Items.Select(f => new Dictionary<string, object?>
@@ -530,10 +565,12 @@ public static class ODataEndpoints
         }
         catch (ArgumentException ex)
         {
-            return CreateODataError(context, "InvalidQuery", $"Invalid OData query: {ex.Message}");
+            Log.InvalidFeaturesQuery(logger, layerId, ex);
+            return CreateODataError(context, "InvalidQuery", "Invalid OData query.");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.FeaturesQueryFailed(logger, layerId, ex);
             return CreateODataError(context, "InternalServerError", "An error occurred processing the OData request", 500);
         }
     }
@@ -547,19 +584,22 @@ public static class ODataEndpoints
         long objectId,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        ILogger<ODataEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
             // Verify layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Get the feature
-            var feature = await featureStore.GetAsync(layerId, objectId, cancellationToken);
+            var feature = await featureStore.GetAsync(layerId, objectId, effectiveToken);
             if (feature == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
@@ -582,8 +622,9 @@ public static class ODataEndpoints
             SetODataHeaders(context, featureValue.Id.ToString());
             return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.GetFeatureFailed(logger, layerId, objectId, ex);
             return CreateODataError(context, "InternalServerError", "An error occurred processing the OData request", 500);
         }
     }
@@ -597,12 +638,15 @@ public static class ODataEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         [FromBody] ODataFeatureRequest request,
+        ILogger<ODataEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
             // Verify layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
@@ -627,7 +671,7 @@ public static class ODataEndpoints
 
             // Create the feature
             var newFeature = Feature.Create(0, geometry, attributes);
-            var createdFeature = await featureStore.CreateAsync(layerId, newFeature, cancellationToken);
+            var createdFeature = await featureStore.CreateAsync(layerId, newFeature, effectiveToken);
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var response = new ODataFeatureResponse
@@ -645,8 +689,9 @@ public static class ODataEndpoints
             context.Response.Headers["OData-EntityId"] = $"{baseUrl}/odata/Features({layerId},{createdFeature.Id})";
             return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType, statusCode: 201);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.CreateFeatureFailed(logger, layerId, ex);
             return CreateODataError(context, "InternalServerError", "An error occurred creating the feature", 500);
         }
     }
@@ -661,19 +706,22 @@ public static class ODataEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         [FromBody] ODataFeatureRequest request,
+        ILogger<ODataEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
             // Verify layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Get existing feature to merge with update
-            var existingFeature = await featureStore.GetAsync(layerId, objectId, cancellationToken);
+            var existingFeature = await featureStore.GetAsync(layerId, objectId, effectiveToken);
             if (existingFeature == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
@@ -708,7 +756,7 @@ public static class ODataEndpoints
 
             // Update the feature
             var updatedFeature = Feature.Create(objectId, geometry, attributes.ToImmutableDictionary());
-            var result = await featureStore.UpdateAsync(layerId, updatedFeature, cancellationToken);
+            var result = await featureStore.UpdateAsync(layerId, updatedFeature, effectiveToken);
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var response = new ODataFeatureResponse
@@ -723,12 +771,14 @@ public static class ODataEndpoints
             SetODataHeaders(context, result.Id.ToString());
             return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateODataError(context, "ResourceNotFound", ex.Message, 404);
+            Log.UpdateFeatureNotFound(logger, layerId, objectId, ex);
+            return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.UpdateFeatureFailed(logger, layerId, objectId, ex);
             return CreateODataError(context, "InternalServerError", "An error occurred updating the feature", 500);
         }
     }
@@ -742,19 +792,22 @@ public static class ODataEndpoints
         long objectId,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        ILogger<ODataEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
             // Verify layer exists
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
             }
 
             // Delete the feature
-            var deleted = await featureStore.DeleteAsync(layerId, objectId, cancellationToken);
+            var deleted = await featureStore.DeleteAsync(layerId, objectId, effectiveToken);
             if (!deleted)
             {
                 return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
@@ -763,8 +816,9 @@ public static class ODataEndpoints
             SetODataHeaders(context);
             return Results.NoContent();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.DeleteFeatureFailed(logger, layerId, objectId, ex);
             return CreateODataError(context, "InternalServerError", "An error occurred deleting the feature", 500);
         }
     }
@@ -789,6 +843,49 @@ public static class ODataEndpoints
         return Results.Json(error, ODataJsonContext.Default.ODataError,
             contentType: ODataContentType,
             statusCode: statusCode);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 3000, Level = LogLevel.Warning, Message = "Failed to generate dynamic OData metadata, using static metadata.")]
+        public static partial void MetadataFallback(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3001, Level = LogLevel.Warning, Message = "Invalid OData layers query.")]
+        public static partial void InvalidLayersQuery(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3002, Level = LogLevel.Error, Message = "OData layers query failed.")]
+        public static partial void LayersQueryFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3003, Level = LogLevel.Warning, Message = "Invalid OData features query for layer {LayerId}.")]
+        public static partial void InvalidFeaturesQuery(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 3004, Level = LogLevel.Error, Message = "OData features query failed for layer {LayerId}.")]
+        public static partial void FeaturesQueryFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 3005, Level = LogLevel.Error, Message = "OData get feature failed for layer {LayerId} and objectId {ObjectId}.")]
+        public static partial void GetFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
+
+        [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "OData create feature failed for layer {LayerId}.")]
+        public static partial void CreateFeatureFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 3007, Level = LogLevel.Warning, Message = "OData update feature not found for layer {LayerId} and objectId {ObjectId}.")]
+        public static partial void UpdateFeatureNotFound(ILogger logger, int layerId, long objectId, Exception exception);
+
+        [LoggerMessage(EventId = 3008, Level = LogLevel.Error, Message = "OData update feature failed for layer {LayerId} and objectId {ObjectId}.")]
+        public static partial void UpdateFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
+
+        [LoggerMessage(EventId = 3009, Level = LogLevel.Error, Message = "OData delete feature failed for layer {LayerId} and objectId {ObjectId}.")]
+        public static partial void DeleteFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
+    }
+
+    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    {
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            return timeoutToken;
+        }
+
+        return context.RequestAborted;
     }
 
     /// <summary>
@@ -826,18 +923,215 @@ public static class ODataEndpoints
         return $"{baseUrl}/odata/Features({layerId})?{string.Join("&", queryParams)}";
     }
 
+    private static bool TryExtractSpatialFilter(string filter, out SpatialFilter? spatialFilter, out string? nonSpatialFilter, out string? error)
+    {
+        spatialFilter = null;
+        nonSpatialFilter = filter;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return false;
+        }
+
+        var trimmed = filter.Trim();
+
+        if (TryParseODataSpatialFilter(trimmed, out var parsedSpatialFilter, out error))
+        {
+            spatialFilter = parsedSpatialFilter;
+            nonSpatialFilter = null;
+            return true;
+        }
+
+        var parts = System.Text.RegularExpressions.Regex.Split(trimmed, @"\s+and\s+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (parts.Length == 2)
+        {
+            if (TryParseODataSpatialFilter(parts[0].Trim(), out parsedSpatialFilter, out error))
+            {
+                spatialFilter = parsedSpatialFilter;
+                nonSpatialFilter = parts[1].Trim();
+                return true;
+            }
+
+            if (TryParseODataSpatialFilter(parts[1].Trim(), out parsedSpatialFilter, out error))
+            {
+                spatialFilter = parsedSpatialFilter;
+                nonSpatialFilter = parts[0].Trim();
+                return true;
+            }
+        }
+
+        if (trimmed.Contains("geo.", StringComparison.OrdinalIgnoreCase))
+        {
+            error ??= "Unsupported spatial filter format.";
+        }
+
+        return false;
+    }
+
+    private static bool TryParseODataSpatialFilter(string filter, out SpatialFilter spatialFilter, out string? error)
+    {
+        spatialFilter = default;
+        error = null;
+
+        var intersectsMatch = System.Text.RegularExpressions.Regex.Match(
+            filter,
+            @"^geo\.intersects\(\s*(?<field>\w+)\s*,\s*geography'(?<wkt>[^']+)'\s*\)\s*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (intersectsMatch.Success)
+        {
+            var field = intersectsMatch.Groups["field"].Value;
+            if (!field.Equals("geometry", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "Spatial filters are only supported on Geometry.";
+                return false;
+            }
+
+            if (!TryCreateWkbFromWkt(intersectsMatch.Groups["wkt"].Value, out var geometryWkb, out error))
+            {
+                return false;
+            }
+
+            spatialFilter = SpatialFilter.Create(geometryWkb, SpatialRelationship.Intersects);
+            return true;
+        }
+
+        var distanceMatch = System.Text.RegularExpressions.Regex.Match(
+            filter,
+            @"^geo\.distance\(\s*(?<field>\w+)\s*,\s*geography'(?<wkt>[^']+)'\s*\)\s*(?<op>lt|le|gt|ge|eq|ne)\s*(?<distance>-?\d+(?:\.\d+)?)\s*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (distanceMatch.Success)
+        {
+            var field = distanceMatch.Groups["field"].Value;
+            if (!field.Equals("geometry", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "Spatial filters are only supported on Geometry.";
+                return false;
+            }
+
+            if (!TryCreateWkbFromWkt(distanceMatch.Groups["wkt"].Value, out var geometryWkb, out error))
+            {
+                return false;
+            }
+
+            if (!double.TryParse(distanceMatch.Groups["distance"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var distanceValue) ||
+                distanceValue <= 0)
+            {
+                error = "Distance must be a positive number.";
+                return false;
+            }
+
+            var op = distanceMatch.Groups["op"].Value.ToLowerInvariant();
+            var withinDistance = op is "lt" or "le" or "eq";
+
+            spatialFilter = SpatialFilter.CreateDistanceFilter(
+                geometryWkb,
+                distanceValue,
+                DistanceUnit.Meters,
+                withinDistance);
+
+            return true;
+        }
+
+        if (filter.Contains("geo.", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Unsupported spatial filter format.";
+        }
+
+        return false;
+    }
+
+    private static bool TryCreateWkbFromWkt(string wkt, out byte[] geometryWkb, out string? error)
+    {
+        geometryWkb = Array.Empty<byte>();
+        error = null;
+
+        try
+        {
+            var reader = new WKTReader();
+            var geometry = reader.Read(wkt);
+            if (geometry == null)
+            {
+                error = "Invalid spatial filter geometry.";
+                return false;
+            }
+
+            if (geometry.SRID == 0)
+            {
+                geometry.SRID = 4326;
+            }
+
+            var writer = new WKBWriter();
+            geometryWkb = writer.Write(geometry);
+            return true;
+        }
+        catch
+        {
+            error = "Invalid spatial filter geometry.";
+            return false;
+        }
+    }
+
     /// <summary>
     /// Converts basic OData $filter expressions to SQL WHERE clauses
     /// Supports: eq, ne, gt, lt, ge, le, contains, startswith, endswith, geo.distance, geo.intersects
     /// </summary>
-    private static string? ConvertODataFilterToSql(string? odataFilter)
+    private static (SqlFragment? sqlFragment, string? whereClause) ConvertODataFilterToSqlFragment(string? odataFilter)
     {
         if (string.IsNullOrWhiteSpace(odataFilter))
-            return null;
+            return (null, null);
 
-        // Basic OData to SQL conversion
-        // This is a simplified implementation - production would use a proper OData parser
         var sql = odataFilter;
+        var parameters = new List<object?>();
+        var paramIndex = 0; // Start from 0 for @p0, @p1, etc.
+
+        // Handle spatial functions first
+        // geo.distance(Geometry, geography'POINT(x y)') lt/gt value
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"geo\.distance\(\s*(?<field>\w+)\s*,\s*geography'(?<geometry>[^']+)'\s*\)\s*(?<op>lt|gt|le|ge|eq|ne)\s*(?<distance>\d+(?:\.\d+)?)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var geometry = match.Groups["geometry"].Value;
+                var op = match.Groups["op"].Value;
+                var distance = match.Groups["distance"].Value;
+
+                var fieldSql = MapODataField(field);
+                var sqlOp = ConvertODataOperator(op);
+
+                // Add parameters for geometry and distance
+                var geometryParamIndex = paramIndex++;
+                var distanceParamIndex = paramIndex++;
+                parameters.Add(geometry);
+                parameters.Add(double.Parse(distance));
+
+                // Return parameterized SQL
+                return $"ST_Distance({fieldSql}::geography, ST_GeomFromText(@p{geometryParamIndex})::geography) {sqlOp} @p{distanceParamIndex}";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // geo.intersects(Geometry, geography'POLYGON(...)')
+        sql = System.Text.RegularExpressions.Regex.Replace(
+            sql,
+            @"geo\.intersects\(\s*(?<field>\w+)\s*,\s*geography'(?<geometry>[^']+)'\s*\)",
+            match =>
+            {
+                var field = match.Groups["field"].Value;
+                var geometry = match.Groups["geometry"].Value;
+
+                var fieldSql = MapODataField(field);
+
+                // Add parameter for geometry
+                var geometryParamIndex = paramIndex++;
+                parameters.Add(geometry);
+
+                // Return parameterized SQL
+                return $"ST_Intersects({fieldSql}, ST_GeomFromText(@p{geometryParamIndex}))";
+            },
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         // Handle geo.distance(geometry, geography'POINT(lon lat)') comparisons
         // Example: geo.distance(geometry, geography'POINT(-122.4 37.8)') lt 1000
@@ -887,7 +1181,12 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var value = match.Groups["value"].Value;
                 var fieldSql = MapODataField(field);
-                return $"{fieldSql} LIKE '%{value}%'";
+
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                parameters.Add($"%{value}%");
+
+                return $"{fieldSql} LIKE @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -899,7 +1198,12 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var value = match.Groups["value"].Value;
                 var fieldSql = MapODataField(field);
-                return $"{fieldSql} LIKE '{value}%'";
+
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                parameters.Add($"{value}%");
+
+                return $"{fieldSql} LIKE @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -911,7 +1215,12 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var value = match.Groups["value"].Value;
                 var fieldSql = MapODataField(field);
-                return $"{fieldSql} LIKE '%{value}'";
+
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                parameters.Add($"%{value}");
+
+                return $"{fieldSql} LIKE @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -925,8 +1234,8 @@ public static class ODataEndpoints
             .Replace(" and ", " AND ", StringComparison.OrdinalIgnoreCase)
             .Replace(" or ", " OR ", StringComparison.OrdinalIgnoreCase);
 
-        // Convert OData field references to JSONB queries
-        // Example: name eq 'value' -> attributes->>'name' = 'value'
+        // Convert OData field references to JSONB queries with parameterization
+        // Example: name eq 'value' -> attributes->>'name' = $n
         sql = System.Text.RegularExpressions.Regex.Replace(
             sql,
             @"\b(?<field>\w+)\s*(?<op>=|<>|>|<|>=|<=)\s*(?<value>('([^']*)')|(-?\d+(?:\.\d+)?))",
@@ -935,22 +1244,42 @@ public static class ODataEndpoints
                 var field = match.Groups["field"].Value;
                 var op = match.Groups["op"].Value;
                 var value = match.Groups["value"].Value;
-                var isNumericValue = !value.StartsWith('\'');
                 var fieldLower = field.Trim().ToLowerInvariant();
                 var isCoreField = fieldLower == "objectid" || fieldLower == "layerid";
 
-                if (isNumericValue && !isCoreField)
-                {
-                    value = $"'{value}'";
-                }
-
                 var fieldSql = MapODataField(field);
 
-                return $"{fieldSql} {op} {value}";
+                // Add parameter for value
+                var valueParamIndex = paramIndex++;
+                if (value.StartsWith('\'') && value.EndsWith('\''))
+                {
+                    // Remove quotes and add as string parameter
+                    parameters.Add(value.Substring(1, value.Length - 2));
+                }
+                else
+                {
+                    // Numeric value
+                    if (double.TryParse(value, out var numValue))
+                    {
+                        parameters.Add(numValue);
+                    }
+                    else
+                    {
+                        parameters.Add(value);
+                    }
+                }
+
+                return $"{fieldSql} {op} @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-        return sql;
+        // If we have parameters, return SqlFragment; otherwise fallback to string
+        if (parameters.Count > 0)
+        {
+            return (new SqlFragment(sql, parameters), null);
+        }
+
+        return (null, sql);
     }
 
     private static string MapODataField(string field)
@@ -968,7 +1297,26 @@ public static class ODataEndpoints
             return "layer_id";
         }
 
+        if (fieldLower == "geometry")
+        {
+            return "geometry";
+        }
+
         return $"attributes->>'{fieldName}'";
+    }
+
+    private static string ConvertODataOperator(string odataOp)
+    {
+        return odataOp.ToLowerInvariant() switch
+        {
+            "eq" => "=",
+            "ne" => "<>",
+            "gt" => ">",
+            "ge" => ">=",
+            "lt" => "<",
+            "le" => "<=",
+            _ => odataOp
+        };
     }
 
     /// <summary>

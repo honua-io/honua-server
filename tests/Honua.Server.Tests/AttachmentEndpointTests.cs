@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
@@ -28,11 +29,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const long TestFeatureId = 123;
-
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     public async Task InitializeAsync()
     {
@@ -65,12 +61,30 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().HaveCount(2);
         result.AttachmentInfos.Should().Contain(a => a.Name == "test1.txt");
         result.AttachmentInfos.Should().Contain(a => a.Name == "test2.jpg");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
+    public async Task QueryAttachments_WithPost_ReturnsAttachments()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}",
+            new StringContent(string.Empty, Encoding.UTF8, "application/json"));
+
+        response.Should().BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
+
+        result.Should().NotBeNull();
+        result!.AttachmentInfos.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -111,7 +125,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AddAttachmentResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AddAttachmentResponse);
 
         result.Should().NotBeNull();
         result!.AddAttachmentResult.Success.Should().BeTrue();
@@ -183,7 +197,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<UpdateAttachmentResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.UpdateAttachmentResponse);
 
         result.Should().NotBeNull();
         result!.UpdateAttachmentResult.Success.Should().BeTrue();
@@ -232,7 +246,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<DeleteAttachmentsResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.DeleteAttachmentsResponse);
 
         result.Should().NotBeNull();
         result!.DeleteAttachmentResults.Should().HaveCount(2);
@@ -331,7 +345,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().BeEmpty();

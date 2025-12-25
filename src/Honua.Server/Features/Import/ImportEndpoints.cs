@@ -10,8 +10,12 @@ namespace Honua.Server.Features.Import;
 /// <summary>
 /// File import endpoints for uploading and processing geospatial files
 /// </summary>
-public static class ImportEndpoints
+internal static partial class ImportEndpoints
 {
+    internal sealed class ImportEndpointsLog
+    {
+    }
+
     /// <summary>
     /// Map file import endpoints to the web application
     /// </summary>
@@ -93,7 +97,7 @@ public static class ImportEndpoints
             return;
         }
 
-        CancellationToken cancellationToken = context.RequestAborted;
+        CancellationToken cancellationToken = GetTimeoutAwareCancellationToken(context);
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
         IFormFile? file = GetFormFile(form, "file", "File");
 
@@ -131,7 +135,9 @@ public static class ImportEndpoints
         }
         catch (Exception ex)
         {
-            await WriteErrorAsync(context, $"Failed to preview file: {ex.Message}", StatusCodes.Status400BadRequest);
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
+            await WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
         }
     }
 
@@ -146,7 +152,7 @@ public static class ImportEndpoints
             return;
         }
 
-        CancellationToken cancellationToken = context.RequestAborted;
+        CancellationToken cancellationToken = GetTimeoutAwareCancellationToken(context);
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
 
         IFormFile? file = GetFormFile(form, "File", "file");
@@ -205,8 +211,20 @@ public static class ImportEndpoints
         }
         catch (Exception ex)
         {
-            await WriteErrorAsync(context, $"Import failed: {ex.Message}", StatusCodes.Status400BadRequest);
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, tableName, ex);
+            await WriteErrorAsync(context, "Import failed", StatusCodes.Status400BadRequest);
         }
+    }
+
+    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    {
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            return timeoutToken;
+        }
+
+        return context.RequestAborted;
     }
 
     /// <summary>
@@ -223,6 +241,15 @@ public static class ImportEndpoints
     }
 
     private static IFormFile? GetFormFile(IFormCollection form, string primaryName, string fallbackName) => form.Files.GetFile(primaryName) ?? form.Files.GetFile(fallbackName);
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 3300, Level = LogLevel.Error, Message = "Failed to preview import file {FileName}")]
+        public static partial void PreviewFailed(ILogger logger, string fileName, Exception exception);
+
+        [LoggerMessage(EventId = 3301, Level = LogLevel.Error, Message = "Import failed for table {TableName}")]
+        public static partial void ImportFailed(ILogger logger, string tableName, Exception exception);
+    }
 
     private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
     {

@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -77,6 +78,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.RemoveAll<IDatabaseConnectionProvider>();
                     services.RemoveAll<ICrsDetectionService>();
                     services.RemoveAll<IFileImportService>();
+                    services.RemoveAll<ISqlFilterTranslator>();
 
                     // Register NpgsqlDataSource with test connection string
                     services.AddSingleton<NpgsqlDataSource>(_ =>
@@ -85,27 +87,29 @@ public sealed class WebAppFixture : IAsyncLifetime
                         return dataSourceBuilder.Build();
                     });
 
-                    // Register all PostgreSQL services manually with test implementations
-                    services.AddScoped<IFeatureStore, Honua.Postgres.Features.FeatureStore.PostgresFeatureStore>();
-                    services.AddScoped(_ => new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
-                        useJsonAttributes: true,
-                        attributesColumn: "attributes",
-                        geometryColumn: "geometry",
-                        primaryKeyColumn: "objectid"));
-                    services.AddScoped<IAttachmentStore, Honua.Postgres.Features.Attachments.PostgresAttachmentStore>();
+                    // Create test configuration with connection string
+                    var testConfiguration = new ConfigurationBuilder()
+                        .AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString
+                        })
+                        .Build();
+
+                    // Register all PostgreSQL services using the Postgres layer's extension method
+                    // This ensures proper dependency injection without Server/TestKit directly instantiating Postgres types
+                    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+
+                    // Override specific services for testing
+                    // Use CITE-compatible layer catalog for conformance tests
+                    services.RemoveAll<ILayerCatalog>();
                     services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite>();
-                    services.AddScoped<ITableDiscoveryService, Honua.Postgres.Features.Admin.PostgreSqlTableDiscoveryService>();
-                    services.AddScoped<IDatabaseHealthChecker, Honua.Postgres.Features.HealthCheck.PostgresDatabaseHealthChecker>();
+
+                    // Override database connection provider with test-specific implementation
+                    services.RemoveAll<IDatabaseConnectionProvider>();
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
                     {
                         var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
                         return new TestDatabaseConnectionProvider(dataSource);
-                    });
-                    services.AddScoped<ICrsDetectionService>(_ => new Honua.Postgres.Features.Import.CrsDetectionService(_postgres.ConnectionString));
-                    services.AddScoped<IFileImportService>(serviceProvider =>
-                    {
-                        var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
-                        return new Honua.Postgres.Features.Import.FileImportService(_postgres.ConnectionString, crsDetectionService);
                     });
 
                     // Apply custom service configurations

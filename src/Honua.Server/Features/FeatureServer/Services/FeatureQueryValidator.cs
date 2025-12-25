@@ -52,7 +52,11 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ResultRecordCount = recordCount,
             Geometry = queryParams.Geometry,
             GeometryType = queryParams.GeometryType,
-            SpatialRel = queryParams.SpatialRel
+            SpatialRel = queryParams.SpatialRel,
+            Distance = queryParams.Distance,
+            Units = queryParams.Units,
+            NearestCount = queryParams.NearestCount,
+            ReturnDistance = queryParams.ReturnDistance
         };
 
         return QueryValidationResult.Success(validatedParams);

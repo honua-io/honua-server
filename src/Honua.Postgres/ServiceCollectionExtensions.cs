@@ -69,7 +69,11 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
 
         // Register SQL filter translator
-        services.AddScoped<ISqlFilterTranslator, PostgresSqlFilterTranslator>();
+        services.AddScoped<ISqlFilterTranslator>(_ => new PostgresSqlFilterTranslator(
+            useJsonAttributes: true,
+            attributesColumn: "attributes",
+            geometryColumn: "geometry",
+            primaryKeyColumn: "objectid"));
 
         // Register database connection provider with resilience policies
         services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();

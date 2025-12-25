@@ -179,9 +179,12 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         Directory.CreateDirectory(directory);
 
         // Save file to storage
-        await using var fileStream = new FileStream(fullPath, FileMode.Create);
-        await content.CopyToAsync(fileStream, cancellationToken);
-        var fileSize = fileStream.Length;
+        long fileSize;
+        await using (var fileStream = new FileStream(fullPath, FileMode.Create))
+        {
+            await content.CopyToAsync(fileStream, cancellationToken);
+            fileSize = fileStream.Length;
+        }
 
         // Create attachment record
         var attachment = Attachment.CreateForUpload(
@@ -194,7 +197,26 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             storagePath: storagePath,
             keywords: keywords);
 
-        return await CreateAsync(layerId, featureId, attachment, cancellationToken);
+        try
+        {
+            return await CreateAsync(layerId, featureId, attachment, cancellationToken);
+        }
+        catch
+        {
+            if (File.Exists(fullPath))
+            {
+                try
+                {
+                    File.Delete(fullPath);
+                }
+                catch
+                {
+                    // Best effort cleanup: ignore file delete failures to preserve original exception.
+                }
+            }
+
+            throw;
+        }
     }
 
     public async Task<AttachmentContent?> DownloadAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)

@@ -231,8 +231,16 @@ public sealed class TestFeatureStore : IFeatureStore
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
+        List<Feature>? snapshot = null;
+        if (editBatch.RollbackOnFailure && _layerFeatures.TryGetValue(layerId, out var existingFeatures))
+        {
+            snapshot = existingFeatures.ToList();
+        }
+
         var createdIds = new List<long>();
         var createResults = new List<EditOperationResult>();
+        var updateResults = new List<EditOperationResult>();
+        var deleteResults = new List<EditOperationResult>();
 
         // Process creates
         var createdCount = 0;
@@ -251,31 +259,72 @@ public sealed class TestFeatureStore : IFeatureStore
             }
         }
 
+        // Process updates
+        var updatedCount = 0;
+        foreach (var feature in editBatch.Updates)
+        {
+            try
+            {
+                var updated = await UpdateAsync(layerId, feature, cancellationToken);
+                updatedCount++;
+                updateResults.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            }
+            catch (Exception ex)
+            {
+                updateResults.Add(EditOperationResult.Failure($"Failed to update feature {feature.Id}: {ex.Message}", objectId: feature.Id));
+            }
+        }
+
+        // Process deletes
+        var deletedCount = 0;
+        foreach (var featureId in editBatch.Deletes)
+        {
+            try
+            {
+                var deleted = await DeleteAsync(layerId, featureId, cancellationToken);
+                if (deleted)
+                {
+                    deletedCount++;
+                    deleteResults.Add(EditOperationResult.Success(featureId));
+                }
+                else
+                {
+                    deleteResults.Add(EditOperationResult.Failure($"Feature {featureId} not found", objectId: featureId));
+                }
+            }
+            catch (Exception ex)
+            {
+                deleteResults.Add(EditOperationResult.Failure($"Failed to delete feature {featureId}: {ex.Message}", objectId: featureId));
+            }
+        }
+
         // Check if any operations failed
-        var hasErrors = createResults.Any(r => !r.IsSuccess);
+        var hasErrors = createResults.Any(r => !r.IsSuccess) ||
+                        updateResults.Any(r => !r.IsSuccess) ||
+                        deleteResults.Any(r => !r.IsSuccess);
 
         if (hasErrors && editBatch.RollbackOnFailure)
         {
             // Rollback all operations
-            return FeatureEditResult.Rollback(createResults.ToImmutableArray());
-        }
-        else if (hasErrors && !editBatch.RollbackOnFailure)
-        {
-            // Return partial success - count only successful operations
-            return FeatureEditResult.Success(
-                createdCount: createResults.Count(r => r.IsSuccess),
-                updatedCount: 0,
-                deletedCount: 0,
-                createdIds: createdIds.ToImmutableArray(),
-                createResults: createResults.ToImmutableArray());
+            if (snapshot != null)
+            {
+                _layerFeatures[layerId] = snapshot;
+            }
+
+            return FeatureEditResult.Rollback(
+                createResults.ToImmutableArray(),
+                updateResults.ToImmutableArray(),
+                deleteResults.ToImmutableArray());
         }
 
         return FeatureEditResult.Success(
-            createdCount: createdCount,
-            updatedCount: 0,
-            deletedCount: 0,
+            createdCount: hasErrors ? createResults.Count(r => r.IsSuccess) : createdCount,
+            updatedCount: hasErrors ? updateResults.Count(r => r.IsSuccess) : updatedCount,
+            deletedCount: hasErrors ? deleteResults.Count(r => r.IsSuccess) : deletedCount,
             createdIds: createdIds.ToImmutableArray(),
-            createResults: createResults.ToImmutableArray());
+            createResults: createResults.ToImmutableArray(),
+            updateResults: updateResults.ToImmutableArray(),
+            deleteResults: deleteResults.ToImmutableArray());
     }
 
     private static IEnumerable<Feature> ApplyWhereFilter(IEnumerable<Feature> features, string whereClause)
@@ -332,6 +381,67 @@ public sealed class TestFeatureStore : IFeatureStore
     /// </summary>
     private static IEnumerable<Feature> ApplySpatialFilter(IEnumerable<Feature> features, SpatialFilter spatialFilter)
     {
+        // Handle KNN queries - sort by distance and take K nearest
+        if (spatialFilter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
+        {
+            var filterPoint = ParsePointFromWkb(spatialFilter.Geometry);
+            if (filterPoint == null)
+                return Enumerable.Empty<Feature>();
+
+            var featuresWithDistance = features
+                .Where(f => f.Geometry != null)
+                .Select(f =>
+                {
+                    var point = ParsePointFromWkb(f.Geometry!);
+                    var distance = point.HasValue ? CalculateDistance(filterPoint.Value, point.Value) : double.MaxValue;
+                    return (Feature: f, Distance: distance);
+                })
+                .OrderBy(x => x.Distance);
+
+            var limit = spatialFilter.NearestCount ?? 10;
+            var result = featuresWithDistance.Take(limit);
+
+            // If ReturnDistance is true, add distance to attributes
+            if (spatialFilter.ReturnDistance)
+            {
+                return result.Select(x =>
+                {
+                    var attributesWithDistance = x.Feature.Attributes.SetItem("distance", x.Distance);
+                    return Feature.Create(x.Feature.Id, x.Feature.Geometry, attributesWithDistance);
+                });
+            }
+
+            return result.Select(x => x.Feature);
+        }
+
+        // Handle distance-based queries
+        if (spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance ||
+            spatialFilter.SpatialRelationship == SpatialRelationship.BeyondDistance)
+        {
+            var filterPoint = ParsePointFromWkb(spatialFilter.Geometry);
+            if (filterPoint == null)
+                return Enumerable.Empty<Feature>();
+
+            var distanceMeters = ConvertDistanceToMeters(spatialFilter.Distance ?? 0, spatialFilter.DistanceUnit);
+
+            return features.Where(feature =>
+            {
+                if (feature.Geometry == null)
+                    return false;
+
+                var point = ParsePointFromWkb(feature.Geometry);
+                if (point == null)
+                    return false;
+
+                var actualDistance = CalculateDistance(filterPoint.Value, point.Value);
+
+                return spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance
+                    ? actualDistance <= distanceMeters
+                    : actualDistance > distanceMeters;
+            });
+        }
+
+        // Handle polygon-based spatial relationships
         return features.Where(feature =>
         {
             if (feature.Geometry == null)
@@ -352,9 +462,45 @@ public sealed class TestFeatureStore : IFeatureStore
                 SpatialRelationship.Contains => IsPointInPolygon(point.Value, polygon),
                 SpatialRelationship.Intersects => IsPointInPolygon(point.Value, polygon),
                 SpatialRelationship.Within => IsPointInPolygon(point.Value, polygon),
+                SpatialRelationship.EnvelopeIntersects => IsPointInPolygon(point.Value, polygon),
                 _ => false
             };
         });
+    }
+
+    /// <summary>
+    /// Converts a distance value to meters based on the specified unit
+    /// </summary>
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
+    {
+        return unit switch
+        {
+            DistanceUnit.Meters => distance,
+            DistanceUnit.Feet => distance * 0.3048,
+            DistanceUnit.Kilometers => distance * 1000,
+            DistanceUnit.Miles => distance * 1609.344,
+            _ => distance
+        };
+    }
+
+    /// <summary>
+    /// Calculates approximate distance in meters between two geographic points using Haversine formula
+    /// </summary>
+    private static double CalculateDistance((double x, double y) point1, (double x, double y) point2)
+    {
+        const double earthRadiusMeters = 6371000; // Earth's radius in meters
+
+        var lat1 = point1.y * Math.PI / 180;
+        var lat2 = point2.y * Math.PI / 180;
+        var deltaLat = (point2.y - point1.y) * Math.PI / 180;
+        var deltaLon = (point2.x - point1.x) * Math.PI / 180;
+
+        var a = Math.Sin(deltaLat / 2) * Math.Sin(deltaLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(deltaLon / 2) * Math.Sin(deltaLon / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+        return earthRadiusMeters * c;
     }
 
     /// <summary>

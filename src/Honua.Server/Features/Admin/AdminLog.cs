@@ -6,7 +6,7 @@ namespace Honua.Server.Features.Admin;
 /// <summary>
 /// Source-generated logger for Admin features (AOT compatible)
 /// </summary>
-public static partial class AdminLog
+internal static partial class AdminLog
 {
     /// <summary>
     /// Log when connection not found for table discovery

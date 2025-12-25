@@ -2,9 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -239,10 +244,13 @@ public sealed class ODataTestFeatureStore : IFeatureStore
 
         var filteredFeatures = features.AsEnumerable();
 
-        // Apply WHERE clause filtering
-        if (!string.IsNullOrEmpty(query.Where))
+        var whereClause = query.SqlFilter is not null
+            ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
+            : query.Where;
+
+        if (!string.IsNullOrEmpty(whereClause))
         {
-            filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
+            filteredFeatures = ApplyWhereFilter(filteredFeatures, whereClause);
         }
 
         // Apply spatial filtering
@@ -290,9 +298,13 @@ public sealed class ODataTestFeatureStore : IFeatureStore
 
         var filteredFeatures = features.AsEnumerable();
 
-        if (!string.IsNullOrEmpty(query.Where))
+        var whereClause = query.SqlFilter is not null
+            ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
+            : query.Where;
+
+        if (!string.IsNullOrEmpty(whereClause))
         {
-            filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
+            filteredFeatures = ApplyWhereFilter(filteredFeatures, whereClause);
         }
 
         return Task.FromResult((long)filteredFeatures.Count());
@@ -551,6 +563,61 @@ public sealed class ODataTestFeatureStore : IFeatureStore
         return features;
     }
 
+    private static string? ConvertSqlFragmentToWhereClause(SqlFragment sqlFragment)
+    {
+        if (string.IsNullOrWhiteSpace(sqlFragment.Sql))
+        {
+            return null;
+        }
+
+        var sql = sqlFragment.Sql;
+        for (var i = sqlFragment.Parameters.Count - 1; i >= 0; i--)
+        {
+            var literal = FormatSqlLiteral(sqlFragment.Parameters[i]);
+            sql = sql.Replace($"@p{i}", literal, StringComparison.Ordinal);
+        }
+
+        return sql;
+    }
+
+    private static string FormatSqlLiteral(object? value)
+    {
+        if (value == null)
+        {
+            return "NULL";
+        }
+
+        if (value is JsonElement element)
+        {
+            return FormatSqlLiteral(ConvertJsonElement(element));
+        }
+
+        return value switch
+        {
+            string strValue => $"'{strValue.Replace("'", "''")}'",
+            bool boolValue => boolValue ? "true" : "false",
+            DateTime dateTime => $"'{dateTime.ToString("O", CultureInfo.InvariantCulture)}'",
+            DateTimeOffset dateTimeOffset => $"'{dateTimeOffset.ToString("O", CultureInfo.InvariantCulture)}'",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? "NULL",
+            _ => $"'{value.ToString()?.Replace("'", "''")}'"
+        };
+    }
+
+    private static object? ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue :
+                                    element.TryGetDouble(out var doubleValue) ? doubleValue :
+                                    element.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.ToString()
+        };
+    }
+
     private static Feature FilterFields(Feature feature, ImmutableArray<string> outFields)
     {
         var filteredAttributes = ImmutableDictionary<string, object?>.Empty;
@@ -578,68 +645,114 @@ public sealed class ODataTestFeatureStore : IFeatureStore
 
     private static IEnumerable<Feature> ApplySpatialFilter(IEnumerable<Feature> features, SpatialFilter spatialFilter)
     {
+        if (!TryReadGeometry(spatialFilter.Geometry, out var filterGeometry))
+        {
+            return Enumerable.Empty<Feature>();
+        }
+
         return features.Where(feature =>
         {
             if (feature.Geometry == null)
+            {
                 return false;
+            }
 
-            var point = ParsePointFromWkb(feature.Geometry);
-            if (point == null)
+            if (!TryReadGeometry(feature.Geometry, out var featureGeometry))
+            {
                 return false;
-
-            var polygon = ParsePolygonFromWkb(spatialFilter.Geometry);
-            if (polygon == null)
-                return false;
+            }
 
             return spatialFilter.SpatialRelationship switch
             {
-                SpatialRelationship.Contains => IsPointInPolygon(point.Value, polygon),
-                SpatialRelationship.Intersects => IsPointInPolygon(point.Value, polygon),
-                SpatialRelationship.Within => IsPointInPolygon(point.Value, polygon),
+                SpatialRelationship.Intersects => featureGeometry.Intersects(filterGeometry),
+                SpatialRelationship.Contains => featureGeometry.Contains(filterGeometry),
+                SpatialRelationship.Within => featureGeometry.Within(filterGeometry),
+                SpatialRelationship.EnvelopeIntersects => featureGeometry.EnvelopeInternal.Intersects(filterGeometry.EnvelopeInternal),
+                SpatialRelationship.WithinDistance or SpatialRelationship.BeyondDistance => MatchDistanceFilter(featureGeometry, filterGeometry, spatialFilter),
                 _ => false
             };
         });
     }
 
-    private static bool IsPointInPolygon((double x, double y) point, List<(double x, double y)> polygon)
+    private static bool TryReadGeometry(byte[] wkb, out Geometry geometry)
     {
-        bool inside = false;
-        int j = polygon.Count - 1;
+        geometry = null!;
 
-        for (int i = 0; i < polygon.Count; i++)
+        try
         {
-            if (((polygon[i].y > point.y) != (polygon[j].y > point.y)) &&
-                (point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x))
-            {
-                inside = !inside;
-            }
-            j = i;
+            var reader = new WKBReader();
+            geometry = reader.Read(wkb);
+            return geometry != null;
         }
-        return inside;
-    }
-
-    private static (double x, double y)? ParsePointFromWkb(byte[] wkb)
-    {
-        if (wkb.Length < 21)
-            return null;
-
-        var x = BitConverter.ToDouble(wkb, 5);
-        var y = BitConverter.ToDouble(wkb, 13);
-        return (x, y);
-    }
-
-    private static List<(double x, double y)>? ParsePolygonFromWkb(byte[] wkb)
-    {
-        // For test purposes - covers Western US
-        return new List<(double x, double y)>
+        catch
         {
-            (-125.0, 30.0),
-            (-100.0, 30.0),
-            (-100.0, 50.0),
-            (-125.0, 50.0),
-            (-125.0, 30.0)
+            return false;
+        }
+    }
+
+    private static bool MatchDistanceFilter(Geometry featureGeometry, Geometry filterGeometry, SpatialFilter spatialFilter)
+    {
+        if (!spatialFilter.Distance.HasValue)
+        {
+            return false;
+        }
+
+        var distanceMeters = TryCalculateDistanceMeters(featureGeometry, filterGeometry);
+        if (!distanceMeters.HasValue)
+        {
+            return false;
+        }
+
+        var thresholdMeters = ConvertDistanceToMeters(spatialFilter.Distance.Value, spatialFilter.DistanceUnit);
+        return spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance
+            ? distanceMeters.Value <= thresholdMeters
+            : distanceMeters.Value > thresholdMeters;
+    }
+
+    private static double? TryCalculateDistanceMeters(Geometry featureGeometry, Geometry filterGeometry)
+    {
+        if (featureGeometry is Point featurePoint && filterGeometry is Point filterPoint)
+        {
+            return HaversineMeters(
+                featurePoint.Y,
+                featurePoint.X,
+                filterPoint.Y,
+                filterPoint.X);
+        }
+
+        return null;
+    }
+
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
+    {
+        return unit switch
+        {
+            DistanceUnit.Meters => distance,
+            DistanceUnit.Kilometers => distance * 1000.0,
+            DistanceUnit.Miles => distance * 1609.344,
+            DistanceUnit.Feet => distance * 0.3048,
+            _ => distance
         };
     }
+
+    private static double HaversineMeters(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double earthRadiusMeters = 6371000.0;
+
+        var dLat = DegreesToRadians(lat2 - lat1);
+        var dLon = DegreesToRadians(lon2 - lon1);
+        var lat1Rad = DegreesToRadians(lat1);
+        var lat2Rad = DegreesToRadians(lat2);
+
+        var a = Math.Pow(Math.Sin(dLat / 2.0), 2.0) +
+                Math.Cos(lat1Rad) * Math.Cos(lat2Rad) *
+                Math.Pow(Math.Sin(dLon / 2.0), 2.0);
+
+        var c = 2.0 * Math.Asin(Math.Sqrt(a));
+        return earthRadiusMeters * c;
+    }
+
+    private static double DegreesToRadians(double degrees) => degrees * (Math.PI / 180.0);
 
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {

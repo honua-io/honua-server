@@ -14,7 +14,7 @@ namespace Honua.Server.Features.Infrastructure.Logging;
 /// - 4000-4999: Infrastructure operations
 /// - 5000-5999: Errors
 /// </remarks>
-public static partial class Log
+internal static partial class Log
 {
     #region Query Operations (1000-1999)
 

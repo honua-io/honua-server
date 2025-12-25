@@ -6,7 +6,7 @@ namespace Honua.Server.Features.Infrastructure.Authentication;
 /// <summary>
 /// Source-generated logger for Authentication features (AOT compatible)
 /// </summary>
-public static partial class AuthenticationLog
+internal static partial class AuthenticationLog
 {
     /// <summary>
     /// Logs when development authentication bypass is enabled

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Git pre-push hook - automatically runs pre-PR validation
+# This enforces quality checks before any push to origin
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${YELLOW}🔒 Pre-push validation triggered...${NC}"
+echo
+
+# Get information about what's being pushed
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        # Branch is being deleted, allow it
+        continue
+    fi
+
+    # Extract branch name
+    branch_name=$(echo "$remote_ref" | sed 's/refs\/heads\///')
+
+    # Skip validation for trunk branch (assume it's already validated)
+    if [ "$branch_name" = "trunk" ]; then
+        echo -e "${GREEN}✅ Skipping validation for trunk branch${NC}"
+        continue
+    fi
+
+    echo -e "${YELLOW}📤 Pushing to branch: $branch_name${NC}"
+    echo
+
+    # Check if we have uncommitted changes
+    if [ -n "$(git status --porcelain)" ]; then
+        echo -e "${RED}❌ ERROR: You have uncommitted changes!${NC}"
+        echo "   Please commit or stash your changes before pushing."
+        echo
+        git status --short
+        exit 1
+    fi
+
+    # Run pre-PR validation
+    echo -e "${YELLOW}🔍 Running pre-PR validation before push...${NC}"
+    echo "   This ensures your code passes CI checks"
+    echo
+
+    if ! bash scripts/pre-pr-check.sh; then
+        echo
+        echo -e "${RED}❌ Pre-push validation failed!${NC}"
+        echo "   Your push has been rejected to prevent CI failures."
+        echo
+        echo -e "${YELLOW}To fix:${NC}"
+        echo "   1. Address the issues above"
+        echo "   2. Commit your fixes"
+        echo "   3. Try pushing again"
+        echo
+        echo -e "${YELLOW}To bypass (not recommended):${NC}"
+        echo "   git push --no-verify"
+        echo
+        exit 1
+    fi
+
+    echo
+    echo -e "${GREEN}✅ Pre-push validation passed!${NC}"
+    echo -e "${GREEN}🚀 Proceeding with push...${NC}"
+    echo
+done
+
+echo -e "${GREEN}✅ All pre-push checks passed!${NC}"

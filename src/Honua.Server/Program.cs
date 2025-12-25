@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Text.Json.Serialization.Metadata;
 using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Server.Features.Admin;
@@ -28,8 +29,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Skip Aspire configuration during testing to avoid connection string conflicts
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
+var useAspire = !isTestEnvironment && !builder.Environment.IsDevelopment();
 
-if (!isTestEnvironment)
+if (useAspire)
 {
     // Add Aspire service defaults (OTel, health, resilience)
     builder.AddServiceDefaults();
@@ -124,10 +126,13 @@ ConfigureOutputCaching(builder.Services);
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
-// Configure JSON serialization for ASP.NET Core (needed for OData route parameter binding)
+// Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolver = Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default;
+    options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
+        Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
+        Honua.Server.Features.OData.Models.ODataJsonContext.Default,
+        Honua.Server.Features.OgcFeatures.OgcJsonContext.Default);
 });
 
 var app = builder.Build();
@@ -200,8 +205,8 @@ app.MapODataEndpoints();
 // Configure file import endpoints
 app.MapImportEndpoints();
 
-// Map health endpoints for Aspire dashboard (only in non-test environments)
-if (!isTestEnvironment)
+// Map health endpoints for Aspire dashboard (only when Aspire is enabled)
+if (useAspire)
 {
     app.MapDefaultEndpoints();
 }

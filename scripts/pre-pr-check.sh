@@ -20,21 +20,27 @@ if ! dotnet format Honua.sln --verify-no-changes --verbosity diagnostic; then
     exit 1
 fi
 
-echo "5. Running unit tests..."
-dotnet test Honua.sln --no-restore --configuration Release --filter "Category!=Integration"
+echo "5. Pre-pulling Docker images for faster tests..."
+docker pull postgis/postgis:16-3.4-alpine > /dev/null 2>&1 || echo "   ⚠️ Could not pre-pull PostGIS image"
 
-echo "6. Running integration tests..."
-dotnet test Honua.sln --no-restore --configuration Release --filter "Category=Integration"
+echo "6. Running all tests (Unit + Integration + Architecture)..."
+mkdir -p ./tests/TestResults
+dotnet test Honua.sln \
+    --no-restore \
+    --configuration Release \
+    --filter "Category=Unit|Category=Integration|Category=Architecture" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    --collect:"XPlat Code Coverage" \
+    --settings tests/coverlet.runsettings \
+    -- RunConfiguration.MaxCpuCount=0
 
-echo "7. Running architecture tests..."
-dotnet test Honua.sln --no-restore --configuration Release --filter "Category=Architecture"
-
-echo "8. Testing AOT build..."
+echo "7. Testing AOT build..."
 cd src/Honua.Server
 dotnet publish --configuration Release -p:PublishAot=true -p:StripSymbols=true -o ./publish >/dev/null 2>&1
 cd ../..
 
-echo "9. Local Claude architecture review..."
+echo "8. Local Claude architecture review..."
 if command -v python3 >/dev/null 2>&1; then
     python3 scripts/claude-architecture-review.py || {
         echo "❌ Architecture review found blocking issues!"

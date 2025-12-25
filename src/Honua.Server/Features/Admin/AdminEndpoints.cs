@@ -14,7 +14,7 @@ namespace Honua.Server.Features.Admin;
 /// <summary>
 /// Admin endpoints for table discovery and connection management
 /// </summary>
-public static class AdminEndpoints
+internal static class AdminEndpoints
 {
     /// <summary>
     /// Configure admin endpoints using AOT-compatible routing

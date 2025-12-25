@@ -483,26 +483,82 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private ParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query)
     {
-        var sql = new StringBuilder($"SELECT objectid, geometry, attributes FROM {_tableName} WHERE layer_id = $1");
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
+        var sql = new StringBuilder();
         var paramIndex = 2;
         var parameters = new List<object>();
 
+        BuildSelectClause(sql, isKnnQuery, spatialFilter, ref paramIndex);
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
         AppendSpatialFilter(sql, query, ref paramIndex);
         AppendOrderByClause(sql, query);
+        AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, ref paramIndex);
+        AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
 
-        if (query.Limit.HasValue)
+        return new ParameterizedQuery(sql.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Builds the SELECT clause for the query, handling KNN distance calculations
+    /// </summary>
+    private void BuildSelectClause(StringBuilder sql, bool isKnnQuery, SpatialFilter? spatialFilter, ref int paramIndex)
+    {
+        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
-            sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+            // KNN query with distance calculation
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT objectid, geometry, attributes, ST_Distance(geometry::geography, ST_GeomFromWKB(${paramIndex++})::geography) as distance FROM {_tableName} WHERE layer_id = $1");
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT objectid, geometry, attributes FROM {_tableName} WHERE layer_id = $1");
+        }
+    }
+
+    /// <summary>
+    /// Appends KNN ordering clause using PostGIS distance operator
+    /// </summary>
+    private static void AppendKnnOrdering(StringBuilder sql, bool isKnnQuery, SpatialFilter? spatialFilter, FeatureQuery query, ref int paramIndex)
+    {
+        if (!isKnnQuery)
+        {
+            return;
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY geometry <-> ST_GeomFromWKB(${paramIndex++})");
+    }
+
+    /// <summary>
+    /// Appends pagination clauses (LIMIT and OFFSET) to the query
+    /// </summary>
+    private static void AppendPagination(StringBuilder sql, bool isKnnQuery, FeatureQuery query, SpatialFilter? spatialFilter, ref int paramIndex)
+    {
+        if (isKnnQuery)
+        {
+            // For KNN, use NearestCount as LIMIT if specified, otherwise use regular Limit
+            var limit = spatialFilter!.Value.NearestCount ?? query.Limit;
+            if (limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+            }
+        }
+        else
+        {
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+            }
         }
 
         if (query.Offset.HasValue)
         {
             sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
         }
-
-        return new ParameterizedQuery(sql.ToString(), parameters);
     }
 
     private ParameterizedQuery BuildCountQuery(int layerId, FeatureQuery query)
@@ -661,8 +717,10 @@ WHERE layer_id = $1");
             // Append the converted SQL
             sql.Append(CultureInfo.InvariantCulture, $" AND ({convertedSql})");
 
-            // Add the parameters to our parameter list, filtering out nulls
-            parameters.AddRange(sqlFragment.Parameters.Where(p => p != null)!);
+            foreach (var param in sqlFragment.Parameters)
+            {
+                parameters.Add(param ?? DBNull.Value);
+            }
         }
         // Fall back to legacy string WHERE clause for backward compatibility
         else if (!string.IsNullOrWhiteSpace(query.Where))
@@ -936,27 +994,69 @@ WHERE layer_id = $1");
 
     private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
     {
-        if (query.SpatialFilter.HasValue)
+        if (!query.SpatialFilter.HasValue)
         {
-            var spatialFunction = query.SpatialFilter.Value.SpatialRelationship switch
-            {
-                SpatialRelationship.Intersects => "ST_Intersects",
-                SpatialRelationship.Within => "ST_Within",
-                SpatialRelationship.Contains => "ST_Contains",
-                SpatialRelationship.EnvelopeIntersects => "ST_Intersects",
-                _ => "ST_Intersects"
-            };
-
-            var spatialPredicate = $"{spatialFunction}(geometry, ST_GeomFromWKB(${paramIndex++}))";
-            if (query.IncludeNullGeometry)
-            {
-                sql.Append(CultureInfo.InvariantCulture, $" AND ({spatialPredicate} OR geometry IS NULL)");
-            }
-            else
-            {
-                sql.Append(CultureInfo.InvariantCulture, $" AND {spatialPredicate}");
-            }
+            return;
         }
+
+        var filter = query.SpatialFilter.Value;
+
+        switch (filter.SpatialRelationship)
+        {
+            case SpatialRelationship.Intersects:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.Within:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Within(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.Contains:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Contains(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.EnvelopeIntersects:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+
+            case SpatialRelationship.WithinDistance:
+                // Use ST_DWithin with geography type for accurate geodesic distance calculations
+                // Convert distance to meters based on the unit
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" AND ST_DWithin(geometry::geography, ST_GeomFromWKB(${paramIndex++})::geography, ${paramIndex++})");
+                break;
+
+            case SpatialRelationship.BeyondDistance:
+                // ST_Distance > threshold for features beyond a certain distance
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" AND ST_Distance(geometry::geography, ST_GeomFromWKB(${paramIndex++})::geography) > ${paramIndex++}");
+                break;
+
+            case SpatialRelationship.NearestNeighbor:
+                // KNN uses ORDER BY with PostGIS <-> operator (handled separately in query building)
+                // The filter geometry parameter is added, but actual KNN logic is in ORDER BY
+                sql.Append(CultureInfo.InvariantCulture, $" AND geometry IS NOT NULL");
+                break;
+
+            default:
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Converts a distance value to meters based on the specified unit
+    /// </summary>
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
+    {
+        return unit switch
+        {
+            DistanceUnit.Meters => distance,
+            DistanceUnit.Feet => distance * 0.3048,
+            DistanceUnit.Kilometers => distance * 1000,
+            DistanceUnit.Miles => distance * 1609.344,
+            _ => distance
+        };
     }
 
     private static void AppendOrderByClause(StringBuilder sql, FeatureQuery query)
@@ -1028,26 +1128,105 @@ WHERE layer_id = $1");
         command.Parameters.AddWithValue(layerId);
 
         // Add WHERE clause parameters (these come after layerId but before spatial/pagination params)
-        foreach (var param in whereParameters)
-        {
-            command.Parameters.AddWithValue(param);
-        }
+        AddWhereParameters(command, whereParameters);
 
-        // Add spatial filter parameter if present
+        // Add spatial filter parameters if present
         if (query.SpatialFilter.HasValue)
         {
-            command.Parameters.AddWithValue(query.SpatialFilter.Value.Geometry);
+            AddSpatialFilterParameters(command, query);
+        }
+        else
+        {
+            AddRegularPaginationParameters(command, query);
         }
 
-        // Add pagination parameters
+        // Add offset parameter if present
+        if (query.Offset.HasValue)
+        {
+            command.Parameters.AddWithValue(query.Offset.Value);
+        }
+    }
+
+    /// <summary>
+    /// Adds WHERE clause parameters to the command
+    /// </summary>
+    private static void AddWhereParameters(NpgsqlCommand command, List<object> whereParameters)
+    {
+        foreach (var param in whereParameters)
+        {
+            command.Parameters.AddWithValue(param ?? DBNull.Value);
+        }
+    }
+
+    /// <summary>
+    /// Adds spatial filter parameters including geometry, distance, and KNN-specific parameters
+    /// </summary>
+    private void AddSpatialFilterParameters(NpgsqlCommand command, FeatureQuery query)
+    {
+        var filter = query.SpatialFilter!.Value;
+
+        if (filter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
+        {
+            AddKnnParameters(command, filter, query);
+        }
+        else
+        {
+            AddRegularSpatialParameters(command, filter, query);
+        }
+    }
+
+    /// <summary>
+    /// Adds parameters for KNN (nearest neighbor) queries
+    /// </summary>
+    private static void AddKnnParameters(NpgsqlCommand command, SpatialFilter filter, FeatureQuery query)
+    {
+        // For KNN queries, add geometry parameter(s)
+        // If ReturnDistance is true, geometry is used twice: once for distance calc in SELECT, once for ORDER BY
+        if (filter.ReturnDistance)
+        {
+            command.Parameters.AddWithValue(filter.Geometry); // For distance calculation in SELECT
+        }
+        command.Parameters.AddWithValue(filter.Geometry); // For ORDER BY
+
+        // Add limit for KNN (NearestCount or regular Limit)
+        var limit = filter.NearestCount ?? query.Limit;
+        if (limit.HasValue)
+        {
+            command.Parameters.AddWithValue(limit.Value);
+        }
+    }
+
+    /// <summary>
+    /// Adds parameters for regular spatial queries (non-KNN)
+    /// </summary>
+    private void AddRegularSpatialParameters(NpgsqlCommand command, SpatialFilter filter, FeatureQuery query)
+    {
+        // Add geometry parameter for other spatial operations
+        command.Parameters.AddWithValue(filter.Geometry);
+
+        // Add distance parameter for distance-based queries
+        if (filter.SpatialRelationship == SpatialRelationship.WithinDistance ||
+            filter.SpatialRelationship == SpatialRelationship.BeyondDistance)
+        {
+            var distanceInMeters = ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
+            command.Parameters.AddWithValue(distanceInMeters);
+        }
+
+        // Add pagination parameters for non-KNN queries
         if (query.Limit.HasValue)
         {
             command.Parameters.AddWithValue(query.Limit.Value);
         }
+    }
 
-        if (query.Offset.HasValue)
+    /// <summary>
+    /// Adds regular pagination parameters when no spatial filter is present
+    /// </summary>
+    private static void AddRegularPaginationParameters(NpgsqlCommand command, FeatureQuery query)
+    {
+        if (query.Limit.HasValue)
         {
-            command.Parameters.AddWithValue(query.Offset.Value);
+            command.Parameters.AddWithValue(query.Limit.Value);
         }
     }
 
@@ -1070,9 +1249,28 @@ WHERE layer_id = $1");
         var features = new List<Feature>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        // Check if this is a KNN query with distance
+        var isKnnWithDistance = query.SpatialFilter.HasValue &&
+                                query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor &&
+                                query.SpatialFilter.Value.ReturnDistance;
+
         while (await reader.ReadAsync(cancellationToken))
         {
-            features.Add(await ReadFeatureAsync(reader, cancellationToken));
+            var feature = await ReadFeatureAsync(reader, cancellationToken);
+
+            // Add distance to attributes if this is a KNN query with ReturnDistance
+            if (isKnnWithDistance)
+            {
+                var distanceOrdinal = reader.GetOrdinal("distance");
+                if (!reader.IsDBNull(distanceOrdinal))
+                {
+                    var distance = reader.GetDouble(distanceOrdinal);
+                    var attributesWithDistance = feature.Attributes.SetItem("distance", distance);
+                    feature = Feature.Create(feature.Id, feature.Geometry, attributesWithDistance);
+                }
+            }
+
+            features.Add(feature);
         }
 
         return features.ToImmutableArray();

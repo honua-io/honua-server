@@ -28,11 +28,37 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
+        new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
+
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
 
         new("GET", "/odata"),
         new("GET", "/odata/$metadata"),
         new("GET", "/odata/Layers"),
         new("GET", "/odata/Features({layerId})"),
+        new("POST", "/odata/Features({layerId})"),
+        new("GET", "/odata/Features({layerId},{objectId})"),
+        new("PATCH", "/odata/Features({layerId},{objectId})"),
+        new("DELETE", "/odata/Features({layerId},{objectId})"),
+
+        new("GET", "/ogc/features"),
+        new("GET", "/ogc/features/conformance"),
+        new("GET", "/openapi.json"),
+        new("GET", "/ogc/features/collections"),
+        new("GET", "/ogc/features/collections/{collectionId}"),
+        new("GET", "/ogc/features/collections/{collectionId}/items"),
+        new("GET", "/ogc/features/collections/{collectionId}/items/{featureId}"),
+        new("POST", "/ogc/features/collections/{collectionId}/items"),
+        new("PUT", "/ogc/features/collections/{collectionId}/items/{featureId}"),
+        new("DELETE", "/ogc/features/collections/{collectionId}/items/{featureId}"),
     ];
 }
 

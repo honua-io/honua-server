@@ -14,7 +14,7 @@ public readonly record struct RelatedQuery
     /// <summary>
     /// Object IDs of the origin features to find related records for
     /// </summary>
-    public required int[] ObjectIds { get; init; }
+    public required long[] ObjectIds { get; init; }
 
     /// <summary>
     /// Relationship definition that describes the connection between layers
@@ -42,7 +42,7 @@ public readonly record struct RelatedQuery
     /// <param name="objectIds">Origin object IDs</param>
     /// <param name="relationship">Relationship definition</param>
     /// <returns>Related query instance</returns>
-    public static RelatedQuery ForObjects(int[] objectIds, Relationship relationship)
+    public static RelatedQuery ForObjects(long[] objectIds, Relationship relationship)
         => new() { ObjectIds = objectIds, Relationship = relationship };
 
     /// <summary>
@@ -52,6 +52,6 @@ public readonly record struct RelatedQuery
     /// <param name="relationship">Relationship definition</param>
     /// <param name="where">WHERE clause for related records</param>
     /// <returns>Related query instance</returns>
-    public static RelatedQuery WithFilter(int[] objectIds, Relationship relationship, string where)
+    public static RelatedQuery WithFilter(long[] objectIds, Relationship relationship, string where)
         => new() { ObjectIds = objectIds, Relationship = relationship, Where = where };
 }

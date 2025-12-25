@@ -23,7 +23,7 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// Per-endpoint limits (MaxRecordCount, spatial bounds) are enforced in individual handlers
 /// using the injected LimitsOptions configuration.
 /// </remarks>
-public sealed class LimitsEnforcementMiddleware(
+internal sealed class LimitsEnforcementMiddleware(
     RequestDelegate next,
     ILogger<LimitsEnforcementMiddleware> logger,
     IOptions<LimitsOptions> limitsOptions)

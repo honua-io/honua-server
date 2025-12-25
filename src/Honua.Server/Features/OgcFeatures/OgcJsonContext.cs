@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Server.Features.OgcFeatures.Models;
 
@@ -29,6 +30,7 @@ namespace Honua.Server.Features.OgcFeatures;
 [JsonSerializable(typeof(GeoJsonFeature[]))]
 [JsonSerializable(typeof(SimpleGeoJsonGeometry))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
 internal sealed partial class OgcJsonContext : JsonSerializerContext
 {
