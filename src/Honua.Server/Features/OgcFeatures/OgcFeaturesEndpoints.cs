@@ -14,7 +14,6 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -1404,9 +1403,7 @@ internal static partial class OgcFeaturesEndpoints
     private static async Task<IResult> HandleGetItems(
         string collectionId,
         string? filter,
-        [FromQuery(Name = "filter-crs")] string? filterCrs,
         string? bbox,
-        [FromQuery(Name = "bbox-crs")] string? bboxCrs,
         string? crs,
         string? datetime,
         string? f,
@@ -1422,6 +1419,10 @@ internal static partial class OgcFeaturesEndpoints
     {
         try
         {
+            // Extract hyphenated query parameters manually since minimal APIs don't support them directly
+            var filterCrs = context.Request.Query["filter-crs"].FirstOrDefault();
+            var bboxCrs = context.Request.Query["bbox-crs"].FirstOrDefault();
+
             var validationError = ValidateQueryParameters(context.Request, AllowedQueryParameters.Items);
             if (validationError is not null)
             {
