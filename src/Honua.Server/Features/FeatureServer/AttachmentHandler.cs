@@ -50,7 +50,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
-            return Results.Problem("Failed to query attachments", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to query attachments");
         }
     }
 
@@ -127,7 +127,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogAddAttachmentError(logger, layerId, featureId, file.FileName, ex);
-            return Results.Problem("Failed to add attachment", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to add attachment");
         }
     }
 
@@ -184,7 +184,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return Results.Problem("Failed to update attachment", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to update attachment");
         }
     }
 
@@ -228,7 +228,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogDeleteAttachmentsError(logger, layerId, featureId, ex);
-            return Results.Problem("Failed to delete attachments", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to delete attachments");
         }
     }
 
@@ -268,7 +268,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogDownloadAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return Results.Problem("Failed to download attachment", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to download attachment");
         }
     }
 

@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.FeatureServer.Services;

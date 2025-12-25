@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -14,6 +17,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -398,9 +402,9 @@ internal static partial class OgcFeaturesEndpoints
     }
 
     /// <summary>
-    /// Handles the OpenAPI 3.0 specification request
+    /// Handles the OpenAPI 3.0 specification request using pre-generated static content for AOT compatibility
     /// </summary>
-    private static IResult HandleGetOpenApiSpec(HttpContext context, string? f)
+    private static async Task<IResult> HandleGetOpenApiSpec(HttpContext context, string? f)
     {
         var request = context.Request;
 
@@ -425,767 +429,29 @@ internal static partial class OgcFeaturesEndpoints
             return Results.StatusCode(StatusCodes.Status406NotAcceptable);
         }
 
-        var baseUrl = $"{request.Scheme}://{request.Host}";
-
-        static Dictionary<string, object?> Ref(string refId)
-            => new() { ["$ref"] = refId };
-
-        static Dictionary<string, object?> StringSchema()
-            => new() { ["type"] = "string" };
-
-        static Dictionary<string, object?> ArraySchema(object items)
-            => new() { ["type"] = "array", ["items"] = items };
-
-        var openApiSpec = new Dictionary<string, object?>
+        // Serve pre-generated OpenAPI spec for AOT compatibility
+        // This avoids using Dictionary<string, object?> which is problematic for AOT compilation
+        try
         {
-            ["openapi"] = "3.0.3",
-            ["info"] = new Dictionary<string, object?>
+            var openApiContent = await File.ReadAllTextAsync("openapi.json");
+            return Results.Content(openApiContent, MediaTypes.OpenApi);
+        }
+        catch (FileNotFoundException)
+        {
+            // Fallback: serve minimal spec if file not found
+            const string fallbackSpec = """
             {
-                ["title"] = "Honua OGC API Features",
-                ["description"] = "OGC API Features implementation for geospatial data access",
-                ["version"] = "1.0.0",
-                ["contact"] = new Dictionary<string, object?>
-                {
-                    ["name"] = "Honua Server",
-                    ["url"] = baseUrl
-                }
-            },
-            ["servers"] = new object[]
-            {
-                new Dictionary<string, object?>
-                {
-                    ["url"] = baseUrl,
-                    ["description"] = "Honua Server"
-                }
-            },
-            ["paths"] = new Dictionary<string, object?>
-            {
-                ["/ogc/features"] = new Dictionary<string, object?>
-                {
-                    ["get"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Get OGC API Features landing page",
-                        ["description"] = "The landing page provides links to the API definition and other resources",
-                        ["tags"] = new[] { "OGC API Features" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "f",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output format (json or html)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "json", "html" }
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Landing page information",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/LandingPage")
-                                    },
-                                    ["text/html"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = StringSchema()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                ["/ogc/features/conformance"] = new Dictionary<string, object?>
-                {
-                    ["get"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Get OGC API Features conformance declaration",
-                        ["description"] = "Conformance classes that this API conforms to",
-                        ["tags"] = new[] { "OGC API Features" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "f",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output format (json or html)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "json", "html" }
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Conformance declaration",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/ConformanceDeclaration")
-                                    },
-                                    ["text/html"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = StringSchema()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                ["/ogc/features/collections"] = new Dictionary<string, object?>
-                {
-                    ["get"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Get OGC API Features collections",
-                        ["description"] = "Lists all available feature collections",
-                        ["tags"] = new[] { "OGC API Features" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "f",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output format (json or html)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "json", "html" }
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Collections list",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/Collections")
-                                    },
-                                    ["text/html"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = StringSchema()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                ["/ogc/features/collections/{collectionId}"] = new Dictionary<string, object?>
-                {
-                    ["get"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Get OGC API Features collection metadata",
-                        ["description"] = "Get detailed metadata for a specific collection",
-                        ["tags"] = new[] { "OGC API Features" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "collectionId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Collection identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "f",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output format (json or html)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "json", "html" }
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Collection metadata",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/CollectionInfo")
-                                    },
-                                    ["text/html"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = StringSchema()
-                                    }
-                                }
-                            },
-                            ["404"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Collection not found"
-                            }
-                        }
-                    }
-                },
-                ["/ogc/features/collections/{collectionId}/items"] = new Dictionary<string, object?>
-                {
-                    ["get"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Get features from a collection",
-                        ["description"] = "Get features from a collection with optional filtering",
-                        ["tags"] = new[] { "OGC API Features" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "collectionId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Collection identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "f",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output format (json, geojson, or html)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "json", "geojson", "html" }
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "limit",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Maximum number of features to return (default: 10, max: 10000)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "integer",
-                                    ["minimum"] = 1,
-                                    ["maximum"] = 10000,
-                                    ["default"] = 10
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "offset",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Number of features to skip",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "integer",
-                                    ["minimum"] = 0,
-                                    ["default"] = 0
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "bbox",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Bounding box as 'minx,miny,maxx,maxy' or 'minx,miny,minz,maxx,maxy,maxz'",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "datetime",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Temporal filter (RFC 3339 date-time or interval)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "filter",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "CQL2-Text filter expression",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "filter-lang",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Filter language (only cql2-text is supported)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "cql2-text" }
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "crs",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output coordinate reference system",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[]
-                                    {
-                                        "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
-                                        "http://www.opengis.net/def/crs/EPSG/0/4326"
-                                    }
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "bbox-crs",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Coordinate reference system for bbox parameter",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[]
-                                    {
-                                        "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
-                                        "http://www.opengis.net/def/crs/EPSG/0/4326"
-                                    }
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "GeoJSON FeatureCollection",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/geo+json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/FeatureCollection")
-                                    },
-                                    ["application/json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/FeatureCollection")
-                                    },
-                                    ["text/html"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = StringSchema()
-                                    }
-                                }
-                            },
-                            ["400"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Bad request (invalid parameters)"
-                            },
-                            ["404"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Collection not found"
-                            }
-                        }
-                    },
-                    ["post"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Create a new feature in a collection",
-                        ["description"] = "Add a new feature to the specified collection",
-                        ["tags"] = new[] { "OGC API Features", "Transactions" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "collectionId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Collection identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            }
-                        },
-                        ["requestBody"] = new Dictionary<string, object?>
-                        {
-                            ["required"] = true,
-                            ["content"] = new Dictionary<string, object?>
-                            {
-                                ["application/geo+json"] = new Dictionary<string, object?>
-                                {
-                                    ["schema"] = Ref("#/components/schemas/GeoJsonFeature")
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["201"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Feature created",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/geo+json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/GeoJsonFeature")
-                                    },
-                                    ["application/json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/GeoJsonFeature")
-                                    },
-                                    ["text/html"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = StringSchema()
-                                    }
-                                }
-                            },
-                            ["400"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Bad request"
-                            },
-                            ["404"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Collection not found"
-                            },
-                            ["409"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Conflict"
-                            }
-                        }
-                    }
-                },
-                ["/ogc/features/collections/{collectionId}/items/{featureId}"] = new Dictionary<string, object?>
-                {
-                    ["get"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Get a specific feature from a collection",
-                        ["description"] = "Get a specific feature by its ID from a collection",
-                        ["tags"] = new[] { "OGC API Features" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "collectionId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Collection identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "featureId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Feature identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "f",
-                                ["in"] = "query",
-                                ["required"] = false,
-                                ["description"] = "Output format (json, geojson, or html)",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string",
-                                    ["enum"] = new[] { "json", "geojson", "html" }
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "GeoJSON Feature",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/geo+json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/GeoJsonFeature")
-                                    }
-                                }
-                            },
-                            ["404"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Feature or collection not found"
-                            }
-                        }
-                    },
-                    ["put"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Replace an existing feature",
-                        ["description"] = "Replace an existing feature with new data",
-                        ["tags"] = new[] { "OGC API Features", "Transactions" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "collectionId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Collection identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "featureId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Feature identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            }
-                        },
-                        ["requestBody"] = new Dictionary<string, object?>
-                        {
-                            ["required"] = true,
-                            ["content"] = new Dictionary<string, object?>
-                            {
-                                ["application/geo+json"] = new Dictionary<string, object?>
-                                {
-                                    ["schema"] = Ref("#/components/schemas/GeoJsonFeature")
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["200"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Feature updated",
-                                ["content"] = new Dictionary<string, object?>
-                                {
-                                    ["application/geo+json"] = new Dictionary<string, object?>
-                                    {
-                                        ["schema"] = Ref("#/components/schemas/GeoJsonFeature")
-                                    }
-                                }
-                            },
-                            ["400"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Bad request"
-                            },
-                            ["404"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Feature or collection not found"
-                            }
-                        }
-                    },
-                    ["delete"] = new Dictionary<string, object?>
-                    {
-                        ["summary"] = "Delete a feature",
-                        ["description"] = "Remove a feature from the specified collection",
-                        ["tags"] = new[] { "OGC API Features", "Transactions" },
-                        ["parameters"] = new object[]
-                        {
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "collectionId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Collection identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            },
-                            new Dictionary<string, object?>
-                            {
-                                ["name"] = "featureId",
-                                ["in"] = "path",
-                                ["required"] = true,
-                                ["description"] = "Feature identifier",
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "string"
-                                }
-                            }
-                        },
-                        ["responses"] = new Dictionary<string, object?>
-                        {
-                            ["204"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Feature deleted"
-                            },
-                            ["404"] = new Dictionary<string, object?>
-                            {
-                                ["description"] = "Feature or collection not found"
-                            }
-                        }
-                    }
-                }
-            },
-            ["components"] = new Dictionary<string, object?>
-            {
-                ["schemas"] = new Dictionary<string, object?>
-                {
-                    ["LandingPage"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["title"] = StringSchema(),
-                            ["description"] = StringSchema(),
-                            ["links"] = ArraySchema(Ref("#/components/schemas/Link"))
-                        }
-                    },
-                    ["ConformanceDeclaration"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["conformsTo"] = ArraySchema(StringSchema())
-                        }
-                    },
-                    ["Collections"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["collections"] = ArraySchema(Ref("#/components/schemas/CollectionInfo")),
-                            ["links"] = ArraySchema(Ref("#/components/schemas/Link"))
-                        }
-                    },
-                    ["CollectionInfo"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["id"] = StringSchema(),
-                            ["title"] = StringSchema(),
-                            ["description"] = StringSchema(),
-                            ["itemType"] = StringSchema(),
-                            ["crs"] = ArraySchema(StringSchema()),
-                            ["storageCrs"] = StringSchema(),
-                            ["extent"] = Ref("#/components/schemas/Extent"),
-                            ["links"] = ArraySchema(Ref("#/components/schemas/Link"))
-                        }
-                    },
-                    ["FeatureCollection"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["type"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "string",
-                                ["enum"] = new[] { "FeatureCollection" }
-                            },
-                            ["features"] = ArraySchema(Ref("#/components/schemas/GeoJsonFeature")),
-                            ["numberMatched"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "integer"
-                            },
-                            ["numberReturned"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "integer"
-                            },
-                            ["timeStamp"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "string",
-                                ["format"] = "date-time"
-                            },
-                            ["links"] = ArraySchema(Ref("#/components/schemas/Link"))
-                        }
-                    },
-                    ["GeoJsonFeature"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["type"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "string",
-                                ["enum"] = new[] { "Feature" }
-                            },
-                            ["id"] = new Dictionary<string, object?>(),
-                            ["geometry"] = new Dictionary<string, object?>(),
-                            ["properties"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "object"
-                            },
-                            ["links"] = ArraySchema(Ref("#/components/schemas/Link"))
-                        }
-                    },
-                    ["Link"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["href"] = StringSchema(),
-                            ["rel"] = StringSchema(),
-                            ["type"] = StringSchema(),
-                            ["title"] = StringSchema()
-                        },
-                        ["required"] = new[] { "href", "rel" }
-                    },
-                    ["Extent"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["spatial"] = Ref("#/components/schemas/SpatialExtent"),
-                            ["temporal"] = Ref("#/components/schemas/TemporalExtent")
-                        }
-                    },
-                    ["SpatialExtent"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["bbox"] = ArraySchema(ArraySchema(new Dictionary<string, object?>
-                            {
-                                ["type"] = "number"
-                            })),
-                            ["crs"] = StringSchema()
-                        }
-                    },
-                    ["TemporalExtent"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["interval"] = ArraySchema(ArraySchema(StringSchema())),
-                            ["trs"] = StringSchema()
-                        }
-                    }
-                }
+              "openapi": "3.0.3",
+              "info": {
+                "title": "Honua OGC API Features",
+                "description": "OGC API Features implementation for geospatial data access",
+                "version": "1.0.0"
+              },
+              "paths": {}
             }
-        };
-        return Results.Json(openApiSpec, contentType: MediaTypes.OpenApi);
+            """;
+            return Results.Content(fallbackSpec, MediaTypes.OpenApi);
+        }
     }
 
     /// <summary>
@@ -1411,8 +677,8 @@ internal static partial class OgcFeaturesEndpoints
         int? offset,
         HttpContext context,
         ILayerCatalog layerCatalog,
+        IOptions<LimitsOptions> limitsOptions,
         IFeatureStore featureStore,
-        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
         ISqlFilterTranslator sqlFilterTranslator,
         ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
@@ -1457,13 +723,19 @@ internal static partial class OgcFeaturesEndpoints
                 return TypedResults.BadRequest("Offset must be non-negative");
             }
 
-            // Apply reasonable maximum limit to prevent unbounded queries
-            const int maxLimit = 10000;
-            var effectiveLimit = limit ?? 10;
-            if (effectiveLimit > maxLimit)
+            var queryLimits = limitsOptions.Value.Query;
+
+            if (limit.HasValue && limit.Value > queryLimits.MaxRecordCount)
             {
-                effectiveLimit = maxLimit;
+                return TypedResults.BadRequest($"Limit exceeds maximum of {queryLimits.MaxRecordCount}");
             }
+
+            if (offset.HasValue && offset.Value > queryLimits.MaxOffset)
+            {
+                return TypedResults.BadRequest($"Offset exceeds maximum of {queryLimits.MaxOffset}");
+            }
+
+            var effectiveLimit = limit ?? Math.Min(10, queryLimits.MaxRecordCount);
 
             // Parse collection ID to layer ID
             if (!int.TryParse(collectionId, out var layerId))
@@ -1600,7 +872,7 @@ internal static partial class OgcFeaturesEndpoints
             var result = await featureStore.QueryAsync(layerId, featureQuery, effectiveToken);
 
             // Convert to GeoJSON FeatureCollection with enhanced metadata
-            var featureCollection = ConvertToGeoJsonFeatureCollection(result, layer, geometryConverter, context, collectionId, effectiveLimit, offset, outputFormat);
+            var featureCollection = ConvertToGeoJsonFeatureCollection(result, context, collectionId, effectiveLimit, offset, outputFormat);
 
             // Return response in requested format
             return FormatFeatureCollectionResponse(featureCollection, outputFormat, crs);
@@ -1637,7 +909,6 @@ internal static partial class OgcFeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
-        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
         ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
@@ -1703,7 +974,7 @@ internal static partial class OgcFeaturesEndpoints
             {
                 Type = "Feature",
                 Id = ((Feature)feature).Id,
-                Geometry = ConvertFeatureGeometry(((Feature)feature).Geometry, geometryConverter),
+                Geometry = ConvertFeatureGeometry(((Feature)feature).Geometry),
                 Properties = ((Feature)feature).Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 Links = itemLinks
             };
@@ -1842,8 +1113,6 @@ internal static partial class OgcFeaturesEndpoints
     /// </summary>
     private static FeatureCollection ConvertToGeoJsonFeatureCollection(
         QueryResult<Feature> queryResult,
-        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
-        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
         HttpContext httpContext,
         string collectionId,
         int? limit,
@@ -1854,7 +1123,7 @@ internal static partial class OgcFeaturesEndpoints
         {
             Type = "Feature",
             Id = ((Feature)feature).Id,
-            Geometry = ConvertFeatureGeometry(((Feature)feature).Geometry, geometryConverter),
+            Geometry = ConvertFeatureGeometry(((Feature)feature).Geometry),
             Properties = ((Feature)feature).Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
         }).ToArray();
 
@@ -1990,7 +1259,7 @@ internal static partial class OgcFeaturesEndpoints
     /// <summary>
     /// Converts a feature's WKB geometry to GeoJSON format
     /// </summary>
-    private static SimpleGeoJsonGeometry? ConvertFeatureGeometry(byte[]? wkbGeometry, Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    private static SimpleGeoJsonGeometry? ConvertFeatureGeometry(byte[]? wkbGeometry)
     {
         if (wkbGeometry == null || wkbGeometry.Length == 0)
         {
@@ -1999,68 +1268,240 @@ internal static partial class OgcFeaturesEndpoints
 
         try
         {
-            var geoJson = geometryConverter.ConvertWkbToGeoJson(wkbGeometry);
-            if (geoJson == null)
-            {
-                return null;
-            }
+            var reader = new WKBReader();
+            var geometry = reader.Read(wkbGeometry);
 
-            if (geoJson is string geoJsonString)
-            {
-                using var document = JsonDocument.Parse(geoJsonString);
-                return BuildSimpleGeometry(document.RootElement);
-            }
-
-            if (geoJson is JsonElement element)
-            {
-                return BuildSimpleGeometry(element);
-            }
-
-            return null;
+            return geometry == null ? null : BuildSimpleGeometry(geometry);
         }
-        catch (Exception ex) when (ex is ArgumentException or JsonException)
+        catch (Exception ex) when (ex is ArgumentException or ParseException or FormatException)
         {
             return null;
         }
     }
 
-    private static SimpleGeoJsonGeometry? BuildSimpleGeometry(JsonElement root)
+    private static SimpleGeoJsonGeometry? BuildSimpleGeometry(Geometry geometry)
     {
-        if (!root.TryGetProperty("type", out var typeElement))
+        if (geometry == null)
         {
             return null;
         }
 
-        var type = typeElement.GetString();
-        if (string.IsNullOrWhiteSpace(type))
+        if (geometry is GeometryCollection collection)
         {
-            return null;
-        }
-
-        if (string.Equals(type, "GeometryCollection", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!root.TryGetProperty("geometries", out var geometriesElement))
-            {
-                return null;
-            }
-
             return new SimpleGeoJsonGeometry
             {
-                Type = type,
-                GeometriesJson = geometriesElement.GetRawText()
+                Type = "GeometryCollection",
+                GeometriesJson = SerializeGeometryCollection(collection)
             };
-        }
-
-        if (!root.TryGetProperty("coordinates", out var coordinatesElement))
-        {
-            return null;
         }
 
         return new SimpleGeoJsonGeometry
         {
-            Type = type,
-            CoordinatesJson = coordinatesElement.GetRawText()
+            Type = MapGeometryType(geometry),
+            CoordinatesJson = SerializeCoordinates(geometry)
         };
+    }
+
+    private static string MapGeometryType(Geometry geometry)
+    {
+        return geometry.OgcGeometryType switch
+        {
+            OgcGeometryType.Point => "Point",
+            OgcGeometryType.LineString => "LineString",
+            OgcGeometryType.Polygon => "Polygon",
+            OgcGeometryType.MultiPoint => "MultiPoint",
+            OgcGeometryType.MultiLineString => "MultiLineString",
+            OgcGeometryType.MultiPolygon => "MultiPolygon",
+            OgcGeometryType.GeometryCollection => "GeometryCollection",
+            _ => geometry.GeometryType
+        };
+    }
+
+    private static string? SerializeCoordinates(Geometry geometry)
+    {
+        if (geometry.IsEmpty)
+        {
+            return null;
+        }
+
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+
+        WriteCoordinates(writer, geometry);
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static string SerializeGeometryCollection(GeometryCollection collection)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+
+        writer.WriteStartArray();
+
+        for (var i = 0; i < collection.NumGeometries; i++)
+        {
+            WriteGeometryObject(writer, collection.GetGeometryN(i));
+        }
+
+        writer.WriteEndArray();
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteGeometryObject(Utf8JsonWriter writer, Geometry geometry)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("type", MapGeometryType(geometry));
+
+        if (geometry is GeometryCollection collection)
+        {
+            writer.WritePropertyName("geometries");
+            writer.WriteStartArray();
+
+            for (var i = 0; i < collection.NumGeometries; i++)
+            {
+                WriteGeometryObject(writer, collection.GetGeometryN(i));
+            }
+
+            writer.WriteEndArray();
+        }
+        else
+        {
+            writer.WritePropertyName("coordinates");
+
+            if (geometry.IsEmpty)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                WriteCoordinates(writer, geometry);
+            }
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteCoordinates(Utf8JsonWriter writer, Geometry geometry)
+    {
+        switch (geometry)
+        {
+            case Point point:
+                WritePointCoordinates(writer, point);
+                break;
+            case LineString lineString:
+                WriteLineStringCoordinates(writer, lineString);
+                break;
+            case Polygon polygon:
+                WritePolygonCoordinates(writer, polygon);
+                break;
+            case MultiPoint multiPoint:
+                WriteMultiPointCoordinates(writer, multiPoint);
+                break;
+            case MultiLineString multiLineString:
+                WriteMultiLineStringCoordinates(writer, multiLineString);
+                break;
+            case MultiPolygon multiPolygon:
+                WriteMultiPolygonCoordinates(writer, multiPolygon);
+                break;
+            case LinearRing linearRing:
+                WriteLineStringCoordinates(writer, linearRing);
+                break;
+            default:
+                throw new ArgumentException($"Unsupported geometry type: {geometry.GeometryType}");
+        }
+    }
+
+    private static void WritePointCoordinates(Utf8JsonWriter writer, Point point)
+    {
+        var sequence = point.CoordinateSequence;
+        if (sequence.Count == 0)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        WriteCoordinate(writer, sequence, 0);
+    }
+
+    private static void WriteLineStringCoordinates(Utf8JsonWriter writer, LineString lineString)
+    {
+        var sequence = lineString.CoordinateSequence;
+        writer.WriteStartArray();
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            WriteCoordinate(writer, sequence, i);
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WritePolygonCoordinates(Utf8JsonWriter writer, Polygon polygon)
+    {
+        writer.WriteStartArray();
+        WriteLineStringCoordinates(writer, polygon.ExteriorRing);
+        for (var i = 0; i < polygon.NumInteriorRings; i++)
+        {
+            WriteLineStringCoordinates(writer, polygon.GetInteriorRingN(i));
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteMultiPointCoordinates(Utf8JsonWriter writer, MultiPoint multiPoint)
+    {
+        writer.WriteStartArray();
+        for (var i = 0; i < multiPoint.NumGeometries; i++)
+        {
+            var point = (Point)multiPoint.GetGeometryN(i);
+            if (point.IsEmpty || point.CoordinateSequence.Count == 0)
+            {
+                writer.WriteNullValue();
+                continue;
+            }
+
+            WriteCoordinate(writer, point.CoordinateSequence, 0);
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteMultiLineStringCoordinates(Utf8JsonWriter writer, MultiLineString multiLineString)
+    {
+        writer.WriteStartArray();
+        for (var i = 0; i < multiLineString.NumGeometries; i++)
+        {
+            WriteLineStringCoordinates(writer, (LineString)multiLineString.GetGeometryN(i));
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteMultiPolygonCoordinates(Utf8JsonWriter writer, MultiPolygon multiPolygon)
+    {
+        writer.WriteStartArray();
+        for (var i = 0; i < multiPolygon.NumGeometries; i++)
+        {
+            WritePolygonCoordinates(writer, (Polygon)multiPolygon.GetGeometryN(i));
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteCoordinate(Utf8JsonWriter writer, CoordinateSequence sequence, int index)
+    {
+        writer.WriteStartArray();
+        writer.WriteNumberValue(sequence.GetX(index));
+        writer.WriteNumberValue(sequence.GetY(index));
+
+        if (sequence.Dimension > 2)
+        {
+            var z = sequence.GetOrdinate(index, Ordinate.Z);
+            if (!double.IsNaN(z))
+            {
+                writer.WriteNumberValue(z);
+            }
+        }
+
+        writer.WriteEndArray();
     }
 
 
@@ -2262,7 +1703,6 @@ internal static partial class OgcFeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
-        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
         ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
@@ -2306,7 +1746,7 @@ internal static partial class OgcFeaturesEndpoints
             {
                 Type = "Feature",
                 Id = createdFeature.Id,
-                Geometry = ConvertFeatureGeometry(createdFeature.Geometry, geometryConverter),
+                Geometry = ConvertFeatureGeometry(createdFeature.Geometry),
                 Properties = createdFeature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 Links = ImmutableArray.Create(
                     Link.Create(
@@ -2359,7 +1799,6 @@ internal static partial class OgcFeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
-        Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
         ILogger<OgcFeaturesEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
@@ -2421,7 +1860,7 @@ internal static partial class OgcFeaturesEndpoints
             {
                 Type = "Feature",
                 Id = updatedFeature.Id,
-                Geometry = ConvertFeatureGeometry(updatedFeature.Geometry, geometryConverter),
+                Geometry = ConvertFeatureGeometry(updatedFeature.Geometry),
                 Properties = updatedFeature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 Links = ImmutableArray.Create(
                     Link.Create(

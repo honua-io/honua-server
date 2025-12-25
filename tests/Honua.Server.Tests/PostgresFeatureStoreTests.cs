@@ -5,6 +5,8 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Server.Tests.Infrastructure;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -41,7 +43,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
             CREATE TABLE features (
                 objectid bigserial PRIMARY KEY,
                 layer_id integer NOT NULL,
-                geometry bytea,
+                geometry geometry,
                 attributes jsonb NOT NULL DEFAULT '{}'::jsonb
             );
 
@@ -84,7 +86,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     public async Task CreateAsync_WithGeometry_StoresGeometry()
     {
         // Arrange
-        var geometry = new byte[] { 1, 2, 3, 4, 5 }; // Mock WKB data
+        var geometry = CreatePointWkb(-122.5, 37.5);
         var attributes = new Dictionary<string, object?> { ["name"] = "Geometry Feature" }.ToImmutableDictionary();
         var feature = Feature.Create(0, geometry, attributes);
 
@@ -95,6 +97,13 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.True(created.Id > 0);
         Assert.Equal(geometry, created.Geometry);
         Assert.Equal(attributes["name"], created.Attributes["name"]);
+    }
+
+    private static byte[] CreatePointWkb(double x, double y)
+    {
+        var point = new Point(x, y);
+        var writer = new WKBWriter();
+        return writer.Write(point);
     }
 
     [Fact]

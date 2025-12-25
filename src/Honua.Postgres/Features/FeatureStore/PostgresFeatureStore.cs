@@ -39,8 +39,16 @@ internal record ParameterizedQuery(string Sql, List<object> WhereParameters);
 /// </remarks>
 internal sealed class PostgresFeatureStore : IFeatureStore
 {
+    private enum GeometryStorageType
+    {
+        Geometry,
+        Geography,
+        Bytea
+    }
+
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
+    private const string GeometryColumnName = "geometry";
 
     private static readonly Regex _comparisonRegex = new(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
@@ -56,21 +64,170 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _tableName;
+    private readonly string _tableNameOnly;
+    private readonly string? _tableSchema;
+    private GeometryStorageType? _geometryStorageType;
 
     public PostgresFeatureStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _tableName = string.IsNullOrEmpty(schemaName) ? "features" : $"{schemaName}.features";
+        _tableNameOnly = "features";
+        _tableSchema = string.IsNullOrEmpty(schemaName) ? null : schemaName;
+        _tableName = string.IsNullOrEmpty(schemaName) ? _tableNameOnly : $"{schemaName}.{_tableNameOnly}";
+    }
+
+    private async Task<GeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
+    {
+        if (_geometryStorageType.HasValue)
+        {
+            return _geometryStorageType.Value;
+        }
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider
+            .OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await GetGeometryStorageTypeAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<GeometryStorageType> GetGeometryStorageTypeAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (_geometryStorageType.HasValue)
+        {
+            return _geometryStorageType.Value;
+        }
+
+        const string sql = """
+            SELECT data_type, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = COALESCE(@schema, current_schema())
+              AND table_name = @table
+              AND column_name = @column
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@schema", (object?)_tableSchema ?? DBNull.Value);
+        _ = command.Parameters.AddWithValue("@table", _tableNameOnly);
+        _ = command.Parameters.AddWithValue("@column", GeometryColumnName);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            _geometryStorageType = GeometryStorageType.Geometry;
+            return _geometryStorageType.Value;
+        }
+
+        var dataType = reader.GetString(0);
+        var udtName = reader.GetString(1);
+
+        _geometryStorageType = ResolveGeometryStorageType(dataType, udtName);
+        return _geometryStorageType.Value;
+    }
+
+    private static GeometryStorageType ResolveGeometryStorageType(string dataType, string udtName)
+    {
+        if (string.Equals(dataType, "bytea", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(udtName, "bytea", StringComparison.OrdinalIgnoreCase))
+        {
+            return GeometryStorageType.Bytea;
+        }
+
+        if (string.Equals(udtName, "geography", StringComparison.OrdinalIgnoreCase))
+        {
+            return GeometryStorageType.Geography;
+        }
+
+        return GeometryStorageType.Geometry;
+    }
+
+    private static string GetGeometrySelectExpressionWithAlias(GeometryStorageType storageType)
+    {
+        var expression = storageType switch
+        {
+            GeometryStorageType.Geometry => $"ST_AsBinary({GeometryColumnName})",
+            GeometryStorageType.Geography => $"ST_AsBinary({GeometryColumnName}::geometry)",
+            GeometryStorageType.Bytea => GeometryColumnName,
+            _ => GeometryColumnName
+        };
+
+        return $"{expression} AS {GeometryColumnName}";
+    }
+
+    private static string GetGeometryWriteExpression(GeometryStorageType storageType, string parameterName)
+    {
+        return storageType switch
+        {
+            GeometryStorageType.Geometry => $"ST_GeomFromWKB({parameterName})",
+            GeometryStorageType.Geography => $"ST_GeogFromWKB({parameterName})",
+            GeometryStorageType.Bytea => parameterName,
+            _ => parameterName
+        };
+    }
+
+    private static string GetGeometryOperand(GeometryStorageType storageType)
+    {
+        return storageType switch
+        {
+            GeometryStorageType.Geometry => GeometryColumnName,
+            GeometryStorageType.Geography => $"{GeometryColumnName}::geometry",
+            GeometryStorageType.Bytea => $"ST_GeomFromWKB({GeometryColumnName})",
+            _ => GeometryColumnName
+        };
+    }
+
+    private static string GetGeometryOperand(GeometryStorageType storageType, string columnExpression)
+    {
+        return storageType switch
+        {
+            GeometryStorageType.Geometry => columnExpression,
+            GeometryStorageType.Geography => $"{columnExpression}::geometry",
+            GeometryStorageType.Bytea => $"ST_GeomFromWKB({columnExpression})",
+            _ => columnExpression
+        };
+    }
+
+    private static string GetGeographyOperand(GeometryStorageType storageType)
+    {
+        return storageType switch
+        {
+            GeometryStorageType.Geography => GeometryColumnName,
+            GeometryStorageType.Geometry => $"{GeometryColumnName}::geography",
+            GeometryStorageType.Bytea => $"ST_GeomFromWKB({GeometryColumnName})::geography",
+            _ => $"{GeometryColumnName}::geography"
+        };
+    }
+
+    private static string GetGeographyParameterExpression(GeometryStorageType storageType, int paramIndex)
+    {
+        return storageType switch
+        {
+            GeometryStorageType.Geography => $"ST_GeogFromWKB(${paramIndex})",
+            _ => $"ST_GeomFromWKB(${paramIndex})::geography"
+        };
+    }
+
+    private static string GetExtentExpression(GeometryStorageType storageType)
+    {
+        return storageType switch
+        {
+            GeometryStorageType.Geometry => GeometryColumnName,
+            GeometryStorageType.Geography => $"{GeometryColumnName}::geometry",
+            GeometryStorageType.Bytea => $"ST_GeomFromWKB({GeometryColumnName})",
+            _ => GeometryColumnName
+        };
     }
 
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var geometryStorageType = await GetGeometryStorageTypeAsync(connection, cancellationToken).ConfigureAwait(false);
+        var geometrySelect = GetGeometrySelectExpressionWithAlias(geometryStorageType);
+
         var sql = $@"
-            SELECT objectid, geometry, attributes
+            SELECT objectid, {geometrySelect}, attributes
             FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -87,15 +244,17 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        var geometryStorageType = await GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+
         // PERFORMANCE OPTIMIZATION: Use single query with window function instead of separate count + select
         // This reduces database round trips from 2 to 1, improving performance by 30-50%
         if (query.Limit.HasValue || query.Offset.HasValue)
         {
-            return await QueryOptimizedAsync(layerId, query, cancellationToken);
+            return await QueryOptimizedAsync(layerId, query, geometryStorageType, cancellationToken);
         }
 
         // Fallback to original pattern for unlimited queries where count optimization isn't beneficial
-        var countQuery = BuildCountQuery(layerId, query);
+        var countQuery = BuildCountQuery(layerId, query, geometryStorageType);
         var totalCount = await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
 
         if (totalCount == 0)
@@ -103,7 +262,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
             return QueryResult<Feature>.Empty();
         }
 
-        var selectQuery = BuildSelectQuery(layerId, query);
+        var selectQuery = BuildSelectQuery(layerId, query, geometryStorageType);
         var features = await ExecuteSelectQuery(selectQuery, query, layerId, cancellationToken);
 
         return QueryResult<Feature>.Create(totalCount, features, false);
@@ -111,13 +270,15 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var countQuery = BuildCountQuery(layerId, query);
+        var geometryStorageType = await GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var countQuery = BuildCountQuery(layerId, query, geometryStorageType);
         return await ExecuteCountQuery(countQuery, query, layerId, cancellationToken);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var extentQuery = BuildExtentQuery(layerId, query ?? new FeatureQuery());
+        var geometryStorageType = await GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var extentQuery = BuildExtentQuery(layerId, query ?? new FeatureQuery(), geometryStorageType);
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(extentQuery.Sql, connection);
@@ -157,17 +318,26 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
+        var geometryStorageType = await GetGeometryStorageTypeAsync(connection, cancellationToken).ConfigureAwait(false);
+        var geometryValueExpression = GetGeometryWriteExpression(geometryStorageType, "$2");
+
+        var geometrySelect = GetGeometrySelectExpressionWithAlias(geometryStorageType);
         var sql = $@"
             INSERT INTO {_tableName} (layer_id, geometry, attributes)
-            VALUES ($1, $2, $3)
-            RETURNING objectid, geometry, attributes";
+            VALUES ($1, {geometryValueExpression}, $3)
+            RETURNING objectid, {geometrySelect}, attributes";
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
             Transaction = transaction
         };
         command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
+        var geometryParam = new NpgsqlParameter
+        {
+            Value = feature.Geometry ?? (object)DBNull.Value,
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea
+        };
+        command.Parameters.Add(geometryParam);
 
         // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
         var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
@@ -198,11 +368,15 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
+        var geometryStorageType = await GetGeometryStorageTypeAsync(connection, cancellationToken).ConfigureAwait(false);
+        var geometryValueExpression = GetGeometryWriteExpression(geometryStorageType, "$3");
+
+        var geometrySelect = GetGeometrySelectExpressionWithAlias(geometryStorageType);
         var sql = $@"
             UPDATE {_tableName}
-            SET geometry = $3, attributes = $4
+            SET geometry = {geometryValueExpression}, attributes = $4
             WHERE layer_id = $1 AND objectid = $2
-            RETURNING objectid, geometry, attributes";
+            RETURNING objectid, {geometrySelect}, attributes";
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
@@ -210,7 +384,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         };
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Id);
-        command.Parameters.AddWithValue(feature.Geometry ?? (object)DBNull.Value);
+        var geometryParam = new NpgsqlParameter
+        {
+            Value = feature.Geometry ?? (object)DBNull.Value,
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea
+        };
+        command.Parameters.Add(geometryParam);
 
         // Serialize to JSON string and pass as JSONB parameter (AOT-compatible with source generators)
         var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
@@ -481,7 +660,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     }
 
 
-    private ParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query, GeometryStorageType geometryStorageType)
     {
         var spatialFilter = query.SpatialFilter;
         var isKnnQuery = spatialFilter.HasValue &&
@@ -491,12 +670,12 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         var paramIndex = 2;
         var parameters = new List<object>();
 
-        BuildSelectClause(sql, isKnnQuery, spatialFilter, ref paramIndex);
+        BuildSelectClause(sql, isKnnQuery, spatialFilter, geometryStorageType, ref paramIndex);
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-        AppendSpatialFilter(sql, query, ref paramIndex);
+        AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
         AppendOrderByClause(sql, query);
-        AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, ref paramIndex);
+        AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
         AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
 
         return new ParameterizedQuery(sql.ToString(), parameters);
@@ -505,32 +684,43 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     /// <summary>
     /// Builds the SELECT clause for the query, handling KNN distance calculations
     /// </summary>
-    private void BuildSelectClause(StringBuilder sql, bool isKnnQuery, SpatialFilter? spatialFilter, ref int paramIndex)
+    private void BuildSelectClause(StringBuilder sql, bool isKnnQuery, SpatialFilter? spatialFilter, GeometryStorageType geometryStorageType, ref int paramIndex)
     {
+        var geometrySelect = GetGeometrySelectExpressionWithAlias(geometryStorageType);
+        var geographyOperand = GetGeographyOperand(geometryStorageType);
+
         if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
+            var distanceParamExpression = GetGeographyParameterExpression(geometryStorageType, paramIndex++);
             // KNN query with distance calculation
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT objectid, geometry, attributes, ST_Distance(geometry::geography, ST_GeomFromWKB(${paramIndex++})::geography) as distance FROM {_tableName} WHERE layer_id = $1");
+                $"SELECT objectid, {geometrySelect}, attributes, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE layer_id = $1");
         }
         else
         {
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT objectid, geometry, attributes FROM {_tableName} WHERE layer_id = $1");
+                $"SELECT objectid, {geometrySelect}, attributes FROM {_tableName} WHERE layer_id = $1");
         }
     }
 
     /// <summary>
     /// Appends KNN ordering clause using PostGIS distance operator
     /// </summary>
-    private static void AppendKnnOrdering(StringBuilder sql, bool isKnnQuery, SpatialFilter? spatialFilter, FeatureQuery query, ref int paramIndex)
+    private static void AppendKnnOrdering(
+        StringBuilder sql,
+        bool isKnnQuery,
+        SpatialFilter? spatialFilter,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType,
+        ref int paramIndex)
     {
         if (!isKnnQuery)
         {
             return;
         }
 
-        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY geometry <-> ST_GeomFromWKB(${paramIndex++})");
+        var geometryOperand = GetGeometryOperand(geometryStorageType);
+        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {geometryOperand} <-> ST_GeomFromWKB(${paramIndex++})");
     }
 
     /// <summary>
@@ -561,7 +751,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
         }
     }
 
-    private ParameterizedQuery BuildCountQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildCountQuery(int layerId, FeatureQuery query, GeometryStorageType geometryStorageType)
     {
         var sql = new StringBuilder($"SELECT COUNT(*) FROM {_tableName} WHERE layer_id = $1");
         var paramIndex = 2;
@@ -569,7 +759,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-        AppendSpatialFilter(sql, query, ref paramIndex);
+        AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
 
         return new ParameterizedQuery(sql.ToString(), parameters);
     }
@@ -578,9 +768,13 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     /// Optimized query method that combines count and select in a single database round trip
     /// Uses window functions to get total count with the data, reducing latency by 30-50%
     /// </summary>
-    private async Task<QueryResult<Feature>> QueryOptimizedAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
+    private async Task<QueryResult<Feature>> QueryOptimizedAsync(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType,
+        CancellationToken cancellationToken)
     {
-        var optimizedQuery = BuildOptimizedQuery(layerId, query);
+        var optimizedQuery = BuildOptimizedQuery(layerId, query, geometryStorageType);
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(optimizedQuery.Sql, connection);
@@ -613,12 +807,13 @@ internal sealed class PostgresFeatureStore : IFeatureStore
     /// <summary>
     /// Builds an optimized query that includes both data and total count using window functions
     /// </summary>
-    private ParameterizedQuery BuildOptimizedQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildOptimizedQuery(int layerId, FeatureQuery query, GeometryStorageType geometryStorageType)
     {
+        var geometrySelect = GetGeometrySelectExpressionWithAlias(geometryStorageType);
         var sql = new StringBuilder($@"
 SELECT
     objectid,
-    geometry,
+    {geometrySelect},
     attributes,
     COUNT(*) OVER() as total_count
 FROM {_tableName}
@@ -629,7 +824,7 @@ WHERE layer_id = $1");
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-        AppendSpatialFilter(sql, query, ref paramIndex);
+        AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
         AppendOrderByClause(sql, query);
 
         if (query.Limit.HasValue)
@@ -645,22 +840,23 @@ WHERE layer_id = $1");
         return new ParameterizedQuery(sql.ToString(), parameters);
     }
 
-    private ParameterizedQuery BuildExtentQuery(int layerId, FeatureQuery query)
+    private ParameterizedQuery BuildExtentQuery(int layerId, FeatureQuery query, GeometryStorageType geometryStorageType)
     {
+        var extentExpression = GetExtentExpression(geometryStorageType);
         var sql = new StringBuilder($@"
             SELECT
                 ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
             FROM (
-                SELECT ST_Extent(geometry) as extent
+                SELECT ST_Extent({extentExpression}) as extent
                 FROM {_tableName}
-                WHERE layer_id = $1 AND geometry IS NOT NULL");
+                WHERE layer_id = $1 AND {extentExpression} IS NOT NULL");
 
         var paramIndex = 2;
         var parameters = new List<object>();
 
         AppendWhereClause(sql, query, ref paramIndex, parameters);
         AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-        AppendSpatialFilter(sql, query, ref paramIndex);
+        AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
 
         sql.Append(") AS extent_query");
         return new ParameterizedQuery(sql.ToString(), parameters);
@@ -769,9 +965,10 @@ WHERE layer_id = $1");
             if (nullMatch.Success)
             {
                 var fieldName = nullMatch.Groups["field"].Value;
+                var fieldSql = MapWhereField(fieldName, out _);
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                parameterizedExpressions.Add($"{fieldName} IS {notClause}NULL");
+                parameterizedExpressions.Add($"{fieldSql} IS {notClause}NULL");
                 continue;
             }
 
@@ -782,8 +979,16 @@ WHERE layer_id = $1");
                 var operatorValue = NormalizeOperator(comparisonMatch.Groups["op"].Value);
                 var valueToken = comparisonMatch.Groups["value"].Value;
 
-                parameters.Add(ParseValueToken(valueToken));
-                parameterizedExpressions.Add($"{fieldName} {operatorValue} ${paramIndex++}");
+                var fieldSql = MapWhereField(fieldName, out var isAttributeField);
+                var isStringLiteral = valueToken.StartsWith('\'');
+
+                if (!isStringLiteral && isAttributeField && IsNumericComparisonOperator(operatorValue))
+                {
+                    fieldSql = $"NULLIF({fieldSql}, '')::double precision";
+                }
+
+                parameters.Add(ParseValueToken(valueToken, operatorValue is "LIKE" or "NOT LIKE"));
+                parameterizedExpressions.Add($"{fieldSql} {operatorValue} ${paramIndex++}");
                 continue;
             }
 
@@ -799,8 +1004,50 @@ WHERE layer_id = $1");
         return normalized.ToUpperInvariant();
     }
 
-    private static object ParseValueToken(string valueToken)
+    private static string MapWhereField(string fieldName, out bool isAttributeField)
     {
+        var jsonPathIndex = fieldName.IndexOf("->>", StringComparison.Ordinal);
+        if (jsonPathIndex >= 0)
+        {
+            var baseField = fieldName[..jsonPathIndex];
+            if (!baseField.Equals("attributes", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(UnsupportedWhereClauseMessage);
+            }
+
+            isAttributeField = true;
+            return $"attributes{fieldName[jsonPathIndex..]}";
+        }
+
+        if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase))
+        {
+            isAttributeField = false;
+            return "objectid";
+        }
+
+        if (fieldName.Equals("layer_id", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("layerid", StringComparison.OrdinalIgnoreCase))
+        {
+            isAttributeField = false;
+            return "layer_id";
+        }
+
+        isAttributeField = true;
+        return $"attributes->>'{fieldName}'";
+    }
+
+    private static bool IsNumericComparisonOperator(string operatorValue)
+    {
+        return operatorValue is "=" or "<>" or "!=" or "<" or "<=" or ">" or ">=";
+    }
+
+    private static object ParseValueToken(string valueToken, bool forceText)
+    {
+        if (forceText && !valueToken.StartsWith('\''))
+        {
+            return valueToken;
+        }
+
         if (valueToken.StartsWith('\''))
         {
             return UnescapeSqlString(valueToken);
@@ -992,7 +1239,7 @@ WHERE layer_id = $1");
         sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
     }
 
-    private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
+    private static void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, GeometryStorageType geometryStorageType, ref int paramIndex)
     {
         if (!query.SpatialFilter.HasValue)
         {
@@ -1000,66 +1247,68 @@ WHERE layer_id = $1");
         }
 
         var filter = query.SpatialFilter.Value;
+        var geometryOperand = GetGeometryOperand(geometryStorageType);
+        var geographyOperand = GetGeographyOperand(geometryStorageType);
 
         switch (filter.SpatialRelationship)
         {
             case SpatialRelationship.Intersects:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Within:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Within(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Within({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Contains:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Contains(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Contains({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Crosses:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Crosses(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Crosses({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Touches:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Touches(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Touches({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Overlaps:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Overlaps(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Overlaps({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Disjoint:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Disjoint(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Disjoint({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.Equals:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Equals(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Equals({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
 
             case SpatialRelationship.WithinDistance:
                 // Use ST_DWithin with geography type for accurate geodesic distance calculations
                 // Convert distance to meters based on the unit
                 sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_DWithin(geometry::geography, ST_GeomFromWKB(${paramIndex++})::geography, ${paramIndex++})");
+                    $" AND ST_DWithin({geographyOperand}, {GetGeographyParameterExpression(geometryStorageType, paramIndex++)}, ${paramIndex++})");
                 break;
 
             case SpatialRelationship.BeyondDistance:
                 // ST_Distance > threshold for features beyond a certain distance
                 sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_Distance(geometry::geography, ST_GeomFromWKB(${paramIndex++})::geography) > ${paramIndex++}");
+                    $" AND ST_Distance({geographyOperand}, {GetGeographyParameterExpression(geometryStorageType, paramIndex++)}) > ${paramIndex++}");
                 break;
 
             case SpatialRelationship.NearestNeighbor:
                 // KNN uses ORDER BY with PostGIS <-> operator (handled separately in query building)
                 // The filter geometry parameter is added, but actual KNN logic is in ORDER BY
-                sql.Append(CultureInfo.InvariantCulture, $" AND geometry IS NOT NULL");
+                sql.Append(CultureInfo.InvariantCulture, $" AND {geometryOperand} IS NOT NULL");
                 break;
 
             default:
-                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects(geometry, ST_GeomFromWKB(${paramIndex++}))");
+                sql.Append(CultureInfo.InvariantCulture, $" AND ST_Intersects({geometryOperand}, ST_GeomFromWKB(${paramIndex++}))");
                 break;
         }
     }
@@ -1396,13 +1645,15 @@ WHERE layer_id = $1");
             return Array.Empty<Feature>();
         }
 
+        var geometryStorageType = await GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var geometrySelect = GetGeometrySelectExpressionWithAlias(geometryStorageType);
         var sql = new StringBuilder();
         var parameters = new List<object> { query.Relationship.RelatedLayerId };
         var paramIndex = 2;
 
         // Build base query
         sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT objectid, geometry, attributes
+            SELECT objectid, {geometrySelect}, attributes
             FROM {_tableName}
             WHERE layer_id = $1");
 
@@ -1493,6 +1744,9 @@ WHERE layer_id = $1");
             throw new ArgumentException($"Invalid tile coordinates: x={x}, y={y}, z={z}");
         }
 
+        var geometryStorageType = await GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var geometryOperand = GetGeometryOperand(geometryStorageType);
+
         // Get tile bounds in Web Mercator (EPSG:3857)
         var bounds = TileMath.GetTileBounds(x, y, z);
         var tolerance = TileMath.GetSimplificationTolerance(z);
@@ -1514,7 +1768,9 @@ WHERE layer_id = $1");
         if (z < 10 && tolerance > 0)
         {
             sql.Append(@"
-                        ST_Simplify(ST_Transform(geometry, 3857), $");
+                        ST_Simplify(ST_Transform(");
+            sql.Append(geometryOperand);
+            sql.Append(", 3857), $");
             sql.Append(paramIndex++);
             sql.Append("),");
             parameters.Add(tolerance);
@@ -1522,7 +1778,9 @@ WHERE layer_id = $1");
         else
         {
             sql.Append(@"
-                        ST_Transform(geometry, 3857),");
+                        ST_Transform(");
+            sql.Append(geometryOperand);
+            sql.Append(", 3857),");
         }
 
         // Add tile bounds envelope and MVT parameters
@@ -1540,7 +1798,7 @@ WHERE layer_id = $1");
         sql.Append(CultureInfo.InvariantCulture, $@"
                 FROM {_tableName}
                 WHERE layer_id = $1
-                AND geometry && ST_Transform(ST_MakeEnvelope(${paramIndex - 4}, ${paramIndex - 3}, ${paramIndex - 2}, ${paramIndex - 1}, 3857), ST_SRID(geometry))");
+                AND {geometryOperand} && ST_Transform(ST_MakeEnvelope(${paramIndex - 4}, ${paramIndex - 3}, ${paramIndex - 2}, ${paramIndex - 1}, 3857), ST_SRID({geometryOperand}))");
 
         // Add WHERE clause filter if specified
         if (query.HasValue && !string.IsNullOrWhiteSpace(query.Value.Where))
@@ -1588,6 +1846,9 @@ WHERE layer_id = $1");
             throw new ArgumentException($"Invalid tile coordinates: x={x}, y={y}, z={z}");
         }
 
+        var geometryStorageType = await GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var geometryOperand = GetGeometryOperand(geometryStorageType, "f.geometry");
+
         // Get tile bounds in Web Mercator (EPSG:3857)
         var bounds = TileMath.GetTileBounds(x, y, z);
         var tolerance = TileMath.GetSimplificationTolerance(z);
@@ -1609,7 +1870,9 @@ WHERE layer_id = $1");
         if (z < tileOptions.SimplifyZoom && tolerance > 0)
         {
             sql.Append(@"
-                        ST_Simplify(ST_Transform(geometry, 3857), $");
+                        ST_Simplify(ST_Transform(");
+            sql.Append(geometryOperand);
+            sql.Append(", 3857), $");
             sql.Append(paramIndex++);
             sql.Append("),");
             parameters.Add(tolerance);
@@ -1617,7 +1880,9 @@ WHERE layer_id = $1");
         else
         {
             sql.Append(@"
-                        ST_Transform(geometry, 3857),");
+                        ST_Transform(");
+            sql.Append(geometryOperand);
+            sql.Append(", 3857),");
         }
 
         // Add tile bounds envelope and MVT parameters using TileOptions
@@ -1636,7 +1901,9 @@ WHERE layer_id = $1");
                 FROM layers l
                 INNER JOIN features f ON l.id = f.layer_id
                 WHERE l.id = $1
-                  AND ST_Intersects(f.geometry, ST_Transform(ST_MakeEnvelope($");
+                  AND ST_Intersects(");
+        sql.Append(geometryOperand);
+        sql.Append(@", ST_Transform(ST_MakeEnvelope($");
 
         sql.Append(paramIndex - 4); // XMin parameter index
         sql.Append(", $");
@@ -1645,7 +1912,9 @@ WHERE layer_id = $1");
         sql.Append(paramIndex - 2); // XMax parameter index
         sql.Append(", $");
         sql.Append(paramIndex - 1); // YMax parameter index
-        sql.Append(", 3857), ST_SRID(f.geometry)))");
+        sql.Append(", 3857), ST_SRID(");
+        sql.Append(geometryOperand);
+        sql.Append(")))");
 
         // Apply additional WHERE clause filtering if provided
         if (query != null)

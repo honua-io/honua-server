@@ -1,0 +1,293 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Honua OGC API Features",
+    "description": "OGC API Features implementation for geospatial data access",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Honua Server"
+    }
+  },
+  "paths": {
+    "/ogc/features": {
+      "get": {
+        "summary": "Get OGC API Features landing page",
+        "description": "The landing page provides links to the API definition and other resources",
+        "tags": ["OGC API Features"],
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Landing page information",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/LandingPage"}
+              },
+              "text/html": {
+                "schema": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/features/conformance": {
+      "get": {
+        "summary": "Get OGC API Features conformance declaration",
+        "description": "Conformance classes that this API conforms to",
+        "tags": ["OGC API Features"],
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conformance declaration",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ConformanceDeclaration"}
+              },
+              "text/html": {
+                "schema": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/features/collections": {
+      "get": {
+        "summary": "Get OGC API Features collections",
+        "description": "Lists all available feature collections",
+        "tags": ["OGC API Features"],
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collections list",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Collections"}
+              },
+              "text/html": {
+                "schema": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/features/collections/{collectionId}/items": {
+      "get": {
+        "summary": "Get features from a collection",
+        "description": "Get features from a collection with optional filtering",
+        "tags": ["OGC API Features"],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json, geojson, or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "geojson", "html"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of features to return",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 10
+            }
+          },
+          {
+            "name": "bbox",
+            "in": "query",
+            "required": false,
+            "description": "Bounding box filter",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "required": false,
+            "description": "CQL2-Text filter expression",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {"$ref": "#/components/schemas/FeatureCollection"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LandingPage": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "links": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Link"}
+          }
+        }
+      },
+      "ConformanceDeclaration": {
+        "type": "object",
+        "properties": {
+          "conformsTo": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      },
+      "Collections": {
+        "type": "object",
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/CollectionInfo"}
+          },
+          "links": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Link"}
+          }
+        }
+      },
+      "CollectionInfo": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "extent": {"$ref": "#/components/schemas/Extent"},
+          "links": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Link"}
+          }
+        }
+      },
+      "FeatureCollection": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["FeatureCollection"]
+          },
+          "features": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/GeoJsonFeature"}
+          },
+          "numberMatched": {"type": "integer"},
+          "numberReturned": {"type": "integer"},
+          "links": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Link"}
+          }
+        }
+      },
+      "GeoJsonFeature": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["Feature"]
+          },
+          "id": {},
+          "geometry": {},
+          "properties": {"type": "object"}
+        }
+      },
+      "Link": {
+        "type": "object",
+        "properties": {
+          "href": {"type": "string"},
+          "rel": {"type": "string"},
+          "type": {"type": "string"},
+          "title": {"type": "string"}
+        },
+        "required": ["href", "rel"]
+      },
+      "Extent": {
+        "type": "object",
+        "properties": {
+          "spatial": {"$ref": "#/components/schemas/SpatialExtent"},
+          "temporal": {"$ref": "#/components/schemas/TemporalExtent"}
+        }
+      },
+      "SpatialExtent": {
+        "type": "object",
+        "properties": {
+          "bbox": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {"type": "number"}
+            }
+          }
+        }
+      },
+      "TemporalExtent": {
+        "type": "object",
+        "properties": {
+          "interval": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

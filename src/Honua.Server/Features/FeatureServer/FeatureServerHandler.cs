@@ -580,8 +580,7 @@ internal sealed class FeatureServerHandler(
         byte[]? geometry = null;
         if (feature.Geometry != null)
         {
-            var geometryJson = JsonSerializer.Serialize(feature.Geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
-            geometry = ConvertGeoServicesJsonToWkb(geometryJson);
+            geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry);
         }
 
         var attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary();
@@ -1034,60 +1033,7 @@ internal sealed class FeatureServerHandler(
         return new GeoServicesFeature
         {
             Attributes = attributes,
-            Geometry = returnGeometry ? ConvertGeometryToGeoServicesFormat(feature.Geometry) : null
-        };
-    }
-
-    /// <summary>
-    /// Converts WKB geometry to GeoServices format
-    /// </summary>
-    private static GeoServicesGeometry? ConvertGeometryToGeoServicesFormat(byte[]? wkbGeometry)
-    {
-        if (wkbGeometry == null || wkbGeometry.Length < 21)
-            return null;
-
-        // Detect endianness (1 = little-endian, 0 = big-endian)
-        bool isLittleEndian = wkbGeometry[0] == 1;
-        if (!isLittleEndian && wkbGeometry[0] != 0)
-            return null; // Invalid endianness marker
-
-        // Read geometry type with proper endianness
-        uint geometryType = isLittleEndian
-            ? BitConverter.ToUInt32(wkbGeometry, 1)
-            : BitConverter.ToUInt32([.. wkbGeometry.AsSpan(1, 4).ToArray().Reverse()], 0);
-
-        // Only support point geometries for now
-        if (geometryType != 1)
-        {
-            // Return null for unsupported geometry types
-            // TODO: Add support for LineString (2), Polygon (3), MultiPoint (4), etc.
-            return null;
-        }
-
-        // Read coordinates with proper endianness
-        double x, y;
-        if (isLittleEndian)
-        {
-            x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-            y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
-        }
-        else
-        {
-            byte[] xBytes = [.. wkbGeometry.AsSpan(5, 8).ToArray().Reverse()];
-            byte[] yBytes = [.. wkbGeometry.AsSpan(13, 8).ToArray().Reverse()];
-            x = BitConverter.ToDouble(xBytes, 0);
-            y = BitConverter.ToDouble(yBytes, 0);
-        }
-
-        // TODO: Extract actual SRID from WKB instead of defaulting to 4326
-        // For now, use Web Mercator (3857) if coordinates suggest projected data, otherwise WGS84 (4326)
-        int srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
-
-        return new GeoServicesGeometry
-        {
-            X = x,
-            Y = y,
-            SpatialReference = new GeoServicesSpatialReference { Wkid = srid }
+            Geometry = returnGeometry ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry) : null
         };
     }
 
