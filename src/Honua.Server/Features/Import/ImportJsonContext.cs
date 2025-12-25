@@ -14,13 +14,22 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(FileFormatsResponse))]
 [JsonSerializable(typeof(FilePreview))]
 [JsonSerializable(typeof(ImportResult))]
+[JsonSerializable(typeof(ImportProgress))]
+[JsonSerializable(typeof(ImportLimits))]
+[JsonSerializable(typeof(ImportStatus))]
+[JsonSerializable(typeof(BackgroundImportResponse))]
+[JsonSerializable(typeof(CancelJobResponse))]
+[JsonSerializable(typeof(ActiveJobsResponse))]
+[JsonSerializable(typeof(ImportProgress[]))]
 [JsonSerializable(typeof(ApiErrorResponse))]
 [JsonSerializable(typeof(GeoServicesError))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(IReadOnlyList<string>))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(TimeSpan))]
+[JsonSerializable(typeof(DateTimeOffset))]
 internal sealed partial class ImportJsonContext : JsonSerializerContext
 {
 }

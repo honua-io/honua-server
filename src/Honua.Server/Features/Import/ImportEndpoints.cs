@@ -42,10 +42,34 @@ internal static partial class ImportEndpoints
         // Import geospatial file
         _ = group.Map("/upload", HandleImportFile)
             .WithName("ImportFile")
-            .WithSummary("Import geospatial file to PostgreSQL")
+            .WithSummary("Import geospatial file to PostgreSQL using memory-efficient streaming")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             // .Produces<ImportResult>()
             .DisableAntiforgery(); // For file uploads
+
+        // Get import job status
+        _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
+            .WithName("GetImportJobStatus")
+            .WithSummary("Get the status of a background import job")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        // Cancel import job
+        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelJob)
+            .WithName("CancelImportJob")
+            .WithSummary("Cancel a running background import job")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        // Get all active import jobs
+        _ = group.Map("/jobs", HandleGetActiveJobs)
+            .WithName("GetActiveImportJobs")
+            .WithSummary("Get all active background import jobs")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        // Get import limits configuration
+        _ = group.Map("/limits", HandleGetLimits)
+            .WithName("GetImportLimits")
+            .WithSummary("Get current import configuration limits")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
     /// <summary>
@@ -142,7 +166,8 @@ internal static partial class ImportEndpoints
     }
 
     /// <summary>
-    /// Import geospatial file to PostgreSQL
+    /// Import geospatial file to PostgreSQL using memory-efficient streaming.
+    /// Large files are automatically queued for background processing.
     /// </summary>
     private static async Task HandleImportFile(HttpContext context)
     {
@@ -188,12 +213,17 @@ internal static partial class ImportEndpoints
 
         try
         {
-            using Stream stream = file.OpenReadStream();
-
             // Parse optional parameters
             int? sourceSrid = int.TryParse(form["SourceSrid"], out int src) ? src : (int?)null;
             int targetSrid = int.TryParse(form["TargetSrid"], out int tgt) ? tgt : 4326;
             bool overwriteExisting = bool.TryParse(form["OverwriteExisting"], out bool overwrite) && overwrite;
+            bool forceBackground = bool.TryParse(form["ForceBackground"], out bool forceBg) && forceBg;
+
+            // Check if file should be processed in background
+            var limits = importService.Limits;
+            var shouldQueueBackground = forceBackground || file.Length > limits.BackgroundJobThresholdBytes;
+
+            using Stream stream = file.OpenReadStream();
 
             var importRequest = new ImportRequest
             {
@@ -205,16 +235,166 @@ internal static partial class ImportEndpoints
                 OverwriteExisting = overwriteExisting
             };
 
-            ImportResult result = await importService.ImportFileAsync(importRequest, cancellationToken);
-            IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
-            await response.ExecuteAsync(context);
+            if (shouldQueueBackground)
+            {
+                // Queue for background processing
+                var jobService = context.RequestServices.GetService<IImportJobService>();
+                if (jobService == null)
+                {
+                    await WriteErrorAsync(context,
+                        "Background import service not available. File is too large for synchronous import.",
+                        StatusCodes.Status503ServiceUnavailable);
+                    return;
+                }
+
+                var jobId = await jobService.QueueImportAsync(importRequest, file.Length, cancellationToken);
+
+                var response = new BackgroundImportResponse
+                {
+                    JobId = jobId,
+                    Message = "File queued for background processing",
+                    StatusUrl = $"/api/import/jobs/{jobId}",
+                    CancelUrl = $"/api/import/jobs/{jobId}/cancel"
+                };
+
+                IResult result = Results.Json(response, ImportJsonContext.Default.BackgroundImportResponse, statusCode: StatusCodes.Status202Accepted);
+                await result.ExecuteAsync(context);
+            }
+            else
+            {
+                // Process synchronously with streaming
+                ImportResult result = await importService.ImportFileAsync(importRequest, cancellationToken);
+                IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
+                await response.ExecuteAsync(context);
+            }
         }
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, tableName, ex);
-            await WriteErrorAsync(context, "Import failed", StatusCodes.Status400BadRequest);
+            await WriteErrorAsync(context, "Import failed: " + ex.Message, StatusCodes.Status400BadRequest);
         }
+    }
+
+    /// <summary>
+    /// Get the status of a background import job
+    /// </summary>
+    private static async Task HandleGetJobStatus(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var jobId = context.GetRouteValue("jobId")?.ToString();
+        if (string.IsNullOrEmpty(jobId))
+        {
+            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var jobService = context.RequestServices.GetService<IImportJobService>();
+        if (jobService == null)
+        {
+            await WriteErrorAsync(context, "Background import service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        CancellationToken cancellationToken = context.RequestAborted;
+        var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
+
+        if (progress == null)
+        {
+            await WriteErrorAsync(context, "Job not found", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        IResult result = Results.Json(progress, ImportJsonContext.Default.ImportProgress);
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Cancel a running background import job
+    /// </summary>
+    private static async Task HandleCancelJob(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var jobId = context.GetRouteValue("jobId")?.ToString();
+        if (string.IsNullOrEmpty(jobId))
+        {
+            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var jobService = context.RequestServices.GetService<IImportJobService>();
+        if (jobService == null)
+        {
+            await WriteErrorAsync(context, "Background import service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        CancellationToken cancellationToken = context.RequestAborted;
+        var cancelled = await jobService.CancelJobAsync(jobId, cancellationToken);
+
+        if (!cancelled)
+        {
+            await WriteErrorAsync(context, "Job not found or already completed", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        var response = new CancelJobResponse { JobId = jobId, Message = "Job cancelled" };
+        IResult result = Results.Json(response, ImportJsonContext.Default.CancelJobResponse);
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Get all active background import jobs
+    /// </summary>
+    private static async Task HandleGetActiveJobs(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        var jobService = context.RequestServices.GetService<IImportJobService>();
+        if (jobService == null)
+        {
+            await WriteErrorAsync(context, "Background import service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        CancellationToken cancellationToken = context.RequestAborted;
+        var jobs = await jobService.GetActiveJobsAsync(cancellationToken);
+
+        var response = new ActiveJobsResponse { Jobs = jobs.ToArray() };
+        IResult result = Results.Json(response, ImportJsonContext.Default.ActiveJobsResponse);
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Get current import configuration limits
+    /// </summary>
+    private static async Task HandleGetLimits(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var limits = importService.Limits;
+
+        IResult result = Results.Json(limits, ImportJsonContext.Default.ImportLimits);
+        await result.ExecuteAsync(context);
     }
 
     private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
@@ -273,4 +453,57 @@ internal sealed record FileFormatsResponse
 {
     public required string[] SupportedExtensions { get; init; }
     public required Dictionary<string, string> FormatDescriptions { get; init; }
+}
+
+/// <summary>
+/// Response when a file is queued for background import processing
+/// </summary>
+internal sealed record BackgroundImportResponse
+{
+    /// <summary>
+    /// Unique identifier for tracking the import job
+    /// </summary>
+    public required string JobId { get; init; }
+
+    /// <summary>
+    /// Human-readable status message
+    /// </summary>
+    public required string Message { get; init; }
+
+    /// <summary>
+    /// URL to check the status of the import job
+    /// </summary>
+    public required string StatusUrl { get; init; }
+
+    /// <summary>
+    /// URL to cancel the import job
+    /// </summary>
+    public required string CancelUrl { get; init; }
+}
+
+/// <summary>
+/// Response for cancel job endpoint
+/// </summary>
+internal sealed record CancelJobResponse
+{
+    /// <summary>
+    /// The job ID that was cancelled
+    /// </summary>
+    public required string JobId { get; init; }
+
+    /// <summary>
+    /// Confirmation message
+    /// </summary>
+    public required string Message { get; init; }
+}
+
+/// <summary>
+/// Response containing list of active import jobs
+/// </summary>
+internal sealed record ActiveJobsResponse
+{
+    /// <summary>
+    /// List of active import job progress records
+    /// </summary>
+    public required ImportProgress[] Jobs { get; init; }
 }

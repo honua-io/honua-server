@@ -24,7 +24,8 @@ public interface IFileImportService
     string[] GetSupportedExtensions();
 
     /// <summary>
-    /// Import a geospatial file into PostgreSQL
+    /// Import a geospatial file into PostgreSQL using memory-efficient streaming.
+    /// Features are processed in batches to maintain constant memory usage.
     /// </summary>
     /// <param name="request">Import request with file stream and parameters</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -32,13 +33,66 @@ public interface IFileImportService
     Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Preview file contents without importing (first 100 features)
+    /// Import a geospatial file with progress reporting.
+    /// </summary>
+    /// <param name="request">Import request with file stream and parameters</param>
+    /// <param name="progress">Progress reporter for tracking import status</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Import result with success/failure details</returns>
+    Task<ImportResult> ImportFileAsync(ImportRequest request, IProgress<ImportProgress>? progress, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Preview file contents without importing (first N features based on limits).
+    /// Uses streaming to avoid loading entire file into memory.
     /// </summary>
     /// <param name="fileStream">File stream to preview</param>
     /// <param name="fileName">Original filename for format detection</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Preview information including feature count and sample features</returns>
     Task<FilePreview> PreviewFileAsync(Stream fileStream, string fileName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get the configured import limits.
+    /// </summary>
+    ImportLimits Limits { get; }
+}
+
+/// <summary>
+/// Service for managing background import jobs for large files.
+/// </summary>
+public interface IImportJobService
+{
+    /// <summary>
+    /// Queue a file for background import processing.
+    /// </summary>
+    /// <param name="request">Import request with file stream and parameters</param>
+    /// <param name="fileSize">Size of the file in bytes</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Job ID for tracking progress</returns>
+    Task<string> QueueImportAsync(ImportRequest request, long fileSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get the current progress of an import job.
+    /// </summary>
+    /// <param name="jobId">Job ID returned from QueueImportAsync</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Current progress or null if job not found</returns>
+    Task<ImportProgress?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancel a running import job.
+    /// </summary>
+    /// <param name="jobId">Job ID to cancel</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if job was cancelled, false if not found or already completed</returns>
+    Task<bool> CancelJobAsync(string jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get all active import jobs.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of active job progress records</returns>
+    Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>

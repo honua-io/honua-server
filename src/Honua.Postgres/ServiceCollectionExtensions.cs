@@ -90,7 +90,32 @@ internal static class ServiceCollectionExtensions
             return new CrsDetectionService(connectionString);
         });
 
-        // Register file import service with NetTopologySuite support
+        // Register import limits configuration
+        services.AddSingleton(serviceProvider =>
+        {
+            var section = configuration.GetSection("Import:Limits");
+            var limits = new Core.Features.Import.Domain.ImportLimits();
+
+            if (section.Exists())
+            {
+                limits = new Core.Features.Import.Domain.ImportLimits
+                {
+                    BatchSize = section.GetValue("BatchSize", limits.BatchSize),
+                    MaxMemoryBytes = section.GetValue("MaxMemoryBytes", limits.MaxMemoryBytes),
+                    BackgroundJobThresholdBytes = section.GetValue("BackgroundJobThresholdBytes", limits.BackgroundJobThresholdBytes),
+                    MaxPreviewSizeBytes = section.GetValue("MaxPreviewSizeBytes", limits.MaxPreviewSizeBytes),
+                    MaxPreviewFeatures = section.GetValue("MaxPreviewFeatures", limits.MaxPreviewFeatures),
+                    StreamBufferSize = section.GetValue("StreamBufferSize", limits.StreamBufferSize),
+                    UseTransactions = section.GetValue("UseTransactions", limits.UseTransactions),
+                    ContinueOnError = section.GetValue("ContinueOnError", limits.ContinueOnError),
+                    MaxFeaturesPerFile = section.GetValue("MaxFeaturesPerFile", limits.MaxFeaturesPerFile)
+                };
+            }
+
+            return limits;
+        });
+
+        // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -100,7 +125,16 @@ internal static class ServiceCollectionExtensions
             }
 
             var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
-            return new FileImportService(connectionString, crsDetectionService);
+            var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
+            return new StreamingFileImportService(connectionString, crsDetectionService, limits);
+        });
+
+        // Register background import job service
+        // Note: This uses a scoped service provider to access the import service
+        services.AddScoped<IImportJobService>(serviceProvider =>
+        {
+            var importService = serviceProvider.GetRequiredService<IFileImportService>();
+            return new InMemoryImportJobService(importService);
         });
 
         return services;
