@@ -758,7 +758,6 @@ public sealed class ODataTestFeatureStore : IFeatureStore
     }
 
     private static double DegreesToRadians(double degrees) => degrees * (Math.PI / 180.0);
->>>>>>> origin/trunk
 
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
