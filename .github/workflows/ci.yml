@@ -72,7 +72,7 @@ jobs:
           dotnet test Honua.sln \
             --no-restore \
             --configuration Release \
-            --filter "(Category=Unit OR Category=Integration)" \
+            --filter "Category=Unit|Category=Integration" \
             --logger "trx;LogFileName=all-test-results.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \

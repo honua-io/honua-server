@@ -28,7 +28,7 @@ mkdir -p ./tests/TestResults
 dotnet test Honua.sln \
     --no-restore \
     --configuration Release \
-    --filter "(Category=Unit OR Category=Integration OR Category=Architecture)" \
+    --filter "Category=Unit|Category=Integration|Category=Architecture" \
     --logger "console;verbosity=minimal" \
     --results-directory ./tests/TestResults \
     --collect:"XPlat Code Coverage" \
