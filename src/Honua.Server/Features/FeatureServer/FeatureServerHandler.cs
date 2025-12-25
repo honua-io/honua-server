@@ -245,7 +245,7 @@ internal sealed class FeatureServerHandler(
     }
 
     /// <summary>
-    /// Handles applyEdits requests for adding, updating, and deleting features
+    /// Handles applyEdits requests for adding, updating, and deleting features.
     /// </summary>
     public async Task<IResult> HandleApplyEditsAsync(
         string serviceId,
