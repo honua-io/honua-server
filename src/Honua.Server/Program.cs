@@ -83,15 +83,6 @@ if (!isTestEnvironment)
 {
     RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
-else
-{
-    builder.Services.AddScoped<Honua.Core.Queries.Filters.ISqlFilterTranslator>(_ =>
-        new Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator(
-            useJsonAttributes: true,
-            attributesColumn: "attributes",
-            geometryColumn: "geometry",
-            primaryKeyColumn: "objectid"));
-}
 
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);

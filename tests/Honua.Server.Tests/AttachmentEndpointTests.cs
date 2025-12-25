@@ -30,11 +30,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     private const int TestLayerId = 0;
     private const long TestFeatureId = 123;
 
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     public async Task InitializeAsync()
     {
         // Replace services with test implementations
@@ -66,7 +61,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().HaveCount(2);
@@ -86,7 +81,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().NotBeEmpty();
@@ -130,7 +125,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AddAttachmentResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AddAttachmentResponse);
 
         result.Should().NotBeNull();
         result!.AddAttachmentResult.Success.Should().BeTrue();
@@ -202,7 +197,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<UpdateAttachmentResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.UpdateAttachmentResponse);
 
         result.Should().NotBeNull();
         result!.UpdateAttachmentResult.Success.Should().BeTrue();
@@ -251,7 +246,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<DeleteAttachmentsResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.DeleteAttachmentsResponse);
 
         result.Should().NotBeNull();
         result!.DeleteAttachmentResults.Should().HaveCount(2);
@@ -350,7 +345,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Should().BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<AttachmentQueryResponse>(content, _jsonOptions);
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().BeEmpty();

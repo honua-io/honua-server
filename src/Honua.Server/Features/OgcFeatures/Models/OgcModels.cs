@@ -281,6 +281,13 @@ public sealed record TemporalExtent
 /// </summary>
 public sealed class RawJsonStringConverter : JsonConverter<string?>
 {
+    /// <summary>
+    /// Reads and converts JSON to a raw JSON string value.
+    /// </summary>
+    /// <param name="reader">The reader to read from.</param>
+    /// <param name="typeToConvert">The type to convert.</param>
+    /// <param name="options">The serializer options.</param>
+    /// <returns>The raw JSON string, or null if the token is null.</returns>
     public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
@@ -292,6 +299,12 @@ public sealed class RawJsonStringConverter : JsonConverter<string?>
         return document.RootElement.GetRawText();
     }
 
+    /// <summary>
+    /// Writes a raw JSON string value to the writer.
+    /// </summary>
+    /// <param name="writer">The writer to write to.</param>
+    /// <param name="value">The raw JSON string value to write.</param>
+    /// <param name="options">The serializer options.</param>
     public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
     {
         if (value is null)

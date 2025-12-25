@@ -20,21 +20,17 @@ namespace Honua.Server.Features.FeatureServer;
 /// </summary>
 /// <remarks>
 /// Initializes a new FeatureServerHandler with required dependencies.
-/// Note: This handler has 6 dependencies (meets the refactored limit with IFeatureQueryValidator service).
+/// Uses FeatureServerServices to aggregate query-related services, reducing dependency count to 4.
 /// </remarks>
 internal sealed class FeatureServerHandler(
     ILayerCatalog layerCatalog,
     IFeatureStore featureStore,
-    Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
-    IQueryFormatter queryFormatter,
-    IFeatureQueryValidator queryValidator,
+    FeatureServerServices services,
     ILogger<FeatureServerHandler> logger)
 {
     private readonly ILayerCatalog _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
     private readonly IFeatureStore _featureStore = featureStore ?? throw new ArgumentNullException(nameof(featureStore));
-    private readonly Honua.Server.Features.Infrastructure.Services.IGeometryConverter _geometryConverter = geometryConverter ?? throw new ArgumentNullException(nameof(geometryConverter));
-    private readonly IQueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
-    private readonly IFeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
+    private readonly FeatureServerServices _services = services ?? throw new ArgumentNullException(nameof(services));
     private readonly ILogger<FeatureServerHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -80,7 +76,7 @@ internal sealed class FeatureServerHandler(
             }
 
             // Apply limits enforcement
-            QueryValidationResult validationResult = _queryValidator.ValidateQueryLimits(queryParams);
+            QueryValidationResult validationResult = _services.QueryValidator.ValidateQueryLimits(queryParams);
             if (!validationResult.IsValid)
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
@@ -100,7 +96,7 @@ internal sealed class FeatureServerHandler(
             string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
                 [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
 
-            (object? formattedResponse, string? contentType) = _queryFormatter.FormatQueryResult(
+            (object? formattedResponse, string? contentType) = _services.QueryFormatter.FormatQueryResult(
                 result,
                 layer,
                 validatedParams.F ?? "json",
@@ -186,7 +182,7 @@ internal sealed class FeatureServerHandler(
             var relationship = relationshipMaybe.Value;
 
             // Apply limits enforcement
-            RelatedRecordsValidationResult validationResult = _queryValidator.ValidateRelatedRecordsLimits(queryParams);
+            RelatedRecordsValidationResult validationResult = _services.QueryValidator.ValidateRelatedRecordsLimits(queryParams);
             if (!validationResult.IsValid)
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
@@ -266,41 +262,23 @@ internal sealed class FeatureServerHandler(
                 request.Deletes?.Length ?? 0);
 
             // Validate service and layer exist
+            var validationResult = await ValidateServiceAndLayer(serviceId, layerId, cancellationToken);
+            if (validationResult != null)
+            {
+                return validationResult;
+            }
+
             var service = await _layerCatalog.GetServiceAsync(serviceId, cancellationToken);
-            if (service == null)
+            var layer = service!.GetLayer(layerId);
+
+            // Validate edit limits
+            var limitsValidationResult = ValidateEditLimits(request, editLimits);
+            if (limitsValidationResult != null)
             {
-                FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+                return limitsValidationResult;
             }
 
-            var layer = service.GetLayer(layerId);
-            if (layer == null)
-            {
-                FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
-            }
-
-            var addCount = request.Adds?.Length ?? 0;
-            var updateCount = request.Updates?.Length ?? 0;
-            var deleteCount = request.Deletes?.Length ?? 0;
-            var totalCount = addCount + updateCount + deleteCount;
-
-            if (addCount > editLimits.MaxFeaturesPerEdit ||
-                updateCount > editLimits.MaxFeaturesPerEdit ||
-                deleteCount > editLimits.MaxFeaturesPerEdit)
-            {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
-                    "Too many features in a single edit operation",
-                    [$"Maximum per operation: {editLimits.MaxFeaturesPerEdit}"]);
-            }
-
-            if (totalCount > editLimits.MaxEditsPerTransaction)
-            {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
-                    "Too many edits in a single request",
-                    [$"Maximum per request: {editLimits.MaxEditsPerTransaction}"]);
-            }
-
+            var totalCount = (request.Adds?.Length ?? 0) + (request.Updates?.Length ?? 0) + (request.Deletes?.Length ?? 0);
             if (totalCount == 0)
             {
                 return Results.Json(new ApplyEditsResponse { Success = true },
@@ -308,154 +286,20 @@ internal sealed class FeatureServerHandler(
                     contentType: "application/json");
             }
 
-            EditResult?[]? addResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null;
-            EditResult?[]? updateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null;
-            EditResult?[]? deleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null;
+            // Process edit operations
+            var editContext = ProcessEditOperations(request);
 
-            var createFeatures = new List<Feature>();
-            var createIndexes = new List<int>();
-            var updateFeatures = new List<Feature>();
-            var updateIndexes = new List<int>();
-            var updateObjectIds = new List<long>();
-            var deleteIds = new List<long>();
-            var deleteIndexes = new List<int>();
-
-            var hasValidationErrors = false;
-
-            if (request.Adds != null)
+            // Handle validation errors with rollback if needed
+            if (editContext.HasValidationErrors && request.RollbackOnFailure)
             {
-                for (var i = 0; i < request.Adds.Length; i++)
-                {
-                    try
-                    {
-                        var newFeature = BuildFeatureFromGeoServices(request.Adds[i], 0);
-                        createFeatures.Add(newFeature);
-                        createIndexes.Add(i);
-                    }
-                    catch (Exception)
-                    {
-                        hasValidationErrors = true;
-                        addResults![i] = CreateFailureResult(
-                            code: 1000,
-                            description: "Failed to add feature");
-                    }
-                }
+                return CreateRollbackResponse(editContext, serviceId, layerId);
             }
 
-            if (request.Updates != null)
-            {
-                for (var i = 0; i < request.Updates.Length; i++)
-                {
-                    var update = request.Updates[i];
-                    if (!TryGetObjectId(update.Attributes, out var objectId))
-                    {
-                        hasValidationErrors = true;
-                        updateResults![i] = CreateFailureResult(
-                            code: 1001,
-                            description: "ObjectId is required for update operations");
-                        continue;
-                    }
+            // Execute edits in the database
+            var editResult = await ExecuteEdits(layer!.Id, editContext, request, cancellationToken);
 
-                    try
-                    {
-                        var updateFeature = BuildFeatureFromGeoServices(update, objectId);
-                        updateFeatures.Add(updateFeature);
-                        updateIndexes.Add(i);
-                        updateObjectIds.Add(objectId);
-                    }
-                    catch (Exception)
-                    {
-                        hasValidationErrors = true;
-                        updateResults![i] = CreateFailureResult(
-                            code: 1002,
-                            description: "Failed to update feature",
-                            objectId: objectId);
-                    }
-                }
-            }
-
-            if (request.Deletes != null)
-            {
-                for (var i = 0; i < request.Deletes.Length; i++)
-                {
-                    if (!TryConvertToLong(request.Deletes[i], out var objectId))
-                    {
-                        hasValidationErrors = true;
-                        deleteResults![i] = CreateFailureResult(
-                            code: 1003,
-                            description: "Invalid ObjectId for delete operation");
-                        continue;
-                    }
-
-                    deleteIds.Add(objectId);
-                    deleteIndexes.Add(i);
-                }
-            }
-
-            if (hasValidationErrors && request.RollbackOnFailure)
-            {
-                var rollbackError = new EditError
-                {
-                    Code = 1000,
-                    Description = "Operation rolled back due to validation failure"
-                };
-
-                ApplyRollbackResults(addResults, createIndexes, null, rollbackError);
-                ApplyRollbackResults(updateResults, updateIndexes, updateObjectIds, rollbackError);
-                ApplyRollbackResults(deleteResults, deleteIndexes, deleteIds, rollbackError);
-
-                var response = new ApplyEditsResponse
-                {
-                    AddResults = FinalizeResults(addResults),
-                    UpdateResults = FinalizeResults(updateResults),
-                    DeleteResults = FinalizeResults(deleteResults),
-                    Success = false
-                };
-
-                FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, false);
-
-                return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
-                    contentType: "application/json");
-            }
-
-            FeatureEditResult editResult = FeatureEditResult.Success(0, 0, 0);
-            if (createFeatures.Count > 0 || updateFeatures.Count > 0 || deleteIds.Count > 0)
-            {
-                var editBatch = FeatureEditBatch.Create(
-                    creates: createFeatures.ToImmutableArray(),
-                    updates: updateFeatures.ToImmutableArray(),
-                    deletes: deleteIds.ToImmutableArray(),
-                    rollbackOnFailure: request.RollbackOnFailure,
-                    useGlobalIds: request.UseGlobalIds);
-
-                editResult = await _featureStore.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
-
-                ApplyResults(addResults, createIndexes, editResult.CreateResults);
-                ApplyResults(updateResults, updateIndexes, editResult.UpdateResults);
-                ApplyResults(deleteResults, deleteIndexes, editResult.DeleteResults);
-            }
-
-            var finalAddResults = FinalizeResults(addResults);
-            var finalUpdateResults = FinalizeResults(updateResults);
-            var finalDeleteResults = FinalizeResults(deleteResults);
-            var allSuccess = AreAllResultsSuccessful(finalAddResults) &&
-                             AreAllResultsSuccessful(finalUpdateResults) &&
-                             AreAllResultsSuccessful(finalDeleteResults) &&
-                             !editResult.WasRolledBack &&
-                             !hasValidationErrors;
-
-            var finalResponse = new ApplyEditsResponse
-            {
-                AddResults = finalAddResults,
-                UpdateResults = finalUpdateResults,
-                DeleteResults = finalDeleteResults,
-                Success = allSuccess
-            };
-
-            FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, allSuccess);
-
-            return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
-                contentType: "application/json");
+            // Build and return final response
+            return CreateFinalResponse(editContext, editResult, serviceId, layerId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -466,6 +310,269 @@ internal sealed class FeatureServerHandler(
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             return GeoServicesErrorHelpers.CreateInternalServerError("Apply edits failed");
         }
+    }
+
+    /// <summary>
+    /// Validates that the service and layer exist
+    /// </summary>
+    private async Task<IResult?> ValidateServiceAndLayer(string serviceId, int layerId, CancellationToken cancellationToken)
+    {
+        var service = await _layerCatalog.GetServiceAsync(serviceId, cancellationToken);
+        if (service == null)
+        {
+            FeatureServerLog.ServiceNotFound(_logger, serviceId);
+            return GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found");
+        }
+
+        var layer = service.GetLayer(layerId);
+        if (layer == null)
+        {
+            FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
+            return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Validates edit operation counts against configured limits
+    /// </summary>
+    private static IResult? ValidateEditLimits(ApplyEditsRequest request, Honua.Core.Configuration.EditLimits editLimits)
+    {
+        var addCount = request.Adds?.Length ?? 0;
+        var updateCount = request.Updates?.Length ?? 0;
+        var deleteCount = request.Deletes?.Length ?? 0;
+        var totalCount = addCount + updateCount + deleteCount;
+
+        if (addCount > editLimits.MaxFeaturesPerEdit ||
+            updateCount > editLimits.MaxFeaturesPerEdit ||
+            deleteCount > editLimits.MaxFeaturesPerEdit)
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Too many features in a single edit operation",
+                [$"Maximum per operation: {editLimits.MaxFeaturesPerEdit}"]);
+        }
+
+        if (totalCount > editLimits.MaxEditsPerTransaction)
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Too many edits in a single request",
+                [$"Maximum per request: {editLimits.MaxEditsPerTransaction}"]);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Processes add, update, and delete operations from the request
+    /// </summary>
+    private EditOperationContext ProcessEditOperations(ApplyEditsRequest request)
+    {
+        var context = new EditOperationContext
+        {
+            AddResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null,
+            UpdateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null,
+            DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
+        };
+
+        ProcessAddOperations(request, context);
+        ProcessUpdateOperations(request, context);
+        ProcessDeleteOperations(request, context);
+
+        return context;
+    }
+
+    /// <summary>
+    /// Processes add operations and tracks features to create
+    /// </summary>
+    private void ProcessAddOperations(ApplyEditsRequest request, EditOperationContext context)
+    {
+        if (request.Adds == null)
+            return;
+
+        for (var i = 0; i < request.Adds.Length; i++)
+        {
+            try
+            {
+                var newFeature = BuildFeatureFromGeoServices(request.Adds[i], 0);
+                context.CreateFeatures.Add(newFeature);
+                context.CreateIndexes.Add(i);
+            }
+            catch (Exception)
+            {
+                context.HasValidationErrors = true;
+                context.AddResults![i] = CreateFailureResult(
+                    code: 1000,
+                    description: "Failed to add feature");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Processes update operations and tracks features to update
+    /// </summary>
+    private void ProcessUpdateOperations(ApplyEditsRequest request, EditOperationContext context)
+    {
+        if (request.Updates == null)
+            return;
+
+        for (var i = 0; i < request.Updates.Length; i++)
+        {
+            var update = request.Updates[i];
+            if (!TryGetObjectId(update.Attributes, out var objectId))
+            {
+                context.HasValidationErrors = true;
+                context.UpdateResults![i] = CreateFailureResult(
+                    code: 1001,
+                    description: "ObjectId is required for update operations");
+                continue;
+            }
+
+            try
+            {
+                var updateFeature = BuildFeatureFromGeoServices(update, objectId);
+                context.UpdateFeatures.Add(updateFeature);
+                context.UpdateIndexes.Add(i);
+                context.UpdateObjectIds.Add(objectId);
+            }
+            catch (Exception)
+            {
+                context.HasValidationErrors = true;
+                context.UpdateResults![i] = CreateFailureResult(
+                    code: 1002,
+                    description: "Failed to update feature",
+                    objectId: objectId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Processes delete operations and tracks features to delete
+    /// </summary>
+    private static void ProcessDeleteOperations(ApplyEditsRequest request, EditOperationContext context)
+    {
+        if (request.Deletes == null)
+            return;
+
+        for (var i = 0; i < request.Deletes.Length; i++)
+        {
+            if (!TryConvertToLong(request.Deletes[i], out var objectId))
+            {
+                context.HasValidationErrors = true;
+                context.DeleteResults![i] = CreateFailureResult(
+                    code: 1003,
+                    description: "Invalid ObjectId for delete operation");
+                continue;
+            }
+
+            context.DeleteIds.Add(objectId);
+            context.DeleteIndexes.Add(i);
+        }
+    }
+
+    /// <summary>
+    /// Executes the validated edit operations in the database
+    /// </summary>
+    private async Task<FeatureEditResult> ExecuteEdits(
+        int layerId,
+        EditOperationContext context,
+        ApplyEditsRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (context.CreateFeatures.Count == 0 && context.UpdateFeatures.Count == 0 && context.DeleteIds.Count == 0)
+        {
+            return FeatureEditResult.Success(0, 0, 0);
+        }
+
+        var editBatch = FeatureEditBatch.Create(
+            creates: context.CreateFeatures.ToImmutableArray(),
+            updates: context.UpdateFeatures.ToImmutableArray(),
+            deletes: context.DeleteIds.ToImmutableArray(),
+            rollbackOnFailure: request.RollbackOnFailure,
+            useGlobalIds: request.UseGlobalIds);
+
+        var editResult = await _featureStore.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+
+        ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults);
+        ApplyResults(context.UpdateResults, context.UpdateIndexes, editResult.UpdateResults);
+        ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults);
+
+        return editResult;
+    }
+
+    /// <summary>
+    /// Creates a rollback response when validation errors occur
+    /// </summary>
+    private IResult CreateRollbackResponse(EditOperationContext context, string serviceId, int layerId)
+    {
+        var rollbackError = new EditError
+        {
+            Code = 1000,
+            Description = "Operation rolled back due to validation failure"
+        };
+
+        ApplyRollbackResults(context.AddResults, context.CreateIndexes, null, rollbackError);
+        ApplyRollbackResults(context.UpdateResults, context.UpdateIndexes, context.UpdateObjectIds, rollbackError);
+        ApplyRollbackResults(context.DeleteResults, context.DeleteIndexes, context.DeleteIds, rollbackError);
+
+        var response = new ApplyEditsResponse
+        {
+            AddResults = FinalizeResults(context.AddResults),
+            UpdateResults = FinalizeResults(context.UpdateResults),
+            DeleteResults = FinalizeResults(context.DeleteResults),
+            Success = false
+        };
+
+        FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, false);
+
+        return Results.Json(response, FeatureServerJsonContext.Default.ApplyEditsResponse,
+            contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Creates the final response after all operations complete
+    /// </summary>
+    private IResult CreateFinalResponse(EditOperationContext context, FeatureEditResult editResult, string serviceId, int layerId)
+    {
+        var finalAddResults = FinalizeResults(context.AddResults);
+        var finalUpdateResults = FinalizeResults(context.UpdateResults);
+        var finalDeleteResults = FinalizeResults(context.DeleteResults);
+        var allSuccess = AreAllResultsSuccessful(finalAddResults) &&
+                         AreAllResultsSuccessful(finalUpdateResults) &&
+                         AreAllResultsSuccessful(finalDeleteResults) &&
+                         !editResult.WasRolledBack &&
+                         !context.HasValidationErrors;
+
+        var finalResponse = new ApplyEditsResponse
+        {
+            AddResults = finalAddResults,
+            UpdateResults = finalUpdateResults,
+            DeleteResults = finalDeleteResults,
+            Success = allSuccess
+        };
+
+        FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, allSuccess);
+
+        return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
+            contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Context object to track edit operations state
+    /// </summary>
+    private sealed class EditOperationContext
+    {
+        public EditResult?[]? AddResults { get; init; }
+        public EditResult?[]? UpdateResults { get; init; }
+        public EditResult?[]? DeleteResults { get; init; }
+        public List<Feature> CreateFeatures { get; } = new();
+        public List<int> CreateIndexes { get; } = new();
+        public List<Feature> UpdateFeatures { get; } = new();
+        public List<int> UpdateIndexes { get; } = new();
+        public List<long> UpdateObjectIds { get; } = new();
+        public List<long> DeleteIds { get; } = new();
+        public List<int> DeleteIndexes { get; } = new();
+        public bool HasValidationErrors { get; set; }
     }
 
     private Feature BuildFeatureFromGeoServices(GeoServicesFeature feature, long objectId)
@@ -789,7 +896,7 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Converts GeoServices JSON geometry to WKB bytes using the geometry converter service
     /// </summary>
-    private byte[] ConvertGeoServicesJsonToWkb(string geoServicesJsonGeometry) => _geometryConverter.ConvertGeoServicesJsonToWkb(geoServicesJsonGeometry);
+    private byte[] ConvertGeoServicesJsonToWkb(string geoServicesJsonGeometry) => _services.GeometryConverter.ConvertGeoServicesJsonToWkb(geoServicesJsonGeometry);
 
     /// <summary>
     /// Executes a query with validation error handling

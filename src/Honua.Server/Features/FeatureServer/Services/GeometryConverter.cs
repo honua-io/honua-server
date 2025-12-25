@@ -89,8 +89,9 @@ internal sealed class GeometryConverter : IGeometryConverter
             var geoJsonString = writer.Write(geometry);
 
             // Parse the GeoJSON string to return as an object
+            // AOT-safe: Use JsonDocument.Parse directly instead of JsonSerializer.Deserialize
             using var jsonDoc = JsonDocument.Parse(geoJsonString);
-            return JsonSerializer.Deserialize<JsonElement>(jsonDoc.RootElement.GetRawText());
+            return jsonDoc.RootElement.Clone();
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {

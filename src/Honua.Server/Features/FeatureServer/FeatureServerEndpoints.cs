@@ -20,7 +20,7 @@ namespace Honua.Server.Features.FeatureServer;
 /// <summary>
 /// Extension methods to register FeatureServer endpoints
 /// </summary>
-public static partial class FeatureServerEndpoints
+internal static partial class FeatureServerEndpoints
 {
     internal sealed class FeatureServerEndpointsLog
     {

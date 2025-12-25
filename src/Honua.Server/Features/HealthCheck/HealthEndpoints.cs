@@ -6,7 +6,7 @@ namespace Honua.Server.Features.HealthCheck;
 /// <summary>
 /// Health check endpoints with full AOT compatibility
 /// </summary>
-public static class HealthEndpoints
+internal static class HealthEndpoints
 {
     /// <summary>
     /// Configure health endpoints using AOT-compatible routing

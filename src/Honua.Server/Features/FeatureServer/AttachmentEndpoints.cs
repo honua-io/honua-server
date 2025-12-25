@@ -18,7 +18,7 @@ internal sealed class AttachmentOperations
 /// <summary>
 /// Extension methods to register FeatureServer attachment endpoints
 /// </summary>
-public static class AttachmentEndpoints
+internal static class AttachmentEndpoints
 {
     /// <summary>
     /// Maps FeatureServer attachment REST API endpoints using AOT-compatible routing

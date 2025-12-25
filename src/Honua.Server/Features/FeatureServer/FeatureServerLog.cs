@@ -6,7 +6,7 @@ namespace Honua.Server.Features.FeatureServer;
 /// <summary>
 /// Structured logging for FeatureServer endpoints with source generation (AOT compatible)
 /// </summary>
-public static partial class FeatureServerLog
+internal static partial class FeatureServerLog
 {
     // Service metadata events (2000-2099)
 

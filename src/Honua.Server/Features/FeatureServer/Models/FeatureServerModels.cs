@@ -1075,6 +1075,9 @@ public class EditError
     public string Description { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// JSON serialization context for FeatureServer API models with source generation for AOT compatibility.
+/// </summary>
 [JsonSerializable(typeof(FeatureServerResponse))]
 [JsonSerializable(typeof(LayerResponse))]
 [JsonSerializable(typeof(LayerInfo))]

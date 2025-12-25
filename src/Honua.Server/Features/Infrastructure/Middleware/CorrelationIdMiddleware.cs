@@ -23,7 +23,7 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// - Pushed to Serilog LogContext for all log entries
 /// - Available via HttpContext.TraceIdentifier for framework integration
 /// </remarks>
-public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
+internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     private const string CorrelationIdHeader = "X-Correlation-ID";
     private const string CorrelationIdLogProperty = "CorrelationId";

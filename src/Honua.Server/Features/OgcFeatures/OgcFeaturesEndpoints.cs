@@ -22,7 +22,7 @@ namespace Honua.Server.Features.OgcFeatures;
 /// <summary>
 /// Extension methods to register OGC API Features endpoints
 /// </summary>
-public static partial class OgcFeaturesEndpoints
+internal static partial class OgcFeaturesEndpoints
 {
     internal sealed class OgcFeaturesEndpointsLog
     {

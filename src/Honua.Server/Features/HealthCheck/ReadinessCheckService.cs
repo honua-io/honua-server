@@ -9,7 +9,7 @@ namespace Honua.Server.Features.HealthCheck;
 /// <summary>
 /// Service for orchestrating readiness health checks
 /// </summary>
-public sealed class ReadinessCheckService(
+internal sealed class ReadinessCheckService(
     IDatabaseHealthChecker databaseHealthChecker,
     ILogger<ReadinessCheckService> logger) : IReadinessCheckService
 {

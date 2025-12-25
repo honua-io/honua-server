@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Import;
 /// <summary>
 /// File import endpoints for uploading and processing geospatial files
 /// </summary>
-public static partial class ImportEndpoints
+internal static partial class ImportEndpoints
 {
     internal sealed class ImportEndpointsLog
     {

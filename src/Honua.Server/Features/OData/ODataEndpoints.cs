@@ -22,7 +22,7 @@ namespace Honua.Server.Features.OData;
 /// OData v4 endpoints providing intermediate conformance level.
 /// Supports $filter, $select, $orderby, $top, $skip, $count, and CRUD operations.
 /// </summary>
-public static partial class ODataEndpoints
+internal static partial class ODataEndpoints
 {
     internal sealed class ODataEndpointsLog
     {
