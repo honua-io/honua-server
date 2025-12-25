@@ -95,14 +95,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                         })
                         .Build();
 
-                    // Register PostgreSQL services using reflection to avoid direct dependency on Postgres types
-                    // This maintains architectural separation while enabling test infrastructure
-                    RegisterPostgreSqlServicesViaReflection(services, testConfiguration);
+                    // Register all PostgreSQL services using the Postgres layer's extension method
+                    // This ensures proper dependency injection without Server/TestKit directly instantiating Postgres types
+                    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
                     // Override specific services for testing
-                    // Use CITE-compatible layer catalog for conformance tests (via reflection)
+                    // Use CITE-compatible layer catalog for conformance tests
                     services.RemoveAll<ILayerCatalog>();
-                    RegisterCiteLayerCatalogViaReflection(services);
+                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite>();
 
                     // Override database connection provider with test-specific implementation
                     services.RemoveAll<IDatabaseConnectionProvider>();

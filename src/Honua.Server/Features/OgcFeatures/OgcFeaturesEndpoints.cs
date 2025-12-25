@@ -2891,6 +2891,79 @@ internal static partial class OgcFeaturesEndpoints
         public static partial void DeleteFailed(ILogger logger, string collectionId, Exception exception);
     }
 
+    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    {
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            return timeoutToken;
+        }
+
+        return context.RequestAborted;
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 3100, Level = LogLevel.Warning, Message = "Invalid OGC collections request.")]
+        public static partial void InvalidCollectionsRequest(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3101, Level = LogLevel.Warning, Message = "Invalid OGC collections operation.")]
+        public static partial void InvalidCollectionsOperation(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3102, Level = LogLevel.Error, Message = "Error retrieving OGC collections.")]
+        public static partial void CollectionsQueryFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3103, Level = LogLevel.Warning, Message = "Invalid OGC collection ID {CollectionId}.")]
+        public static partial void InvalidCollectionId(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3104, Level = LogLevel.Error, Message = "Error retrieving OGC collection {CollectionId}.")]
+        public static partial void CollectionQueryFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3105, Level = LogLevel.Warning, Message = "Invalid OGC items request for collection {CollectionId}.")]
+        public static partial void InvalidItemsRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3106, Level = LogLevel.Warning, Message = "Invalid OGC items operation for collection {CollectionId}.")]
+        public static partial void InvalidItemsOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3107, Level = LogLevel.Error, Message = "Error processing OGC items request for collection {CollectionId}.")]
+        public static partial void ItemsQueryFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3108, Level = LogLevel.Warning, Message = "Invalid OGC item request for collection {CollectionId}.")]
+        public static partial void InvalidItemRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3109, Level = LogLevel.Warning, Message = "Invalid OGC item operation for collection {CollectionId}.")]
+        public static partial void InvalidItemOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3110, Level = LogLevel.Error, Message = "Error processing OGC item request for collection {CollectionId}.")]
+        public static partial void ItemQueryFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3111, Level = LogLevel.Warning, Message = "Invalid OGC create feature request for collection {CollectionId}.")]
+        public static partial void InvalidCreateRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3112, Level = LogLevel.Warning, Message = "Invalid OGC create feature operation for collection {CollectionId}.")]
+        public static partial void InvalidCreateOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3113, Level = LogLevel.Error, Message = "Error creating OGC feature for collection {CollectionId}.")]
+        public static partial void CreateFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3114, Level = LogLevel.Warning, Message = "Invalid OGC update request for collection {CollectionId}.")]
+        public static partial void InvalidUpdateRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3115, Level = LogLevel.Warning, Message = "Invalid OGC update operation for collection {CollectionId}.")]
+        public static partial void InvalidUpdateOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3116, Level = LogLevel.Error, Message = "Error updating OGC feature for collection {CollectionId}.")]
+        public static partial void UpdateFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3117, Level = LogLevel.Warning, Message = "Invalid OGC delete request for collection {CollectionId}.")]
+        public static partial void InvalidDeleteRequest(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3118, Level = LogLevel.Warning, Message = "Invalid OGC delete operation for collection {CollectionId}.")]
+        public static partial void InvalidDeleteOperation(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 3119, Level = LogLevel.Error, Message = "Error deleting OGC feature for collection {CollectionId}.")]
+        public static partial void DeleteFailed(ILogger logger, string collectionId, Exception exception);
+    }
+
     private static string BuildHtmlDocument(string title, string json)
     {
         var encodedTitle = WebUtility.HtmlEncode(title);

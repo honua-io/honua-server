@@ -277,7 +277,6 @@ public enum SpatialRelationship
     /// </summary>
     EnvelopeIntersects,
 
-    /// <summary>
     /// Features that cross the filter geometry (lines through polygons)
     /// </summary>
     Crosses,
