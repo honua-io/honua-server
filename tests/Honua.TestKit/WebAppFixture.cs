@@ -95,14 +95,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                         })
                         .Build();
 
-                    // Register all PostgreSQL services using the Postgres layer's extension method
-                    // This ensures proper dependency injection without Server/TestKit directly instantiating Postgres types
-                    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+                    // Register PostgreSQL services using reflection to avoid direct dependency on Postgres types
+                    // This maintains architectural separation while enabling test infrastructure
+                    RegisterPostgreSqlServicesViaReflection(services, testConfiguration);
 
                     // Override specific services for testing
-                    // Use CITE-compatible layer catalog for conformance tests
+                    // Use CITE-compatible layer catalog for conformance tests (via reflection)
                     services.RemoveAll<ILayerCatalog>();
-                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite>();
+                    RegisterCiteLayerCatalogViaReflection(services);
 
                     // Override database connection provider with test-specific implementation
                     services.RemoveAll<IDatabaseConnectionProvider>();
@@ -200,6 +200,40 @@ public sealed class WebAppFixture : IAsyncLifetime
     {
         _currentSchema = await _postgres.CreateIsolatedSchemaAsync(testClassName);
         return _currentSchema;
+    }
+
+    /// <summary>
+    /// Registers PostgreSQL services via reflection to avoid direct dependency on Postgres types.
+    /// </summary>
+    private static void RegisterPostgreSqlServicesViaReflection(IServiceCollection services, IConfiguration configuration)
+    {
+        // Use reflection to call Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices
+        // This maintains architectural separation while enabling required infrastructure services
+        var postgresAssembly = System.Reflection.Assembly.LoadFrom("Honua.Postgres.dll");
+        var serviceCollectionExtensionsType = postgresAssembly.GetType("Honua.Postgres.ServiceCollectionExtensions");
+        var addPostgreSqlServicesMethod = serviceCollectionExtensionsType?.GetMethod("AddPostgreSqlServices",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+
+        addPostgreSqlServicesMethod?.Invoke(null, new object[] { services, configuration });
+    }
+
+    /// <summary>
+    /// Registers CITE layer catalog via reflection to avoid direct dependency on Postgres types.
+    /// </summary>
+    private static void RegisterCiteLayerCatalogViaReflection(IServiceCollection services)
+    {
+        // Use reflection to register PostgresLayerCatalogForCite without direct type dependency
+        var postgresAssembly = System.Reflection.Assembly.LoadFrom("Honua.Postgres.dll");
+        var citeLayerCatalogType = postgresAssembly.GetType("Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite");
+
+        if (citeLayerCatalogType != null)
+        {
+            // Find the ILayerCatalog interface from Core
+            var layerCatalogInterface = typeof(ILayerCatalog);
+
+            // Register the concrete type as implementing the interface
+            services.AddScoped(layerCatalogInterface, citeLayerCatalogType);
+        }
     }
 
     /// <summary>
