@@ -728,7 +728,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         // Arrange
         var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
-        var unsupportedSpatialRel = "esriSpatialRelOverlaps"; // Not yet supported
+        var unsupportedSpatialRel = "esriSpatialRelInvalid"; // Invalid spatial relationship
 
         // Act
         var response = await _fixture.Client.GetAsync(
