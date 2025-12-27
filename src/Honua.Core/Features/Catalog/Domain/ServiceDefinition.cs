@@ -46,6 +46,35 @@ public record ServiceDefinition(
         .ToArray();
 
     /// <summary>
+    /// All unique field definitions as ReadOnlySpan for efficient enumeration
+    /// </summary>
+    public ReadOnlySpan<FieldDefinition> AllFieldsSpan =>
+        AllFieldsMemory.Span;
+
+    /// <summary>
+    /// All unique field definitions as Memory for efficient slicing and sharing
+    /// </summary>
+    public Memory<FieldDefinition> AllFieldsMemory
+    {
+        get
+        {
+            // Cache the result to avoid repeated expensive computations
+            if (_allFieldsCache == null)
+            {
+                var allFields = Layers
+                    .SelectMany(layer => layer.Fields)
+                    .DistinctBy(f => f.Name)
+                    .OrderBy(f => f.Name)
+                    .ToArray();
+                _allFieldsCache = new Memory<FieldDefinition>(allFields);
+            }
+            return _allFieldsCache.Value;
+        }
+    }
+
+    private Memory<FieldDefinition>? _allFieldsCache;
+
+    /// <summary>
     /// All unique geometry types present in service layers
     /// </summary>
     public GeometryType[] GeometryTypes => Layers
@@ -54,6 +83,36 @@ public record ServiceDefinition(
         .Distinct()
         .OrderBy(type => type.ToString())
         .ToArray();
+
+    /// <summary>
+    /// All unique geometry types as ReadOnlySpan for efficient enumeration
+    /// </summary>
+    public ReadOnlySpan<GeometryType> GeometryTypesSpan =>
+        GeometryTypesMemory.Span;
+
+    /// <summary>
+    /// All unique geometry types as Memory for efficient slicing and sharing
+    /// </summary>
+    public Memory<GeometryType> GeometryTypesMemory
+    {
+        get
+        {
+            // Cache the result to avoid repeated computations
+            if (_geometryTypesCache == null)
+            {
+                var geometryTypes = Layers
+                    .Select(layer => layer.GeometryType)
+                    .Where(type => type != GeometryType.None)
+                    .Distinct()
+                    .OrderBy(type => type.ToString())
+                    .ToArray();
+                _geometryTypesCache = new Memory<GeometryType>(geometryTypes);
+            }
+            return _geometryTypesCache.Value;
+        }
+    }
+
+    private Memory<GeometryType>? _geometryTypesCache;
 
     /// <summary>
     /// Whether the service supports editing operations

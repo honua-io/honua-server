@@ -148,6 +148,12 @@ internal static partial class Log
     public static partial void DatabaseConnectionStringNotConfigured(ILogger logger);
 
     [LoggerMessage(
+        EventId = 4015,
+        Level = LogLevel.Information,
+        Message = "Database migrations skipped")]
+    public static partial void DatabaseMigrationsSkipped(ILogger logger);
+
+    [LoggerMessage(
         EventId = 4014,
         Level = LogLevel.Debug,
         Message = "Applied migration script: {ScriptName}")]

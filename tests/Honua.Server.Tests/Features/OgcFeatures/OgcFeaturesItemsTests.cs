@@ -10,7 +10,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
-using Xunit;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
@@ -67,7 +66,7 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
         features.Should().HaveCountLessOrEqualTo(2);
 
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
-        numberReturned.Should().BeLessOrEqualTo(2);
+        numberReturned.Should().BeLessThanOrEqualTo(2);
     }
 
     [IntegrationTest]
@@ -194,6 +193,6 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
         features.Should().HaveCountLessOrEqualTo(1);
 
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
-        numberReturned.Should().BeLessOrEqualTo(1);
+        numberReturned.Should().BeLessThanOrEqualTo(1);
     }
 }

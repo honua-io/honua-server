@@ -9,10 +9,16 @@ namespace Honua.Server.Features.FeatureServer.Services;
 internal sealed class FeatureServerServices(
     IQueryFormatter queryFormatter,
     IFeatureQueryValidator queryValidator,
-    Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter)
+    Honua.Server.Features.Infrastructure.Services.IGeometryConverter geometryConverter,
+    Honua.Core.Features.Import.Abstractions.ICrsDetectionService crsDetectionService,
+    Honua.Core.Queries.Filters.ISqlFilterTranslator sqlFilterTranslator)
 {
     public IQueryFormatter QueryFormatter { get; } = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
     public IFeatureQueryValidator QueryValidator { get; } = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
     public Honua.Server.Features.Infrastructure.Services.IGeometryConverter GeometryConverter { get; } =
         geometryConverter ?? throw new ArgumentNullException(nameof(geometryConverter));
+    public Honua.Core.Features.Import.Abstractions.ICrsDetectionService CrsDetectionService { get; } =
+        crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
+    public Honua.Core.Queries.Filters.ISqlFilterTranslator SqlFilterTranslator { get; } =
+        sqlFilterTranslator ?? throw new ArgumentNullException(nameof(sqlFilterTranslator));
 }

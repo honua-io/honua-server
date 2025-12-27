@@ -92,6 +92,12 @@ internal static partial class FeatureServerLog
         Message = "Query parameter invalid: {Parameter} value {ActualValue}")]
     public static partial void QueryParameterInvalid(ILogger logger, string parameter, int actualValue);
 
+    [LoggerMessage(
+        EventId = 2206,
+        Level = LogLevel.Information,
+        Message = "Query {Operation} executed: {ServiceId}/FeatureServer/{LayerId} in {ElapsedMilliseconds} ms")]
+    public static partial void QueryExecuted(ILogger logger, string operation, string serviceId, int layerId, double elapsedMilliseconds);
+
     // ApplyEdits events (2300-2399)
 
     [LoggerMessage(Level = LogLevel.Information, Message = "ApplyEdits requested for service '{ServiceId}' layer {LayerId} with {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes")]

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Server.Features.FeatureServer.Models;
@@ -180,6 +181,12 @@ internal static partial class AttachmentHandler
 
             LogUpdateAttachmentSuccess(logger, layerId, featureId, attachmentId);
             return Results.Ok(response);
+        }
+        catch (ResourceNotFoundException ex)
+        {
+            LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
+            return GeoServicesErrorHelpers.CreateNotFoundError(
+                $"Attachment {attachmentId} not found for feature {featureId}");
         }
         catch (Exception ex)
         {

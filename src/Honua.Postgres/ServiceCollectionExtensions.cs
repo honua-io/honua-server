@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -19,6 +20,7 @@ using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
 namespace Honua.Postgres;
@@ -47,17 +49,53 @@ internal static class ServiceCollectionExtensions
 
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 
+            // PERFORMANCE OPTIMIZATION: Configure optimized connection settings
+            dataSourceBuilder.ConnectionStringBuilder.Pooling = true;
+            dataSourceBuilder.ConnectionStringBuilder.MinPoolSize = 5;
+            dataSourceBuilder.ConnectionStringBuilder.MaxPoolSize = 50;
+            dataSourceBuilder.ConnectionStringBuilder.ConnectionIdleLifetime = 300; // 5 minutes
+            dataSourceBuilder.ConnectionStringBuilder.ConnectionPruningInterval = 10;
+            dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = 30;
+            dataSourceBuilder.ConnectionStringBuilder.WriteBufferSize = 16384; // 16KB
+            dataSourceBuilder.ConnectionStringBuilder.ReadBufferSize = 16384; // 16KB
+            dataSourceBuilder.ConnectionStringBuilder.NoResetOnClose = true;
+            dataSourceBuilder.ConnectionStringBuilder.Multiplexing = true;
+
+            if (dataSourceBuilder.ConnectionStringBuilder.Multiplexing)
+            {
+                // Npgsql multiplexing does not support keepalive settings.
+                dataSourceBuilder.ConnectionStringBuilder.KeepAlive = 0;
+                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveTime = 0;
+                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveInterval = 0;
+            }
+            else
+            {
+                dataSourceBuilder.ConnectionStringBuilder.KeepAlive = 30;
+                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveTime = 30;
+                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveInterval = 2;
+            }
+
             // Note: Not using EnableDynamicJson() for AOT compatibility
             // Manual JSON serialization is used instead for JSONB parameters
 
             return dataSourceBuilder.Build();
         });
 
+        // PERFORMANCE OPTIMIZATION: Register StringBuilder object pool
+        services.AddSingleton<ObjectPool<StringBuilder>>(serviceProvider =>
+        {
+            var provider = new DefaultObjectPoolProvider();
+            return provider.Create(new PostgresFeatureStore.StringBuilderPooledObjectPolicy());
+        });
+
         // Register feature store implementation
         services.AddScoped<IFeatureStore, PostgresFeatureStore>();
 
-        // Register attachment store implementation
-        services.AddScoped<IAttachmentStore, PostgresAttachmentStore>();
+        // Register attachment store implementation (metadata tables live in the honua schema)
+        services.AddScoped<IAttachmentStore>(serviceProvider =>
+            new PostgresAttachmentStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                schemaName: "honua"));
 
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();

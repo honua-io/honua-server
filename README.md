@@ -118,6 +118,14 @@ Limits__Attachments__AllowedMimeTypes="image/*,application/pdf"
 
 See `docs/adr/0008-env-var-configuration.md` for complete environment variable reference.
 
+## Documentation
+
+- **[API Examples](docs/API_EXAMPLES.md)** - Comprehensive examples for all supported protocols (GeoServices REST, OGC API Features, OData v4, MVT)
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
+- **[Architecture Documentation](docs/ARCHITECTURE.md)** - System design and architectural decisions
+- **[ADR Index](docs/adr/README.md)** - Architecture Decision Records with complete rationale
+- **[Performance Testing](docs/performance-testing.md)** - Performance benchmarks and optimization guidance
+
 ## Roadmap
 
 See `docs/ROADMAP.md` for the staged plan (Beta, GA, Later).

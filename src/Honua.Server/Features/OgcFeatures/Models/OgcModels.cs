@@ -41,6 +41,12 @@ public sealed record ConformanceDeclaration
     /// </summary>
     [JsonPropertyName("conformsTo")]
     public required ImmutableArray<string> ConformsTo { get; init; }
+
+    /// <summary>
+    /// Links to related resources
+    /// </summary>
+    [JsonPropertyName("links")]
+    public ImmutableArray<Link>? Links { get; init; }
 }
 
 /// <summary>
@@ -378,6 +384,7 @@ public sealed record GeoJsonFeature
     /// Feature geometry in GeoJSON format
     /// </summary>
     [JsonPropertyName("geometry")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public SimpleGeoJsonGeometry? Geometry { get; init; }
 
     /// <summary>
@@ -563,4 +570,9 @@ public static class MediaTypes
     /// OpenAPI 3.0 specification media type
     /// </summary>
     public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
+
+    /// <summary>
+    /// GML 3.2 media type
+    /// </summary>
+    public const string Gml = "application/gml+xml;version=3.2";
 }

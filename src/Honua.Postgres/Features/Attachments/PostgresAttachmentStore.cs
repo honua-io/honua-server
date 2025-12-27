@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -125,7 +126,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
-            throw new InvalidOperationException($"Attachment {attachment.Id} not found for update");
+            throw new ResourceNotFoundException($"Attachment {attachment.Id} not found for update");
         }
 
         return await ReadAttachmentAsync(reader, cancellationToken);
@@ -180,7 +181,13 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
 
         // Save file to storage
         long fileSize;
-        await using (var fileStream = new FileStream(fullPath, FileMode.Create))
+        await using (var fileStream = new FileStream(fullPath, new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        }))
         {
             await content.CopyToAsync(fileStream, cancellationToken);
             fileSize = fileStream.Length;
@@ -233,7 +240,13 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             return null;
         }
 
-        var fileStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
+        var fileStream = new FileStream(fullPath, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
         return AttachmentContent.Create(attachment.Value, fileStream);
     }
 

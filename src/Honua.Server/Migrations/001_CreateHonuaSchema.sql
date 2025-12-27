@@ -4,14 +4,6 @@
 -- Initial Honua schema migration
 -- Creates honua schema, enables PostGIS, and sets up core metadata tables
 
--- Debug: Show current schema context
-DO $$
-BEGIN
-    RAISE NOTICE 'Current search_path: %', current_setting('search_path');
-    RAISE NOTICE 'Current schema: %', current_schema();
-END
-$$;
-
 -- Create honua schema for isolation
 CREATE SCHEMA IF NOT EXISTS honua;
 
@@ -20,10 +12,13 @@ CREATE SCHEMA IF NOT EXISTS honua;
 
 -- Services table - top-level service definitions
 CREATE TABLE IF NOT EXISTS honua.services (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    service_name VARCHAR(64) PRIMARY KEY,
+    description TEXT NOT NULL DEFAULT '',
+    srid INT NOT NULL DEFAULT 4326,
+    max_record_count INT NOT NULL DEFAULT 1000,
+    supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
+    capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
+    service_extent GEOMETRY,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -45,27 +40,26 @@ CREATE TABLE IF NOT EXISTS honua.layers (
 
 -- Service layers junction table - maps layers to services with layer index
 CREATE TABLE IF NOT EXISTS honua.service_layers (
-    service_id TEXT NOT NULL REFERENCES honua.services(id) ON DELETE CASCADE,
+    service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    layer_index INT NOT NULL,
-    PRIMARY KEY (service_id, layer_id),
-    UNIQUE (service_id, layer_index)
+    layer_order INT NOT NULL,
+    PRIMARY KEY (service_name, layer_id),
+    UNIQUE (service_name, layer_order)
 );
 
 -- Layer fields table - field metadata for each layer
 CREATE TABLE IF NOT EXISTS honua.layer_fields (
-    field_id SERIAL PRIMARY KEY,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,
-    field_type TEXT NOT NULL,
-    field_alias TEXT,
-    is_nullable BOOLEAN DEFAULT TRUE,
-    is_editable BOOLEAN DEFAULT TRUE,
-    field_length INT
+    field_name VARCHAR(64) NOT NULL,
+    field_type VARCHAR(32) NOT NULL,
+    field_order INT NOT NULL,
+    max_length INT,
+    nullable BOOLEAN NOT NULL DEFAULT TRUE,
+    default_value TEXT,
+    description TEXT,
+    PRIMARY KEY (layer_id, field_name)
 );
 
--- Relationships table - created in separate migration (003_CreateRelationshipsTable.sql)
--- This ensures proper dependency management and cleaner migration structure
 
 -- Features table - stores actual feature data
 CREATE TABLE IF NOT EXISTS features (
@@ -78,7 +72,7 @@ CREATE TABLE IF NOT EXISTS features (
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_service_layers_service_id ON honua.service_layers(service_id);
+CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);
 CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Domain;
 
 namespace Honua.Core.Features.Attachments.Abstractions;
@@ -51,7 +52,7 @@ public interface IAttachmentStore
     /// <param name="attachment">Attachment with updated values (must include valid Id)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated attachment</returns>
-    /// <exception cref="InvalidOperationException">Thrown if attachment with the specified ID does not exist</exception>
+    /// <exception cref="ResourceNotFoundException">Thrown if attachment with the specified ID does not exist</exception>
     Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default);
 
     /// <summary>

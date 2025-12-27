@@ -38,8 +38,33 @@ public sealed record Literal(object? Value, LiteralType Type) : FilterExpression
 /// </summary>
 public sealed record SpatialPredicate(
     SpatialOperator Operator,
-    PropertyReference GeometryProperty,
-    GeometryLiteral Geometry) : FilterExpression;
+    FilterExpression Left,
+    FilterExpression Right) : FilterExpression;
+
+/// <summary>
+/// Spatial predicate with a distance operand: DWithin, Beyond
+/// </summary>
+public sealed record SpatialDistancePredicate(
+    SpatialOperator Operator,
+    FilterExpression Left,
+    FilterExpression Right,
+    FilterExpression Distance) : FilterExpression;
+
+/// <summary>
+/// Temporal predicate: AFTER, BEFORE, INTERSECTS, etc.
+/// </summary>
+public sealed record TemporalPredicate(
+    TemporalOperator Operator,
+    FilterExpression Left,
+    FilterExpression Right) : FilterExpression;
+
+/// <summary>
+/// Array predicate: A_CONTAINS, A_EQUALS, etc.
+/// </summary>
+public sealed record ArrayPredicate(
+    ArrayOperator Operator,
+    FilterExpression Left,
+    FilterExpression Right) : FilterExpression;
 
 /// <summary>
 /// Geometry literal in WKB format (normalized from WKT, GeoJSON, GeoServices JSON)
@@ -50,6 +75,13 @@ public sealed record GeometryLiteral(
     string OriginalFormat) : FilterExpression;
 
 /// <summary>
+/// Interval literal represented by start and end instants
+/// </summary>
+public sealed record IntervalLiteral(
+    Literal? Start,
+    Literal? End) : FilterExpression;
+
+/// <summary>
 /// Function call: UPPER, LOWER, LENGTH, etc.
 /// </summary>
 public sealed record FunctionCall(
@@ -57,6 +89,12 @@ public sealed record FunctionCall(
     IReadOnlyList<FilterExpression> Arguments) : FilterExpression;
 
 /// <summary>
+/// Array literal value
+/// </summary>
+public sealed record ArrayLiteral(
+    IReadOnlyList<FilterExpression> Elements) : FilterExpression;
+
+/// <summary>
 /// List of values for IN operator
 /// </summary>
-public sealed record ValueList(IReadOnlyList<Literal> Values) : FilterExpression;
+public sealed record ValueList(IReadOnlyList<FilterExpression> Values) : FilterExpression;

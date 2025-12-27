@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Server.Features.Infrastructure.Models;
 // using Honua.Server.Features.OData.Models; // Temporarily disabled for Issue 46 performance testing
@@ -495,9 +497,34 @@ public sealed class GeoServicesFieldInfo
 public sealed class QueryResponse
 {
     /// <summary>
+    /// Geometry type for the features returned by the query
+    /// </summary>
+    public string? GeometryType { get; init; }
+
+    /// <summary>
+    /// Spatial reference for returned geometries
+    /// </summary>
+    public GeoServicesSpatialReference? SpatialReference { get; init; }
+
+    /// <summary>
     /// Object ID field name for the layer
     /// </summary>
     public string ObjectIdFieldName { get; init; } = "objectid";
+
+    /// <summary>
+    /// Object IDs returned by the query (when returnIdsOnly=true)
+    /// </summary>
+    public long[]? ObjectIds { get; init; }
+
+    /// <summary>
+    /// Total count returned by the query (when returnCountOnly=true)
+    /// </summary>
+    public long? Count { get; init; }
+
+    /// <summary>
+    /// Extent returned by the query (when returnExtentOnly=true)
+    /// </summary>
+    public ExtentInfo? Extent { get; init; }
 
     /// <summary>
     /// Unique value field name (optional)
@@ -533,6 +560,7 @@ public sealed class GeoServicesFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public GeoServicesGeometry? Geometry { get; init; }
 }
 
@@ -542,14 +570,75 @@ public sealed class GeoServicesFeature
 public sealed class GeoServicesGeometry
 {
     /// <summary>
+    /// Indicates whether the geometry includes Z values
+    /// </summary>
+    [JsonPropertyName("hasZ")]
+    public bool? HasZ { get; init; }
+
+    /// <summary>
+    /// Indicates whether the geometry includes M values
+    /// </summary>
+    [JsonPropertyName("hasM")]
+    public bool? HasM { get; init; }
+
+    /// <summary>
     /// X coordinate (longitude)
     /// </summary>
-    public double X { get; init; }
+    public double? X { get; init; }
 
     /// <summary>
     /// Y coordinate (latitude)
     /// </summary>
-    public double Y { get; init; }
+    public double? Y { get; init; }
+
+    /// <summary>
+    /// Z coordinate (elevation)
+    /// </summary>
+    public double? Z { get; init; }
+
+    /// <summary>
+    /// Measure value
+    /// </summary>
+    public double? M { get; init; }
+
+    /// <summary>
+    /// Envelope minimum X
+    /// </summary>
+    [JsonPropertyName("xmin")]
+    public double? Xmin { get; init; }
+
+    /// <summary>
+    /// Envelope minimum Y
+    /// </summary>
+    [JsonPropertyName("ymin")]
+    public double? Ymin { get; init; }
+
+    /// <summary>
+    /// Envelope maximum X
+    /// </summary>
+    [JsonPropertyName("xmax")]
+    public double? Xmax { get; init; }
+
+    /// <summary>
+    /// Envelope maximum Y
+    /// </summary>
+    [JsonPropertyName("ymax")]
+    public double? Ymax { get; init; }
+
+    /// <summary>
+    /// MultiPoint coordinates
+    /// </summary>
+    public double[][]? Points { get; init; }
+
+    /// <summary>
+    /// Polyline paths
+    /// </summary>
+    public double[][][]? Paths { get; init; }
+
+    /// <summary>
+    /// Polygon rings
+    /// </summary>
+    public double[][][]? Rings { get; init; }
 
     /// <summary>
     /// Spatial reference information
@@ -566,6 +655,16 @@ public sealed class GeoServicesSpatialReference
     /// Well-known ID for the spatial reference
     /// </summary>
     public int Wkid { get; init; }
+
+    /// <summary>
+    /// Latest well-known ID for the spatial reference
+    /// </summary>
+    public int? LatestWkid { get; init; }
+
+    /// <summary>
+    /// Well-known text representation (optional)
+    /// </summary>
+    public string? Wkt { get; init; }
 }
 
 /// <summary>
@@ -584,9 +683,29 @@ public sealed class QueryParameters
     public string? OutFields { get; init; }
 
     /// <summary>
+    /// Fields to order results by (comma-separated list with optional ASC/DESC)
+    /// </summary>
+    public string? OrderByFields { get; init; }
+
+    /// <summary>
     /// Whether to return geometry
     /// </summary>
     public bool ReturnGeometry { get; init; } = true;
+
+    /// <summary>
+    /// Whether to return only object IDs
+    /// </summary>
+    public bool ReturnIdsOnly { get; init; }
+
+    /// <summary>
+    /// Whether to return only the total count
+    /// </summary>
+    public bool ReturnCountOnly { get; init; }
+
+    /// <summary>
+    /// Whether to return only the extent of matching features
+    /// </summary>
+    public bool ReturnExtentOnly { get; init; }
 
     /// <summary>
     /// Output format (json, geojson)
@@ -606,7 +725,22 @@ public sealed class QueryParameters
     /// <summary>
     /// Filter geometry in GeoServices JSON format for spatial queries
     /// </summary>
+    [JsonConverter(typeof(RawJsonStringConverter))]
     public string? Geometry { get; init; }
+
+    /// <summary>
+    /// Input spatial reference for geometry (WKID or WKT)
+    /// </summary>
+    [JsonPropertyName("inSR")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? InSr { get; init; }
+
+    /// <summary>
+    /// Output spatial reference for response geometry (WKID or WKT)
+    /// </summary>
+    [JsonPropertyName("outSR")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? OutSr { get; init; }
 
     /// <summary>
     /// Type of filter geometry (esriGeometryPoint, esriGeometryPolygon, esriGeometryEnvelope)
@@ -643,6 +777,41 @@ public sealed class QueryParameters
     /// When true, a "distance" field will be added to each feature's attributes.
     /// </summary>
     public bool ReturnDistance { get; init; }
+}
+
+internal sealed class RawJsonStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number => reader.TryGetInt64(out var longValue)
+                ? longValue.ToString(CultureInfo.InvariantCulture)
+                : reader.GetDouble().ToString(CultureInfo.InvariantCulture),
+            JsonTokenType.StartObject or JsonTokenType.StartArray => JsonDocument.ParseValue(ref reader).RootElement.GetRawText(),
+            JsonTokenType.Null => null,
+            _ => throw new JsonException("Unsupported JSON token for string conversion.")
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        if (value.StartsWith('{') || value.StartsWith('['))
+        {
+            using var document = JsonDocument.Parse(value);
+            document.RootElement.WriteTo(writer);
+            return;
+        }
+
+        writer.WriteStringValue(value);
+    }
 }
 
 /// <summary>
@@ -684,6 +853,7 @@ public sealed class GeoJsonFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public GeoJsonGeometry? Geometry { get; init; }
 
     /// <summary>
@@ -708,12 +878,17 @@ public sealed class GeoJsonGeometry
     /// For LineString: [[x, y], [x, y], ...]
     /// For Polygon: [[[x, y], [x, y], ...], ...]
     /// </summary>
-    public required object Coordinates { get; init; }
+    public required object? Coordinates { get; init; }
 
     /// <summary>
     /// Coordinate Reference System (optional)
     /// </summary>
     public GeoJsonCrs? Crs { get; init; }
+
+    /// <summary>
+    /// Geometry collection members (only when Type=GeometryCollection)
+    /// </summary>
+    public GeoJsonGeometry[]? Geometries { get; init; }
 }
 
 /// <summary>
@@ -1087,6 +1262,7 @@ public class EditError
 [JsonSerializable(typeof(GeoServicesFieldInfo))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(GeoServicesFeature))]
+[JsonSerializable(typeof(GeoServicesFeature[]), TypeInfoPropertyName = "GeoServicesFeatureArray")]
 [JsonSerializable(typeof(GeoServicesGeometry))]
 [JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(QueryParameters))]
@@ -1110,6 +1286,7 @@ public class EditError
 [JsonSerializable(typeof(GeoServicesError))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(AttachmentInfo))]
 [JsonSerializable(typeof(AttachmentQueryResponse))]
 [JsonSerializable(typeof(AddAttachmentResult))]

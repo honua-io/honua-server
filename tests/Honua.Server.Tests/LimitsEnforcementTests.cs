@@ -14,7 +14,6 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Options;
-using Xunit;
 
 namespace Honua.Server.Tests;
 

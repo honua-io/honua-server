@@ -17,7 +17,10 @@ import signal
 import subprocess
 import sys
 import time
+from collections import deque
+from threading import Thread
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 class HonuaServer:
@@ -49,6 +52,10 @@ class HonuaServer:
         self.port = port
         self.project_root = project_root or self._find_project_root()
         self._process: subprocess.Popen | None = None
+        self._stdout_lines: deque[str] = deque(maxlen=2000)
+        self._stderr_lines: deque[str] = deque(maxlen=2000)
+        self._log_threads: list[Thread] = []
+        self._echo_logs = bool(os.getenv("HONUA_TEST_SERVER_LOGS"))
 
     @property
     def base_url(self) -> str:
@@ -84,24 +91,28 @@ class HonuaServer:
             raise RuntimeError(f"Server project not found at {server_project}")
 
         env = os.environ.copy()
+        connection_string = self._normalize_connection_string(self.connection_string)
         env.update({
             "ASPNETCORE_URLS": f"http://localhost:{self.port}",
             "ASPNETCORE_ENVIRONMENT": "Development",
-            "ConnectionStrings__HonuaDb": self.connection_string,
+            "ConnectionStrings__DefaultConnection": connection_string,
+            "ConnectionStrings__honua": connection_string,
             # Enable dev auth bypass for tests
             "HONUA_DEV_AUTH": "true",
+            "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",
         })
 
         # Start the server process
         self._process = subprocess.Popen(
-            ["dotnet", "run", "--no-build", "--project", str(server_project)],
+            ["dotnet", "run", "--no-build", "--no-launch-profile", "--project", str(server_project)],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(self.project_root),
         )
+        self._start_log_readers()
 
         # Wait for server to be healthy
         self._wait_for_health(timeout)
@@ -112,7 +123,7 @@ class HonuaServer:
         """Wait for the server to respond to health checks."""
         import httpx
 
-        health_url = f"{self.base_url}/health"
+        health_url = f"{self.base_url}/healthz/live"
         start_time = time.time()
 
         while time.time() - start_time < timeout:
@@ -125,16 +136,45 @@ class HonuaServer:
 
             # Check if process died
             if self._process and self._process.poll() is not None:
-                stdout, stderr = self._process.communicate()
+                stdout = "".join(self._stdout_lines)
+                stderr = "".join(self._stderr_lines)
                 raise RuntimeError(
                     f"Server process died unexpectedly.\n"
-                    f"stdout: {stdout.decode()}\n"
-                    f"stderr: {stderr.decode()}"
+                    f"stdout: {stdout}\n"
+                    f"stderr: {stderr}"
                 )
 
             time.sleep(0.5)
 
         raise RuntimeError(f"Server did not become healthy within {timeout}s")
+
+    def _normalize_connection_string(self, value: str) -> str:
+        """Normalize PostgreSQL connection strings for Npgsql."""
+        if "://" not in value:
+            return value
+
+        parsed = urlparse(value)
+        if not parsed.hostname:
+            return value
+
+        username = parsed.username or ""
+        password = parsed.password or ""
+        host = parsed.hostname or ""
+        port = parsed.port or 5432
+        database = parsed.path.lstrip("/") if parsed.path else ""
+
+        parts = [
+            f"Host={host}",
+            f"Port={port}",
+        ]
+        if database:
+            parts.append(f"Database={database}")
+        if username:
+            parts.append(f"Username={username}")
+        if password:
+            parts.append(f"Password={password}")
+
+        return ";".join(parts)
 
     def stop(self):
         """Stop the server process."""
@@ -148,6 +188,30 @@ class HonuaServer:
                 self._process.kill()
                 self._process.wait()
             self._process = None
+            self._log_threads.clear()
+
+    def _start_log_readers(self):
+        """Drain server stdout/stderr to avoid pipe backpressure."""
+        if not self._process:
+            return
+
+        def drain(stream, buffer):
+            for line in iter(stream.readline, b""):
+                text = line.decode(errors="ignore")
+                buffer.append(text)
+                if self._echo_logs:
+                    sys.stdout.write(text)
+            stream.close()
+
+        if self._process.stdout:
+            thread = Thread(target=drain, args=(self._process.stdout, self._stdout_lines), daemon=True)
+            thread.start()
+            self._log_threads.append(thread)
+
+        if self._process.stderr:
+            thread = Thread(target=drain, args=(self._process.stderr, self._stderr_lines), daemon=True)
+            thread.start()
+            self._log_threads.append(thread)
 
     def __enter__(self) -> "HonuaServer":
         return self.start()

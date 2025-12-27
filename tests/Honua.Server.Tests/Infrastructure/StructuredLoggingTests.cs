@@ -5,7 +5,6 @@ using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Logging;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
-using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure;
 

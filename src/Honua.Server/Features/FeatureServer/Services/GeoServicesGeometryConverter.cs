@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.FeatureServer.Models;
+using NetTopologySuite;
+using NetTopologySuite.Algorithm;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -13,75 +17,667 @@ internal static class GeoServicesGeometryConverter
     /// <summary>
     /// Converts WKB geometry to GeoServices format.
     /// </summary>
-    public static GeoServicesGeometry? ConvertWkbToGeoServicesGeometry(byte[]? wkbGeometry)
+    public static GeoServicesGeometry? ConvertWkbToGeoServicesGeometry(byte[]? wkbGeometry, int? srid = null)
     {
-        if (wkbGeometry == null || wkbGeometry.Length < 21)
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        // Detect endianness (1 = little-endian, 0 = big-endian)
-        bool isLittleEndian = wkbGeometry[0] == 1;
-        if (!isLittleEndian && wkbGeometry[0] != 0)
-            return null; // Invalid endianness marker
+        var reader = new WKBReader();
+        Geometry geometry;
 
-        // Read geometry type with proper endianness
-        uint geometryType = isLittleEndian
-            ? BitConverter.ToUInt32(wkbGeometry, 1)
-            : BitConverter.ToUInt32([.. wkbGeometry.AsSpan(1, 4).ToArray().Reverse()], 0);
-
-        // Only support point geometries for now
-        if (geometryType != 1)
+        try
         {
-            // TODO: Add support for LineString (2), Polygon (3), MultiPoint (4), etc.
+            geometry = reader.Read(wkbGeometry);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException)
+        {
             return null;
         }
 
-        // Read coordinates with proper endianness
-        double x, y;
-        if (isLittleEndian)
+        if (geometry == null || geometry.IsEmpty)
         {
-            x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-            y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
-        }
-        else
-        {
-            byte[] xBytes = [.. wkbGeometry.AsSpan(5, 8).ToArray().Reverse()];
-            byte[] yBytes = [.. wkbGeometry.AsSpan(13, 8).ToArray().Reverse()];
-            x = BitConverter.ToDouble(xBytes, 0);
-            y = BitConverter.ToDouble(yBytes, 0);
+            return null;
         }
 
-        // TODO: Extract actual SRID from WKB instead of defaulting to 4326
-        // For now, use Web Mercator (3857) if coordinates suggest projected data, otherwise WGS84 (4326)
-        int srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
-
-        return new GeoServicesGeometry
+        if (srid.HasValue)
         {
-            X = x,
-            Y = y,
-            SpatialReference = new GeoServicesSpatialReference { Wkid = srid }
-        };
+            geometry.SRID = srid.Value;
+        }
+
+        var spatialReference = srid.HasValue && srid.Value > 0
+            ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
+            : null;
+
+        return ConvertGeometryToGeoServicesGeometry(geometry, spatialReference);
     }
 
     /// <summary>
-    /// Converts GeoServices point geometry to WKB.
+    /// Converts GeoServices geometry to WKB.
     /// </summary>
-    public static byte[] ConvertGeoServicesGeometryToWkb(GeoServicesGeometry geometry)
+    public static byte[] ConvertGeoServicesGeometryToWkb(GeoServicesGeometry geometry, int? srid = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
 
-        return ConvertPointToWkb(geometry.X, geometry.Y);
+        if (IsEmptyGeometry(geometry))
+        {
+            throw new ArgumentException(UnsupportedGeometryMessage);
+        }
+
+        var targetSrid = srid
+            ?? geometry.SpatialReference?.Wkid
+            ?? geometry.SpatialReference?.LatestWkid;
+
+        var factory = NtsGeometryServices.Instance.CreateGeometryFactory(targetSrid ?? 0);
+        var ntsGeometry = CreateGeometryFromGeoServices(geometry, factory)
+            ?? throw new ArgumentException(UnsupportedGeometryMessage);
+
+        if (targetSrid.HasValue)
+        {
+            ntsGeometry.SRID = targetSrid.Value;
+        }
+
+        var (hasZ, hasM) = GetHasZandM(ntsGeometry);
+        var includeSrid = targetSrid.HasValue && targetSrid.Value > 0;
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: includeSrid, emitZ: hasZ, emitM: hasM);
+        return writer.Write(ntsGeometry);
     }
 
-    private static byte[] ConvertPointToWkb(double x, double y)
+    private static Geometry? CreateGeometryFromGeoServices(GeoServicesGeometry geometry, GeometryFactory factory)
     {
-        // Create WKB for a POINT geometry (little-endian format)
-        // WKB format: [endian][type][x][y]
-        byte[] wkbBytes = new byte[21]; // 1 + 4 + 8 + 8 bytes
-        wkbBytes[0] = 1; // Little-endian
-        BitConverter.GetBytes((uint)1).CopyTo(wkbBytes, 1); // POINT type
-        BitConverter.GetBytes(x).CopyTo(wkbBytes, 5); // X coordinate
-        BitConverter.GetBytes(y).CopyTo(wkbBytes, 13); // Y coordinate
+        if (geometry.Xmin.HasValue && geometry.Ymin.HasValue &&
+            geometry.Xmax.HasValue && geometry.Ymax.HasValue)
+        {
+            var envelope = new Envelope(geometry.Xmin.Value, geometry.Xmax.Value, geometry.Ymin.Value, geometry.Ymax.Value);
+            return factory.ToGeometry(envelope);
+        }
 
-        return wkbBytes;
+        if (geometry.X.HasValue && geometry.Y.HasValue)
+        {
+            var ordinates = new List<double>(4) { geometry.X.Value, geometry.Y.Value };
+            var hasZ = geometry.HasZ ?? geometry.Z.HasValue;
+            var hasM = geometry.HasM ?? geometry.M.HasValue;
+
+            if (hasZ && geometry.Z.HasValue)
+            {
+                ordinates.Add(geometry.Z.Value);
+            }
+
+            if (hasM && geometry.M.HasValue)
+            {
+                ordinates.Add(geometry.M.Value);
+            }
+
+            return factory.CreatePoint(CreateCoordinate(ordinates.ToArray(), hasZ, hasM));
+        }
+
+        if (geometry.Points is not null)
+        {
+            if (geometry.Points.Length == 0)
+            {
+                throw new ArgumentException("No valid points found in multipoint geometry");
+            }
+
+            var points = geometry.Points
+                .Where(point => point is { Length: >= 2 })
+                .Select(point => factory.CreatePoint(CreateCoordinate(point, geometry.HasZ, geometry.HasM)))
+                .ToArray();
+
+            if (points.Length == 0)
+            {
+                throw new ArgumentException("No valid points found in multipoint geometry");
+            }
+
+            return factory.CreateMultiPoint(points);
+        }
+
+        if (geometry.Paths is not null)
+        {
+            if (geometry.Paths.Length == 0)
+            {
+                throw new ArgumentException("No valid paths found in linestring geometry");
+            }
+
+            var lineStrings = geometry.Paths
+                .Select(path => FilterValidPoints(path))
+                .Select(path => CreateCoordinates(path, geometry.HasZ, geometry.HasM))
+                .Where(coords => coords.Length >= 2)
+                .Select(coords => factory.CreateLineString(coords))
+                .ToArray();
+
+            if (lineStrings.Length == 0)
+            {
+                throw new ArgumentException("No valid paths found in linestring geometry");
+            }
+
+            return lineStrings.Length == 1 ? lineStrings[0] : factory.CreateMultiLineString(lineStrings);
+        }
+
+        if (geometry.Rings is not null)
+        {
+            if (geometry.Rings.Length == 0)
+            {
+                throw new ArgumentException("No valid rings found in polygon geometry");
+            }
+
+            return CreatePolygonalGeometry(geometry.Rings, factory, geometry.HasZ, geometry.HasM);
+        }
+
+        return null;
+    }
+
+    private static Coordinate CreateCoordinate(double[] ordinates, bool? hasZ = null, bool? hasM = null)
+    {
+        if (hasZ == true && hasM == true)
+        {
+            if (ordinates.Length >= 4)
+            {
+                return new CoordinateZM(ordinates[0], ordinates[1], ordinates[2], ordinates[3]);
+            }
+
+            if (ordinates.Length >= 3)
+            {
+                return new CoordinateZ(ordinates[0], ordinates[1], ordinates[2]);
+            }
+        }
+
+        if (hasZ == true && hasM != true)
+        {
+            if (ordinates.Length >= 3)
+            {
+                return new CoordinateZ(ordinates[0], ordinates[1], ordinates[2]);
+            }
+
+            return new Coordinate(ordinates[0], ordinates[1]);
+        }
+
+        if (hasM == true && hasZ != true)
+        {
+            if (ordinates.Length >= 3)
+            {
+                return new CoordinateM(ordinates[0], ordinates[1], ordinates[2]);
+            }
+
+            return new Coordinate(ordinates[0], ordinates[1]);
+        }
+
+        if (ordinates.Length > 3)
+        {
+            return new CoordinateZM(ordinates[0], ordinates[1], ordinates[2], ordinates[3]);
+        }
+
+        if (ordinates.Length > 2)
+        {
+            return new CoordinateZ(ordinates[0], ordinates[1], ordinates[2]);
+        }
+
+        return new Coordinate(ordinates[0], ordinates[1]);
+    }
+
+    private static Coordinate[] CreateCoordinates(double[][] points, bool? hasZ = null, bool? hasM = null)
+    {
+        var coords = new Coordinate[points.Length];
+        for (var i = 0; i < points.Length; i++)
+        {
+            coords[i] = CreateCoordinate(points[i], hasZ, hasM);
+        }
+
+        return coords;
+    }
+
+    private static Geometry CreatePolygonalGeometry(double[][][] rings, GeometryFactory factory, bool? hasZ, bool? hasM)
+    {
+        var shells = new List<LinearRing>();
+        var holes = new List<LinearRing>();
+        var validRingCount = 0;
+
+        foreach (var ring in rings)
+        {
+            var validRing = FilterValidPoints(ring);
+            if (validRing.Length < 3)
+            {
+                continue;
+            }
+
+            var coords = CreateCoordinates(EnsureClosed(validRing), hasZ, hasM);
+            if (coords.Length < 4)
+            {
+                continue;
+            }
+
+            var linearRing = factory.CreateLinearRing(coords);
+            validRingCount++;
+
+            if (Orientation.IsCCW(coords))
+            {
+                holes.Add(linearRing);
+            }
+            else
+            {
+                shells.Add(linearRing);
+            }
+        }
+
+        if (validRingCount == 0)
+        {
+            throw new ArgumentException("No valid rings found in polygon geometry");
+        }
+
+        if (shells.Count == 0)
+        {
+            shells.AddRange(holes);
+            holes.Clear();
+        }
+
+        var holeAssignments = new Dictionary<LinearRing, List<LinearRing>>();
+
+        foreach (var hole in holes)
+        {
+            var holePoint = factory.CreatePoint(hole.Coordinate);
+            LinearRing? assignedShell = null;
+
+            foreach (var shell in shells)
+            {
+                var shellPolygon = factory.CreatePolygon(shell);
+                if (shellPolygon.Covers(holePoint))
+                {
+                    assignedShell = shell;
+                    break;
+                }
+            }
+
+            if (assignedShell == null)
+            {
+                shells.Add(hole);
+                continue;
+            }
+
+            if (!holeAssignments.TryGetValue(assignedShell, out var assignedHoles))
+            {
+                assignedHoles = new List<LinearRing>();
+                holeAssignments[assignedShell] = assignedHoles;
+            }
+
+            assignedHoles.Add(hole);
+        }
+
+        if (holes.Count == 0 && shells.Count > 1)
+        {
+            var shellsToRemove = new List<LinearRing>();
+
+            foreach (var candidate in shells)
+            {
+                var candidatePoint = factory.CreatePoint(candidate.Coordinate);
+                LinearRing? containingShell = null;
+
+                foreach (var shell in shells)
+                {
+                    if (ReferenceEquals(shell, candidate))
+                    {
+                        continue;
+                    }
+
+                    var shellPolygon = factory.CreatePolygon(shell);
+                    if (shellPolygon.Covers(candidatePoint))
+                    {
+                        containingShell = shell;
+                        break;
+                    }
+                }
+
+                if (containingShell == null)
+                {
+                    continue;
+                }
+
+                if (!holeAssignments.TryGetValue(containingShell, out var assignedHoles))
+                {
+                    assignedHoles = new List<LinearRing>();
+                    holeAssignments[containingShell] = assignedHoles;
+                }
+
+                assignedHoles.Add(candidate);
+                shellsToRemove.Add(candidate);
+            }
+
+            if (shellsToRemove.Count != 0)
+            {
+                shells.RemoveAll(shellsToRemove.Contains);
+            }
+        }
+
+        var polygons = new List<Polygon>();
+        foreach (var shell in shells)
+        {
+            holeAssignments.TryGetValue(shell, out var assigned);
+            polygons.Add(factory.CreatePolygon(shell, assigned?.ToArray() ?? Array.Empty<LinearRing>()));
+        }
+
+        return polygons.Count == 1 ? polygons[0] : factory.CreateMultiPolygon(polygons.ToArray());
+    }
+
+    private static double[][] EnsureClosed(double[][] ring)
+    {
+        if (ring.Length == 0)
+        {
+            return ring;
+        }
+
+        var first = ring[0];
+        var last = ring[^1];
+        if (first.Length >= 2 && last.Length >= 2 &&
+            first[0].Equals(last[0]) && first[1].Equals(last[1]))
+        {
+            return ring;
+        }
+
+        var closed = new double[ring.Length + 1][];
+        Array.Copy(ring, closed, ring.Length);
+        closed[^1] = first;
+        return closed;
+    }
+
+    private static double[][] FilterValidPoints(double[][]? points)
+    {
+        if (points == null || points.Length == 0)
+        {
+            return Array.Empty<double[]>();
+        }
+
+        var valid = new List<double[]>(points.Length);
+        foreach (var point in points)
+        {
+            if (point is { Length: >= 2 })
+            {
+                valid.Add(point);
+            }
+        }
+
+        return valid.Count == points.Length ? points : valid.ToArray();
+    }
+
+    private static GeoServicesGeometry ConvertGeometryToGeoServicesGeometry(Geometry geometry, GeoServicesSpatialReference? spatialReference)
+    {
+        return geometry switch
+        {
+            Point point => ConvertPoint(point, spatialReference),
+            MultiPoint multiPoint => ConvertMultiPoint(multiPoint, spatialReference),
+            LineString lineString => ConvertLineString(lineString, spatialReference),
+            MultiLineString multiLineString => ConvertMultiLineString(multiLineString, spatialReference),
+            Polygon polygon => ConvertPolygon(polygon, spatialReference),
+            MultiPolygon multiPolygon => ConvertMultiPolygon(multiPolygon, spatialReference),
+            GeometryCollection collection => ConvertGeometryCollection(collection, spatialReference),
+            _ => throw new ArgumentException($"Unsupported geometry type: {geometry.GeometryType}")
+        };
+    }
+
+    private static GeoServicesGeometry ConvertPoint(Point point, GeoServicesSpatialReference? spatialReference)
+    {
+        var sequence = point.CoordinateSequence;
+        var (hasZ, hasM) = GetHasZandM(point);
+        var (z, m) = GetZandM(sequence, 0);
+
+        return new GeoServicesGeometry
+        {
+            HasZ = hasZ,
+            HasM = hasM,
+            X = point.X,
+            Y = point.Y,
+            Z = z,
+            M = m,
+            SpatialReference = spatialReference
+        };
+    }
+
+    private static GeoServicesGeometry ConvertMultiPoint(MultiPoint multiPoint, GeoServicesSpatialReference? spatialReference)
+    {
+        var (hasZ, hasM) = GetHasZandM(multiPoint);
+        var points = new double[multiPoint.NumGeometries][];
+        for (var i = 0; i < multiPoint.NumGeometries; i++)
+        {
+            var point = (Point)multiPoint.GetGeometryN(i);
+            points[i] = BuildCoordinateArray(point.CoordinateSequence, 0);
+        }
+
+        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Points = points, SpatialReference = spatialReference };
+    }
+
+    private static GeoServicesGeometry ConvertLineString(LineString lineString, GeoServicesSpatialReference? spatialReference)
+    {
+        var (hasZ, hasM) = GetHasZandM(lineString);
+        return new GeoServicesGeometry
+        {
+            HasZ = hasZ,
+            HasM = hasM,
+            Paths = [BuildLineCoordinates(lineString)],
+            SpatialReference = spatialReference
+        };
+    }
+
+    private static GeoServicesGeometry ConvertMultiLineString(MultiLineString multiLineString, GeoServicesSpatialReference? spatialReference)
+    {
+        var (hasZ, hasM) = GetHasZandM(multiLineString);
+        var paths = new double[multiLineString.NumGeometries][][];
+        for (var i = 0; i < multiLineString.NumGeometries; i++)
+        {
+            paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i));
+        }
+
+        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Paths = paths, SpatialReference = spatialReference };
+    }
+
+    private static GeoServicesGeometry ConvertPolygon(Polygon polygon, GeoServicesSpatialReference? spatialReference)
+    {
+        var (hasZ, hasM) = GetHasZandM(polygon);
+        return new GeoServicesGeometry
+        {
+            HasZ = hasZ,
+            HasM = hasM,
+            Rings = BuildPolygonRings(polygon).ToArray(),
+            SpatialReference = spatialReference
+        };
+    }
+
+    private static GeoServicesGeometry ConvertMultiPolygon(MultiPolygon multiPolygon, GeoServicesSpatialReference? spatialReference)
+    {
+        var (hasZ, hasM) = GetHasZandM(multiPolygon);
+        var rings = new List<double[][]>();
+        for (var i = 0; i < multiPolygon.NumGeometries; i++)
+        {
+            var polygon = (Polygon)multiPolygon.GetGeometryN(i);
+            rings.AddRange(BuildPolygonRings(polygon));
+        }
+
+        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Rings = rings.ToArray(), SpatialReference = spatialReference };
+    }
+
+    private static GeoServicesGeometry ConvertGeometryCollection(GeometryCollection collection, GeoServicesSpatialReference? spatialReference)
+    {
+        var points = new List<Point>();
+        var lines = new List<LineString>();
+        var polygons = new List<Polygon>();
+
+        for (var i = 0; i < collection.NumGeometries; i++)
+        {
+            switch (collection.GetGeometryN(i))
+            {
+                case Point point:
+                    points.Add(point);
+                    break;
+                case LineString lineString:
+                    lines.Add(lineString);
+                    break;
+                case Polygon polygon:
+                    polygons.Add(polygon);
+                    break;
+                case MultiPoint multiPoint:
+                    points.AddRange(multiPoint.Geometries.Cast<Point>());
+                    break;
+                case MultiLineString multiLineString:
+                    lines.AddRange(multiLineString.Geometries.Cast<LineString>());
+                    break;
+                case MultiPolygon multiPolygon:
+                    polygons.AddRange(multiPolygon.Geometries.Cast<Polygon>());
+                    break;
+                default:
+                    throw new ArgumentException($"Unsupported geometry type: {collection.GetGeometryN(i).GeometryType}");
+            }
+        }
+
+        if (polygons.Count > 0 && points.Count == 0 && lines.Count == 0)
+        {
+            return ConvertMultiPolygon(collection.Factory.CreateMultiPolygon(polygons.ToArray()), spatialReference);
+        }
+
+        if (lines.Count > 0 && points.Count == 0 && polygons.Count == 0)
+        {
+            return ConvertMultiLineString(collection.Factory.CreateMultiLineString(lines.ToArray()), spatialReference);
+        }
+
+        if (points.Count > 0 && lines.Count == 0 && polygons.Count == 0)
+        {
+            return ConvertMultiPoint(collection.Factory.CreateMultiPoint(points.ToArray()), spatialReference);
+        }
+
+        throw new ArgumentException("GeometryCollection cannot be represented as GeoServices JSON.");
+    }
+
+    private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon)
+    {
+        yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true);
+
+        for (var i = 0; i < polygon.NumInteriorRings; i++)
+        {
+            yield return BuildRingCoordinates(polygon.GetInteriorRingN(i), clockwise: false);
+        }
+    }
+
+    private static double[][] BuildRingCoordinates(LineString ring, bool clockwise)
+    {
+        var coords = BuildLineCoordinates(ring);
+        if (coords.Length < 4)
+        {
+            return coords;
+        }
+
+        var isCcw = Orientation.IsCCW(ring.Coordinates);
+        if (clockwise == isCcw)
+        {
+            Array.Reverse(coords);
+        }
+
+        return coords;
+    }
+
+    private static double[][] BuildLineCoordinates(LineString lineString)
+    {
+        var sequence = lineString.CoordinateSequence;
+        var coords = new double[sequence.Count][];
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            coords[i] = BuildCoordinateArray(sequence, i);
+        }
+
+        return coords;
+    }
+
+    private static (double? z, double? m) GetZandM(CoordinateSequence sequence, int index)
+    {
+        double? z = null;
+        double? m = null;
+
+        var zValue = sequence.GetOrdinate(index, Ordinate.Z);
+        if (!double.IsNaN(zValue))
+        {
+            z = zValue;
+        }
+
+        var mValue = sequence.GetOrdinate(index, Ordinate.M);
+        if (!double.IsNaN(mValue))
+        {
+            m = mValue;
+        }
+
+        return (z, m);
+    }
+
+    private static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
+    {
+        if (geometry is GeometryCollection collection && collection.NumGeometries > 0)
+        {
+            return GetHasZandM(collection.GetGeometryN(0));
+        }
+
+        CoordinateSequence? sequence = geometry switch
+        {
+            Point point => point.CoordinateSequence,
+            LineString lineString => lineString.CoordinateSequence,
+            Polygon polygon => polygon.ExteriorRing.CoordinateSequence,
+            MultiPoint multiPoint when multiPoint.NumGeometries > 0 => ((Point)multiPoint.GetGeometryN(0)).CoordinateSequence,
+            MultiLineString multiLineString when multiLineString.NumGeometries > 0 => ((LineString)multiLineString.GetGeometryN(0)).CoordinateSequence,
+            MultiPolygon multiPolygon when multiPolygon.NumGeometries > 0 => ((Polygon)multiPolygon.GetGeometryN(0)).ExteriorRing.CoordinateSequence,
+            _ => null
+        };
+
+        if (sequence == null)
+        {
+            return (false, false);
+        }
+
+        var hasZ = HasOrdinateValues(sequence, Ordinate.Z);
+        var hasM = HasOrdinateValues(sequence, Ordinate.M);
+        return (hasZ, hasM);
+    }
+
+    private static bool IsEmptyGeometry(GeoServicesGeometry geometry)
+    {
+        return !geometry.X.HasValue &&
+            !geometry.Y.HasValue &&
+            !geometry.Xmin.HasValue &&
+            !geometry.Ymin.HasValue &&
+            !geometry.Xmax.HasValue &&
+            !geometry.Ymax.HasValue &&
+            geometry.Points is null &&
+            geometry.Paths is null &&
+            geometry.Rings is null;
+    }
+
+    private const string UnsupportedGeometryMessage =
+        "Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)";
+
+    private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index)
+    {
+        var values = new List<double>(4)
+        {
+            sequence.GetX(index),
+            sequence.GetY(index)
+        };
+
+        var z = sequence.GetOrdinate(index, Ordinate.Z);
+        if (!double.IsNaN(z))
+        {
+            values.Add(z);
+        }
+
+        var m = sequence.GetOrdinate(index, Ordinate.M);
+        if (!double.IsNaN(m))
+        {
+            values.Add(m);
+        }
+
+        return values.ToArray();
+    }
+
+    private static bool HasOrdinateValues(CoordinateSequence sequence, Ordinate ordinate)
+    {
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            var value = sequence.GetOrdinate(i, ordinate);
+            if (!double.IsNaN(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

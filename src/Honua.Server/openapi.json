@@ -13,7 +13,9 @@
       "get": {
         "summary": "Get OGC API Features landing page",
         "description": "The landing page provides links to the API definition and other resources",
-        "tags": ["OGC API Features"],
+        "tags": [
+          "OGC API Features"
+        ],
         "parameters": [
           {
             "name": "f",
@@ -22,7 +24,10 @@
             "description": "Output format (json or html)",
             "schema": {
               "type": "string",
-              "enum": ["json", "html"]
+              "enum": [
+                "json",
+                "html"
+              ]
             }
           }
         ],
@@ -31,10 +36,14 @@
             "description": "Landing page information",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/LandingPage"}
+                "schema": {
+                  "$ref": "#/components/schemas/LandingPage"
+                }
               },
               "text/html": {
-                "schema": {"type": "string"}
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -45,7 +54,9 @@
       "get": {
         "summary": "Get OGC API Features conformance declaration",
         "description": "Conformance classes that this API conforms to",
-        "tags": ["OGC API Features"],
+        "tags": [
+          "OGC API Features"
+        ],
         "parameters": [
           {
             "name": "f",
@@ -54,7 +65,10 @@
             "description": "Output format (json or html)",
             "schema": {
               "type": "string",
-              "enum": ["json", "html"]
+              "enum": [
+                "json",
+                "html"
+              ]
             }
           }
         ],
@@ -63,10 +77,14 @@
             "description": "Conformance declaration",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/ConformanceDeclaration"}
+                "schema": {
+                  "$ref": "#/components/schemas/ConformanceDeclaration"
+                }
               },
               "text/html": {
-                "schema": {"type": "string"}
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -77,7 +95,9 @@
       "get": {
         "summary": "Get OGC API Features collections",
         "description": "Lists all available feature collections",
-        "tags": ["OGC API Features"],
+        "tags": [
+          "OGC API Features"
+        ],
         "parameters": [
           {
             "name": "f",
@@ -86,7 +106,10 @@
             "description": "Output format (json or html)",
             "schema": {
               "type": "string",
-              "enum": ["json", "html"]
+              "enum": [
+                "json",
+                "html"
+              ]
             }
           }
         ],
@@ -95,10 +118,14 @@
             "description": "Collections list",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/Collections"}
+                "schema": {
+                  "$ref": "#/components/schemas/Collections"
+                }
               },
               "text/html": {
-                "schema": {"type": "string"}
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -109,23 +136,33 @@
       "get": {
         "summary": "Get features from a collection",
         "description": "Get features from a collection with optional filtering",
-        "tags": ["OGC API Features"],
+        "tags": [
+          "OGC API Features"
+        ],
         "parameters": [
           {
             "name": "collectionId",
             "in": "path",
             "required": true,
             "description": "Collection identifier",
-            "schema": {"type": "string"}
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "f",
             "in": "query",
             "required": false,
-            "description": "Output format (json, geojson, or html)",
+            "description": "Output format (json, geojson, gml, xml, or html)",
             "schema": {
               "type": "string",
-              "enum": ["json", "geojson", "html"]
+              "enum": [
+                "json",
+                "geojson",
+                "gml",
+                "xml",
+                "html"
+              ]
             }
           },
           {
@@ -136,33 +173,473 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 10000,
-              "default": 10
+              "maximum": 2000,
+              "default": 1000
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Number of features to skip",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           {
             "name": "bbox",
             "in": "query",
             "required": false,
-            "description": "Bounding box filter",
-            "schema": {"type": "string"}
+            "description": "Bounding box filter (minx,miny,maxx,maxy or minx,miny,minz,maxx,maxy,maxz)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bbox-crs",
+            "in": "query",
+            "required": false,
+            "description": "CRS for the bbox coordinates",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                "http://www.opengis.net/def/crs/EPSG/0/4326"
+              ]
+            }
+          },
+          {
+            "name": "crs",
+            "in": "query",
+            "required": false,
+            "description": "Coordinate reference system URI for response geometry",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                "http://www.opengis.net/def/crs/EPSG/0/4326"
+              ]
+            }
+          },
+          {
+            "name": "datetime",
+            "in": "query",
+            "required": false,
+            "description": "Temporal filter (RFC 3339 instant or interval)",
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "filter",
             "in": "query",
             "required": false,
-            "description": "CQL2-Text filter expression",
-            "schema": {"type": "string"}
+            "description": "CQL2 filter expression",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter-lang",
+            "in": "query",
+            "required": false,
+            "description": "Filter language (default cql2-text)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cql2-text",
+                "cql2-json"
+              ]
+            }
+          },
+          {
+            "name": "filter-crs",
+            "in": "query",
+            "required": false,
+            "description": "CRS for filter geometries",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                "http://www.opengis.net/def/crs/EPSG/0/4326"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "GeoJSON FeatureCollection",
+            "description": "FeatureCollection",
             "content": {
               "application/geo+json": {
-                "schema": {"$ref": "#/components/schemas/FeatureCollection"}
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              },
+              "application/gml+xml;version=3.2": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new feature in a collection",
+        "description": "Add a new feature to the specified collection",
+        "tags": [
+          "OGC API Features",
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/geo+json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoJsonFeature"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Feature created",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoJsonFeature"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/ogc/features/collections/{collectionId}": {
+      "get": {
+        "summary": "Get OGC API Features collection metadata",
+        "description": "Get detailed metadata for a specific collection",
+        "tags": [
+          "OGC API Features"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionInfo"
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
+    },
+    "/ogc/features/collections/{collectionId}/queryables": {
+      "get": {
+        "summary": "Get queryable properties for a collection",
+        "description": "Get JSON Schema describing queryable properties for filtering",
+        "tags": [
+          "OGC API Features"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queryables schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryablesSchema"
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
+    },
+    "/ogc/features/collections/{collectionId}/items/{featureId}": {
+      "get": {
+        "summary": "Get a specific feature from a collection",
+        "description": "Get a specific feature by its ID from a collection",
+        "tags": [
+          "OGC API Features"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "featureId",
+            "in": "path",
+            "required": true,
+            "description": "Feature identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json, geojson, gml, xml, or html)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "geojson",
+                "gml",
+                "xml",
+                "html"
+              ]
+            }
+          },
+          {
+            "name": "crs",
+            "in": "query",
+            "required": false,
+            "description": "Coordinate reference system URI for response geometry",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                "http://www.opengis.net/def/crs/EPSG/0/4326"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feature",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoJsonFeature"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoJsonFeature"
+                }
+              },
+              "application/gml+xml;version=3.2": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Feature not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing feature",
+        "description": "Replace an existing feature with new data",
+        "tags": [
+          "OGC API Features",
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "featureId",
+            "in": "path",
+            "required": true,
+            "description": "Feature identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/geo+json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoJsonFeature"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feature updated",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoJsonFeature"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Feature created"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Feature not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a feature from a collection",
+        "description": "Remove a feature from the specified collection",
+        "tags": [
+          "OGC API Features",
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "featureId",
+            "in": "path",
+            "required": true,
+            "description": "Feature identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Feature deleted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Feature not found"
           }
         }
       }
@@ -173,11 +650,17 @@
       "LandingPage": {
         "type": "object",
         "properties": {
-          "title": {"type": "string"},
-          "description": {"type": "string"},
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
           "links": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/Link"}
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
           }
         }
       },
@@ -186,7 +669,15 @@
         "properties": {
           "conformsTo": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "string"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
           }
         }
       },
@@ -195,24 +686,50 @@
         "properties": {
           "collections": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/CollectionInfo"}
+            "items": {
+              "$ref": "#/components/schemas/CollectionInfo"
+            }
           },
           "links": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/Link"}
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
           }
         }
       },
       "CollectionInfo": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "title": {"type": "string"},
-          "description": {"type": "string"},
-          "extent": {"$ref": "#/components/schemas/Extent"},
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "extent": {
+            "$ref": "#/components/schemas/Extent"
+          },
           "links": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/Link"}
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          },
+          "itemType": {
+            "type": "string"
+          },
+          "crs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storageCrs": {
+            "type": "string"
           }
         }
       },
@@ -221,17 +738,31 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["FeatureCollection"]
+            "enum": [
+              "FeatureCollection"
+            ]
           },
           "features": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/GeoJsonFeature"}
+            "items": {
+              "$ref": "#/components/schemas/GeoJsonFeature"
+            }
           },
-          "numberMatched": {"type": "integer"},
-          "numberReturned": {"type": "integer"},
+          "numberMatched": {
+            "type": "integer"
+          },
+          "numberReturned": {
+            "type": "integer"
+          },
           "links": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/Link"}
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          },
+          "timeStamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -240,28 +771,53 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["Feature"]
+            "enum": [
+              "Feature"
+            ]
           },
           "id": {},
           "geometry": {},
-          "properties": {"type": "object"}
+          "properties": {
+            "type": "object"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
         }
       },
       "Link": {
         "type": "object",
         "properties": {
-          "href": {"type": "string"},
-          "rel": {"type": "string"},
-          "type": {"type": "string"},
-          "title": {"type": "string"}
+          "href": {
+            "type": "string"
+          },
+          "rel": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
         },
-        "required": ["href", "rel"]
+        "required": [
+          "href",
+          "rel"
+        ]
       },
       "Extent": {
         "type": "object",
         "properties": {
-          "spatial": {"$ref": "#/components/schemas/SpatialExtent"},
-          "temporal": {"$ref": "#/components/schemas/TemporalExtent"}
+          "spatial": {
+            "$ref": "#/components/schemas/SpatialExtent"
+          },
+          "temporal": {
+            "$ref": "#/components/schemas/TemporalExtent"
+          }
         }
       },
       "SpatialExtent": {
@@ -271,7 +827,9 @@
             "type": "array",
             "items": {
               "type": "array",
-              "items": {"type": "number"}
+              "items": {
+                "type": "number"
+              }
             }
           }
         }
@@ -283,10 +841,15 @@
             "type": "array",
             "items": {
               "type": "array",
-              "items": {"type": "string"}
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
+      },
+      "QueryablesSchema": {
+        "type": "object"
       }
     }
   }

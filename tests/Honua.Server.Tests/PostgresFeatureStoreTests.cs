@@ -2,12 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Server.Tests.Infrastructure;
+using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -36,7 +37,9 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 
         // Create feature store with the isolated schema
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
-        _featureStore = new PostgresFeatureStore(connectionProvider, _schemaName);
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new PostgresFeatureStore.StringBuilderPooledObjectPolicy());
+        _featureStore = new PostgresFeatureStore(connectionProvider, stringBuilderPool, _schemaName);
 
         // Create test table structure
         await _fixture.ExecuteAsync("""
@@ -159,7 +162,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         var feature = Feature.Create(99999, null, attributes);
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             _featureStore.UpdateAsync(TestLayerId, feature));
     }
 

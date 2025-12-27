@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;

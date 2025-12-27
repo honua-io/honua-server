@@ -133,11 +133,21 @@ internal static partial class ImportEndpoints
             IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
             await result.ExecuteAsync(context);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
             await WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
+            await WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -209,11 +219,21 @@ internal static partial class ImportEndpoints
             IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
             await response.ExecuteAsync(context);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, tableName, ex);
             await WriteErrorAsync(context, "Import failed", StatusCodes.Status400BadRequest);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, tableName, ex);
+            await WriteErrorAsync(context, "Import failed", StatusCodes.Status500InternalServerError);
         }
     }
 

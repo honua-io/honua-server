@@ -52,6 +52,12 @@ internal static class GeoServicesErrorCodes
     public const int PayloadTooLarge = 413;
 
     /// <summary>
+    /// Too Many Requests - Rate limiting
+    /// Used for: Rate limit exceeded
+    /// </summary>
+    public const int TooManyRequests = 429;
+
+    /// <summary>
     /// Unprocessable Entity - Valid syntax but cannot be processed
     /// Used for: Invalid geometry, unsupported spatial reference
     /// </summary>
@@ -101,6 +107,7 @@ internal static class GeoServicesErrorCodes
         405 => MethodNotAllowed,
         408 => RequestTimeout,
         413 => PayloadTooLarge,
+        429 => TooManyRequests,
         422 => UnprocessableEntity,
         498 => InvalidToken,
         499 => TokenRequired,

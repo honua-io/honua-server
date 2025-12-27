@@ -15,13 +15,12 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
-using Xunit;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
 [Collection("Database")]
 [Protocol(Protocols.OgcApiFeatures)]
-public sealed class OgcFeaturesTransactionTests : IAsyncLifetime
+public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
 {
     private readonly WebAppFixture _fixture = new();
     private TestFeatureStore _featureStore = null!;
@@ -35,7 +34,17 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime
         await _fixture.InitializeAsync();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        _featureStore?.Dispose();
+        await _fixture.DisposeAsync();
+    }
+
+    public void Dispose()
+    {
+        _featureStore?.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Create)]

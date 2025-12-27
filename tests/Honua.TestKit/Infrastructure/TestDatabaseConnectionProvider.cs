@@ -13,14 +13,38 @@ namespace Honua.TestKit.Infrastructure;
 internal sealed class TestDatabaseConnectionProvider : IDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly Func<string?> _schemaProvider;
 
-    public TestDatabaseConnectionProvider(NpgsqlDataSource dataSource)
+    public TestDatabaseConnectionProvider(NpgsqlDataSource dataSource, Func<string?>? schemaProvider = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _schemaProvider = schemaProvider ?? (() => null);
     }
 
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
-        return await _dataSource.OpenConnectionAsync(cancellationToken);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var schemaName = _schemaProvider();
+        if (!string.IsNullOrWhiteSpace(schemaName))
+        {
+            ValidateSchemaName(schemaName);
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"SET search_path TO {schemaName}, public;";
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return connection;
+    }
+
+    private static void ValidateSchemaName(string schemaName)
+    {
+        foreach (var ch in schemaName)
+        {
+            if (!char.IsLetterOrDigit(ch) && ch != '_')
+            {
+                throw new ArgumentException($"Invalid schema name '{schemaName}'.", nameof(schemaName));
+            }
+        }
     }
 }

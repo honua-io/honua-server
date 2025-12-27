@@ -1,0 +1,82 @@
+# Development Dockerfile for Honua Server
+# Optimized for development workflow with hot reload and debugging
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    unzip \
+    postgresql-client \
+    python3 \
+    python3-pip \
+    vim \
+    nano \
+    htop \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install development tools
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && rm get-docker.sh
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/
+
+# Install Helm
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Install dotnet tools
+RUN dotnet tool install --global dotnet-ef && \
+    dotnet tool install --global dotnet-format && \
+    dotnet tool install --global dotnet-reportgenerator-globaltool && \
+    dotnet tool install --global coverlet.console
+
+# Add dotnet tools to PATH
+ENV PATH="$PATH:/root/.dotnet/tools"
+
+# Create workspace directory
+WORKDIR /workspace
+
+# Create non-root user for development
+RUN groupadd --gid 1000 vscode \
+    && useradd --uid 1000 --gid 1000 -m vscode \
+    && apt-get update \
+    && apt-get install -y sudo \
+    && echo vscode ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/vscode \
+    && chmod 0440 /etc/sudoers.d/vscode
+
+# Switch to vscode user
+USER vscode
+
+# Install dotnet tools for user
+RUN dotnet tool install --global dotnet-ef && \
+    dotnet tool install --global dotnet-format && \
+    dotnet tool install --global dotnet-reportgenerator-globaltool && \
+    dotnet tool install --global coverlet.console
+
+# Add dotnet tools to PATH for vscode user
+ENV PATH="$PATH:/home/vscode/.dotnet/tools"
+
+# Configure git (will be overridden by devcontainer)
+RUN git config --global init.defaultBranch main && \
+    git config --global user.email "dev@honua.example.com" && \
+    git config --global user.name "Developer"
+
+# Set development environment variables
+ENV ASPNETCORE_ENVIRONMENT=Development
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+ENV DOTNET_NOLOGO=1
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV DOTNET_USE_POLLING_FILE_WATCHER=true
+ENV DOTNET_WATCH_RESTART_ON_RUDE_EDIT=true
+
+# Expose development ports
+EXPOSE 8080 5001
+
+# Default command for devcontainer
+CMD ["sleep", "infinity"]

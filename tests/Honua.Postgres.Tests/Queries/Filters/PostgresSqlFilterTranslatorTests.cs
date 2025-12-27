@@ -30,7 +30,9 @@ public class PostgresSqlFilterTranslatorTests
                 new FieldDefinition("active", FieldType.Boolean),
                 new FieldDefinition("description", FieldType.String),
                 new FieldDefinition("field", FieldType.String),
-                new FieldDefinition("status", FieldType.String)
+                new FieldDefinition("status", FieldType.String),
+                new FieldDefinition("timestamp", FieldType.DateTime),
+                new FieldDefinition("tags", FieldType.Json)
             ]
         );
     }
@@ -196,10 +198,136 @@ public class PostgresSqlFilterTranslatorTests
         var result = _translator.Translate(spatial, _layer);
 
         // Assert
-        result.Sql.Should().Be("ST_Intersects(\"geom\", ST_GeomFromWKB(@p0, @p1))");
+        result.Sql.Should().Be("ST_Intersects(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1))");
         result.Parameters.Should().HaveCount(2);
         result.Parameters[0].Should().BeEquivalentTo(wkb);
         result.Parameters[1].Should().Be(4326);
+    }
+
+    [Fact]
+    public void Translate_SpatialDistancePredicate_ReturnsCorrectSQL()
+    {
+        // Arrange
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4326, "POINT(1 2)");
+        var distance = new Literal(100, LiteralType.Number);
+        var spatial = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            geometry,
+            distance);
+
+        // Act
+        var result = _translator.Translate(spatial, _layer);
+
+        // Assert
+        result.Sql.Should().StartWith("ST_DWithin(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1), @p2)");
+        result.Parameters.Should().HaveCount(3);
+        result.Parameters[2].Should().Be(100);
+    }
+
+    [Fact]
+    public void Translate_ArithmeticExpression_ReturnsCorrectSQL()
+    {
+        // Arrange
+        var arithmetic = new BinaryExpression(
+            new PropertyReference("age"),
+            BinaryOperator.Add,
+            new Literal(1, LiteralType.Number));
+
+        // Act
+        var result = _translator.Translate(arithmetic, _layer);
+
+        // Assert
+        result.Sql.Should().Be("(\"age\" + @p0)");
+        result.Parameters.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Translate_DivOperator_UsesTruncation()
+    {
+        // Arrange
+        var arithmetic = new BinaryExpression(
+            new PropertyReference("age"),
+            BinaryOperator.Div,
+            new Literal(2, LiteralType.Number));
+
+        // Act
+        var result = _translator.Translate(arithmetic, _layer);
+
+        // Assert
+        result.Sql.Should().Be("TRUNC((\"age\") / (@p0))");
+    }
+
+    [Fact]
+    public void Translate_PowerOperator_UsesPowerFunction()
+    {
+        // Arrange
+        var arithmetic = new BinaryExpression(
+            new PropertyReference("age"),
+            BinaryOperator.Power,
+            new Literal(2, LiteralType.Number));
+
+        // Act
+        var result = _translator.Translate(arithmetic, _layer);
+
+        // Assert
+        result.Sql.Should().Be("POWER(\"age\", @p0)");
+    }
+
+    [Fact]
+    public void Translate_TemporalPredicate_ReturnsCorrectSQL()
+    {
+        // Arrange
+        var interval = new IntervalLiteral(
+            new Literal(new DateTimeOffset(2023, 01, 01, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime),
+            new Literal(new DateTimeOffset(2023, 12, 31, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime));
+
+        var predicate = new TemporalPredicate(
+            TemporalOperator.Intersects,
+            new PropertyReference("timestamp"),
+            interval);
+
+        // Act
+        var result = _translator.Translate(predicate, _layer);
+
+        // Assert
+        result.Sql.Should().Be("NOT (\"timestamp\" < @p0 OR \"timestamp\" > @p1)");
+        result.Parameters.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Translate_ArrayPredicate_ReturnsCorrectSQL()
+    {
+        // Arrange
+        var array = new ArrayLiteral([
+            new Literal("a", LiteralType.Text),
+            new Literal("b", LiteralType.Text)
+        ]);
+
+        var predicate = new ArrayPredicate(
+            ArrayOperator.Contains,
+            new PropertyReference("tags"),
+            array);
+
+        // Act
+        var result = _translator.Translate(predicate, _layer);
+
+        // Assert
+        result.Sql.Should().Be("\"attributes\" -> 'tags' @> @p0::jsonb");
+    }
+
+    [Fact]
+    public void Translate_CaseInsensitiveFunction_ReturnsLoweredSQL()
+    {
+        // Arrange
+        var function = new FunctionCall("CASEI", [new PropertyReference("name")]);
+
+        // Act
+        var result = _translator.Translate(function, _layer);
+
+        // Assert
+        result.Sql.Should().Be("LOWER(\"name\")");
     }
 
     [Theory]

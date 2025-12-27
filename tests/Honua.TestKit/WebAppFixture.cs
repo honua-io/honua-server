@@ -30,17 +30,21 @@ public sealed class WebAppFixture : IAsyncLifetime
 {
     private readonly PostgresFixture _postgres;
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
+    private readonly Action<IWebHostBuilder>? _configureWebHost;
     private WebApplicationFactory<Program>? _factory;
     private string? _currentSchema;
 
-    public WebAppFixture()
+    public WebAppFixture(Action<IWebHostBuilder>? configureWebHost = null)
     {
         _postgres = new PostgresFixture();
+        _configureWebHost = configureWebHost;
     }
 
     public HttpClient Client { get; private set; } = null!;
 
     public PostgresFixture Postgres => _postgres;
+
+    public PostgresFixture PostgresFixture => _postgres;
 
     public string? CurrentSchema => _currentSchema;
 
@@ -56,6 +60,8 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                 // Configure authentication bypass for test environment
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
+
+                _configureWebHost?.Invoke(builder);
 
                 // Configure application configuration with test connection string BEFORE app startup
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -80,13 +86,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.RemoveAll<IFileImportService>();
                     services.RemoveAll<ISqlFilterTranslator>();
 
-                    // Register NpgsqlDataSource with test connection string
-                    services.AddSingleton<NpgsqlDataSource>(_ =>
-                    {
-                        var dataSourceBuilder = new NpgsqlDataSourceBuilder(_postgres.ConnectionString);
-                        return dataSourceBuilder.Build();
-                    });
-
                     // Create test configuration with connection string
                     var testConfiguration = new ConfigurationBuilder()
                         .AddInMemoryCollection(new Dictionary<string, string?>
@@ -99,6 +98,15 @@ public sealed class WebAppFixture : IAsyncLifetime
                     // This ensures proper dependency injection without Server/TestKit directly instantiating Postgres types
                     Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
+                    // Override the data source to avoid multiplexing so schema-based tests keep session state.
+                    services.RemoveAll<NpgsqlDataSource>();
+                    services.AddSingleton<NpgsqlDataSource>(_ =>
+                    {
+                        var dataSourceBuilder = new NpgsqlDataSourceBuilder(_postgres.ConnectionString);
+                        dataSourceBuilder.ConnectionStringBuilder.Multiplexing = false;
+                        return dataSourceBuilder.Build();
+                    });
+
                     // Override specific services for testing
                     // Use CITE-compatible layer catalog for conformance tests
                     services.RemoveAll<ILayerCatalog>();
@@ -109,7 +117,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
                     {
                         var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
-                        return new TestDatabaseConnectionProvider(dataSource);
+                        return new TestDatabaseConnectionProvider(dataSource, () => _currentSchema);
                     });
 
                     // Apply custom service configurations
@@ -220,5 +228,18 @@ public sealed class WebAppFixture : IAsyncLifetime
         var client = _factory!.CreateClient();
         configure?.Invoke(client);
         return client;
+    }
+
+    /// <summary>
+    /// Create a new HTTP client scoped to a specific database schema.
+    /// </summary>
+    public HttpClient CreateClient(string schemaName)
+    {
+        if (!string.IsNullOrWhiteSpace(schemaName))
+        {
+            _currentSchema = schemaName;
+        }
+
+        return CreateClient();
     }
 }

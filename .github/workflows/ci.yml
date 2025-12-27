@@ -84,6 +84,15 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: false
           TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./tests/TestResults/**/coverage.cobertura.xml
+          flags: combined
+          name: honua-server-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         if: always()

@@ -70,6 +70,7 @@ PublishScripts/
 *.trx
 [Tt]est[Rr]esult*/
 [Cc]overage/
+test-coverage/
 *.coveragexml
 coverage*.json
 coverage*.xml
@@ -80,6 +81,9 @@ _NCrunch_*
 .axoCover/*
 coverage*.cobertura.xml
 TestResults/
+benchmark-results/
+performance-reports/
+codecov
 
 # SQL Server
 *.mdf
@@ -114,6 +118,7 @@ _Chutzpah*
 # Python Tools for Visual Studio
 __pycache__/
 *.pyc
+.venv/
 
 # Cake
 tools/**

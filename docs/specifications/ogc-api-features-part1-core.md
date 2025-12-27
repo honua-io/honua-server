@@ -34,7 +34,7 @@ This is the official OGC standard (version 1.0.1) that defines a web API for acc
 **Status**: ✅ Implemented
 
 ### Query Parameters
-- `limit` - Controls page size (default 10, max 10000) ✅
+- `limit` - Controls page size (defaults and max are server-configured via `LimitsOptions.Query`) ✅
 - `bbox` - Filters by 4 or 6 numeric coordinates ✅
 - `datetime` - Filters by temporal range using RFC 3339 format ✅
 

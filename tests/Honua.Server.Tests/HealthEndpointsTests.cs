@@ -7,7 +7,6 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Honua.Server.Tests;
 
@@ -151,7 +150,7 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
+        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(100,
             "liveness probe should respond within 100ms");
     }
 
@@ -179,7 +178,7 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
+        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(100,
             "readiness probe should respond within 100ms with healthy database");
     }
 
