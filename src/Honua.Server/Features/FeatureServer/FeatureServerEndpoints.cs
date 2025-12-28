@@ -1584,6 +1584,15 @@ internal static partial class FeatureServerEndpoints
 
     private static partial class Log
     {
+        /// <summary>
+        /// Logs when tile generation fails for a specific layer and tile coordinates.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="z">The tile zoom level.</param>
+        /// <param name="x">The tile X coordinate.</param>
+        /// <param name="y">The tile Y coordinate.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3200, Level = LogLevel.Error, Message = "Tile generation failed for layer {LayerId} at {Z}/{X}/{Y}")]
         public static partial void TileGenerationFailed(ILogger logger, int layerId, int z, int x, int y, Exception exception);
     }

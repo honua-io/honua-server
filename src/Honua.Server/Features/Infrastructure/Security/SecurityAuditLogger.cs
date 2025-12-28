@@ -143,60 +143,140 @@ public static class SecurityAuditLogger
 /// </summary>
 internal static partial class Log
 {
+    /// <summary>
+    /// Logs successful user authentication events for security audit purposes.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="userId">The identifier of the user who successfully authenticated.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
+    /// <param name="userAgent">The user agent string from the client request.</param>
     [LoggerMessage(
         EventId = 6001,
         Level = LogLevel.Information,
         Message = "Authentication successful for user {UserId} from {ClientIp} using {UserAgent}")]
     public static partial void AuthenticationSuccess(ILogger logger, string userId, string clientIp, string userAgent);
 
+    /// <summary>
+    /// Logs failed authentication attempts for security audit purposes.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="reason">The reason why authentication failed.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
+    /// <param name="userAgent">The user agent string from the client request.</param>
     [LoggerMessage(
         EventId = 6002,
         Level = LogLevel.Warning,
         Message = "Authentication failed: {Reason} from {ClientIp} using {UserAgent}")]
     public static partial void AuthenticationFailure(ILogger logger, string reason, string clientIp, string userAgent);
 
+    /// <summary>
+    /// Logs authorization failures when authenticated users attempt unauthorized actions.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="userId">The identifier of the user who failed authorization.</param>
+    /// <param name="resource">The resource the user attempted to access.</param>
+    /// <param name="action">The action the user attempted to perform.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
     [LoggerMessage(
         EventId = 6003,
         Level = LogLevel.Warning,
         Message = "Authorization failed for user {UserId} attempting {Action} on {Resource} from {ClientIp}")]
     public static partial void AuthorizationFailure(ILogger logger, string userId, string resource, string action, string clientIp);
 
+    /// <summary>
+    /// Logs suspicious activity that may indicate security threats or attacks.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="activityType">The type of suspicious activity detected.</param>
+    /// <param name="details">Additional details about the suspicious activity.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
+    /// <param name="userAgent">The user agent string from the client request.</param>
     [LoggerMessage(
         EventId = 6004,
         Level = LogLevel.Warning,
         Message = "Suspicious activity detected: {ActivityType} - {Details} from {ClientIp} using {UserAgent}")]
     public static partial void SuspiciousActivity(ILogger logger, string activityType, string details, string clientIp, string userAgent);
 
+    /// <summary>
+    /// Logs file upload security violations such as malicious files or policy violations.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="fileName">The name of the file that violated security policies.</param>
+    /// <param name="violationType">The type of security violation detected.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
+    /// <param name="userId">The identifier of the user who uploaded the file.</param>
     [LoggerMessage(
         EventId = 6005,
         Level = LogLevel.Warning,
         Message = "File upload security violation: {FileName} - {ViolationType} from {ClientIp} by user {UserId}")]
     public static partial void FileUploadSecurityViolation(ILogger logger, string fileName, string violationType, string clientIp, string userId);
 
+    /// <summary>
+    /// Logs potential SQL injection attempts for immediate security response.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="attemptedQuery">The suspicious query that was attempted.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
+    /// <param name="userId">The identifier of the user who made the attempt.</param>
+    /// <param name="endpoint">The API endpoint where the attempt was made.</param>
     [LoggerMessage(
         EventId = 6006,
         Level = LogLevel.Error,
         Message = "SQL injection attempt detected: {AttemptedQuery} from {ClientIp} by user {UserId} on endpoint {Endpoint}")]
     public static partial void SqlInjectionAttempt(ILogger logger, string attemptedQuery, string clientIp, string userId, string endpoint);
 
+    /// <summary>
+    /// Logs rate limit violations for security monitoring and abuse prevention.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="clientIp">The IP address of the client that violated the rate limit.</param>
+    /// <param name="requestCount">The number of requests made within the time window.</param>
+    /// <param name="windowMinutes">The time window in minutes for the rate limit.</param>
+    /// <param name="endpoint">The API endpoint where the violation occurred.</param>
     [LoggerMessage(
         EventId = 6007,
         Level = LogLevel.Warning,
         Message = "Rate limit violation: {ClientIp} made {RequestCount} requests in {WindowMinutes} minutes on {Endpoint}")]
     public static partial void RateLimitViolation(ILogger logger, string clientIp, int requestCount, int windowMinutes, string endpoint);
 
+    /// <summary>
+    /// Logs administrative operations for compliance and audit trail purposes.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="operation">The administrative operation that was performed.</param>
+    /// <param name="userId">The identifier of the administrator who performed the operation.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
+    /// <param name="parameters">The parameters or details of the operation.</param>
     [LoggerMessage(
         EventId = 6008,
         Level = LogLevel.Information,
         Message = "Admin operation: {Operation} performed by user {UserId} from {ClientIp} with parameters: {Parameters}")]
     public static partial void AdminOperation(ILogger logger, string operation, string userId, string clientIp, string parameters);
 
+    /// <summary>
+    /// Logs data access operations for data governance and compliance monitoring.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="dataType">The type of data that was accessed.</param>
+    /// <param name="operation">The operation that was performed (read, write, delete, etc.).</param>
+    /// <param name="recordCount">The number of records accessed during the operation.</param>
+    /// <param name="userId">The identifier of the user who accessed the data.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
     [LoggerMessage(
         EventId = 6009,
         Level = LogLevel.Information,
         Message = "Data access: {DataType} {Operation} operation accessing {RecordCount} records by user {UserId} from {ClientIp}")]
     public static partial void DataAccess(ILogger logger, string dataType, string operation, int recordCount, string userId, string clientIp);
 
+    /// <summary>
+    /// Logs changes to security configuration settings for audit and compliance purposes.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="setting">The security setting that was changed.</param>
+    /// <param name="oldValue">The previous value of the setting.</param>
+    /// <param name="newValue">The new value of the setting.</param>
+    /// <param name="userId">The identifier of the user who made the change.</param>
+    /// <param name="clientIp">The IP address of the client.</param>
     [LoggerMessage(
         EventId = 6010,
         Level = LogLevel.Warning,

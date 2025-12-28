@@ -444,9 +444,21 @@ internal static partial class ImportEndpoints
 
     private static partial class Log
     {
+        /// <summary>
+        /// Logs when importing a file preview fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="fileName">The name of the file that failed to preview.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3300, Level = LogLevel.Error, Message = "Failed to preview import file {FileName}")]
         public static partial void PreviewFailed(ILogger logger, string fileName, Exception exception);
 
+        /// <summary>
+        /// Logs when importing data to a table fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="tableName">The name of the table where import failed.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3301, Level = LogLevel.Error, Message = "Import failed for table {TableName}")]
         public static partial void ImportFailed(ILogger logger, string tableName, Exception exception);
     }

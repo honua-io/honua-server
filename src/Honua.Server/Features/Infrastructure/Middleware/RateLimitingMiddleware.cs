@@ -28,6 +28,7 @@ internal sealed class RateLimitingMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         // Skip rate limiting for health checks and development environment
+        // This ensures monitoring systems and local development are not rate limited
         if (IsExemptPath(context.Request.Path) || IsLocalRequest(context))
         {
             await _next(context);
@@ -37,19 +38,25 @@ internal sealed class RateLimitingMiddleware
         var clientIp = GetClientIpAddress(context);
         if (clientIp == null)
         {
+            // Cannot determine client IP, allow request through
+            // This can happen with malformed proxy headers
             await _next(context);
             return;
         }
 
+        // Get or create rate limit tracker for this IP address
+        // Uses sliding window algorithm to track request timestamps
         var clientLimit = _clients.GetOrAdd(clientIp, _ => new ClientRateLimit(_options.WindowSize));
 
         if (!clientLimit.TryAddRequest(_options.MaxRequestsPerWindow))
         {
+            // Client has exceeded rate limit, return 429 Too Many Requests
             await HandleRateLimitExceededAsync(context, clientIp);
             return;
         }
 
-        // Add rate limit headers to response
+        // Add standard rate limit headers to inform clients of their limits
+        // These headers follow RFC 6585 and common industry practices
         context.Response.Headers["X-RateLimit-Limit"] = _options.MaxRequestsPerWindow.ToString();
         context.Response.Headers["X-RateLimit-Remaining"] = Math.Max(0, _options.MaxRequestsPerWindow - clientLimit.RequestCount).ToString();
         context.Response.Headers["X-RateLimit-Reset"] = DateTimeOffset.UtcNow.Add(clientLimit.WindowReset).ToUnixTimeSeconds().ToString();
@@ -109,6 +116,8 @@ internal sealed class RateLimitingMiddleware
         var request = context.Request;
 
         // Check X-Forwarded-For header first (when behind proxy)
+        // Format: X-Forwarded-For: client, proxy1, proxy2
+        // We want the first (leftmost) IP which is the original client
         if (request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
         {
             var firstIp = forwardedFor.ToString().Split(',')[0].Trim();
@@ -116,14 +125,14 @@ internal sealed class RateLimitingMiddleware
                 return ip;
         }
 
-        // Check X-Real-IP header
+        // Check X-Real-IP header (single IP, set by some proxies)
         if (request.Headers.TryGetValue("X-Real-IP", out var realIp))
         {
             if (IPAddress.TryParse(realIp.ToString(), out var ip))
                 return ip;
         }
 
-        // Fall back to connection remote IP
+        // Fall back to connection remote IP (direct connection or misconfigured proxy)
         return context.Connection.RemoteIpAddress;
     }
 
@@ -232,12 +241,24 @@ public static class RateLimitingMiddlewareExtensions
 /// </summary>
 internal static partial class Log
 {
+    /// <summary>
+    /// Logs when a client exceeds the configured rate limit.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="clientIp">The IP address of the client that exceeded the rate limit.</param>
+    /// <param name="maxRequests">The maximum number of requests allowed.</param>
+    /// <param name="windowMinutes">The time window in minutes for the rate limit.</param>
     [LoggerMessage(
         EventId = 4101,
         Level = LogLevel.Warning,
         Message = "Rate limit exceeded for client {ClientIp}. Limit: {MaxRequests} requests per {WindowMinutes} minutes")]
     public static partial void RateLimitExceeded(ILogger logger, string clientIp, int maxRequests, double windowMinutes);
 
+    /// <summary>
+    /// Logs when the rate limit cache cleanup process removes expired client entries.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="expiredCount">The number of expired client entries that were removed.</param>
     [LoggerMessage(
         EventId = 4102,
         Level = LogLevel.Debug,

@@ -1285,48 +1285,137 @@ internal static partial class ODataEndpoints
 
     private static partial class Log
     {
+        /// <summary>
+        /// Logs when dynamic OData metadata generation fails and falls back to static metadata.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3000, Level = LogLevel.Warning, Message = "Failed to generate dynamic OData metadata, using static metadata.")]
         public static partial void MetadataFallback(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OData layers query is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that occurred during query validation.</param>
         [LoggerMessage(EventId = 3001, Level = LogLevel.Warning, Message = "Invalid OData layers query.")]
         public static partial void InvalidLayersQuery(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an OData layers query fails to execute.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3002, Level = LogLevel.Error, Message = "OData layers query failed.")]
         public static partial void LayersQueryFailed(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OData features query is received for a specific layer.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="exception">The exception that occurred during query validation.</param>
         [LoggerMessage(EventId = 3003, Level = LogLevel.Warning, Message = "Invalid OData features query for layer {LayerId}.")]
         public static partial void InvalidFeaturesQuery(ILogger logger, int layerId, Exception exception);
 
+        /// <summary>
+        /// Logs when an OData features query fails to execute for a specific layer.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3004, Level = LogLevel.Error, Message = "OData features query failed for layer {LayerId}.")]
         public static partial void FeaturesQueryFailed(ILogger logger, int layerId, Exception exception);
 
+        /// <summary>
+        /// Logs when getting a specific feature fails via OData.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="objectId">The object identifier of the feature.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3005, Level = LogLevel.Error, Message = "OData get feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void GetFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
 
+        /// <summary>
+        /// Logs when creating a feature fails via OData.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "OData create feature failed for layer {LayerId}.")]
         public static partial void CreateFeatureFailed(ILogger logger, int layerId, Exception exception);
 
+        /// <summary>
+        /// Logs when a feature to update is not found via OData.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="objectId">The object identifier of the feature that was not found.</param>
+        /// <param name="exception">The exception that occurred.</param>
         [LoggerMessage(EventId = 3007, Level = LogLevel.Warning, Message = "OData update feature not found for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void UpdateFeatureNotFound(ILogger logger, int layerId, long objectId, Exception exception);
 
+        /// <summary>
+        /// Logs when updating a feature fails via OData.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="objectId">The object identifier of the feature.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3008, Level = LogLevel.Error, Message = "OData update feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void UpdateFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
 
+        /// <summary>
+        /// Logs when deleting a feature fails via OData.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="objectId">The object identifier of the feature.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3009, Level = LogLevel.Error, Message = "OData delete feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void DeleteFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
 
+        /// <summary>
+        /// Logs when parsing an OData batch request fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that caused the parsing failure.</param>
         [LoggerMessage(EventId = 3010, Level = LogLevel.Warning, Message = "OData batch request parse failed.")]
         public static partial void BatchParseFailed(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an OData batch request fails to execute.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3011, Level = LogLevel.Error, Message = "OData batch request failed.")]
         public static partial void BatchFailed(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OData $apply expression is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="exception">The exception that occurred during expression validation.</param>
         [LoggerMessage(EventId = 3012, Level = LogLevel.Warning, Message = "Invalid OData $apply expression for layer {LayerId}.")]
         public static partial void InvalidApplyExpression(ILogger logger, int layerId, Exception exception);
 
+        /// <summary>
+        /// Logs when an OData $apply aggregation operation fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3013, Level = LogLevel.Error, Message = "OData $apply aggregation failed for layer {LayerId}.")]
         public static partial void ApplyFailed(ILogger logger, int layerId, Exception exception);
 
+        /// <summary>
+        /// Logs when an OData $search operation fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="layerId">The layer identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3014, Level = LogLevel.Error, Message = "OData $search failed for layer {LayerId}.")]
         public static partial void SearchFailed(ILogger logger, int layerId, Exception exception);
     }

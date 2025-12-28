@@ -1,7 +1,7 @@
-# ADR-0004: Proxy-Based Rate Limiting
+# ADR-0004: Application-Level Rate Limiting
 
 ## Status
-Accepted
+Superseded - Implementation changed during development
 
 ## Context
 MVP needs protection against abuse and runaway queries. Options:
@@ -10,27 +10,58 @@ MVP needs protection against abuse and runaway queries. Options:
 - API Gateway (Kong, YARP)
 
 ## Decision
-Defer rate limiting to the reverse proxy layer for MVP.
+**UPDATED**: Implemented application-level rate limiting middleware instead of proxy-based approach.
 
-**Rationale:**
-- Standard pattern for containerized deployments
-- Battle-tested implementations (nginx, Traefik)
-- Keeps application code simple
-- More flexible (per-path, per-IP rules at infra level)
-- No additional application dependencies
+**Rationale for Change:**
+- Provides immediate protection without proxy dependency
+- Enables fine-grained control over rate limiting behavior
+- Supports testing and development scenarios without proxy setup
+- Allows for future enhancements like user-based rate limiting
+- Standard HTTP headers for client awareness
+
+## Implementation Details
+
+### Current Implementation
+- Custom `RateLimitingMiddleware` using sliding window algorithm
+- Per-IP address tracking with configurable limits
+- Default: 1000 requests per 10-minute window
+- Exempts health checks and development endpoints
+- Proper proxy support via X-Forwarded-For headers
+
+### Configuration
+```json
+{
+  "RateLimit": {
+    "MaxRequestsPerWindow": 1000,
+    "WindowSize": "00:10:00"
+  }
+}
+```
 
 ## Consequences
 
 ### Positive
-- Zero application complexity
-- Flexible configuration at deployment time
-- Works with any proxy (nginx, Traefik, HAProxy, cloud LBs)
-- Easier to adjust limits without code changes
+- Works out-of-the-box without proxy configuration
+- Consistent behavior across all deployment scenarios
+- Comprehensive testing coverage with integration tests
+- Detailed logging and monitoring capabilities
+- Standard HTTP headers (X-RateLimit-*, Retry-After)
 
 ### Negative
-- Requires proxy in production (direct container access unprotected)
-- No per-user or per-API-key limits (requires app-level)
-- Documentation must explain proxy setup
+- Additional application complexity and memory usage
+- Per-instance rate limiting (not global across load-balanced instances)
+- Requires careful tuning for different environments
 
-### Future
-Beta may add `Microsoft.AspNetCore.RateLimiting` if per-user limits needed for authenticated endpoints.
+### Migration Path
+For production deployments requiring strict global limits:
+1. Keep current implementation for baseline protection
+2. Add proxy-level rate limiting for additional protection
+3. Future: Consider Redis-based distributed rate limiting
+
+## Documentation
+See [RATE_LIMITING.md](../RATE_LIMITING.md) for comprehensive configuration and troubleshooting guide.
+
+## Future Enhancements
+- Migration to `Microsoft.AspNetCore.RateLimiting` in Beta
+- Redis-based distributed rate limiting for multi-instance deployments
+- User-based rate limiting for authenticated endpoints

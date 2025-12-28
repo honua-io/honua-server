@@ -57,24 +57,48 @@ internal static partial class Log
     public static partial void ApplyEditsPartialFailure(
         ILogger logger, string layerId, int successCount, int failureCount);
 
+    /// <summary>
+    /// Logs when a database transaction is started.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="transactionId">The transaction identifier.</param>
+    /// <param name="layerId">The layer identifier associated with the transaction.</param>
     [LoggerMessage(
         EventId = 2010,
         Level = LogLevel.Debug,
         Message = "Transaction {TransactionId} started for layer {LayerId}")]
     public static partial void TransactionStarted(ILogger logger, string transactionId, string layerId);
 
+    /// <summary>
+    /// Logs when a database transaction is successfully committed.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="transactionId">The transaction identifier.</param>
+    /// <param name="operationCount">The number of operations that were committed.</param>
     [LoggerMessage(
         EventId = 2011,
         Level = LogLevel.Debug,
         Message = "Transaction {TransactionId} committed: {OperationCount} operations")]
     public static partial void TransactionCommitted(ILogger logger, string transactionId, int operationCount);
 
+    /// <summary>
+    /// Logs when a database transaction is rolled back.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="transactionId">The transaction identifier.</param>
+    /// <param name="reason">The reason for the rollback.</param>
     [LoggerMessage(
         EventId = 2012,
         Level = LogLevel.Warning,
         Message = "Transaction {TransactionId} rolled back: {Reason}")]
     public static partial void TransactionRolledBack(ILogger logger, string transactionId, string reason);
 
+    /// <summary>
+    /// Logs when a transaction retry attempt is made.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="attempt">The retry attempt number.</param>
+    /// <param name="errorMessage">The error message that caused the retry.</param>
     [LoggerMessage(
         EventId = 2013,
         Level = LogLevel.Warning,
@@ -117,42 +141,72 @@ internal static partial class Log
     public static partial void ApplicationStarting(
         ILogger logger, string version, string environment);
 
+    /// <summary>
+    /// Logs when the application is gracefully stopping.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4002,
         Level = LogLevel.Information,
         Message = "Application stopping gracefully")]
     public static partial void ApplicationStopping(ILogger logger);
 
+    /// <summary>
+    /// Logs when database migrations are starting.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4010,
         Level = LogLevel.Information,
         Message = "Database migrations starting")]
     public static partial void DatabaseMigrationsStarting(ILogger logger);
 
+    /// <summary>
+    /// Logs when database migrations have completed successfully.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="scriptCount">The number of migration scripts that were applied.</param>
     [LoggerMessage(
         EventId = 4011,
         Level = LogLevel.Information,
         Message = "Database migrations completed: {ScriptCount} scripts applied")]
     public static partial void DatabaseMigrationsCompleted(ILogger logger, int scriptCount);
 
+    /// <summary>
+    /// Logs when no database migrations are available to apply.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4012,
         Level = LogLevel.Information,
         Message = "No database migrations to apply")]
     public static partial void NoDatabaseMigrationsToApply(ILogger logger);
 
+    /// <summary>
+    /// Logs when the database connection string is not configured, causing migrations to be skipped.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4013,
         Level = LogLevel.Information,
         Message = "Database connection string 'honua' not configured - skipping migrations")]
     public static partial void DatabaseConnectionStringNotConfigured(ILogger logger);
 
+    /// <summary>
+    /// Logs when database migrations are deliberately skipped.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
     [LoggerMessage(
         EventId = 4015,
         Level = LogLevel.Information,
         Message = "Database migrations skipped")]
     public static partial void DatabaseMigrationsSkipped(ILogger logger);
 
+    /// <summary>
+    /// Logs when an individual migration script has been successfully applied.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="scriptName">The name of the migration script that was applied.</param>
     [LoggerMessage(
         EventId = 4014,
         Level = LogLevel.Debug,

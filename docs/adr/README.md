@@ -17,6 +17,11 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0009](0009-shared-filter-ast.md) | Shared Filter AST for Multi-Protocol Support | Accepted | 2025-12 |
 | [0010](0010-admin-ui-architecture.md) | Admin UI Architecture (Blazor WASM) | Accepted | 2025-12 |
 | [0011](0011-testing-strategy.md) | Testing Strategy and API Surface Coverage | Accepted | 2025-12 |
+| [0012](0012-clean-architecture-implementation.md) | Clean Architecture Implementation | Accepted | 2025-12 |
+| [0013](0013-minimal-apis-vs-controllers.md) | Minimal APIs vs Controllers Decision | Accepted | 2025-12 |
+| [0014](0014-dependency-injection-limits.md) | Dependency Injection Limits Rationale | Accepted | 2025-12 |
+| [0015](0015-vertical-slice-architecture.md) | Vertical Slice Architecture Pattern | Accepted | 2025-12 |
+| [0016](0016-performance-optimization-strategies.md) | Performance Optimization Strategies | Accepted | 2025-12 |
 
 ## Template
 

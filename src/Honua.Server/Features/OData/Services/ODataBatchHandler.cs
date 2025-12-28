@@ -591,15 +591,38 @@ internal sealed partial class ODataBatchHandler
 
     private static partial class Log
     {
+        /// <summary>
+        /// Logs when an OData batch request fails to parse.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="requestId">The identifier of the batch request that failed to parse.</param>
+        /// <param name="exception">The exception that caused the parsing failure.</param>
         [LoggerMessage(EventId = 3100, Level = LogLevel.Warning, Message = "Batch request {RequestId} failed to parse.")]
         public static partial void BatchRequestParseFailed(ILogger logger, string requestId, Exception exception);
 
+        /// <summary>
+        /// Logs when a batch read request fails during processing.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="requestId">The identifier of the batch request that failed to read.</param>
+        /// <param name="exception">The exception that caused the read failure.</param>
         [LoggerMessage(EventId = 3101, Level = LogLevel.Warning, Message = "Batch read request {RequestId} failed.")]
         public static partial void BatchReadFailed(ILogger logger, string requestId, Exception exception);
 
+        /// <summary>
+        /// Logs when an atomic batch group fails, requiring all operations in the group to be rolled back.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that caused the atomic group failure.</param>
         [LoggerMessage(EventId = 3102, Level = LogLevel.Error, Message = "Batch atomic group failed.")]
         public static partial void BatchAtomicGroupFailed(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when a single request within a batch operation fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="requestId">The identifier of the single request that failed.</param>
+        /// <param name="exception">The exception that caused the request failure.</param>
         [LoggerMessage(EventId = 3103, Level = LogLevel.Warning, Message = "Batch single request {RequestId} failed.")]
         public static partial void BatchSingleRequestFailed(ILogger logger, string requestId, Exception exception);
     }
