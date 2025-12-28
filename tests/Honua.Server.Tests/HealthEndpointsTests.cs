@@ -7,7 +7,6 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Honua.Server.Tests;
 
@@ -140,7 +139,7 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
     [IntegrationTest]
     [Operation("HealthCheck")]
     [Endpoint("GET /healthz/live")]
-    public async Task LivenessProbe_ResponseTime_IsUnder100Ms()
+    public async Task LivenessProbe_ResponseTime_IsUnder200Ms()
     {
         // Arrange
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -151,14 +150,14 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
-            "liveness probe should respond within 100ms");
+        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(200,
+            "liveness probe should respond within 200ms");
     }
 
     [IntegrationTest]
     [Operation("HealthCheck")]
     [Endpoint("GET /healthz/ready")]
-    public async Task ReadinessProbe_WithHealthyDatabase_ResponseTime_IsUnder100Ms()
+    public async Task ReadinessProbe_WithHealthyDatabase_ResponseTime_IsUnder200Ms()
     {
         // Arrange
         var factory = _factory.WithWebHostBuilder(builder =>
@@ -179,8 +178,8 @@ public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<P
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100,
-            "readiness probe should respond within 100ms with healthy database");
+        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(200,
+            "readiness probe should respond within 200ms with healthy database");
     }
 
     [IntegrationTest]

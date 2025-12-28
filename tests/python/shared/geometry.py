@@ -36,6 +36,8 @@ from shapely.geometry import (
 class TestGeometry:
     """A test geometry with metadata for validation."""
 
+    __test__ = False
+
     name: str
     geojson: dict[str, Any]
     wkt: str

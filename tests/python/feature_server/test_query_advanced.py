@@ -31,7 +31,7 @@ class TestQueryOrderBy:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={
                 "where": "1=1",
-                "orderByFields": "id ASC",
+                "orderByFields": "count ASC",
                 "f": "json",
             },
         )
@@ -40,9 +40,9 @@ class TestQueryOrderBy:
         data = response.json()
         features = data.get("features", [])
         if len(features) >= 2:
-            # Verify ordering (if id field exists)
+            # Verify ordering (if count field exists)
             ids = [
-                f.get("attributes", {}).get("id") or f.get("attributes", {}).get("OBJECTID")
+                f.get("attributes", {}).get("count") or f.get("attributes", {}).get("OBJECTID")
                 for f in features
             ]
             ids = [i for i in ids if i is not None]
@@ -59,7 +59,7 @@ class TestQueryOrderBy:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={
                 "where": "1=1",
-                "orderByFields": "id DESC",
+                "orderByFields": "count DESC",
                 "f": "json",
             },
         )
@@ -69,7 +69,7 @@ class TestQueryOrderBy:
         features = data.get("features", [])
         if len(features) >= 2:
             ids = [
-                f.get("attributes", {}).get("id") or f.get("attributes", {}).get("OBJECTID")
+                f.get("attributes", {}).get("count") or f.get("attributes", {}).get("OBJECTID")
                 for f in features
             ]
             ids = [i for i in ids if i is not None]
@@ -86,7 +86,7 @@ class TestQueryOrderBy:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
             params={
                 "where": "1=1",
-                "orderByFields": "name ASC, id DESC",
+                "orderByFields": "name ASC, count DESC",
                 "f": "json",
             },
         )
@@ -393,7 +393,7 @@ class TestQueryStatistics:
     ):
         """Query with outStatistics parameter."""
         statistics = [
-            {"statisticType": "count", "onStatisticField": "id", "outStatisticFieldName": "total_count"}
+            {"statisticType": "count", "onStatisticField": "count", "outStatisticFieldName": "total_count"}
         ]
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
@@ -420,7 +420,7 @@ class TestQueryStatistics:
     ):
         """Query with grouped statistics."""
         statistics = [
-            {"statisticType": "count", "onStatisticField": "id", "outStatisticFieldName": "count"}
+            {"statisticType": "count", "onStatisticField": "count", "outStatisticFieldName": "count"}
         ]
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",

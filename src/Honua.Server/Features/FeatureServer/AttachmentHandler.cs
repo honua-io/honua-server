@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Server.Features.FeatureServer.Models;
@@ -50,7 +51,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
-            return Results.Problem("Failed to query attachments", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to query attachments");
         }
     }
 
@@ -127,7 +128,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogAddAttachmentError(logger, layerId, featureId, file.FileName, ex);
-            return Results.Problem("Failed to add attachment", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to add attachment");
         }
     }
 
@@ -181,10 +182,16 @@ internal static partial class AttachmentHandler
             LogUpdateAttachmentSuccess(logger, layerId, featureId, attachmentId);
             return Results.Ok(response);
         }
+        catch (ResourceNotFoundException ex)
+        {
+            LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
+            return GeoServicesErrorHelpers.CreateNotFoundError(
+                $"Attachment {attachmentId} not found for feature {featureId}");
+        }
         catch (Exception ex)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return Results.Problem("Failed to update attachment", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to update attachment");
         }
     }
 
@@ -228,7 +235,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogDeleteAttachmentsError(logger, layerId, featureId, ex);
-            return Results.Problem("Failed to delete attachments", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to delete attachments");
         }
     }
 
@@ -268,7 +275,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogDownloadAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return Results.Problem("Failed to download attachment", statusCode: 500);
+            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to download attachment");
         }
     }
 

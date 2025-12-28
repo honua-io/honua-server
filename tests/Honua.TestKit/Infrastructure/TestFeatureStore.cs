@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -12,8 +13,11 @@ namespace Honua.TestKit.Infrastructure;
 /// <summary>
 /// Test implementation of IFeatureStore for unit and integration tests
 /// </summary>
-public sealed class TestFeatureStore : IFeatureStore
+public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, IDisposable
 {
+    private const string UnsupportedWhereClauseMessage =
+        "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
+
     private readonly Dictionary<int, List<Feature>> _layerFeatures = new();
 
     public TestFeatureStore()
@@ -53,6 +57,15 @@ public sealed class TestFeatureStore : IFeatureStore
                 .Add("category", "test")
                 .Add("timestamp", new DateTimeOffset(2023, 01, 20, 0, 0, 0, TimeSpan.Zero)))
         };
+    }
+
+    public static Feature CreateTestFeature(long id, double x, double y, IDictionary<string, object?>? attributes = null)
+    {
+        var attributeMap = attributes is null
+            ? ImmutableDictionary<string, object?>.Empty
+            : attributes.ToImmutableDictionary();
+
+        return Feature.Create(id, CreatePointWkb(x, y), attributeMap);
     }
 
     public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -134,6 +147,52 @@ public sealed class TestFeatureStore : IFeatureStore
             totalCount,
             allFilteredFeatures.ToImmutableArray(),
             hasMoreResults));
+    }
+
+    public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var result = await QueryAsync(layerId, query, cancellationToken);
+        foreach (var feature in result.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return feature;
+        }
+    }
+
+    public async IAsyncEnumerable<IReadOnlyList<Feature>> StreamFeatureBatchesAsync(
+        int layerId,
+        FeatureQuery query,
+        int batchSize = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
+
+        var result = await QueryAsync(layerId, query, cancellationToken);
+        var features = result.Items;
+
+        for (var i = 0; i < features.Length; i += batchSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Math.Min(batchSize, features.Length - i);
+            var batch = features.Skip(i).Take(count).ToArray();
+            yield return batch;
+        }
+    }
+
+    public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var result = await QueryAsync(layerId, query, cancellationToken);
+        foreach (var feature in result.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return GmlFeature.Create(feature.Id, geometryGml: null, feature.Attributes);
+        }
     }
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
@@ -327,25 +386,244 @@ public sealed class TestFeatureStore : IFeatureStore
             deleteResults: deleteResults.ToImmutableArray());
     }
 
+    public void Dispose()
+    {
+        _layerFeatures.Clear();
+        GC.SuppressFinalize(this);
+    }
+
     private static IEnumerable<Feature> ApplyWhereFilter(IEnumerable<Feature> features, string whereClause)
     {
-        // Simple WHERE clause parsing for testing
-        // This is a simplified version, real implementation would be more robust
-        var normalized = Regex.Replace(whereClause, @"\s*=\s*", "=", RegexOptions.CultureInvariant);
-        var lowerClause = normalized.Trim().ToLowerInvariant();
-
-        return lowerClause switch
+        var normalized = whereClause.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
         {
-            "name='test feature'" => features.Where(f => f.Attributes.TryGetValue("name", out var nameValue) &&
-                                                         nameValue?.ToString()?.Equals("Test Feature", StringComparison.OrdinalIgnoreCase) == true),
-            "category='test'" => features.Where(f => f.Attributes.TryGetValue("category", out var categoryValue) &&
-                                                     categoryValue?.ToString()?.Equals("test", StringComparison.OrdinalIgnoreCase) == true),
-            var clause when clause.Contains("drop", StringComparison.OrdinalIgnoreCase) || clause.Contains(';') || clause.Contains("--", StringComparison.OrdinalIgnoreCase) =>
-                throw new ArgumentException("WHERE clause contains dangerous pattern: " + clause.Split(' ').First(w => new[] { "drop", ";", "--" }.Contains(w.ToLower(System.Globalization.CultureInfo.InvariantCulture))), nameof(whereClause)),
-            "invalid syntax here" =>
-                throw new ArgumentException("WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18", nameof(whereClause)),
-            _ => features
-        };
+            return features;
+        }
+
+        if (normalized.Contains("drop", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains(';') ||
+            normalized.Contains("--", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("WHERE clause contains dangerous pattern: " + normalized.Split(' ').First(), nameof(whereClause));
+        }
+
+        var clauses = Regex.Split(normalized, @"\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var filtered = features;
+
+        foreach (var clause in clauses)
+        {
+            var trimmedClause = clause.Trim();
+            if (string.IsNullOrEmpty(trimmedClause))
+            {
+                continue;
+            }
+
+            if (IsTrueLiteral(trimmedClause))
+            {
+                continue;
+            }
+
+            if (TryParseInClause(trimmedClause, out var inField, out var inValues))
+            {
+                filtered = filtered.Where(feature =>
+                    TryGetAttributeValue(feature, inField, out var value) &&
+                    MatchesInValues(value, inValues));
+                continue;
+            }
+
+            if (TryParseEqualityClause(trimmedClause, out var eqField, out var eqValue))
+            {
+                filtered = filtered.Where(feature =>
+                    TryGetAttributeValue(feature, eqField, out var value) &&
+                    ValuesEqual(value, eqValue));
+                continue;
+            }
+
+            throw new ArgumentException(UnsupportedWhereClauseMessage, nameof(whereClause));
+        }
+
+        return filtered;
+    }
+
+    private static bool IsTrueLiteral(string clause)
+    {
+        return string.Equals(clause, "TRUE", StringComparison.OrdinalIgnoreCase) ||
+               Regex.IsMatch(clause, @"^1\s*=\s*1$", RegexOptions.CultureInvariant);
+    }
+
+    private static bool TryGetAttributeValue(Feature feature, string fieldName, out object? value)
+    {
+        if (feature.Attributes.TryGetValue(fieldName, out value))
+        {
+            return true;
+        }
+
+        foreach (var (key, attributeValue) in feature.Attributes)
+        {
+            if (string.Equals(key, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = attributeValue;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryParseEqualityClause(string clause, out string fieldName, out object value)
+    {
+        var match = Regex.Match(
+            clause,
+            @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(?<value>.+)$",
+            RegexOptions.CultureInvariant);
+
+        if (!match.Success)
+        {
+            fieldName = string.Empty;
+            value = string.Empty;
+            return false;
+        }
+
+        fieldName = match.Groups["field"].Value;
+        var rawValue = match.Groups["value"].Value.Trim();
+
+        if (rawValue.StartsWith('\'') && rawValue.EndsWith('\'') && rawValue.Length >= 2)
+        {
+            value = rawValue[1..^1].Replace("''", "'", StringComparison.Ordinal);
+            return true;
+        }
+
+        if (long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+        {
+            value = longValue;
+            return true;
+        }
+
+        if (double.TryParse(rawValue, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue))
+        {
+            value = doubleValue;
+            return true;
+        }
+
+        value = rawValue;
+        return true;
+    }
+
+    private static bool TryParseInClause(string clause, out string fieldName, out List<object> values)
+    {
+        var match = Regex.Match(
+            clause,
+            @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>.+)\)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (!match.Success)
+        {
+            fieldName = string.Empty;
+            values = new List<object>();
+            return false;
+        }
+
+        fieldName = match.Groups["field"].Value;
+        var valuesRaw = match.Groups["values"].Value;
+
+        values = valuesRaw
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(ParseValueLiteral)
+            .ToList();
+
+        return true;
+    }
+
+    private static object ParseValueLiteral(string rawValue)
+    {
+        if (rawValue.StartsWith('\'') && rawValue.EndsWith('\'') && rawValue.Length >= 2)
+        {
+            return rawValue[1..^1].Replace("''", "'", StringComparison.Ordinal);
+        }
+
+        if (long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+        {
+            return longValue;
+        }
+
+        if (double.TryParse(rawValue, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue))
+        {
+            return doubleValue;
+        }
+
+        return rawValue;
+    }
+
+    private static bool MatchesInValues(object? value, IReadOnlyList<object> candidates)
+    {
+        return candidates.Any(candidate => ValuesEqual(value, candidate));
+    }
+
+    private static bool ValuesEqual(object? left, object right)
+    {
+        if (left == null)
+        {
+            return false;
+        }
+
+        if (left is DateTimeOffset leftOffset)
+        {
+            if (right is DateTimeOffset rightOffset)
+            {
+                return leftOffset.Equals(rightOffset);
+            }
+
+            if (right is DateTime rightDateTime)
+            {
+                return leftOffset.UtcDateTime.Equals(rightDateTime.ToUniversalTime());
+            }
+
+            if (right is string rightText &&
+                DateTimeOffset.TryParse(rightText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedOffset))
+            {
+                return leftOffset.Equals(parsedOffset);
+            }
+        }
+
+        if (left is DateTime leftDateTime)
+        {
+            if (right is DateTime rightDateTime)
+            {
+                return leftDateTime.Equals(rightDateTime);
+            }
+
+            if (right is string rightText &&
+                DateTime.TryParse(rightText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDateTime))
+            {
+                return leftDateTime.Equals(parsedDateTime);
+            }
+        }
+
+        if (left is string leftText)
+        {
+            return right is string rightText &&
+                   string.Equals(leftText, rightText, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (left is IConvertible)
+        {
+            if (right is IConvertible)
+            {
+                try
+                {
+                    var leftValue = Convert.ToDouble(left, CultureInfo.InvariantCulture);
+                    var rightValue = Convert.ToDouble(right, CultureInfo.InvariantCulture);
+                    return Math.Abs(leftValue - rightValue) < double.Epsilon;
+                }
+                catch (FormatException)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return left.Equals(right);
     }
 
     private static Feature FilterFields(Feature feature, ImmutableArray<string> outFields)

@@ -10,7 +10,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.OData.Client;
-using Xunit;
 
 namespace Honua.Server.Tests.Features.OData;
 

@@ -21,6 +21,27 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # PostgreSQL with PostGIS for tests (opt-in)
+  postgis-test:
+    image: postgis/postgis:18-3.6
+    profiles:
+      - test
+    environment:
+      POSTGRES_DB: honua_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d honua_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # Honua Server application
   honua:
     build: .
@@ -55,6 +76,7 @@ services:
 
 volumes:
   postgres_data:
+  postgres_test_data:
   honua_logs:
   honua_cache:
   dotnet_diagnostics:

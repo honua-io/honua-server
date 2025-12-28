@@ -13,20 +13,37 @@ public static class BenchmarkEntryPoint
         if (args.Length > 0)
         {
             // Use BenchmarkSwitcher to enable filtering and multi-benchmark runs
-            BenchmarkSwitcher.FromAssembly(typeof(QueryBenchmarks).Assembly).Run(args);
+            BenchmarkSwitcher.FromAssembly(typeof(SqlGenerationBenchmarks).Assembly).Run(args);
         }
         else
         {
-            // Default: Run query benchmarks
-            Console.WriteLine("Available benchmark categories:");
-            Console.WriteLine("  --filter *Query*     - Query latency benchmarks");
-            Console.WriteLine("  --filter *MemorySoak*  - Memory leak detection");
-            Console.WriteLine("  --filter *LoadTest*  - Throughput and concurrency");
+            // Default: Show help and run all benchmarks
+            Console.WriteLine("Honua Server Performance Benchmarks");
+            Console.WriteLine("==================================");
             Console.WriteLine();
-            Console.WriteLine("Running query benchmarks by default...");
+            Console.WriteLine("Available benchmark categories:");
+            Console.WriteLine("  --filter *Query*              - End-to-end query performance");
+            Console.WriteLine("  --filter *SqlGeneration*      - SQL query building performance");
+            Console.WriteLine();
+            Console.WriteLine("Examples:");
+            Console.WriteLine("  dotnet run --filter *SqlGeneration*");
+            Console.WriteLine("  dotnet run --filter *Query* --job short");
+            Console.WriteLine("  dotnet run --filter *Query* --exporters json,html");
+            Console.WriteLine();
+            Console.WriteLine("For performance analysis, use:");
+            Console.WriteLine("  dotnet run --filter *Performance* --profiler ETW");
+            Console.WriteLine();
+            Console.WriteLine("Running all benchmarks (this may take a while)...");
             Console.WriteLine();
 
-            BenchmarkRunner.Run<QueryBenchmarks>();
+            // Run core benchmarks (query and SQL generation)
+            var benchmarks = new[]
+            {
+                typeof(QueryBenchmarks),
+                typeof(SqlGenerationBenchmarks)
+            };
+
+            BenchmarkRunner.Run(benchmarks);
         }
     }
 }

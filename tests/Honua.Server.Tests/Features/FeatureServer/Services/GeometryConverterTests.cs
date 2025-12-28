@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.FeatureServer.Services;
 
@@ -13,6 +15,12 @@ namespace Honua.Server.Tests.Features.FeatureServer.Services;
 public class GeometryConverterTests
 {
     private readonly GeometryConverter _converter = new();
+
+    private static Geometry ReadGeometry(byte[] wkb)
+    {
+        var reader = new WKBReader();
+        return reader.Read(wkb);
+    }
 
     #region Point Geometry Tests
 
@@ -27,18 +35,12 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result.Should().HaveCount(21); // 1 + 4 + 8 + 8 bytes
-        result[0].Should().Be(1); // Little-endian
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Point>();
 
-        // Extract and verify geometry type (POINT = 1)
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(1);
-
-        // Extract and verify coordinates
-        var x = BitConverter.ToDouble(result, 5);
-        var y = BitConverter.ToDouble(result, 13);
-        x.Should().BeApproximately(-122.4194, 0.0001);
-        y.Should().BeApproximately(37.7749, 0.0001);
+        var point = (Point)geometry;
+        point.X.Should().BeApproximately(-122.4194, 0.0001);
+        point.Y.Should().BeApproximately(37.7749, 0.0001);
     }
 
     [UnitTest]
@@ -52,12 +54,12 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result.Should().HaveCount(21);
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Point>();
 
-        var x = BitConverter.ToDouble(result, 5);
-        var y = BitConverter.ToDouble(result, 13);
-        x.Should().BeApproximately(-122.0, 0.0001);
-        y.Should().BeApproximately(38.0, 0.0001);
+        var point = (Point)geometry;
+        point.X.Should().BeApproximately(-122.0, 0.0001);
+        point.Y.Should().BeApproximately(38.0, 0.0001);
     }
 
     #endregion
@@ -81,15 +83,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result[0].Should().Be(1); // Little-endian
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<LineString>();
 
-        // Extract and verify geometry type (LINESTRING = 2)
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(2);
-
-        // Extract and verify number of points
-        var pointCount = BitConverter.ToUInt32(result, 5);
-        pointCount.Should().Be(3);
+        var lineString = (LineString)geometry;
+        lineString.NumPoints.Should().Be(3);
     }
 
     [UnitTest]
@@ -110,15 +108,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result[0].Should().Be(1); // Little-endian
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<MultiLineString>();
 
-        // Extract and verify geometry type (MULTILINESTRING = 5)
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(5);
-
-        // Extract and verify number of linestrings
-        var lineStringCount = BitConverter.ToUInt32(result, 5);
-        lineStringCount.Should().Be(2);
+        var multiLineString = (MultiLineString)geometry;
+        multiLineString.NumGeometries.Should().Be(2);
     }
 
     [UnitTest]
@@ -156,15 +150,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result[0].Should().Be(1); // Little-endian
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<MultiPoint>();
 
-        // Extract and verify geometry type (MULTIPOINT = 4)
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(4);
-
-        // Extract and verify number of points
-        var pointCount = BitConverter.ToUInt32(result, 5);
-        pointCount.Should().Be(3);
+        var multiPoint = (MultiPoint)geometry;
+        multiPoint.NumGeometries.Should().Be(3);
     }
 
     [UnitTest]
@@ -184,11 +174,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(4); // MULTIPOINT
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<MultiPoint>();
 
-        var pointCount = BitConverter.ToUInt32(result, 5);
-        pointCount.Should().Be(1);
+        var multiPoint = (MultiPoint)geometry;
+        multiPoint.NumGeometries.Should().Be(1);
     }
 
     [UnitTest]
@@ -230,15 +220,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result[0].Should().Be(1); // Little-endian
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Polygon>();
 
-        // Extract and verify geometry type (POLYGON = 3)
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(3);
-
-        // Extract and verify number of rings
-        var ringCount = BitConverter.ToUInt32(result, 5);
-        ringCount.Should().Be(1);
+        var polygon = (Polygon)geometry;
+        polygon.NumInteriorRings.Should().Be(0);
     }
 
     [UnitTest]
@@ -250,9 +236,9 @@ public class GeometryConverterTests
             "rings": [
                 [
                     [-122.0, 37.0],
-                    [-121.0, 37.0],
-                    [-121.0, 38.0],
                     [-122.0, 38.0],
+                    [-121.0, 38.0],
+                    [-121.0, 37.0],
                     [-122.0, 37.0]
                 ],
                 [
@@ -271,11 +257,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(3); // POLYGON
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Polygon>();
 
-        var ringCount = BitConverter.ToUInt32(result, 5);
-        ringCount.Should().Be(2); // Outer ring + inner ring (hole)
+        var polygon = (Polygon)geometry;
+        polygon.NumInteriorRings.Should().Be(1);
     }
 
     #endregion
@@ -300,19 +286,12 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        result[0].Should().Be(1); // Little-endian
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Polygon>();
 
-        // Extract and verify geometry type (POLYGON = 3, envelope becomes polygon)
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(3);
-
-        // Extract and verify number of rings (should be 1 for envelope)
-        var ringCount = BitConverter.ToUInt32(result, 5);
-        ringCount.Should().Be(1);
-
-        // Extract and verify number of points in the ring (should be 5: 4 corners + closing point)
-        var pointCount = BitConverter.ToUInt32(result, 9);
-        pointCount.Should().Be(5);
+        var polygon = (Polygon)geometry;
+        polygon.NumInteriorRings.Should().Be(0);
+        polygon.ExteriorRing.NumPoints.Should().Be(5);
     }
 
     [UnitTest]
@@ -333,11 +312,11 @@ public class GeometryConverterTests
 
         // Assert
         result.Should().NotBeNull();
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(3); // POLYGON
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Polygon>();
 
-        var ringCount = BitConverter.ToUInt32(result, 5);
-        ringCount.Should().Be(1);
+        var polygon = (Polygon)geometry;
+        polygon.NumInteriorRings.Should().Be(0);
     }
 
     #endregion
@@ -398,11 +377,11 @@ public class GeometryConverterTests
 
         // Assert - Should only process valid points
         result.Should().NotBeNull();
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(4); // MULTIPOINT
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<MultiPoint>();
 
-        var pointCount = BitConverter.ToUInt32(result, 5);
-        pointCount.Should().Be(1); // Only one valid point processed
+        var multiPoint = (MultiPoint)geometry;
+        multiPoint.NumGeometries.Should().Be(1); // Only one valid point processed
     }
 
     #endregion
@@ -430,11 +409,8 @@ public class GeometryConverterTests
 
         // Assert - Basic WKB structure validation
         result.Should().NotBeNull();
-        result.Length.Should().BeGreaterThan(21); // More than a simple point
-
-        // Should be a proper LINESTRING
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(2);
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<LineString>();
     }
 
     [UnitTest]
@@ -455,15 +431,12 @@ public class GeometryConverterTests
 
         // Assert - Should be converted to a rectangular polygon
         result.Should().NotBeNull();
+        var geometry = ReadGeometry(result);
+        geometry.Should().BeOfType<Polygon>();
 
-        var geometryType = BitConverter.ToUInt32(result, 1);
-        geometryType.Should().Be(3); // POLYGON
-
-        var ringCount = BitConverter.ToUInt32(result, 5);
-        ringCount.Should().Be(1);
-
-        var pointCount = BitConverter.ToUInt32(result, 9);
-        pointCount.Should().Be(5); // Rectangle with closing point
+        var polygon = (Polygon)geometry;
+        polygon.NumInteriorRings.Should().Be(0);
+        polygon.ExteriorRing.NumPoints.Should().Be(5); // Rectangle with closing point
     }
 
     #endregion

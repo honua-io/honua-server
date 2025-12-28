@@ -1,14 +1,21 @@
 # Multi-stage Dockerfile for Honua Server
 # Native AOT build for minimal image size and fast cold start
+# Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
+# Build stage with security hardening
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
-# Install native AOT build dependencies
+# Security: Create non-root build user
+RUN addgroup -g 1001 -S builduser && \
+    adduser -S builduser -G builduser -u 1001
+
+# Install native AOT build dependencies with version pinning for security
 RUN apk add --no-cache \
-    clang \
-    build-base \
-    zlib-dev
+    clang=18.1.8-r0 \
+    build-base=0.5-r3 \
+    zlib-dev=1.3.1-r1 \
+    && rm -rf /var/cache/apk/*
 
 # Copy solution and project files first for better layer caching
 COPY Honua.sln Directory.Build.props .editorconfig ./
@@ -34,43 +41,66 @@ RUN dotnet publish src/Honua.Server/Honua.Server.csproj \
     -p:OptimizationPreference=Speed \
     -p:IlcOptimizationPreference=Speed
 
-# Runtime stage - use runtime-deps for AOT (no .NET runtime needed)
+# Runtime stage - distroless-style minimal image for maximum security
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
 
-# Install required packages for PostGIS connectivity
-RUN apk add --no-cache \
-    icu-libs \
-    tzdata
+# Security: Update packages and remove package manager
+RUN apk upgrade --no-cache && \
+    apk add --no-cache \
+    icu-libs=74.2-r0 \
+    tzdata=2024b-r0 \
+    curl=8.11.0-r0 \
+    ca-certificates=20240705-r0 && \
+    rm -rf /var/cache/apk/* && \
+    rm -rf /tmp/*
 
-# Create non-root user for security
+# Security: Create non-root user with minimal privileges
 RUN addgroup -g 1001 -S honua && \
-    adduser -S honua -G honua -u 1001
+    adduser -S honua -G honua -u 1001 -s /sbin/nologin -h /app
 
+# Security: Set strict file permissions
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=1001:1001 /app .
 
-# Create directories that need to be writable at runtime
+# Security: Create runtime directories with proper permissions
 RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
-    chown -R honua:honua /app /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
-    chmod 755 /app/Honua.Server
+    chown -R 1001:1001 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
+    chmod 750 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
+    chmod 755 /app/Honua.Server && \
+    chmod -R 755 /app
 
-# Switch to non-root user
-USER honua
+# Security: Remove unnecessary setuid/setgid binaries
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
 
-# Security labels for enhanced container security
-LABEL security.non-root="true"
-LABEL security.capabilities.drop="ALL"
-LABEL security.read-only-root="true"
+# Security: Switch to non-root user early
+USER 1001:1001
 
-# Configure ASP.NET Core
-ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_URLS=http://+:8080
-ENV DOTNET_RUNNING_IN_CONTAINER=true
+# Security and compliance labels
+LABEL security.non-root="true" \
+      security.capabilities.drop="ALL" \
+      security.read-only-root="true" \
+      security.user="1001" \
+      security.group="1001" \
+      maintainer="Honua Development Team" \
+      version="1.0" \
+      description="Honua Geospatial Feature Server" \
+      org.opencontainers.image.source="https://github.com/honua/honua-server" \
+      org.opencontainers.image.description="Production-ready geospatial feature server" \
+      org.opencontainers.image.licenses="Elastic-2.0"
 
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/healthz/live || exit 1
+# Security: Minimal environment variables
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    ASPNETCORE_URLS=http://+:8080 \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    DOTNET_EnableDiagnostics=0
 
-EXPOSE 8080
+# Security: Enhanced health check with timeout and authentication bypass
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f --max-time 5 --connect-timeout 3 http://localhost:8080/healthz/live || exit 1
 
-ENTRYPOINT ["./Honua.Server"]
+# Security: Explicit port exposure
+EXPOSE 8080/tcp
+
+# Security: Use exec form and explicit binary path
+ENTRYPOINT ["/app/Honua.Server"]

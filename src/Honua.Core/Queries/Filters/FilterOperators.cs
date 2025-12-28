@@ -26,7 +26,16 @@ public enum BinaryOperator
 
     // Collection operators
     In,
-    NotIn
+    NotIn,
+
+    // Arithmetic operators
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    Div,
+    Power
 }
 
 /// <summary>
@@ -36,7 +45,8 @@ public enum UnaryOperator
 {
     Not,
     IsNull,
-    IsNotNull
+    IsNotNull,
+    Negate
 }
 
 /// <summary>
@@ -56,6 +66,39 @@ public enum SpatialOperator
     // Distance-based operators
     DWithin,    // Within distance
     Beyond      // Beyond distance
+}
+
+/// <summary>
+/// Temporal operators for temporal predicates
+/// </summary>
+public enum TemporalOperator
+{
+    After,
+    Before,
+    Contains,
+    Disjoint,
+    During,
+    Equals,
+    FinishedBy,
+    Finishes,
+    Intersects,
+    Meets,
+    MetBy,
+    OverlappedBy,
+    Overlaps,
+    StartedBy,
+    Starts
+}
+
+/// <summary>
+/// Array operators for array predicates
+/// </summary>
+public enum ArrayOperator
+{
+    Equals,
+    Contains,
+    ContainedBy,
+    Overlaps
 }
 
 /// <summary>

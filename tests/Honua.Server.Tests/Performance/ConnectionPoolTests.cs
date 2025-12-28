@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Xunit;
 
 namespace Honua.Server.Tests.Performance;
 

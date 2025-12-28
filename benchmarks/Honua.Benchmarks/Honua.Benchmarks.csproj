@@ -6,16 +6,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishAot>false</PublishAot>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.14.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.1" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Honua.Server\Honua.Server.csproj" />
-    <ProjectReference Include="..\..\tests\Honua.TestKit\Honua.TestKit.csproj" />
   </ItemGroup>
 
 </Project>

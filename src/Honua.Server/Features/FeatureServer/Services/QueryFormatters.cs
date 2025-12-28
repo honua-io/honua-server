@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -19,6 +22,7 @@ internal interface IQueryFormatter
     /// <param name="layer">Layer definition for metadata</param>
     /// <param name="format">Output format (json, geojson)</param>
     /// <param name="returnGeometry">Whether to include geometry</param>
+    /// <param name="outputSrid">Output SRID for geometry</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <returns>Formatted result and content type</returns>
     (object response, string contentType) FormatQueryResult(
@@ -26,6 +30,7 @@ internal interface IQueryFormatter
         LayerDefinition layer,
         string format,
         bool returnGeometry,
+        int? outputSrid,
         string[]? outFields = null);
 }
 
@@ -42,12 +47,13 @@ internal sealed class QueryFormatter : IQueryFormatter
         LayerDefinition layer,
         string format,
         bool returnGeometry,
+        int? outputSrid,
         string[]? outFields = null)
     {
         return format.ToLowerInvariant() switch
         {
             "geojson" => FormatAsGeoJson(result, layer, returnGeometry, outFields),
-            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outFields)
+            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, outFields)
         };
     }
 
@@ -58,13 +64,24 @@ internal sealed class QueryFormatter : IQueryFormatter
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
+        int? outputSrid,
         string[]? outFields)
     {
-        GeoServicesFeature[] features = result.Items.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields)).ToArray();
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        GeoServicesFeature[] features = result.Items
+            .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName))
+            .ToArray();
+
+        var srid = outputSrid ?? layer.SpatialReference.Srid;
+        var spatialReference = layer.HasGeometry
+            ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
+            : null;
 
         var response = new QueryResponse
         {
-            ObjectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid",
+            ObjectIdFieldName = objectIdFieldName,
+            GeometryType = layer.HasGeometry ? MapGeometryType(layer.GeometryType) : null,
+            SpatialReference = spatialReference,
             Features = features,
             ExceededTransferLimit = result.HasMoreResults
         };
@@ -81,7 +98,10 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool returnGeometry,
         string[]? outFields)
     {
-        GeoJsonFeature[] features = result.Items.Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields)).ToArray();
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        GeoJsonFeature[] features = result.Items
+            .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName))
+            .ToArray();
 
         var response = new GeoJsonFeatureSet
         {
@@ -100,23 +120,31 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Converts a Feature to GeoServices feature format
     /// </summary>
-    private static GeoServicesFeature ConvertToGeoServicesFeature(Feature feature, bool returnGeometry, string[]? outFields)
+    private static GeoServicesFeature ConvertToGeoServicesFeature(
+        Feature feature,
+        bool returnGeometry,
+        string[]? outFields,
+        string objectIdFieldName)
     {
-        Dictionary<string, object?> attributes = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
+        Dictionary<string, object?> attributes = FilterAttributes(feature.Attributes, outFields, objectIdFieldName, feature.Id);
 
         return new GeoServicesFeature
         {
             Attributes = attributes,
-            Geometry = returnGeometry ? ConvertGeometryToGeoServicesFormat(feature.Geometry) : null
+            Geometry = returnGeometry ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry) : null
         };
     }
 
     /// <summary>
     /// Converts a Feature to GeoJSON feature format
     /// </summary>
-    private static GeoJsonFeature ConvertToGeoJsonFeature(Feature feature, bool returnGeometry, string[]? outFields)
+    private static GeoJsonFeature ConvertToGeoJsonFeature(
+        Feature feature,
+        bool returnGeometry,
+        string[]? outFields,
+        string objectIdFieldName)
     {
-        Dictionary<string, object?> properties = FilterAttributes(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), outFields);
+        Dictionary<string, object?> properties = FilterAttributes(feature.Attributes, outFields, objectIdFieldName, feature.Id);
 
         // Extract the ID from attributes if available
         // Normalize numeric values to ensure type consistency
@@ -141,6 +169,11 @@ internal sealed class QueryFormatter : IQueryFormatter
             };
         }
 
+        if (id == null)
+        {
+            id = feature.Id;
+        }
+
         return new GeoJsonFeature
         {
             Properties = properties,
@@ -153,18 +186,34 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// Filters attributes based on outFields parameter
     /// </summary>
     private static Dictionary<string, object?> FilterAttributes(
-        Dictionary<string, object?> attributes,
-        string[]? outFields)
+        ImmutableDictionary<string, object?> attributes,
+        string[]? outFields,
+        string objectIdFieldName,
+        long objectIdValue)
     {
-        if (outFields == null || outFields.Length == 0)
-            return attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        if (outFields == null || outFields.Length == 0 ||
+            (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal)))
+        {
+            var all = attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            if (!all.ContainsKey(objectIdFieldName))
+            {
+                all[objectIdFieldName] = objectIdValue;
+            }
+            AddObjectIdAlias(all, objectIdFieldName);
+            return all;
+        }
 
         var filtered = new Dictionary<string, object?>();
 
         // Always include objectid field for GeoServices compatibility
-        if (attributes.TryGetValue("objectid", out object? objectIdValue))
-            filtered["objectid"] = objectIdValue;
-
+        if (attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes))
+        {
+            filtered[objectIdFieldName] = objectIdFromAttributes;
+        }
+        else
+        {
+            filtered[objectIdFieldName] = objectIdValue;
+        }
         foreach (string field in outFields)
         {
             if (attributes.TryGetValue(field, out object? fieldValue))
@@ -174,59 +223,22 @@ internal sealed class QueryFormatter : IQueryFormatter
         return filtered;
     }
 
-    /// <summary>
-    /// Converts WKB geometry to GeoServices JSON format.
-    /// Currently supports point geometries with improved endianness and SRID detection.
-    /// TODO: Implement full geometry support using NetTopologySuite for production use.
-    /// </summary>
-    private static GeoServicesGeometry? ConvertGeometryToGeoServicesFormat(byte[]? wkbGeometry)
+    private static void AddObjectIdAlias(Dictionary<string, object?> target, string objectIdFieldName)
     {
-        if (wkbGeometry == null || wkbGeometry.Length < 21)
-            return null;
-
-        // Detect endianness (1 = little-endian, 0 = big-endian)
-        bool isLittleEndian = wkbGeometry[0] == 1;
-        if (!isLittleEndian && wkbGeometry[0] != 0)
-            return null; // Invalid endianness marker
-
-        // Read geometry type with proper endianness
-        uint geometryType = isLittleEndian
-            ? BitConverter.ToUInt32(wkbGeometry, 1)
-            : BitConverter.ToUInt32([.. wkbGeometry.AsSpan(1, 4).ToArray().Reverse()], 0);
-
-        // Only support point geometries for now
-        if (geometryType != 1)
+        if (!objectIdFieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase))
         {
-            // Return null for unsupported geometry types
-            // TODO: Add support for LineString (2), Polygon (3), MultiPoint (4), etc.
-            return null;
+            return;
         }
 
-        // Read coordinates with proper endianness
-        double x, y;
-        if (isLittleEndian)
+        if (target.ContainsKey("OBJECTID"))
         {
-            x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-            y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
-        }
-        else
-        {
-            byte[] xBytes = [.. wkbGeometry.AsSpan(5, 8).ToArray().Reverse()];
-            byte[] yBytes = [.. wkbGeometry.AsSpan(13, 8).ToArray().Reverse()];
-            x = BitConverter.ToDouble(xBytes, 0);
-            y = BitConverter.ToDouble(yBytes, 0);
+            return;
         }
 
-        // TODO: Extract actual SRID from WKB instead of defaulting to 4326
-        // For now, use Web Mercator (3857) if coordinates suggest projected data, otherwise WGS84 (4326)
-        int srid = (Math.Abs(x) > 180 || Math.Abs(y) > 90) ? 3857 : 4326;
-
-        return new GeoServicesGeometry
+        if (target.TryGetValue(objectIdFieldName, out var objectIdValue))
         {
-            X = x,
-            Y = y,
-            SpatialReference = new GeoServicesSpatialReference { Wkid = srid }
-        };
+            target["OBJECTID"] = objectIdValue;
+        }
     }
 
     /// <summary>
@@ -234,35 +246,184 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// </summary>
     private static GeoJsonGeometry? ConvertGeometryToGeoJsonFormat(byte[]? wkbGeometry)
     {
-        if (wkbGeometry == null || wkbGeometry.Length < 21)
+        if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        // Only support little-endian WKB point geometries for now
-        if (wkbGeometry[0] != 1)
+        var reader = new WKBReader();
+        Geometry geometry;
+
+        try
+        {
+            geometry = reader.Read(wkbGeometry);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException)
         {
             return null;
         }
 
-        uint geometryType = BitConverter.ToUInt32(wkbGeometry, 1);
-        if (geometryType != 1)
+        if (geometry == null || geometry.IsEmpty)
         {
             return null;
         }
 
-        double x = BitConverter.ToDouble(wkbGeometry, 5);  // X coordinate at offset 5
-        double y = BitConverter.ToDouble(wkbGeometry, 13); // Y coordinate at offset 13
+        return ConvertGeometryToGeoJsonGeometry(geometry);
+    }
+
+    private static GeoJsonGeometry ConvertGeometryToGeoJsonGeometry(Geometry geometry)
+    {
+        if (geometry is GeometryCollection collection)
+        {
+            return new GeoJsonGeometry
+            {
+                Type = "GeometryCollection",
+                Coordinates = null,
+                Geometries = collection.Geometries.Select(ConvertGeometryToGeoJsonGeometry).ToArray()
+            };
+        }
 
         return new GeoJsonGeometry
         {
-            Type = "Point",
-            Coordinates = new[] { x, y },
-            Crs = new GeoJsonCrs
+            Type = MapGeoJsonType(geometry),
+            Coordinates = BuildGeoJsonCoordinates(geometry)
+        };
+    }
+
+    private static string MapGeoJsonType(Geometry geometry)
+    {
+        return geometry.OgcGeometryType switch
+        {
+            OgcGeometryType.Point => "Point",
+            OgcGeometryType.LineString => "LineString",
+            OgcGeometryType.Polygon => "Polygon",
+            OgcGeometryType.MultiPoint => "MultiPoint",
+            OgcGeometryType.MultiLineString => "MultiLineString",
+            OgcGeometryType.MultiPolygon => "MultiPolygon",
+            _ => geometry.GeometryType
+        };
+    }
+
+    private static object BuildGeoJsonCoordinates(Geometry geometry)
+    {
+        return geometry switch
+        {
+            Point point => BuildPointCoordinates(point),
+            LineString lineString => BuildLineStringCoordinates(lineString),
+            Polygon polygon => BuildPolygonCoordinates(polygon),
+            MultiPoint multiPoint => BuildMultiPointCoordinates(multiPoint),
+            MultiLineString multiLineString => BuildMultiLineStringCoordinates(multiLineString),
+            MultiPolygon multiPolygon => BuildMultiPolygonCoordinates(multiPolygon),
+            _ => throw new ArgumentException($"Unsupported geometry type: {geometry.GeometryType}")
+        };
+    }
+
+    private static double[] BuildPointCoordinates(Point point)
+    {
+        var sequence = point.CoordinateSequence;
+        return BuildCoordinate(sequence, 0);
+    }
+
+    private static double[][] BuildLineStringCoordinates(LineString lineString)
+    {
+        var sequence = lineString.CoordinateSequence;
+        var coords = new double[sequence.Count][];
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            coords[i] = BuildCoordinate(sequence, i);
+        }
+
+        return coords;
+    }
+
+    private static double[][][] BuildPolygonCoordinates(Polygon polygon)
+    {
+        var rings = new List<double[][]>
+        {
+            BuildLineStringCoordinates(polygon.ExteriorRing)
+        };
+
+        for (var i = 0; i < polygon.NumInteriorRings; i++)
+        {
+            rings.Add(BuildLineStringCoordinates(polygon.GetInteriorRingN(i)));
+        }
+
+        return rings.ToArray();
+    }
+
+    private static double[][] BuildMultiPointCoordinates(MultiPoint multiPoint)
+    {
+        var coords = new double[multiPoint.NumGeometries][];
+        for (var i = 0; i < multiPoint.NumGeometries; i++)
+        {
+            coords[i] = BuildPointCoordinates((Point)multiPoint.GetGeometryN(i));
+        }
+
+        return coords;
+    }
+
+    private static double[][][] BuildMultiLineStringCoordinates(MultiLineString multiLineString)
+    {
+        var lines = new double[multiLineString.NumGeometries][][];
+        for (var i = 0; i < multiLineString.NumGeometries; i++)
+        {
+            lines[i] = BuildLineStringCoordinates((LineString)multiLineString.GetGeometryN(i));
+        }
+
+        return lines;
+    }
+
+    private static double[][][][] BuildMultiPolygonCoordinates(MultiPolygon multiPolygon)
+    {
+        var polygons = new double[multiPolygon.NumGeometries][][][];
+        for (var i = 0; i < multiPolygon.NumGeometries; i++)
+        {
+            polygons[i] = BuildPolygonCoordinates((Polygon)multiPolygon.GetGeometryN(i));
+        }
+
+        return polygons;
+    }
+
+    private static double[] BuildCoordinate(CoordinateSequence sequence, int index)
+    {
+        var values = new List<double>(4)
+        {
+            sequence.GetX(index),
+            sequence.GetY(index)
+        };
+
+        if (sequence.Dimension > 2)
+        {
+            var z = sequence.GetOrdinate(index, Ordinate.Z);
+            if (!double.IsNaN(z))
             {
-                Properties = new Dictionary<string, object>
-                {
-                    ["name"] = "EPSG:4326"
-                }
+                values.Add(z);
             }
+        }
+
+        if (sequence.Measures > 0)
+        {
+            var m = sequence.GetOrdinate(index, Ordinate.M);
+            if (!double.IsNaN(m))
+            {
+                values.Add(m);
+            }
+        }
+
+        return values.ToArray();
+    }
+
+    private static string MapGeometryType(Honua.Core.Features.Catalog.Domain.GeometryType geometryType)
+    {
+        return geometryType switch
+        {
+            Honua.Core.Features.Catalog.Domain.GeometryType.Point => "esriGeometryPoint",
+            Honua.Core.Features.Catalog.Domain.GeometryType.LineString => "esriGeometryPolyline",
+            Honua.Core.Features.Catalog.Domain.GeometryType.Polygon => "esriGeometryPolygon",
+            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => "esriGeometryMultipoint",
+            Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => "esriGeometryPolyline",
+            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "esriGeometryPolygon",
+            Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "esriGeometryPolygon",
+            Honua.Core.Features.Catalog.Domain.GeometryType.None => "esriGeometryNull",
+            _ => "esriGeometryPolygon"
         };
     }
 }

@@ -110,7 +110,7 @@ class TestBboxFiltering:
             f"/ogc/features/collections/{test_collection_id}/items",
             params={
                 "bbox": "-180,-90,180,90",
-                "filter": "id > 0",
+                "filter": "count > 0",
             },
         )
         assert response.status_code == 200
@@ -131,7 +131,7 @@ class TestSpatialPredicates:
         """S_INTERSECTS spatial predicate."""
         polygon = geometry_generator.polygon_simple()
         # CQL2 spatial function syntax
-        filter_expr = f"S_INTERSECTS(geom, {polygon.wkt})"
+        filter_expr = f"S_INTERSECTS(shape, {polygon.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
@@ -151,7 +151,7 @@ class TestSpatialPredicates:
     ):
         """S_CONTAINS spatial predicate."""
         polygon = geometry_generator.polygon_simple()
-        filter_expr = f"S_CONTAINS(geom, {polygon.wkt})"
+        filter_expr = f"S_CONTAINS(shape, {polygon.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
@@ -170,7 +170,7 @@ class TestSpatialPredicates:
     ):
         """S_WITHIN spatial predicate."""
         polygon = geometry_generator.polygon_simple()
-        filter_expr = f"S_WITHIN(geom, {polygon.wkt})"
+        filter_expr = f"S_WITHIN(shape, {polygon.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
@@ -189,7 +189,7 @@ class TestSpatialPredicates:
     ):
         """S_OVERLAPS spatial predicate."""
         polygon = geometry_generator.polygon_simple()
-        filter_expr = f"S_OVERLAPS(geom, {polygon.wkt})"
+        filter_expr = f"S_OVERLAPS(shape, {polygon.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
@@ -208,7 +208,7 @@ class TestSpatialPredicates:
     ):
         """S_TOUCHES spatial predicate."""
         polygon = geometry_generator.polygon_simple()
-        filter_expr = f"S_TOUCHES(geom, {polygon.wkt})"
+        filter_expr = f"S_TOUCHES(shape, {polygon.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
@@ -227,7 +227,7 @@ class TestSpatialPredicates:
     ):
         """S_CROSSES spatial predicate."""
         line = geometry_generator.linestring()
-        filter_expr = f"S_CROSSES(geom, {line.wkt})"
+        filter_expr = f"S_CROSSES(shape, {line.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",

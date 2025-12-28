@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Server.Tests.Infrastructure;
-using Xunit;
+using Microsoft.Extensions.ObjectPool;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -34,14 +37,16 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 
         // Create feature store with the isolated schema
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
-        _featureStore = new PostgresFeatureStore(connectionProvider, _schemaName);
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new PostgresFeatureStore.StringBuilderPooledObjectPolicy());
+        _featureStore = new PostgresFeatureStore(connectionProvider, stringBuilderPool, _schemaName);
 
         // Create test table structure
         await _fixture.ExecuteAsync("""
             CREATE TABLE features (
                 objectid bigserial PRIMARY KEY,
                 layer_id integer NOT NULL,
-                geometry bytea,
+                geometry geometry,
                 attributes jsonb NOT NULL DEFAULT '{}'::jsonb
             );
 
@@ -84,7 +89,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     public async Task CreateAsync_WithGeometry_StoresGeometry()
     {
         // Arrange
-        var geometry = new byte[] { 1, 2, 3, 4, 5 }; // Mock WKB data
+        var geometry = CreatePointWkb(-122.5, 37.5);
         var attributes = new Dictionary<string, object?> { ["name"] = "Geometry Feature" }.ToImmutableDictionary();
         var feature = Feature.Create(0, geometry, attributes);
 
@@ -95,6 +100,13 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.True(created.Id > 0);
         Assert.Equal(geometry, created.Geometry);
         Assert.Equal(attributes["name"], created.Attributes["name"]);
+    }
+
+    private static byte[] CreatePointWkb(double x, double y)
+    {
+        var point = new Point(x, y);
+        var writer = new WKBWriter();
+        return writer.Write(point);
     }
 
     [Fact]
@@ -150,7 +162,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         var feature = Feature.Create(99999, null, attributes);
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             _featureStore.UpdateAsync(TestLayerId, feature));
     }
 

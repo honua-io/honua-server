@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -198,7 +198,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         var attachment = Attachment.Create(99999, TestFeatureId, TestLayerId, "test.txt", "text/plain", 100, DateTime.UtcNow, "path", null);
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
             _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, attachment));
     }
 

@@ -63,7 +63,7 @@ class TestGenerateRenderer:
         """Generate class breaks renderer."""
         classification = {
             "type": "classBreaksDef",
-            "classificationField": "id",
+            "classificationField": "count",
             "classificationMethod": "esriClassifyNaturalBreaks",
             "breakCount": 5,
         }
@@ -92,7 +92,7 @@ class TestGenerateRenderer:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/generateRenderer",
             params={
                 "classificationDef": str(classification).replace("'", '"'),
-                "where": "id > 0",
+                "where": "count > 0",
                 "f": "json",
             },
         )

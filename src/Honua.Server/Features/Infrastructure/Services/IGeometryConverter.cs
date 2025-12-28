@@ -23,4 +23,12 @@ internal interface IGeometryConverter
     /// <returns>Geometry in GeoJSON format as a JSON object</returns>
     /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
     object? ConvertWkbToGeoJson(byte[] wkbGeometry);
+
+    /// <summary>
+    /// Converts Well-Known Binary (WKB) geometry to GeoJSON format using pooled memory for large geometries
+    /// </summary>
+    /// <param name="wkbGeometry">Geometry in WKB format as Memory&lt;byte&gt;</param>
+    /// <returns>Geometry in GeoJSON format as a JSON object</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    object? ConvertWkbToGeoJson(Memory<byte> wkbGeometry);
 }

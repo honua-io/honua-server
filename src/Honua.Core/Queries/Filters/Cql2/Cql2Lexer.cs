@@ -23,11 +23,18 @@ public sealed class Cql2Lexer
         { "OR", Cql2TokenType.Or },
         { "NOT", Cql2TokenType.Not },
         { "LIKE", Cql2TokenType.Like },
+        { "BETWEEN", Cql2TokenType.Between },
         { "IN", Cql2TokenType.In },
         { "IS", Cql2TokenType.IsNull }, // Will be handled specially for "IS NULL"
         { "NULL", Cql2TokenType.Null },
         { "TRUE", Cql2TokenType.Boolean },
         { "FALSE", Cql2TokenType.Boolean },
+        { "DIV", Cql2TokenType.Div },
+        { "CASEI", Cql2TokenType.Casei },
+        { "ACCENTI", Cql2TokenType.Accenti },
+        { "DATE", Cql2TokenType.Date },
+        { "TIMESTAMP", Cql2TokenType.Timestamp },
+        { "INTERVAL", Cql2TokenType.Interval },
 
         // Spatial predicates
         { "S_INTERSECTS", Cql2TokenType.S_Intersects },
@@ -38,6 +45,31 @@ public sealed class Cql2Lexer
         { "S_OVERLAPS", Cql2TokenType.S_Overlaps },
         { "S_DISJOINT", Cql2TokenType.S_Disjoint },
         { "S_EQUALS", Cql2TokenType.S_Equals },
+        { "S_DWITHIN", Cql2TokenType.S_DWithin },
+        { "S_BEYOND", Cql2TokenType.S_Beyond },
+
+        // Temporal predicates
+        { "T_AFTER", Cql2TokenType.T_After },
+        { "T_BEFORE", Cql2TokenType.T_Before },
+        { "T_CONTAINS", Cql2TokenType.T_Contains },
+        { "T_DISJOINT", Cql2TokenType.T_Disjoint },
+        { "T_DURING", Cql2TokenType.T_During },
+        { "T_EQUALS", Cql2TokenType.T_Equals },
+        { "T_FINISHEDBY", Cql2TokenType.T_FinishedBy },
+        { "T_FINISHES", Cql2TokenType.T_Finishes },
+        { "T_INTERSECTS", Cql2TokenType.T_Intersects },
+        { "T_MEETS", Cql2TokenType.T_Meets },
+        { "T_METBY", Cql2TokenType.T_MetBy },
+        { "T_OVERLAPPEDBY", Cql2TokenType.T_OverlappedBy },
+        { "T_OVERLAPS", Cql2TokenType.T_Overlaps },
+        { "T_STARTEDBY", Cql2TokenType.T_StartedBy },
+        { "T_STARTS", Cql2TokenType.T_Starts },
+
+        // Array predicates
+        { "A_EQUALS", Cql2TokenType.A_Equals },
+        { "A_CONTAINS", Cql2TokenType.A_Contains },
+        { "A_CONTAINEDBY", Cql2TokenType.A_ContainedBy },
+        { "A_OVERLAPS", Cql2TokenType.A_Overlaps },
 
         // Geometry types
         { "POINT", Cql2TokenType.Point },
@@ -46,7 +78,8 @@ public sealed class Cql2Lexer
         { "MULTIPOINT", Cql2TokenType.MultiPoint },
         { "MULTILINESTRING", Cql2TokenType.MultiLineString },
         { "MULTIPOLYGON", Cql2TokenType.MultiPolygon },
-        { "GEOMETRYCOLLECTION", Cql2TokenType.GeometryCollection }
+        { "GEOMETRYCOLLECTION", Cql2TokenType.GeometryCollection },
+        { "BBOX", Cql2TokenType.Bbox }
     };
 
     public Cql2Lexer(string input)
@@ -87,6 +120,36 @@ public sealed class Cql2Lexer
 
                 case ',':
                     _tokens.Add(Cql2Token.Create(Cql2TokenType.Comma, ",", _position));
+                    _position++;
+                    break;
+
+                case '+':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.Plus, "+", _position));
+                    _position++;
+                    break;
+
+                case '-':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.Minus, "-", _position));
+                    _position++;
+                    break;
+
+                case '*':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.Star, "*", _position));
+                    _position++;
+                    break;
+
+                case '/':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.Slash, "/", _position));
+                    _position++;
+                    break;
+
+                case '%':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.Percent, "%", _position));
+                    _position++;
+                    break;
+
+                case '^':
+                    _tokens.Add(Cql2Token.Create(Cql2TokenType.Caret, "^", _position));
                     _position++;
                     break;
 
@@ -139,11 +202,11 @@ public sealed class Cql2Lexer
                     {
                         ReadNumericLiteral();
                     }
-                    else if (ch == '-' && (char.IsDigit(PeekNext()) || (PeekNext() == '.' && PeekNext(1) != '\0' && char.IsDigit(PeekNext(1)))))
-                    {
-                        ReadNumericLiteral();
-                    }
                     else if (char.IsLetter(ch) || ch == '_')
+                    {
+                        ReadIdentifierOrKeyword();
+                    }
+                    else if (ch == ':')
                     {
                         ReadIdentifierOrKeyword();
                     }
@@ -170,11 +233,6 @@ public sealed class Cql2Lexer
     private char PeekNext()
     {
         return _position + 1 < _input.Length ? _input[_position + 1] : '\0';
-    }
-
-    private char PeekNext(int offset)
-    {
-        return _position + offset < _input.Length ? _input[_position + offset] : '\0';
     }
 
     private void ReadStringLiteral()
@@ -239,12 +297,6 @@ public sealed class Cql2Lexer
     {
         var start = _position;
 
-        // Handle optional negative sign
-        if (_position < _input.Length && _input[_position] == '-')
-        {
-            _position++;
-        }
-
         while (_position < _input.Length &&
                (char.IsDigit(_input[_position]) || _input[_position] == '.'))
         {
@@ -260,7 +312,10 @@ public sealed class Cql2Lexer
         var start = _position;
 
         while (_position < _input.Length &&
-               (char.IsLetterOrDigit(_input[_position]) || _input[_position] == '_'))
+               (char.IsLetterOrDigit(_input[_position]) ||
+                _input[_position] == '_' ||
+                _input[_position] == ':' ||
+                _input[_position] == '.'))
         {
             _position++;
         }

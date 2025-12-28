@@ -1,0 +1,44 @@
+version: 1
+srid: 4326
+profiles:
+  core:
+    collections: [places]
+  ogc:
+    collections: [places, roads]
+collections:
+  - name: places
+    table: places
+    geometry_column: geom
+    geometry_type: Point
+    geography: true
+    properties:
+      name: text
+      category: text
+  - name: roads
+    table: roads
+    geometry_column: geom
+    geometry_type: LineString
+    properties:
+      name: text
+      lanes: int
+features:
+  - collection: places
+    id: 1
+    geometry:
+      wkt: "POINT(-157.8583 21.3069)"
+    properties:
+      name: Honolulu
+      category: city
+  - collection: roads
+    id: 10
+    geometry:
+      geojson:
+        type: LineString
+        coordinates:
+          - [-157.9, 21.3]
+          - [-157.7, 21.35]
+    properties:
+      name: H1
+      lanes: 3
+sql:
+  - "CREATE EXTENSION IF NOT EXISTS unaccent;"

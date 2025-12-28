@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Postgres.Features.FeatureStore;
@@ -16,6 +17,7 @@ namespace Honua.Postgres.Features.FeatureStore;
     WriteIndented = false)]
 [JsonSerializable(typeof(ImmutableDictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(List<object?>))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]
@@ -24,6 +26,7 @@ namespace Honua.Postgres.Features.FeatureStore;
 [JsonSerializable(typeof(float))]
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(JsonElement))]
 internal partial class FeatureAttributesJsonContext : JsonSerializerContext
 {
 }

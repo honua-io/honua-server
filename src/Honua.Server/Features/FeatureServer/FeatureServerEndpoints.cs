@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -72,6 +73,16 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         // .Produces<QueryResponse>(200, "application/json")
+        // .Produces(400)
+        // .Produces(404);
+
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer", HandleGenerateRenderer)
+            .WithDisplayName("Generate Renderer")
+            .WithName("GenerateRenderer")
+            .WithSummary("Generate a renderer for a FeatureServer layer")
+            .WithDescription("Generates a renderer definition based on classification parameters")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
         // .Produces(400)
         // .Produces(404);
 
@@ -209,6 +220,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        IFeatureStore featureStore = context.RequestServices.GetRequiredService<IFeatureStore>();
         IOptions<LimitsOptions> limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
         ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
@@ -217,6 +229,7 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             catalog,
+            featureStore,
             limitsOptions.Value.Query,
             logger,
             GetTimeoutAwareCancellationToken(context));
@@ -231,6 +244,7 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         ILayerCatalog catalog,
+        IFeatureStore featureStore,
         QueryLimits limits,
         ILogger logger,
         CancellationToken cancellationToken)
@@ -255,7 +269,18 @@ internal static partial class FeatureServerEndpoints
                 return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
-            LayerResponse response = MapLayerToResponse(layer, limits);
+            FeatureExtent? extent = layer.Extent;
+            if (!extent.HasValue)
+            {
+                extent = await featureStore.GetExtentAsync(layerId, cancellationToken: cancellationToken);
+            }
+
+            if (!extent.HasValue)
+            {
+                extent = FeatureExtent.Create(-180, -90, 180, 90, layer.SpatialReference.Srid);
+            }
+
+            LayerResponse response = MapLayerToResponse(layer, limits, extent);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layerId, layer.Name);
 
@@ -292,10 +317,12 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Maps LayerDefinition to LayerResponse
     /// </summary>
-    private static LayerResponse MapLayerToResponse(LayerDefinition layer, QueryLimits queryLimits)
+    private static LayerResponse MapLayerToResponse(LayerDefinition layer, QueryLimits queryLimits, FeatureExtent? extent)
     {
         string? displayField = layer.AttributeFields.FirstOrDefault()?.Name;
         string objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
+
+        var effectiveExtent = extent ?? layer.Extent;
 
         return new LayerResponse
         {
@@ -305,14 +332,14 @@ internal static partial class FeatureServerEndpoints
             GeometryType = MapGeometryType(layer.GeometryType),
             SpatialReference = MapSpatialReference(layer.SpatialReference),
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
-            Extent = layer.Extent.HasValue ? MapExtent(layer.Extent.Value) : null,
+            Extent = effectiveExtent.HasValue ? MapExtent(effectiveExtent.Value) : null,
             MinScale = layer.MinScale,
             MaxScale = layer.MaxScale,
             DefaultVisibility = layer.DefaultVisibility,
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
-            HasAttachments = false // TODO: Support attachments in future phase
+            HasAttachments = true // Attachments are supported (implemented in Phase 2)
         };
     }
 
@@ -371,7 +398,7 @@ internal static partial class FeatureServerEndpoints
         {
             Name = field.Name,
             Type = geoServicesType,
-            Alias = field.Name, // TODO: Support field aliases
+            Alias = field.DisplayName, // Use DisplayName which provides alias functionality
             SqlType = sqlType,
             Length = length,
             Nullable = field.Nullable,
@@ -479,17 +506,10 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
-        QueryParameters? queryParams;
-        try
+        var (queryParams, parseError) = await TryParseQueryParametersAsync(context);
+        if (parseError is not null)
         {
-            queryParams = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                FeatureServerJsonContext.Default.QueryParameters,
-                context.RequestAborted);
-        }
-        catch (JsonException)
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Invalid JSON payload");
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, parseError);
             return;
         }
 
@@ -510,18 +530,170 @@ internal static partial class FeatureServerEndpoints
         await result.ExecuteAsync(context);
     }
 
+    private static async Task HandleGenerateRenderer(HttpContext context)
+    {
+        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
+            return;
+
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return;
+        }
+
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
+            return;
+        }
+
+        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+        var service = await catalog.GetServiceAsync(serviceId, cancellationToken);
+        if (service == null)
+        {
+            await GeoServicesErrorHelpers.CreateNotFoundError($"Service '{serviceId}' not found")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        if (service.GetLayer(layerId) == null)
+        {
+            await GeoServicesErrorHelpers.CreateNotFoundError(
+                $"Layer {layerId} not found in service '{serviceId}'").ExecuteAsync(context);
+            return;
+        }
+
+        if (!context.Request.Query.TryGetValue("classificationDef", out var classificationDef) ||
+            StringValues.IsNullOrEmpty(classificationDef))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "classificationDef is required");
+            return;
+        }
+
+        try
+        {
+            _ = JsonDocument.Parse(classificationDef.ToString());
+        }
+        catch (JsonException)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "classificationDef must be valid JSON");
+            return;
+        }
+
+        await GeoServicesErrorHelpers.CreateBadRequestError("generateRenderer is not implemented")
+            .ExecuteAsync(context);
+    }
+
+    private static async Task<(QueryParameters? Parameters, string? Error)> TryParseQueryParametersAsync(HttpContext context)
+    {
+        context.Request.EnableBuffering();
+
+        if (IsFormContentType(context.Request))
+        {
+            IFormCollection form;
+            try
+            {
+                form = await context.Request.ReadFormAsync(context.RequestAborted);
+            }
+            catch (InvalidDataException)
+            {
+                return (null, "Invalid form payload");
+            }
+
+            if (form.Count > 0)
+            {
+                var formValues = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in form)
+                {
+                    formValues[entry.Key] = entry.Value;
+                }
+
+                if (!TryBuildQueryParameters(new QueryCollection(formValues), out var queryParams, out var formError))
+                {
+                    return (null, formError);
+                }
+
+                return (queryParams, null);
+            }
+
+            if (context.Request.Body.CanSeek)
+            {
+                context.Request.Body.Position = 0;
+            }
+        }
+
+        string body;
+        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true))
+        {
+            body = await reader.ReadToEndAsync(context.RequestAborted);
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return (null, "Request body is required");
+        }
+
+        var trimmedBody = body.TrimStart();
+        if (trimmedBody.StartsWith('{') || trimmedBody.StartsWith('['))
+        {
+            try
+            {
+                var queryParams = JsonSerializer.Deserialize(
+                    trimmedBody,
+                    FeatureServerJsonContext.Default.QueryParameters);
+                return (queryParams, queryParams == null ? "Request body is required" : null);
+            }
+            catch (JsonException)
+            {
+                return (null, "Invalid JSON payload");
+            }
+        }
+
+        var queryString = trimmedBody.StartsWith('?') ? trimmedBody : $"?{trimmedBody}";
+        var values = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(queryString);
+        if (!TryBuildQueryParameters(new QueryCollection(values), out var parsedParams, out var error))
+        {
+            return (null, error);
+        }
+
+        return (parsedParams, null);
+    }
+
 
     private static bool TryBuildQueryParameters(IQueryCollection query, out QueryParameters queryParams, out string? error)
     {
         string? where = TryGetQueryValue(query, "where");
         string? outFields = TryGetQueryValue(query, "outFields");
+        string? orderByFields = TryGetQueryValue(query, "orderByFields");
         string? geometry = TryGetQueryValue(query, "geometry");
+        string? inSr = TryGetQueryValue(query, "inSR");
+        string? outSr = TryGetQueryValue(query, "outSR");
         string? geometryType = TryGetQueryValue(query, "geometryType");
         string? spatialRel = TryGetQueryValue(query, "spatialRel");
         string? units = TryGetQueryValue(query, "units");
         string format = TryGetQueryValue(query, "f") ?? "json";
 
         if (!TryParseQueryBool(query, "returnGeometry", true, out bool returnGeometry, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnIdsOnly", false, out bool returnIdsOnly, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnCountOnly", false, out bool returnCountOnly, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnExtentOnly", false, out bool returnExtentOnly, out error))
         {
             queryParams = new QueryParameters();
             return false;
@@ -561,13 +733,19 @@ internal static partial class FeatureServerEndpoints
         {
             Where = where,
             OutFields = outFields,
+            OrderByFields = orderByFields,
             ReturnGeometry = returnGeometry,
+            ReturnIdsOnly = returnIdsOnly,
+            ReturnCountOnly = returnCountOnly,
+            ReturnExtentOnly = returnExtentOnly,
             ReturnDistance = returnDistance,
             F = format,
             ResultOffset = resultOffset,
             ResultRecordCount = resultRecordCount,
             NearestCount = nearestCount,
             Geometry = geometry,
+            InSr = inSr,
+            OutSr = outSr,
             GeometryType = geometryType,
             SpatialRel = spatialRel,
             Distance = distance,
@@ -671,17 +849,10 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
-        ApplyEditsRequest? editsRequest;
-        try
+        var (editsRequest, parseError) = await TryParseApplyEditsRequestAsync(context);
+        if (parseError is not null)
         {
-            editsRequest = await JsonSerializer.DeserializeAsync(
-                context.Request.Body,
-                FeatureServerJsonContext.Default.ApplyEditsRequest,
-                context.RequestAborted);
-        }
-        catch (JsonException)
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Invalid JSON payload");
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, parseError);
             return;
         }
 
@@ -702,6 +873,323 @@ internal static partial class FeatureServerEndpoints
             GetTimeoutAwareCancellationToken(context));
 
         await result.ExecuteAsync(context);
+    }
+
+    private static async Task<(ApplyEditsRequest? Request, string? Error)> TryParseApplyEditsRequestAsync(
+        HttpContext context)
+    {
+        string? error;
+
+        context.Request.EnableBuffering();
+
+        if (IsFormContentType(context.Request))
+        {
+            IFormCollection form;
+            try
+            {
+                form = await context.Request.ReadFormAsync(context.RequestAborted);
+            }
+            catch (InvalidDataException)
+            {
+                return (null, "Invalid form payload");
+            }
+
+            if (form.Count > 0 && HasApplyEditsKeys(form))
+            {
+                if (!TryParseApplyEditsForm(form, out var request, out error))
+                {
+                    return (null, error);
+                }
+
+                return (request, null);
+            }
+
+            if (context.Request.Body.CanSeek)
+            {
+                context.Request.Body.Position = 0;
+            }
+        }
+
+        string body;
+        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true))
+        {
+            body = await reader.ReadToEndAsync(context.RequestAborted);
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return (null, null);
+        }
+
+        var trimmedBody = body.TrimStart();
+        if (!trimmedBody.StartsWith('{') && !trimmedBody.StartsWith('['))
+        {
+            var queryString = trimmedBody.StartsWith('?') ? trimmedBody : $"?{trimmedBody}";
+            var values = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(queryString);
+            if (values.Count > 0)
+            {
+                var form = new FormCollection(values);
+                if (HasApplyEditsKeys(form))
+                {
+                    if (!TryParseApplyEditsForm(form, out var request, out error))
+                    {
+                        return (null, error);
+                    }
+
+                    return (request, null);
+                }
+            }
+        }
+
+        try
+        {
+            var request = JsonSerializer.Deserialize(
+                body,
+                FeatureServerJsonContext.Default.ApplyEditsRequest);
+            return (request, null);
+        }
+        catch (JsonException)
+        {
+            return (null, "Invalid JSON payload");
+        }
+    }
+
+    private static bool IsFormContentType(HttpRequest request)
+    {
+        if (request.HasFormContentType)
+        {
+            return true;
+        }
+
+        var contentType = request.ContentType;
+        return !string.IsNullOrWhiteSpace(contentType) &&
+               contentType.Contains("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasApplyEditsKeys(IFormCollection form)
+        => form.ContainsKey("adds") || form.ContainsKey("updates") || form.ContainsKey("deletes") ||
+           form.ContainsKey("rollbackOnFailure") || form.ContainsKey("useGlobalIds") || form.ContainsKey("f");
+
+    private static bool TryParseApplyEditsForm(
+        IFormCollection form,
+        out ApplyEditsRequest? request,
+        out string? error)
+    {
+        request = null;
+        error = null;
+
+        if (!TryParseGeoServicesFeatures(form, "adds", out var adds, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseGeoServicesFeatures(form, "updates", out var updates, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseDeleteIds(form, "deletes", out var deletes, out error))
+        {
+            return false;
+        }
+
+        var rollbackOnFailure = false;
+        if (!TryParseFormBool(form, "rollbackOnFailure", out rollbackOnFailure, out error))
+        {
+            return false;
+        }
+
+        var useGlobalIds = false;
+        if (!TryParseFormBool(form, "useGlobalIds", out useGlobalIds, out error))
+        {
+            return false;
+        }
+
+        request = new ApplyEditsRequest
+        {
+            Adds = adds,
+            Updates = updates,
+            Deletes = deletes,
+            RollbackOnFailure = rollbackOnFailure,
+            UseGlobalIds = useGlobalIds
+        };
+
+        return true;
+    }
+
+    private static bool TryParseGeoServicesFeatures(
+        IFormCollection form,
+        string key,
+        out GeoServicesFeature[]? features,
+        out string? error)
+    {
+        features = null;
+        error = null;
+
+        if (!form.TryGetValue(key, out var rawValue))
+        {
+            return true;
+        }
+
+        var raw = rawValue.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        var trimmed = raw.Trim();
+        try
+        {
+            if (trimmed.StartsWith('['))
+            {
+                features = JsonSerializer.Deserialize(trimmed, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
+            }
+            else
+            {
+                var feature = JsonSerializer.Deserialize(trimmed, FeatureServerJsonContext.Default.GeoServicesFeature);
+                features = feature == null ? null : new[] { feature };
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = $"Invalid {key} JSON payload: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool TryParseDeleteIds(
+        IFormCollection form,
+        string key,
+        out object[]? deletes,
+        out string? error)
+    {
+        deletes = null;
+        error = null;
+
+        if (!form.TryGetValue(key, out var rawValue))
+        {
+            return true;
+        }
+
+        var raw = rawValue.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        var trimmed = raw.Trim();
+        if (trimmed.StartsWith('['))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(trimmed);
+                if (document.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    error = $"{key} must be a JSON array";
+                    return false;
+                }
+
+                var values = new List<object>();
+                foreach (var element in document.RootElement.EnumerateArray())
+                {
+                    if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var longValue))
+                    {
+                        values.Add(longValue);
+                        continue;
+                    }
+
+                    if (element.ValueKind == JsonValueKind.String)
+                    {
+                        var text = element.GetString();
+                        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                        {
+                            values.Add(parsed);
+                        }
+                        else if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            values.Add(text!);
+                        }
+                        else
+                        {
+                            error = $"{key} contains an empty value";
+                            return false;
+                        }
+                        continue;
+                    }
+
+                    error = $"{key} contains an unsupported value";
+                    return false;
+                }
+
+                deletes = values.ToArray();
+                return true;
+            }
+            catch (JsonException ex)
+            {
+                error = $"Invalid {key} JSON payload: {ex.Message}";
+                return false;
+            }
+        }
+
+        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return true;
+        }
+
+        var parsedValues = new object[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (long.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                parsedValues[i] = parsed;
+            }
+            else
+            {
+                parsedValues[i] = parts[i];
+            }
+        }
+
+        deletes = parsedValues;
+        return true;
+    }
+
+    private static bool TryParseFormBool(
+        IFormCollection form,
+        string key,
+        out bool value,
+        out string? error)
+    {
+        value = false;
+        error = null;
+
+        if (!form.TryGetValue(key, out var rawValue))
+        {
+            return true;
+        }
+
+        var raw = rawValue.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (bool.TryParse(raw, out var parsed))
+        {
+            value = parsed;
+            return true;
+        }
+
+        if (raw is "1" or "0")
+        {
+            value = raw == "1";
+            return true;
+        }
+
+        error = $"{key} must be a boolean.";
+        return false;
     }
 
     /// <summary>
