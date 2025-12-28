@@ -48,6 +48,11 @@ public sealed class LimitsOptions
     public ConnectionLimits Connections { get; init; } = new();
 
     /// <summary>
+    /// File import operation limits.
+    /// </summary>
+    public ImportLimits Imports { get; init; } = new();
+
+    /// <summary>
     /// Geometry validation options for security and data quality enforcement.
     /// </summary>
     public GeometryValidationOptions Validation { get; init; } = new();
@@ -257,6 +262,49 @@ public sealed class ConnectionLimits
     /// Range: 10 seconds to 10 minutes.
     /// </summary>
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(120);
+}
+
+/// <summary>
+/// File import operation limits.
+/// Applied to geospatial file import endpoints.
+/// </summary>
+public sealed class ImportLimits
+{
+    /// <summary>
+    /// Maximum file size for preview operations in bytes.
+    /// Range: 1MB to 50MB.
+    /// </summary>
+    [Range(1048576, 52428800, ErrorMessage = "MaxPreviewSize must be between 1MB and 50MB")]
+    public long MaxPreviewSize { get; init; } = 10 * 1024 * 1024; // 10MB
+
+    /// <summary>
+    /// Maximum file size for synchronous import operations in bytes.
+    /// Files larger than this trigger background job processing.
+    /// Range: 10MB to 500MB.
+    /// </summary>
+    [Range(10485760, 524288000, ErrorMessage = "MaxSyncImportSize must be between 10MB and 500MB")]
+    public long MaxSyncImportSize { get; init; } = 50 * 1024 * 1024; // 50MB
+
+    /// <summary>
+    /// Maximum file size for any import operation in bytes.
+    /// Range: 50MB to 5GB.
+    /// </summary>
+    [Range(52428800, 5368709120, ErrorMessage = "MaxImportSize must be between 50MB and 5GB")]
+    public long MaxImportSize { get; init; } = 500 * 1024 * 1024; // 500MB
+
+    /// <summary>
+    /// Maximum number of features to return in a preview.
+    /// Range: 10-1,000.
+    /// </summary>
+    [Range(10, 1000, ErrorMessage = "MaxPreviewFeatures must be between 10 and 1,000")]
+    public int MaxPreviewFeatures { get; init; } = 100;
+
+    /// <summary>
+    /// Batch size for feature insertion during import.
+    /// Range: 100-10,000.
+    /// </summary>
+    [Range(100, 10000, ErrorMessage = "BatchSize must be between 100 and 10,000")]
+    public int BatchSize { get; init; } = 1000;
 }
 
 /// <summary>

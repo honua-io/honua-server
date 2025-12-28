@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Import;
 
@@ -131,8 +133,9 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        // Check file size (10MB limit for preview)
-        const long maxPreviewSize = 10 * 1024 * 1024;
+        // Check file size against configured preview limit
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var maxPreviewSize = limitsOptions.Value.Imports.MaxPreviewSize;
         if (file.Length > maxPreviewSize)
         {
             await WriteErrorAsync(context,
@@ -286,7 +289,8 @@ internal static partial class ImportEndpoints
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, tableName, ex);
-            await WriteErrorAsync(context, "Import failed: " + ex.Message, StatusCodes.Status400BadRequest);
+            // Provide generic error message - details logged for debugging
+            await WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {

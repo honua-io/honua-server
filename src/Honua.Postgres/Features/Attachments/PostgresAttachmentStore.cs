@@ -157,8 +157,9 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         // Delete the physical file if database record was deleted
         if (deletedRows > 0)
         {
-            var fullPath = Path.Combine(_storageBasePath, attachment.Value.StoragePath);
-            if (File.Exists(fullPath))
+            // Validate path stays within storage base (path traversal prevention)
+            var fullPath = Path.GetFullPath(Path.Combine(_storageBasePath, attachment.Value.StoragePath));
+            if (fullPath.StartsWith(_storageBasePath, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
             {
                 File.Delete(fullPath);
             }
@@ -170,10 +171,20 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
 
     public async Task<Attachment> UploadAsync(int layerId, long featureId, string filename, string contentType, Stream content, string? keywords = null, CancellationToken cancellationToken = default)
     {
-        // Generate storage path
-        var fileExtension = Path.GetExtension(filename);
+        // Sanitize filename to prevent path traversal attacks
+        var sanitizedFilename = SanitizeFileName(filename);
+        var fileExtension = Path.GetExtension(sanitizedFilename);
+
+        // Generate storage path using only validated components
+        // Using GUID ensures no user-controlled path components
         var storagePath = $"{layerId}/{featureId}/{Guid.NewGuid()}{fileExtension}";
-        var fullPath = Path.Combine(_storageBasePath, storagePath);
+
+        // Validate that the full path stays within the storage base
+        var fullPath = Path.GetFullPath(Path.Combine(_storageBasePath, storagePath));
+        if (!fullPath.StartsWith(_storageBasePath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Path traversal attack detected");
+        }
 
         // Ensure directory exists
         var directory = Path.GetDirectoryName(fullPath)!;
@@ -234,7 +245,14 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             return null;
         }
 
-        var fullPath = Path.Combine(_storageBasePath, attachment.Value.StoragePath);
+        // Validate that the storage path stays within the storage base (path traversal prevention)
+        var fullPath = Path.GetFullPath(Path.Combine(_storageBasePath, attachment.Value.StoragePath));
+        if (!fullPath.StartsWith(_storageBasePath, StringComparison.OrdinalIgnoreCase))
+        {
+            // Log this as a security issue - storage path in DB may have been tampered with
+            throw new InvalidOperationException("Invalid storage path detected");
+        }
+
         if (!File.Exists(fullPath))
         {
             return null;
@@ -248,6 +266,48 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             Options = FileOptions.Asynchronous | FileOptions.SequentialScan
         });
         return AttachmentContent.Create(attachment.Value, fileStream);
+    }
+
+    /// <summary>
+    /// Sanitizes a filename to prevent path traversal and other security issues.
+    /// </summary>
+    private static string SanitizeFileName(string filename)
+    {
+        if (string.IsNullOrWhiteSpace(filename))
+        {
+            return "unnamed_file";
+        }
+
+        // Remove null bytes and control characters
+        var cleanedName = new string(filename.Where(c => c >= 32 && c != 127).ToArray());
+
+        // Get just the filename, not any path components
+        var baseName = Path.GetFileName(cleanedName);
+
+        // Remove dangerous characters
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = new string(baseName
+            .Where(c => !invalidChars.Contains(c) && c != '<' && c != '>' && c != '"' && c != '\'')
+            .ToArray());
+
+        // Collapse path traversal patterns
+        while (sanitized.Contains("..", StringComparison.Ordinal))
+        {
+            sanitized = sanitized.Replace("..", ".", StringComparison.Ordinal);
+        }
+
+        // Trim leading/trailing dots
+        sanitized = sanitized.Trim('.');
+
+        // Ensure filename is not too long (preserve extension)
+        if (sanitized.Length > 200)
+        {
+            var extension = Path.GetExtension(sanitized);
+            var nameWithoutExtension = Path.GetFileNameWithoutExtension(sanitized);
+            sanitized = nameWithoutExtension[..Math.Min(200 - extension.Length, nameWithoutExtension.Length)] + extension;
+        }
+
+        return string.IsNullOrWhiteSpace(sanitized) ? "sanitized_file" : sanitized;
     }
 
     private static async Task<Attachment> ReadAttachmentAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)

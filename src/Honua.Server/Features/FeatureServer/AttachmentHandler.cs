@@ -5,8 +5,10 @@ using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Security;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -56,7 +58,7 @@ internal static partial class AttachmentHandler
     }
 
     /// <summary>
-    /// Adds an attachment to a feature
+    /// Adds an attachment to a feature with comprehensive security validation.
     /// </summary>
     public static async Task<IResult> AddAttachmentAsync(
         int layerId,
@@ -72,18 +74,33 @@ internal static partial class AttachmentHandler
         {
             LogAddAttachment(logger, layerId, featureId, file.FileName);
 
-            // Validate file size
+            // Security Layer 1: Validate file name for path traversal and dangerous patterns
+            var fileNameValidation = FileUploadSecurity.ValidateFileName(file.FileName);
+            if (!fileNameValidation.IsValid)
+            {
+                LogSecurityValidationFailed(logger, layerId, featureId, "filename", fileNameValidation.ErrorMessage);
+                return GeoServicesErrorHelpers.CreateBadRequestError("Invalid file name");
+            }
+
+            // Security Layer 2: Validate file size against configured limits
             if (file.Length > limits.MaxAttachmentSize)
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
-                    $"File size ({file.Length:N0} bytes) exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
+                    $"File size exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
             }
 
-            // Validate MIME type
+            // Security Layer 3: Validate MIME type against allowed types
             if (!IsAllowedMimeType(file.ContentType, limits.AllowedMimeTypes))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
-                    $"File type '{file.ContentType}' is not allowed");
+                return GeoServicesErrorHelpers.CreateBadRequestError("File type is not allowed");
+            }
+
+            // Security Layer 4: Validate file content for malicious signatures
+            var contentValidation = await FileUploadSecurity.ValidateFileContentAsync(file, cancellationToken);
+            if (!contentValidation.IsValid)
+            {
+                LogSecurityValidationFailed(logger, layerId, featureId, "content", contentValidation.ErrorMessage);
+                return GeoServicesErrorHelpers.CreateBadRequestError("File content validation failed");
             }
 
             // Check if feature already has maximum number of attachments
@@ -102,12 +119,15 @@ internal static partial class AttachmentHandler
                     $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
             }
 
+            // Sanitize filename before storage
+            var sanitizedFilename = FileUploadSecurity.SanitizeFileName(file.FileName);
+
             // Upload the attachment
             await using var stream = file.OpenReadStream();
             var attachment = await attachmentStore.UploadAsync(
                 layerId,
                 featureId,
-                file.FileName,
+                sanitizedFilename,
                 file.ContentType,
                 stream,
                 keywords,
@@ -355,6 +375,9 @@ internal static partial class AttachmentHandler
 
     [LoggerMessage(EventId = 2014, Level = LogLevel.Error, Message = "Failed to download attachment {AttachmentId} from layer {LayerId}, feature {FeatureId}")]
     private static partial void LogDownloadAttachmentError(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId, Exception ex);
+
+    [LoggerMessage(EventId = 2015, Level = LogLevel.Warning, Message = "Security validation failed for {ValidationType} on layer {LayerId}, feature {FeatureId}: {Reason}")]
+    private static partial void LogSecurityValidationFailed(ILogger<AttachmentOperations> logger, int layerId, long featureId, string validationType, string? reason);
 
     #endregion
 }
