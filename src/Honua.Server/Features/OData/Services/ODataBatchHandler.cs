@@ -18,7 +18,7 @@ internal sealed class ODataBatchLog;
 /// <summary>
 /// Handles OData v4 $batch operations with support for atomicity groups.
 /// </summary>
-internal sealed class ODataBatchHandler
+internal sealed partial class ODataBatchHandler
 {
     private readonly ILayerCatalog _layerCatalog;
     private readonly IFeatureStore _featureStore;
@@ -243,7 +243,7 @@ internal sealed class ODataBatchHandler
                     if (createIndex < creates.Count)
                     {
                         var (requestId, _, _) = creates[createIndex++];
-                        if (createResult.Success && createResult.ObjectId.HasValue)
+                        if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
                             var createdFeature = await _featureStore.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);
                             responses.Add(CreateSuccessResponse(
@@ -258,7 +258,7 @@ internal sealed class ODataBatchHandler
                         }
                         else
                         {
-                            responses.Add(CreateErrorResponse(requestId, 400, "CreateFailed", createResult.Error ?? "Create operation failed."));
+                            responses.Add(CreateErrorResponse(requestId, 400, "CreateFailed", createResult.ErrorMessage ?? "Create operation failed."));
                         }
                     }
                 }
@@ -268,7 +268,7 @@ internal sealed class ODataBatchHandler
                     if (updateIndex < updates.Count)
                     {
                         var (requestId, _, objectId, _) = updates[updateIndex++];
-                        if (updateResult.Success)
+                        if (updateResult.IsSuccess)
                         {
                             var updatedFeature = await _featureStore.GetAsync(layerId, objectId, cancellationToken);
                             responses.Add(CreateSuccessResponse(
@@ -278,7 +278,7 @@ internal sealed class ODataBatchHandler
                         }
                         else
                         {
-                            responses.Add(CreateErrorResponse(requestId, 400, "UpdateFailed", updateResult.Error ?? "Update operation failed."));
+                            responses.Add(CreateErrorResponse(requestId, 400, "UpdateFailed", updateResult.ErrorMessage ?? "Update operation failed."));
                         }
                     }
                 }
@@ -288,13 +288,13 @@ internal sealed class ODataBatchHandler
                     if (deleteIndex < deletes.Count)
                     {
                         var (requestId, _, _) = deletes[deleteIndex++];
-                        if (deleteResult.Success)
+                        if (deleteResult.IsSuccess)
                         {
                             responses.Add(CreateSuccessResponse(requestId, 204, null));
                         }
                         else
                         {
-                            responses.Add(CreateErrorResponse(requestId, 400, "DeleteFailed", deleteResult.Error ?? "Delete operation failed."));
+                            responses.Add(CreateErrorResponse(requestId, 400, "DeleteFailed", deleteResult.ErrorMessage ?? "Delete operation failed."));
                         }
                     }
                 }
