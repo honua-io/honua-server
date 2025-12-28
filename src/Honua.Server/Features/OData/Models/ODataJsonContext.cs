@@ -33,7 +33,22 @@ namespace Honua.Server.Features.OData.Models;
 [JsonSerializable(typeof(object[]))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(QueryParameters))]
+// Batch operation types
+[JsonSerializable(typeof(ODataBatchRequest))]
+[JsonSerializable(typeof(ODataBatchRequestItem))]
+[JsonSerializable(typeof(ODataBatchRequestItem[]))]
+[JsonSerializable(typeof(ODataBatchResponse))]
+[JsonSerializable(typeof(ODataBatchResponseItem))]
+[JsonSerializable(typeof(ODataBatchResponseItem[]))]
+// Aggregation types
+[JsonSerializable(typeof(ODataAggregationResult))]
+[JsonSerializable(typeof(AggregationGroup))]
+[JsonSerializable(typeof(AggregationGroup[]))]
+// Expanded/search result types
+[JsonSerializable(typeof(ODataExpandedResponse))]
+[JsonSerializable(typeof(ODataSearchResult))]
 internal partial class ODataJsonContext : JsonSerializerContext
 {
 }

@@ -64,6 +64,12 @@ public static class Operations
     public const string CqlFilter = "CqlFilter";
     public const string ODataFilter = "ODataFilter";
 
+    // OData v4 Advanced Operations
+    public const string ODataBatch = "ODataBatch";
+    public const string ODataApply = "ODataApply";
+    public const string ODataSearch = "ODataSearch";
+    public const string ODataExpand = "ODataExpand";
+
     // Attachment Operations
     public const string QueryAttachments = "QueryAttachments";
     public const string AddAttachment = "AddAttachment";
