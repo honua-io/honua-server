@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using Honua.Server.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Primitives;
 using Serilog.Context;
+using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
 
@@ -46,7 +46,7 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         using (LogContext.PushProperty(CorrelationIdLogProperty, correlationId))
         {
             // Log correlation ID establishment for debugging (verbose level)
-            Log.CorrelationIdEstablished(_logger, correlationId, context.Request.Path);
+            InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, context.Request.Path);
 
             // Continue to next middleware
             await _next(context);

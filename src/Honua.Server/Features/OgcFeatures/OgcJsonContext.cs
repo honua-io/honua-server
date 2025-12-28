@@ -32,6 +32,9 @@ namespace Honua.Server.Features.OgcFeatures;
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(QueryablesSchema))]
+[JsonSerializable(typeof(JsonSchemaProperty))]
+[JsonSerializable(typeof(ImmutableDictionary<string, JsonSchemaProperty>))]
 internal sealed partial class OgcJsonContext : JsonSerializerContext
 {
 }

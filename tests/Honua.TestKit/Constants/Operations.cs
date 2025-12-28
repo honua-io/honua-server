@@ -30,13 +30,30 @@ public static class Operations
     public const string GetMetadata = "GetMetadata";
     public const string GetLayerInfo = "GetLayerInfo";
     public const string GetServiceInfo = "GetServiceInfo";
+    public const string Metadata = "Metadata";
 
     // Admin Operations
     public const string TableDiscovery = "TableDiscovery";
 
     // Health Operations
+    public const string HealthCheck = "HealthCheck";
     public const string LivenessCheck = "LivenessCheck";
     public const string ReadinessCheck = "ReadinessCheck";
+
+    // Content Operations
+    public const string ContentNegotiation = "ContentNegotiation";
+
+    // Error Handling
+    public const string ErrorHandling = "ErrorHandling";
+
+    // Security Operations
+    public const string Security = "Security";
+
+    // Pagination Operations
+    public const string Pagination = "Pagination";
+
+    // Performance Operations
+    public const string Performance = "Performance";
 
     // Tile Operations
     public const string GetTile = "GetTile";
@@ -59,4 +76,13 @@ public static class Operations
     public const string UpdateAttachment = "UpdateAttachment";
     public const string DeleteAttachments = "DeleteAttachments";
     public const string DownloadAttachment = "DownloadAttachment";
+
+    // Test Quality Operations
+    public const string TestQuality = "TestQuality";
+    public const string FuzzTesting = "FuzzTesting";
+    public const string SecurityTesting = "SecurityTesting";
+    public const string ChaosTesting = "ChaosTesting";
+    public const string ContractTesting = "ContractTesting";
+    public const string PerformanceTesting = "PerformanceTesting";
+    public const string TestInfrastructure = "TestInfrastructure";
 }

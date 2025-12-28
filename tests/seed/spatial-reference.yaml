@@ -1,0 +1,71 @@
+version: 1
+sql:
+  - "CREATE SCHEMA IF NOT EXISTS honua;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.services (
+          service_name VARCHAR(64) PRIMARY KEY,
+          description TEXT NOT NULL DEFAULT '',
+          srid INT NOT NULL DEFAULT 4326,
+          max_record_count INT NOT NULL DEFAULT 1000,
+          supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
+          capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
+          service_extent GEOMETRY,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.layers (
+          layer_id SERIAL PRIMARY KEY,
+          layer_name TEXT NOT NULL,
+          description TEXT,
+          table_name TEXT NOT NULL,
+          geometry_type TEXT NOT NULL,
+          srid INT NOT NULL DEFAULT 4326,
+          extent GEOMETRY(POLYGON, 4326),
+          min_scale DOUBLE PRECISION,
+          max_scale DOUBLE PRECISION,
+          default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.service_layers (
+          service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
+          layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+          layer_order INT NOT NULL,
+          PRIMARY KEY (service_name, layer_id),
+          UNIQUE (service_name, layer_order)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.layer_fields (
+          layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+          field_name VARCHAR(64) NOT NULL,
+          field_type VARCHAR(32) NOT NULL,
+          field_order INT NOT NULL,
+          max_length INT,
+          nullable BOOLEAN NOT NULL DEFAULT TRUE,
+          default_value TEXT,
+          description TEXT,
+          PRIMARY KEY (layer_id, field_name)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS features (
+          objectid BIGSERIAL PRIMARY KEY,
+          layer_id INT NOT NULL,
+          geometry GEOMETRY,
+          attributes JSONB,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+  - |
+      INSERT INTO honua.layers (layer_id, layer_name, description, table_name, geometry_type, srid, default_visibility)
+      VALUES
+          (101, 'SRID Test Points', 'Point layer for SRID testing', 'features', 'Point', 3857, true),
+          (102, 'SRID Test Lines', 'Line layer for SRID testing', 'features', 'LineString', 3857, true),
+          (103, 'SRID Test Polygons', 'Polygon layer for SRID testing', 'features', 'Polygon', 3857, true)
+      ON CONFLICT (layer_id) DO UPDATE
+      SET layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          srid = EXCLUDED.srid,
+          default_visibility = EXCLUDED.default_visibility;

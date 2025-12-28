@@ -128,6 +128,34 @@ public class MyTests
 }
 ```
 
+#### External Database (opt-in)
+
+Set `HONUA_TEST_DB_URL` to use an existing PostGIS database instead of Testcontainers.
+
+```bash
+export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"
+```
+
+#### Shared YAML Seed
+
+Apply shared YAML seed data to a schema:
+
+```csharp
+using Honua.TestKit.Seeding;
+
+var schema = await _postgres.CreateSeededSchemaAsync(
+    nameof(MyTests),
+    "tests/seed/seed.yaml",
+    profile: "core");
+```
+
+Or opt-in via environment variables:
+
+```bash
+export HONUA_TEST_DB_SEED_PATH="tests/seed/seed.yaml"
+export HONUA_TEST_DB_SEED_PROFILE="core"
+```
+
 ### WebAppFixture
 
 Combined HTTP client and database fixture for end-to-end integration tests.

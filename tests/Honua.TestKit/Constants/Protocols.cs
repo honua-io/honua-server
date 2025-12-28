@@ -38,4 +38,14 @@ public static class Protocols
     /// Administrative API endpoints.
     /// </summary>
     public const string Admin = "Admin";
+
+    /// <summary>
+    /// Comprehensive end-to-end coverage suites.
+    /// </summary>
+    public const string Comprehensive = "Comprehensive";
+
+    /// <summary>
+    /// Test quality validation suites.
+    /// </summary>
+    public const string TestQuality = "TestQuality";
 }

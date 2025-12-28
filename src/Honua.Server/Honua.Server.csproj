@@ -44,4 +44,11 @@
     <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="openapi.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

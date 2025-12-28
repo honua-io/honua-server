@@ -11,7 +11,7 @@ namespace Honua.TestKit.Infrastructure;
 /// Test implementation of IFeatureStore that extends TestFeatureStore
 /// to provide relationship support for queryRelatedRecords endpoint tests.
 /// </summary>
-public sealed class TestFeatureStoreWithRelationships : IFeatureStore
+public sealed class TestFeatureStoreWithRelationships : IFeatureStore, IDisposable
 {
     private readonly TestFeatureStore _baseStore = new();
     private readonly Dictionary<int, List<Feature>> _relatedLayerFeatures = new();
@@ -142,6 +142,12 @@ public sealed class TestFeatureStoreWithRelationships : IFeatureStore
             totalCount,
             matchingFeatures.ToImmutableArray(),
             hasMoreResults));
+    }
+
+    public void Dispose()
+    {
+        _baseStore.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>

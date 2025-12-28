@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
@@ -30,6 +32,16 @@ public readonly record struct FeatureQuery
     /// Spatial filter for geometry-based queries
     /// </summary>
     public SpatialFilter? SpatialFilter { get; init; }
+
+    /// <summary>
+    /// SRID of the stored layer geometry (used for spatial filter transforms and output CRS handling)
+    /// </summary>
+    public int? SpatialReferenceSrid { get; init; }
+
+    /// <summary>
+    /// Optional output SRID for geometry transformation in query results
+    /// </summary>
+    public int? OutputSrid { get; init; }
 
     /// <summary>
     /// Temporal filter for time-based queries
@@ -136,6 +148,11 @@ public readonly record struct SpatialFilter
     public required byte[] Geometry { get; init; }
 
     /// <summary>
+    /// SRID of the filter geometry (null if unspecified)
+    /// </summary>
+    public int? Srid { get; init; }
+
+    /// <summary>
     /// Spatial relationship type
     /// </summary>
     public required SpatialRelationship SpatialRelationship { get; init; }
@@ -167,9 +184,10 @@ public readonly record struct SpatialFilter
     /// </summary>
     /// <param name="geometry">Filter geometry in WKB format</param>
     /// <param name="spatialRelationship">Type of spatial relationship</param>
+    /// <param name="srid">SRID of the filter geometry</param>
     /// <returns>Spatial filter instance</returns>
-    public static SpatialFilter Create(byte[] geometry, SpatialRelationship spatialRelationship)
-        => new() { Geometry = geometry, SpatialRelationship = spatialRelationship };
+    public static SpatialFilter Create(byte[] geometry, SpatialRelationship spatialRelationship, int? srid = null)
+        => new() { Geometry = geometry, SpatialRelationship = spatialRelationship, Srid = srid };
 
     /// <summary>
     /// Creates a distance-based spatial filter
@@ -178,15 +196,18 @@ public readonly record struct SpatialFilter
     /// <param name="distance">Distance value</param>
     /// <param name="unit">Distance unit (defaults to Meters)</param>
     /// <param name="withinDistance">True for within distance, false for beyond distance</param>
+    /// <param name="srid">SRID of the filter geometry</param>
     /// <returns>Spatial filter instance</returns>
     public static SpatialFilter CreateDistanceFilter(
         byte[] geometry,
         double distance,
         DistanceUnit unit = DistanceUnit.Meters,
-        bool withinDistance = true)
+        bool withinDistance = true,
+        int? srid = null)
         => new()
         {
             Geometry = geometry,
+            Srid = srid,
             SpatialRelationship = withinDistance ? SpatialRelationship.WithinDistance : SpatialRelationship.BeyondDistance,
             Distance = distance,
             DistanceUnit = unit
@@ -198,11 +219,13 @@ public readonly record struct SpatialFilter
     /// <param name="geometry">Filter geometry in WKB format</param>
     /// <param name="count">Number of nearest neighbors to return</param>
     /// <param name="returnDistance">Whether to include distance values in results</param>
+    /// <param name="srid">SRID of the filter geometry</param>
     /// <returns>Spatial filter instance</returns>
-    public static SpatialFilter CreateKnnFilter(byte[] geometry, int count, bool returnDistance = false)
+    public static SpatialFilter CreateKnnFilter(byte[] geometry, int count, bool returnDistance = false, int? srid = null)
         => new()
         {
             Geometry = geometry,
+            Srid = srid,
             SpatialRelationship = SpatialRelationship.NearestNeighbor,
             NearestCount = count,
             ReturnDistance = returnDistance
@@ -225,14 +248,22 @@ public readonly record struct OrderByClause
     public bool Ascending { get; init; } = true;
 
     /// <summary>
+    /// Field type metadata for typed ordering (null when unknown)
+    /// </summary>
+    public FieldType? FieldType { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the OrderByClause struct
     /// </summary>
     /// <param name="field">Field name to sort by</param>
     /// <param name="ascending">Sort direction (true = ascending, false = descending)</param>
-    public OrderByClause(string field, bool ascending = true)
+    /// <param name="fieldType">Optional field type for typed ordering</param>
+    [SetsRequiredMembers]
+    public OrderByClause(string field, bool ascending = true, FieldType? fieldType = null)
     {
         Field = field;
         Ascending = ascending;
+        FieldType = fieldType;
     }
 
     /// <summary>
@@ -276,6 +307,31 @@ public enum SpatialRelationship
     /// Features whose envelope intersects the filter geometry
     /// </summary>
     EnvelopeIntersects,
+
+    /// <summary>
+    /// Features that cross the filter geometry (lines through polygons)
+    /// </summary>
+    Crosses,
+
+    /// <summary>
+    /// Features that touch but don't overlap the filter geometry (adjacent parcels)
+    /// </summary>
+    Touches,
+
+    /// <summary>
+    /// Features that partially overlap the filter geometry
+    /// </summary>
+    Overlaps,
+
+    /// <summary>
+    /// Features that don't touch the filter geometry at all
+    /// </summary>
+    Disjoint,
+
+    /// <summary>
+    /// Features that are geometrically identical to the filter geometry
+    /// </summary>
+    Equals,
 
     /// <summary>
     /// Features within a specified distance of the filter geometry (ST_DWithin)

@@ -173,7 +173,7 @@ class TestQueryRelatedRecordsFiltering:
             params={
                 "objectIds": "1",
                 "relationshipId": 0,
-                "outFields": "name,id",
+                "outFields": "name,count",
                 "f": "json",
             },
         )

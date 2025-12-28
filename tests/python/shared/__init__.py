@@ -13,6 +13,7 @@ This module provides:
 
 from .geometry import GeometryGenerator, ALL_GEOMETRY_TYPES
 from .postgis import PostGISFixture, TestDataBuilder
+from .seed import SeedRunner
 from .server import HonuaServer
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "ALL_GEOMETRY_TYPES",
     "PostGISFixture",
     "TestDataBuilder",
+    "SeedRunner",
     "HonuaServer",
 ]

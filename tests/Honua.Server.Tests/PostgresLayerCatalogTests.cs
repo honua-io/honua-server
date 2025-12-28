@@ -5,7 +5,6 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Postgres.Features.Catalog;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;

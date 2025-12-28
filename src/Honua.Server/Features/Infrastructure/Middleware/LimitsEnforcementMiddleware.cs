@@ -1,11 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Logging;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
+using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
 
@@ -50,7 +49,7 @@ internal sealed class LimitsEnforcementMiddleware(
         context.Items["LimitsTimeoutToken"] = timeoutCts.Token;
 
         // 3. Log request processing start with limits context
-        Log.RequestProcessingStarted(_logger, context.Request.Method, context.Request.Path,
+        InfrastructureLog.RequestProcessingStarted(_logger, context.Request.Method, context.Request.Path,
             context.Request.ContentLength ?? 0, _limits.Connections.RequestTimeout.TotalSeconds);
 
         try
@@ -61,7 +60,7 @@ internal sealed class LimitsEnforcementMiddleware(
         catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
             // Request timed out
-            Log.RequestTimedOut(_logger, context.Request.Path, _limits.Connections.RequestTimeout.TotalSeconds);
+            InfrastructureLog.RequestTimedOut(_logger, context.Request.Path, _limits.Connections.RequestTimeout.TotalSeconds);
 
             if (!context.Response.HasStarted)
             {
@@ -72,7 +71,7 @@ internal sealed class LimitsEnforcementMiddleware(
         catch (Exception ex)
         {
             // Log unexpected errors (but don't handle them - let other middleware handle)
-            Log.RequestProcessingError(_logger, context.Request.Path, ex.GetType().Name, ex.Message, ex);
+            InfrastructureLog.RequestProcessingError(_logger, context.Request.Path, ex.GetType().Name, ex.Message, ex);
             throw;
         }
         finally
@@ -104,13 +103,13 @@ internal sealed class LimitsEnforcementMiddleware(
         // the request body size limits configured at the Kestrel level
         if (!contentLength.HasValue)
         {
-            Log.PayloadSizeValidationSkipped(_logger, context.Request.Path);
+            InfrastructureLog.PayloadSizeValidationSkipped(_logger, context.Request.Path);
             return true;
         }
 
         if (contentLength.Value > _limits.Edits.MaxPayloadSize)
         {
-            Log.PayloadSizeExceeded(_logger, context.Request.Path, contentLength.Value, _limits.Edits.MaxPayloadSize);
+            InfrastructureLog.PayloadSizeExceeded(_logger, context.Request.Path, contentLength.Value, _limits.Edits.MaxPayloadSize);
             return false;
         }
 
@@ -120,26 +119,9 @@ internal sealed class LimitsEnforcementMiddleware(
     /// <summary>
     /// Writes a standardized error response for limit violations.
     /// </summary>
-    private static async Task WriteErrorResponseAsync(HttpContext context, int statusCode, string error, string details)
+    private static Task WriteErrorResponseAsync(HttpContext context, int statusCode, string error, string details)
     {
-        context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json; charset=utf-8";
-
-        var errorResponse = new ApiErrorResponse
-        {
-            Error = new GeoServicesError
-            {
-                Code = statusCode,
-                Message = error,
-                Details = [details]
-            }
-        };
-
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body,
-            errorResponse,
-            LimitsEnforcementJsonContext.Default.ApiErrorResponse,
-            context.RequestAborted);
+        return ProtocolErrorWriter.WriteErrorAsync(context, statusCode, error, details);
     }
 }
 

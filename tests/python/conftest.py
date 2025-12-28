@@ -22,6 +22,39 @@ from shared.server import HonuaServer
 
 
 # =============================================================================
+# Environment helpers
+# =============================================================================
+
+
+def _get_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+
+
+def _get_worker_id() -> str:
+    return os.getenv("PYTEST_XDIST_WORKER", "gw0")
+
+
+def _get_worker_index(worker_id: str) -> int:
+    if worker_id.startswith("gw") and worker_id[2:].isdigit():
+        return int(worker_id[2:])
+    return 0
+
+
+def _get_worker_service_name() -> str:
+    return f"test_service_{_get_worker_id()}"
+
+
+def _get_worker_layer_id() -> int:
+    return 1000 + _get_worker_index(_get_worker_id())
+
+
+# =============================================================================
 # Session-scoped fixtures (shared across all tests)
 # =============================================================================
 
@@ -41,17 +74,41 @@ def postgis() -> Generator[PostGISFixture, None, None]:
 
 
 @pytest.fixture(scope="session")
-def honua_server(postgis: PostGISFixture) -> Generator[HonuaServer, None, None]:
+def worker_schema(postgis: PostGISFixture) -> Generator[str, None, None]:
+    """Create a per-worker schema for parallel test isolation."""
+    worker_id = _get_worker_id()
+    schema_name = postgis.create_isolated_schema(f"worker_{worker_id}")
+    postgis.seed_test_catalog(
+        service_name=_get_worker_service_name(),
+        layer_id=_get_worker_layer_id(),
+        schema=schema_name,
+    )
+    postgis.seed_test_features(schema=schema_name, layer_id=_get_worker_layer_id())
+    yield schema_name
+    postgis.drop_schema(schema_name)
+
+
+@pytest.fixture(scope="session")
+def honua_server(
+    postgis: PostGISFixture,
+    worker_schema: str,
+) -> Generator[HonuaServer, None, None]:
     """
     Session-scoped Honua server fixture.
 
     Starts the server once per session connected to the test PostGIS instance.
     """
-    server = HonuaServer(
-        connection_string=postgis.connection_string,
-        port=5555,
+    base_port = _get_env_int("HONUA_TEST_PORT", 5555)
+    port = base_port + _get_worker_index(_get_worker_id())
+    timeout = _get_env_int("HONUA_TEST_TIMEOUT", 120)
+    connection_string = postgis.get_npgsql_connection_string(
+        search_path=f"{worker_schema}, public"
     )
-    server.start(timeout=120)
+    server = HonuaServer(
+        connection_string=connection_string,
+        port=port,
+    )
+    server.start(timeout=float(timeout))
     yield server
     server.stop()
 
@@ -68,15 +125,9 @@ def base_url(honua_server: HonuaServer) -> str:
 
 
 @pytest.fixture
-def schema(postgis: PostGISFixture, request) -> Generator[str, None, None]:
-    """
-    Create an isolated database schema for a single test.
-
-    The schema is automatically dropped after the test completes.
-    """
-    schema_name = postgis.create_isolated_schema(request.node.name)
-    yield schema_name
-    postgis.drop_schema(schema_name)
+def schema(worker_schema: str) -> str:
+    """Return the worker schema used by the running Honua server."""
+    return worker_schema
 
 
 @pytest.fixture
@@ -168,13 +219,13 @@ def point_grid(geometry_generator: GeometryGenerator) -> list[TestGeometry]:
 @pytest.fixture
 def test_service_id() -> str:
     """Default test service ID."""
-    return "test_service"
+    return _get_worker_service_name()
 
 
 @pytest.fixture
 def test_layer_id() -> int:
     """Default test layer ID."""
-    return 0
+    return _get_worker_layer_id()
 
 
 # =============================================================================
@@ -185,7 +236,17 @@ def test_layer_id() -> int:
 @pytest.fixture
 def test_collection_id() -> str:
     """Default test collection ID for OGC tests."""
-    return "0"  # Maps to layer 0
+    return str(_get_worker_layer_id())
+
+
+@pytest.fixture(autouse=True)
+def reset_worker_state(
+    postgis: PostGISFixture,
+    worker_schema: str,
+    test_layer_id: int,
+) -> None:
+    """Reset worker-scoped data before each test for isolation."""
+    postgis.reset_worker_data(worker_schema, layer_id=test_layer_id)
 
 
 # =============================================================================

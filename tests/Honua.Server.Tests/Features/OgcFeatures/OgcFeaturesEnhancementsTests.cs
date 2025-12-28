@@ -10,7 +10,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
-using Xunit;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
@@ -105,6 +104,96 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     #endregion
 
+    #region CRS, Queryables, and GML Tests
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCrsParameter_SwapsAxisOrder()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?limit=1&crs=http://www.opengis.net/def/crs/EPSG/0/4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues!.First().Should().Contain("http://www.opengis.net/def/crs/EPSG/0/4326");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var firstFeature = json.RootElement.GetProperty("features").EnumerateArray().First();
+        var coordinates = firstFeature.GetProperty("geometry").GetProperty("coordinates").EnumerateArray().ToArray();
+
+        coordinates.Should().HaveCount(2);
+        coordinates[0].GetDouble().Should().Be(37.5);
+        coordinates[1].GetDouble().Should().Be(-122.5);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithQueryableParameter_FiltersResults()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?name={Uri.EscapeDataString("Test Feature")}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
+
+        foreach (var feature in features)
+        {
+            feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
+    public async Task GetQueryables_ReturnsSchema()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/queryables");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.TryGetProperty("properties", out var properties).Should().BeTrue();
+        properties.TryGetProperty("name", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithGmlFormat_ReturnsGml()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?f=gml&limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Contain("application/gml+xml");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("FeatureCollection");
+        content.Should().Contain("gml");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetSingleItem_WithGmlFormat_ReturnsGml()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items/1?f=gml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Contain("application/gml+xml");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("gml");
+        content.Should().Contain("id=");
+    }
+
+    #endregion
+
     #region Bbox Parameter Tests (Issue #157)
 
     [IntegrationTest]
@@ -186,7 +275,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithoutLimitParameter_UsesOgcSpecDefaultLimitOf10()
+    public async Task GetItems_WithoutLimitParameter_UsesConfiguredDefaultLimit()
     {
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items");
@@ -200,29 +289,23 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
 
-        // Should use OGC spec default limit of 10 (not 1000)
-        features.Should().HaveCountLessOrEqualTo(10);
-        numberReturned.Should().BeLessOrEqualTo(10);
+        var defaultLimit = new Honua.Core.Configuration.LimitsOptions().Query.DefaultRecordCount;
+        features.Should().HaveCountLessOrEqualTo(defaultLimit);
+        numberReturned.Should().BeLessThanOrEqualTo(defaultLimit);
     }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithLimitExceedingMax_ClampsAndReturnsResults()
+    public async Task GetItems_WithLimitExceedingMax_ReturnsBadRequest()
     {
-        // Arrange - Limit exceeding maximum allowed (10000)
-        var excessiveLimit = 10001;
+        // Arrange - Limit exceeding maximum allowed
+        var excessiveLimit = new Honua.Core.Configuration.LimitsOptions().Query.MaxRecordCount + 1;
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?limit={excessiveLimit}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-
-        var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
-        numberReturned.Should().BeGreaterThan(0);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     #endregion

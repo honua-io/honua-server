@@ -4,7 +4,6 @@
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
-using Xunit;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
@@ -167,9 +166,9 @@ public class Cql2ParserTests
 
         var valueList = (ValueList)binary.Right;
         valueList.Values.Should().HaveCount(3);
-        valueList.Values[0].Value.Should().Be("active");
-        valueList.Values[1].Value.Should().Be("pending");
-        valueList.Values[2].Value.Should().Be("completed");
+        ((Literal)valueList.Values[0]).Value.Should().Be("active");
+        ((Literal)valueList.Values[1]).Value.Should().Be("pending");
+        ((Literal)valueList.Values[2]).Value.Should().Be("completed");
     }
 
     [Fact]
@@ -185,9 +184,33 @@ public class Cql2ParserTests
         result.Should().BeOfType<SpatialPredicate>();
         var spatial = (SpatialPredicate)result;
         spatial.Operator.Should().Be(SpatialOperator.Intersects);
-        spatial.GeometryProperty.PropertyName.Should().Be("geom");
-        spatial.Geometry.Srid.Should().Be(4326); // Default SRID if not specified by NTS
-        spatial.Geometry.OriginalFormat.Should().StartWith("POINT");
+        spatial.Left.Should().BeOfType<PropertyReference>();
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
+
+        var geometryProperty = (PropertyReference)spatial.Left;
+        var geometry = (GeometryLiteral)spatial.Right;
+
+        geometryProperty.PropertyName.Should().Be("geom");
+        geometry.Srid.Should().Be(4326); // Default SRID if not specified by NTS
+        geometry.OriginalFormat.Should().StartWith("POINT");
+    }
+
+    [Fact]
+    public void Parse_SpatialDWithin_ReturnsDistancePredicate()
+    {
+        // Arrange
+        const string cql = "S_DWITHIN(geom, POINT(1 2), 100)";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<SpatialDistancePredicate>();
+        var spatial = (SpatialDistancePredicate)result;
+        spatial.Operator.Should().Be(SpatialOperator.DWithin);
+        spatial.Left.Should().BeOfType<PropertyReference>();
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
+        spatial.Distance.Should().BeOfType<Literal>();
     }
 
     [Theory]
@@ -231,6 +254,136 @@ public class Cql2ParserTests
 
         leftAnd.Operator.Should().Be(BinaryOperator.And);
         rightAnd.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [Fact]
+    public void Parse_BetweenWithText_ReturnsCorrectAST()
+    {
+        // Arrange
+        const string cql = "name BETWEEN 'A' AND 'Z'";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<BinaryExpression>();
+        var andExpr = (BinaryExpression)result;
+        andExpr.Operator.Should().Be(BinaryOperator.And);
+
+        var lower = (BinaryExpression)andExpr.Left;
+        var upper = (BinaryExpression)andExpr.Right;
+
+        lower.Operator.Should().Be(BinaryOperator.GreaterThanOrEqual);
+        ((Literal)lower.Right).Value.Should().Be("A");
+
+        upper.Operator.Should().Be(BinaryOperator.LessThanOrEqual);
+        ((Literal)upper.Right).Value.Should().Be("Z");
+    }
+
+    [Fact]
+    public void Parse_ArithmeticExpression_ReturnsCorrectAST()
+    {
+        // Arrange
+        const string cql = "population / 2 + 1 >= 10";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<BinaryExpression>();
+        var comparison = (BinaryExpression)result;
+        comparison.Operator.Should().Be(BinaryOperator.GreaterThanOrEqual);
+
+        var addExpr = (BinaryExpression)comparison.Left;
+        addExpr.Operator.Should().Be(BinaryOperator.Add);
+
+        var divideExpr = (BinaryExpression)addExpr.Left;
+        divideExpr.Operator.Should().Be(BinaryOperator.Divide);
+    }
+
+    [Fact]
+    public void Parse_TemporalPredicateWithInterval_ReturnsTemporalPredicate()
+    {
+        // Arrange
+        const string cql = "T_INTERSECTS(timestamp, INTERVAL('2020-01-01','2020-12-31'))";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<TemporalPredicate>();
+        var temporal = (TemporalPredicate)result;
+        temporal.Operator.Should().Be(TemporalOperator.Intersects);
+        temporal.Right.Should().BeOfType<IntervalLiteral>();
+    }
+
+    [Fact]
+    public void Parse_ArrayPredicate_ReturnsArrayPredicate()
+    {
+        // Arrange
+        const string cql = "A_CONTAINS(tags, ('a','b'))";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<ArrayPredicate>();
+        var arrayPredicate = (ArrayPredicate)result;
+        arrayPredicate.Operator.Should().Be(ArrayOperator.Contains);
+        arrayPredicate.Right.Should().BeOfType<ArrayLiteral>();
+    }
+
+    [Fact]
+    public void Parse_CaseInsensitiveLike_ReturnsFunctionCall()
+    {
+        // Arrange
+        const string cql = "name LIKE CASEI('Foo%')";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<BinaryExpression>();
+        var binary = (BinaryExpression)result;
+        binary.Operator.Should().Be(BinaryOperator.Like);
+        binary.Right.Should().BeOfType<FunctionCall>();
+
+        var function = (FunctionCall)binary.Right;
+        function.FunctionName.Should().Be("CASEI");
+    }
+
+    [Fact]
+    public void Parse_BboxLiteral_ReturnsGeometryLiteral()
+    {
+        // Arrange
+        const string cql = "S_INTERSECTS(geom, BBOX(0,0,1,1))";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<SpatialPredicate>();
+        var spatial = (SpatialPredicate)result;
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
+
+        var geometry = (GeometryLiteral)spatial.Right;
+        geometry.OriginalFormat.Should().StartWith("BBOX");
+    }
+
+    [Fact]
+    public void Parse_Exponent_IsRightAssociative()
+    {
+        // Arrange
+        const string cql = "2 ^ 3 ^ 2";
+
+        // Act
+        var result = _parser.Parse(cql);
+
+        // Assert
+        result.Should().BeOfType<BinaryExpression>();
+        var power = (BinaryExpression)result;
+        power.Operator.Should().Be(BinaryOperator.Power);
+        power.Right.Should().BeOfType<BinaryExpression>();
     }
 
     [Theory]

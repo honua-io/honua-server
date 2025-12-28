@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Tiles;
-using Xunit;
 
 namespace Honua.Core.Tests.Features.Tiles;
 

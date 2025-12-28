@@ -1,0 +1,150 @@
+{
+  "name": "Honua Server Development",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "honua",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+
+  // Configure properties specific to VS Code
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "dotnet.defaultSolution": "Honua.sln",
+        "omnisharp.enableEditorConfigSupport": true,
+        "omnisharp.enableRoslynAnalyzers": true,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll": "explicit",
+          "source.organizeImports": "explicit"
+        },
+        "dotnet.completion.showCompletionItemsFromUnimportedNamespaces": true,
+        "dotnet.inlayHints.enableInlayHintsForTypes": true,
+        "dotnet.inlayHints.enableInlayHintsForParameters": true
+      },
+
+      // Extensions to install
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.dotnet-interactive-vscode",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "ms-vscode.test-adapter-converter",
+        "formulahendry.dotnet-test-explorer",
+        "EditorConfig.EditorConfig",
+        "streetsidesoftware.code-spell-checker",
+        "ms-vscode.powershell",
+        "ms-python.python",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+
+  // Container configuration
+  "overrideCommand": false,
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "source=honua-dev-nuget,target=/home/vscode/.nuget,type=volume",
+    "source=honua-dev-cache,target=/home/vscode/.cache,type=volume"
+  ],
+
+  // Environment variables
+  "containerEnv": {
+    "ASPNETCORE_ENVIRONMENT": "Development",
+    "ASPNETCORE_URLS": "http://+:8080",
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
+    "DOTNET_NOLOGO": "1",
+    "DOTNET_RUNNING_IN_CONTAINER": "true"
+  },
+
+  // Port forwarding
+  "forwardPorts": [
+    8080,  // Honua Server
+    5432,  // PostgreSQL
+    3000,  // Grafana
+    9090,  // Prometheus
+    3100   // Loki
+  ],
+
+  "portsAttributes": {
+    "8080": {
+      "label": "Honua Server",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL"
+    },
+    "3000": {
+      "label": "Grafana"
+    },
+    "9090": {
+      "label": "Prometheus"
+    },
+    "3100": {
+      "label": "Loki"
+    }
+  },
+
+  // Post-create commands
+  "postCreateCommand": [
+    "bash", "-c",
+    "echo 'Setting up development environment...' && " +
+    "dotnet restore Honua.sln && " +
+    "echo 'Installing git hooks...' && " +
+    "bash scripts/setup-git-hooks.sh && " +
+    "echo 'Development environment ready!' && " +
+    "echo 'Run: dotnet build to build the project' && " +
+    "echo 'Run: dotnet test to run tests' && " +
+    "echo 'Run: cd src/Honua.Server && dotnet run to start the server'"
+  ],
+
+  // Features
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "ppa": true,
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "installDirectlyFromGitHub": true,
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "enableNonRootDocker": "true",
+      "moby": "true"
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "latest",
+      "minikube": "none"
+    }
+  },
+
+  // User settings
+  "remoteUser": "vscode",
+
+  // Lifecycle scripts
+  "initializeCommand": [
+    "bash", "-c",
+    "echo 'Initializing Honua Server devcontainer...' && " +
+    "docker --version && docker-compose --version"
+  ],
+
+  "updateContentCommand": [
+    "bash", "-c",
+    "echo 'Updating dependencies...' && " +
+    "dotnet restore Honua.sln && " +
+    "echo 'Dependencies updated!'"
+  ]
+}

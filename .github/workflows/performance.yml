@@ -104,17 +104,15 @@ jobs:
 
           if [ -f performance-baseline.json ]; then
             echo "Comparing with baseline..."
-
-            # Simple comparison - in production this would use a more sophisticated script
-            BASELINE_AVG=$(jq -r '[.Benchmarks[].Statistics.Mean] | add / length / 1000000 | round' performance-baseline.json)
-            CURRENT_AVG=${{ steps.parse-results.outputs.avg_latency }}
-
-            # Check if current is >10% slower than baseline
-            THRESHOLD_LATENCY=$((BASELINE_AVG * 110 / 100))
-
-            if [ "$CURRENT_AVG" -gt "$THRESHOLD_LATENCY" ]; then
+            RESULTS_FILE=$(find performance-reports -name "results.json" | head -1)
+            if ! python scripts/check-perf-regression.py \
+              --baseline performance-baseline.json \
+              --current "$RESULTS_FILE" \
+              --threshold 0.10 \
+              --report perf-regression.md \
+              --fail-on-regression; then
               REGRESSION_DETECTED=true
-              REGRESSION_DETAILS="Average latency regressed from ${BASELINE_AVG}ms to ${CURRENT_AVG}ms (>${THRESHOLD_LATENCY}ms threshold)"
+              REGRESSION_DETAILS="See perf-regression.md for details"
             fi
           fi
 
@@ -156,7 +154,6 @@ jobs:
             ### Targets
             - Query p50: < 50ms ✅
             - Query p99: < 300ms ${p99Latency <= 300 ? '✅' : '❌'}
-            - Throughput: > 1000 rps (load tests)
 
             `;
 

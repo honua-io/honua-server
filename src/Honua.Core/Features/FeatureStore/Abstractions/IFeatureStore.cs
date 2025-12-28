@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
@@ -100,7 +101,7 @@ public interface IFeatureStore
     /// <param name="feature">Feature with updated values (must include valid Id)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated feature</returns>
-    /// <exception cref="InvalidOperationException">Thrown if feature with the specified ID does not exist</exception>
+    /// <exception cref="ResourceNotFoundException">Thrown if feature with the specified ID does not exist</exception>
     Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default);
 
     /// <summary>

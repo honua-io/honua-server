@@ -4,7 +4,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;

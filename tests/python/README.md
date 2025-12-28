@@ -66,15 +66,18 @@ tests/python/
 The test suite automatically:
 - Starts a PostGIS container using Testcontainers
 - Starts the Honua server process
-- Creates isolated database schemas per test
+- Creates isolated database schemas per worker for parallel execution
 - Cleans up after tests complete
 
 ### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HONUA_TEST_PORT` | Server port | 5555 |
+| `HONUA_TEST_PORT` | Base server port (worker index is added) | 5555 |
 | `HONUA_TEST_TIMEOUT` | Server startup timeout (seconds) | 60 |
+| `HONUA_TEST_DB_URL` | Use external PostGIS database (opt-in) | unset |
+| `HONUA_TEST_DB_SEED_PATH` | Auto-apply YAML seed to new schemas | unset |
+| `HONUA_TEST_DB_SEED_PROFILE` | Seed profile name | unset |
 
 ## Test Markers
 
@@ -122,6 +125,17 @@ pytest -m smoke --tb=short
 pytest -n auto --tb=short
 ```
 
+## Using Docker Compose Test Profile
+
+```bash
+# Start the opt-in PostGIS test database
+docker compose --profile test up -d postgis-test
+
+# Reuse the database for tests
+export HONUA_TEST_DB_URL="postgres://test:test@localhost:5433/honua_test"
+pytest
+```
+
 ## Adding New Tests
 
 1. Create test file in appropriate directory
@@ -146,6 +160,10 @@ def test_items_returns_geojson(http_client, test_collection_id):
 - Ensure Docker is running
 - Check if ports 5432 and 5555 are available
 - Increase `HONUA_TEST_TIMEOUT` if needed
+
+### Running with pytest-xdist
+- Each worker uses a separate schema and increments the base port (`HONUA_TEST_PORT`)
+- For a shared PostGIS container, set `HONUA_TEST_DB_URL` so all workers connect to the same DB
 
 ### Database connection errors
 - Verify PostGIS container is healthy

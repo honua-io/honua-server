@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -15,6 +16,7 @@ using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.AspNetCore.Mvc;
+using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.OData;
@@ -417,29 +419,39 @@ internal static partial class ODataEndpoints
 
             var effectiveToken = GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(effectiveToken);
-            var layerEnumerable = layers.AsEnumerable();
+
+            // PERFORMANCE OPTIMIZATION: Use single enumeration instead of multiple ToList() calls
+            IEnumerable<LayerDefinition> layerQuery = layers;
 
             // Apply basic filtering if specified
             if (!string.IsNullOrWhiteSpace(filter))
             {
-                layerEnumerable = ApplyBasicFilter(layerEnumerable, filter);
+                layerQuery = ApplyBasicFilter(layerQuery, filter);
             }
 
-            var filteredLayers = layerEnumerable.ToList();
-            long? totalCount = count == true ? filteredLayers.Count : null;
+            // PERFORMANCE OPTIMIZATION: Count before materialization to avoid double enumeration
+            long? totalCount = null;
+            if (count == true)
+            {
+                // Only materialize for count if needed
+                var layersForCount = layerQuery.ToArray();
+                totalCount = layersForCount.Length;
+                layerQuery = layersForCount; // Reuse materialized collection
+            }
 
-            // Apply skip/top pagination
+            // Apply skip/top pagination on the query before materialization
             if (validatedParams.ResultOffset.HasValue)
             {
-                filteredLayers = filteredLayers.Skip(validatedParams.ResultOffset.Value).ToList();
+                layerQuery = layerQuery.Skip(validatedParams.ResultOffset.Value);
             }
 
             if (validatedParams.ResultRecordCount.HasValue)
             {
-                filteredLayers = filteredLayers.Take(validatedParams.ResultRecordCount.Value).ToList();
+                layerQuery = layerQuery.Take(validatedParams.ResultRecordCount.Value);
             }
 
-            var layerData = filteredLayers.Select(l => new Dictionary<string, object?>
+            // PERFORMANCE OPTIMIZATION: Single materialization with projection
+            var layerData = layerQuery.Select(l => new Dictionary<string, object?>
             {
                 ["Id"] = l.Id,
                 ["Name"] = l.Name,
@@ -549,7 +561,8 @@ internal static partial class ODataEndpoints
                 Where = whereClause,
                 SqlFilter = sqlFragment,
                 SpatialFilter = spatialFilter,
-                OrderBy = ParseODataOrderBy(orderby),
+                SpatialReferenceSrid = layer.SpatialReference.Srid,
+                OrderBy = ParseODataOrderBy(orderby, layer),
                 Limit = validatedParams.ResultRecordCount,
                 Offset = validatedParams.ResultOffset
             };
@@ -746,6 +759,11 @@ internal static partial class ODataEndpoints
             context.Response.Headers["OData-EntityId"] = $"{baseUrl}/odata/Features({layerId},{createdFeature.Id})";
             return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType, statusCode: 201);
         }
+        catch (ResourceConflictException ex)
+        {
+            Log.CreateFeatureFailed(logger, layerId, ex);
+            return CreateODataError(context, "Conflict", "A conflicting feature already exists.", 409);
+        }
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(logger, layerId, ex);
@@ -828,10 +846,15 @@ internal static partial class ODataEndpoints
             SetODataHeaders(context, result.Id.ToString());
             return Results.Json(response, ODataJsonContext.Default.ODataFeatureResponse, contentType: ODataContentType);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+        catch (ResourceNotFoundException ex)
         {
             Log.UpdateFeatureNotFound(logger, layerId, objectId, ex);
             return CreateODataError(context, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}", 404);
+        }
+        catch (ResourceConflictException ex)
+        {
+            Log.UpdateFeatureFailed(logger, layerId, objectId, ex);
+            return CreateODataError(context, "Conflict", "The update conflicted with existing data.", 409);
         }
         catch (Exception ex)
         {
@@ -1423,7 +1446,7 @@ internal static partial class ODataEndpoints
                 return false;
             }
 
-            spatialFilter = SpatialFilter.Create(geometryWkb, SpatialRelationship.Intersects);
+            spatialFilter = SpatialFilter.Create(geometryWkb, SpatialRelationship.Intersects, 4326);
             return true;
         }
 
@@ -1460,7 +1483,8 @@ internal static partial class ODataEndpoints
                 geometryWkb,
                 distanceValue,
                 DistanceUnit.Meters,
-                withinDistance);
+                withinDistance,
+                4326);
 
             return true;
         }
@@ -1493,7 +1517,8 @@ internal static partial class ODataEndpoints
                 geometry.SRID = 4326;
             }
 
-            var writer = new WKBWriter();
+            var (hasZ, hasM) = GetHasZandM(geometry);
+            var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true, emitZ: hasZ, emitM: hasM);
             geometryWkb = writer.Write(geometry);
             return true;
         }
@@ -1502,6 +1527,46 @@ internal static partial class ODataEndpoints
             error = "Invalid spatial filter geometry.";
             return false;
         }
+    }
+
+    private static (bool hasZ, bool hasM) GetHasZandM(NetTopologySuite.Geometries.Geometry geometry)
+    {
+        if (geometry is GeometryCollection collection && collection.NumGeometries > 0)
+        {
+            return GetHasZandM(collection.GetGeometryN(0));
+        }
+
+        CoordinateSequence? sequence = geometry switch
+        {
+            Point point => point.CoordinateSequence,
+            LineString lineString => lineString.CoordinateSequence,
+            Polygon polygon => polygon.ExteriorRing.CoordinateSequence,
+            MultiPoint multiPoint when multiPoint.NumGeometries > 0 => ((Point)multiPoint.GetGeometryN(0)).CoordinateSequence,
+            MultiLineString multiLineString when multiLineString.NumGeometries > 0 => ((LineString)multiLineString.GetGeometryN(0)).CoordinateSequence,
+            MultiPolygon multiPolygon when multiPolygon.NumGeometries > 0 => ((Polygon)multiPolygon.GetGeometryN(0)).ExteriorRing.CoordinateSequence,
+            _ => null
+        };
+
+        if (sequence == null)
+        {
+            return (false, false);
+        }
+
+        return (HasOrdinateValues(sequence, Ordinate.Z), HasOrdinateValues(sequence, Ordinate.M));
+    }
+
+    private static bool HasOrdinateValues(CoordinateSequence sequence, Ordinate ordinate)
+    {
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            var value = sequence.GetOrdinate(i, ordinate);
+            if (!double.IsNaN(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -1771,7 +1836,7 @@ internal static partial class ODataEndpoints
     /// Format: "field1 asc, field2 desc" or "field1, field2 desc"
     /// Default direction is ascending when not specified.
     /// </summary>
-    private static ImmutableArray<OrderByClause>? ParseODataOrderBy(string? orderby)
+    private static ImmutableArray<OrderByClause>? ParseODataOrderBy(string? orderby, Honua.Core.Features.Catalog.Domain.LayerDefinition layer)
     {
         if (string.IsNullOrWhiteSpace(orderby))
         {
@@ -1812,7 +1877,12 @@ internal static partial class ODataEndpoints
                 }
             }
 
-            clauses.Add(new OrderByClause { Field = fieldName, Ascending = ascending });
+            var fieldDefinition = layer.Fields.FirstOrDefault(f =>
+                f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+            var resolvedField = fieldDefinition?.Name ?? fieldName;
+            var fieldType = fieldDefinition?.Type;
+
+            clauses.Add(new OrderByClause(resolvedField, ascending, fieldType));
         }
 
         return clauses.Count > 0 ? clauses.ToImmutableArray() : null;

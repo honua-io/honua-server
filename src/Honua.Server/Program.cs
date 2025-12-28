@@ -15,6 +15,7 @@ using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
+using Npgsql;
 using Serilog;
 using Serilog.Enrichers.Span;
 
@@ -90,6 +91,9 @@ ConfigureLimits(builder.Services, builder.Configuration);
 // Configure tile options
 ConfigureTileOptions(builder.Services, builder.Configuration);
 
+// Configure rate limiting options
+ConfigureRateLimiting(builder.Services, builder.Configuration);
+
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
@@ -148,6 +152,9 @@ app.UseCorrelationId();
 
 // Add limits enforcement middleware (after correlation ID, before request logging)
 app.UseLimitsEnforcement();
+
+// Add rate limiting middleware before authentication and caching
+app.UseRateLimiting();
 
 // Add authentication and authorization middleware
 app.UseApiKeyAuthentication();
@@ -311,6 +318,12 @@ static void ConfigureResponseCompression(IServiceCollection services)
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
 {
+    if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
+    {
+        Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
+        return;
+    }
+
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     if (string.IsNullOrEmpty(connectionString))
     {
@@ -323,8 +336,14 @@ async Task RunDatabaseMigrationsAsync()
 
     try
     {
+        var migrationConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = "public",
+        }.ConnectionString;
+
         var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
+            .PostgresqlDatabase(migrationConnectionString)
+            .JournalToPostgresqlTable("public", "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
             .WithTransaction()
             .LogToConsole()
@@ -457,6 +476,15 @@ static void ConfigureTileOptions(IServiceCollection services, IConfiguration con
     services.Configure<Honua.Core.Features.Tiles.TileOptions>(options =>
     {
         configuration.GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName).Bind(options);
+    });
+}
+
+// Configure rate limiting options
+static void ConfigureRateLimiting(IServiceCollection services, IConfiguration configuration)
+{
+    services.Configure<RateLimitOptions>(options =>
+    {
+        configuration.GetSection(RateLimitOptions.SectionName).Bind(options);
     });
 }
 

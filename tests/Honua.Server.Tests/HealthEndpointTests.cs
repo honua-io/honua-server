@@ -6,7 +6,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Xunit;
 
 namespace Honua.Server.Tests;
 

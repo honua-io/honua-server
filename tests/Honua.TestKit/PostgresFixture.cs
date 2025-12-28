@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.TestKit.Seeding;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -16,40 +17,65 @@ namespace Honua.TestKit;
 public sealed class PostgresFixture : IAsyncLifetime
 {
     private static readonly ConcurrentDictionary<string, int> _schemaCounters = new();
-    private readonly PostgreSqlContainer _container;
+    private const string ExternalConnectionStringEnv = "HONUA_TEST_DB_URL";
+    private const string SeedPathEnv = "HONUA_TEST_DB_SEED_PATH";
+    private const string SeedProfileEnv = "HONUA_TEST_DB_SEED_PROFILE";
+    private readonly PostgreSqlContainer? _container;
+    private readonly string? _externalConnectionString;
+    private string? _connectionString;
 
     public PostgresFixture()
     {
-        _container = new PostgreSqlBuilder()
-            .WithImage("postgis/postgis:18-3.6")
-            .WithDatabase("honua_test")
-            .WithUsername("test")
-            .WithPassword("test")
-            .WithCommand("-c", "max_connections=200")
-            .Build();
+        _externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
+        if (string.IsNullOrWhiteSpace(_externalConnectionString))
+        {
+            _container = new PostgreSqlBuilder()
+                .WithImage("postgis/postgis:18-3.6")
+                .WithDatabase("honua_test")
+                .WithUsername("test")
+                .WithPassword("test")
+                .WithCommand("-c", "max_connections=200")
+                .Build();
+        }
     }
 
-    public string ConnectionString => _container.GetConnectionString();
+    public string ConnectionString => _connectionString ?? throw new InvalidOperationException("Postgres fixture not initialized.");
 
     public NpgsqlDataSource DataSource { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        if (_externalConnectionString is null)
+        {
+            if (_container is null)
+            {
+                throw new InvalidOperationException("Postgres container not configured.");
+            }
+
+            await _container.StartAsync();
+            _connectionString = _container.GetConnectionString();
+        }
+        else
+        {
+            _connectionString = _externalConnectionString;
+        }
 
         DataSource = NpgsqlDataSource.Create(ConnectionString);
 
         // Enable PostGIS extension
         await using var conn = await DataSource.OpenConnectionAsync();
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis;";
+        cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS unaccent;";
         await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync()
     {
         await DataSource.DisposeAsync();
-        await _container.DisposeAsync();
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
+        }
     }
 
     /// <summary>
@@ -59,6 +85,11 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <param name="testClassName">Name of the test class (for schema naming)</param>
     /// <returns>Schema name to use for the test</returns>
     public async Task<string> CreateIsolatedSchemaAsync(string testClassName)
+    {
+        return await CreateIsolatedSchemaInternalAsync(testClassName, applySeed: true).ConfigureAwait(false);
+    }
+
+    internal async Task<string> CreateIsolatedSchemaInternalAsync(string testClassName, bool applySeed)
     {
         var counter = _schemaCounters.AddOrUpdate(testClassName, 1, (_, c) => c + 1);
         var schemaName = $"test_{SanitizeSchemaName(testClassName)}_{counter}_{Guid.NewGuid():N}".ToLowerInvariant();
@@ -70,6 +101,13 @@ public sealed class PostgresFixture : IAsyncLifetime
             SET search_path TO {schemaName}, public;
             """;
         await cmd.ExecuteNonQueryAsync();
+
+        var seedPath = applySeed ? Environment.GetEnvironmentVariable(SeedPathEnv) : null;
+        if (!string.IsNullOrWhiteSpace(seedPath))
+        {
+            var profile = Environment.GetEnvironmentVariable(SeedProfileEnv);
+            await SeedRunner.ApplyAsync(DataSource, seedPath, schemaName, profile);
+        }
 
         return schemaName;
     }

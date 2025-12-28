@@ -43,6 +43,31 @@ public record LayerDefinition(
     public FieldDefinition[] AttributeFields => Fields.Where(f => !f.IsGeometry).ToArray();
 
     /// <summary>
+    /// Non-geometry attribute fields as ReadOnlySpan for efficient enumeration
+    /// </summary>
+    public ReadOnlySpan<FieldDefinition> AttributeFieldsSpan =>
+        AttributeFieldsMemory.Span;
+
+    /// <summary>
+    /// Non-geometry attribute fields as Memory for efficient slicing and sharing
+    /// </summary>
+    public Memory<FieldDefinition> AttributeFieldsMemory
+    {
+        get
+        {
+            // Cache the result to avoid repeated allocations during multiple accesses
+            if (_attributeFieldsCache == null)
+            {
+                var attributeFields = Fields.Where(f => !f.IsGeometry).ToArray();
+                _attributeFieldsCache = new Memory<FieldDefinition>(attributeFields);
+            }
+            return _attributeFieldsCache.Value;
+        }
+    }
+
+    private Memory<FieldDefinition>? _attributeFieldsCache;
+
+    /// <summary>
     /// Whether this layer contains geometry data
     /// </summary>
     public bool HasGeometry => GeometryType != GeometryType.None;

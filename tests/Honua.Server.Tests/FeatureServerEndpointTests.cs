@@ -13,7 +13,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
-using Xunit;
 
 namespace Honua.Server.Tests;
 
@@ -262,7 +261,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         // Required GeoServices REST layer properties
         layerResponse!.CurrentVersion.Should().NotBeNullOrEmpty();
-        layerResponse.Id.Should().BeGreaterOrEqualTo(0);
+        layerResponse.Id.Should().BeGreaterThanOrEqualTo(0);
         layerResponse.Name.Should().NotBeNullOrEmpty();
         layerResponse.Type.Should().Be("Feature Layer");
         layerResponse.GeometryType.Should().NotBeNullOrEmpty();
@@ -345,6 +344,86 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true")]
+    public async Task QueryFeatures_WithReturnCountOnly_ReturnsCount()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnCountOnly=true");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Count.Should().Be(5);
+        queryResponse.ObjectIds.Should().BeNull();
+        queryResponse.Extent.Should().BeNull();
+        queryResponse.Features.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true")]
+    public async Task QueryFeatures_WithReturnIdsOnly_ReturnsIds()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnIdsOnly=true");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.ObjectIds.Should().NotBeNull();
+        queryResponse.ObjectIds!.Should().HaveCount(5);
+        queryResponse.Count.Should().BeNull();
+        queryResponse.Extent.Should().BeNull();
+        queryResponse.Features.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true")]
+    public async Task QueryFeatures_WithReturnExtentOnly_ReturnsExtent()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnExtentOnly=true");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Extent.Should().NotBeNull();
+        queryResponse.Extent!.SpatialReference.Should().NotBeNull();
+        queryResponse.ObjectIds.Should().BeNull();
+        queryResponse.Count.Should().BeNull();
+        queryResponse.Features.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_WithClassificationDef_ReturnsNotImplemented()
+    {
+        var classificationDef = Uri.EscapeDataString("""{"type":"uniqueValue"}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("generateRenderer is not implemented");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithSqlInjectionAttempt_Returns400()
     {
@@ -355,7 +434,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("dangerous pattern");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -370,7 +452,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("WHERE clause format not supported");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -728,7 +813,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         // Arrange
         var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
-        var unsupportedSpatialRel = "esriSpatialRelOverlaps"; // Not yet supported
+        var unsupportedSpatialRel = "esriSpatialRelInvalid"; // Invalid spatial relationship
 
         // Act
         var response = await _fixture.Client.GetAsync(
