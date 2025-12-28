@@ -32,7 +32,7 @@ internal sealed class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Supported file extensions mapped to formats
     /// </summary>
-    private static readonly Dictionary<string, SupportedFileFormat> FileExtensions = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, SupportedFileFormat> _fileExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         [".geojson"] = SupportedFileFormat.GeoJson,
         [".json"] = SupportedFileFormat.GeoJson,
@@ -60,11 +60,11 @@ internal sealed class StreamingFileImportService : IFileImportService
     {
         var extension = Path.GetExtension(fileName);
         return string.IsNullOrEmpty(extension) ? null :
-               FileExtensions.TryGetValue(extension, out var format) ? format : null;
+               _fileExtensions.TryGetValue(extension, out var format) ? format : null;
     }
 
     /// <inheritdoc/>
-    public string[] GetSupportedExtensions() => FileExtensions.Keys.ToArray();
+    public string[] GetSupportedExtensions() => _fileExtensions.Keys.ToArray();
 
     /// <inheritdoc/>
     public Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default)
@@ -690,12 +690,12 @@ internal sealed class StreamingFileImportService : IFileImportService
         return null;
     }
 
-    private static readonly char[] KmlCoordinateSeparators = { ' ', '\n', '\r', '\t' };
+    private static readonly char[] _kmlCoordinateSeparators = { ' ', '\n', '\r', '\t' };
 
     private static Coordinate[] ParseKmlCoordinates(string coordsString)
     {
         var coords = new List<Coordinate>();
-        var parts = coordsString.Trim().Split(KmlCoordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
+        var parts = coordsString.Trim().Split(_kmlCoordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var part in parts)
         {
