@@ -23,7 +23,6 @@ namespace Honua.Postgres.Features.Import;
 internal sealed class StreamingFileImportService : IFileImportService
 {
     private readonly string _connectionString;
-    private readonly ICrsDetectionService _crsDetectionService;
     private readonly ImportLimits _limits;
     private readonly StreamingGeoJsonReader _geoJsonReader;
 
@@ -46,11 +45,9 @@ internal sealed class StreamingFileImportService : IFileImportService
 
     public StreamingFileImportService(
         string connectionString,
-        ICrsDetectionService crsDetectionService,
         ImportLimits? limits = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-        _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
         _limits = limits ?? ImportLimits.Default;
         _geoJsonReader = new StreamingGeoJsonReader(_limits);
     }
@@ -693,10 +690,12 @@ internal sealed class StreamingFileImportService : IFileImportService
         return null;
     }
 
+    private static readonly char[] KmlCoordinateSeparators = { ' ', '\n', '\r', '\t' };
+
     private static Coordinate[] ParseKmlCoordinates(string coordsString)
     {
         var coords = new List<Coordinate>();
-        var parts = coordsString.Trim().Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        var parts = coordsString.Trim().Split(KmlCoordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var part in parts)
         {

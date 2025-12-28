@@ -64,7 +64,7 @@ public sealed record ImportLimits
     /// 0 means no limit.
     /// Default: 0 (no limit).
     /// </summary>
-    public int MaxFeaturesPerFile { get; init; } = 0;
+    public int MaxFeaturesPerFile { get; init; }
 
     /// <summary>
     /// Default configuration for standard import operations.

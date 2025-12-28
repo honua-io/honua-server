@@ -138,15 +138,15 @@ internal static class ServiceCollectionExtensions
             {
                 limits = new Core.Features.Import.Domain.ImportLimits
                 {
-                    BatchSize = section.GetValue("BatchSize", limits.BatchSize),
-                    MaxMemoryBytes = section.GetValue("MaxMemoryBytes", limits.MaxMemoryBytes),
-                    BackgroundJobThresholdBytes = section.GetValue("BackgroundJobThresholdBytes", limits.BackgroundJobThresholdBytes),
-                    MaxPreviewSizeBytes = section.GetValue("MaxPreviewSizeBytes", limits.MaxPreviewSizeBytes),
-                    MaxPreviewFeatures = section.GetValue("MaxPreviewFeatures", limits.MaxPreviewFeatures),
-                    StreamBufferSize = section.GetValue("StreamBufferSize", limits.StreamBufferSize),
-                    UseTransactions = section.GetValue("UseTransactions", limits.UseTransactions),
-                    ContinueOnError = section.GetValue("ContinueOnError", limits.ContinueOnError),
-                    MaxFeaturesPerFile = section.GetValue("MaxFeaturesPerFile", limits.MaxFeaturesPerFile)
+                    BatchSize = int.TryParse(section["BatchSize"], out var batchSize) ? batchSize : limits.BatchSize,
+                    MaxMemoryBytes = long.TryParse(section["MaxMemoryBytes"], out var maxMemory) ? maxMemory : limits.MaxMemoryBytes,
+                    BackgroundJobThresholdBytes = long.TryParse(section["BackgroundJobThresholdBytes"], out var bgThreshold) ? bgThreshold : limits.BackgroundJobThresholdBytes,
+                    MaxPreviewSizeBytes = long.TryParse(section["MaxPreviewSizeBytes"], out var previewSize) ? previewSize : limits.MaxPreviewSizeBytes,
+                    MaxPreviewFeatures = int.TryParse(section["MaxPreviewFeatures"], out var previewFeatures) ? previewFeatures : limits.MaxPreviewFeatures,
+                    StreamBufferSize = int.TryParse(section["StreamBufferSize"], out var bufferSize) ? bufferSize : limits.StreamBufferSize,
+                    UseTransactions = bool.TryParse(section["UseTransactions"], out var useTransactions) ? useTransactions : limits.UseTransactions,
+                    ContinueOnError = bool.TryParse(section["ContinueOnError"], out var continueOnError) ? continueOnError : limits.ContinueOnError,
+                    MaxFeaturesPerFile = int.TryParse(section["MaxFeaturesPerFile"], out var maxFeatures) ? maxFeatures : limits.MaxFeaturesPerFile
                 };
             }
 
@@ -162,9 +162,8 @@ internal static class ServiceCollectionExtensions
                 throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
             }
 
-            var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
             var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
-            return new StreamingFileImportService(connectionString, crsDetectionService, limits);
+            return new StreamingFileImportService(connectionString, limits);
         });
 
         // Register background import job service

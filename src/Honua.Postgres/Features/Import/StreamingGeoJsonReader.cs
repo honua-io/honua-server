@@ -8,9 +8,20 @@ using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Postgres.Features.Import;
+
+/// <summary>
+/// State for tracking JSON processing across chunks
+/// </summary>
+internal sealed record JsonProcessingState
+{
+    public bool InFeaturesArray { get; init; }
+    public int FeatureDepth { get; init; }
+    public bool IsCollectingFeature { get; init; }
+    public int FeatureStartIndex { get; init; } = -1;
+    public bool IsComplete { get; init; }
+}
 
 /// <summary>
 /// Memory-efficient streaming GeoJSON reader that processes features incrementally.
@@ -20,7 +31,6 @@ internal sealed class StreamingGeoJsonReader
 {
     private readonly ImportLimits _limits;
     private readonly GeometryFactory _geometryFactory;
-    private static readonly WKTReader WktReader = new();
 
     public StreamingGeoJsonReader(ImportLimits? limits = null)
     {
@@ -47,11 +57,7 @@ internal sealed class StreamingGeoJsonReader
 
             var leftover = ReadOnlyMemory<byte>.Empty;
             var featureCount = 0;
-            var inFeaturesArray = false;
-            var featureDepth = 0;
-            var featureStartIndex = -1;
-            var currentFeatureBytes = new List<byte>();
-            var isCollectingFeature = false;
+            var processingState = new JsonProcessingState();
 
             while (true)
             {
@@ -76,83 +82,40 @@ internal sealed class StreamingGeoJsonReader
                     data = combined;
                 }
 
-                var reader = new Utf8JsonReader(data.Span, bytesRead == 0, jsonReaderState);
+                // Process chunk synchronously to avoid ref struct issues
+                var (features, newState, newProcessingState, consumed) = ProcessJsonChunk(data, jsonReaderState, processingState);
 
-                var lastConsumed = 0L;
+                jsonReaderState = newState;
+                processingState = newProcessingState;
 
-                while (reader.Read())
+                // Yield all features found in this chunk
+                foreach (var feature in features)
                 {
-                    lastConsumed = reader.BytesConsumed;
+                    featureCount++;
+                    yield return feature;
 
-                    if (reader.TokenType == JsonTokenType.PropertyName)
+                    // Check feature limit
+                    if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
                     {
-                        var propertyName = reader.GetString();
-                        if (propertyName == "features" && !inFeaturesArray)
-                        {
-                            // Next token should be the start of the features array
-                            if (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
-                            {
-                                inFeaturesArray = true;
-                                featureDepth = reader.CurrentDepth;
-                            }
-                        }
-                    }
-                    else if (inFeaturesArray)
-                    {
-                        if (reader.TokenType == JsonTokenType.StartObject && reader.CurrentDepth == featureDepth + 1)
-                        {
-                            // Start of a feature
-                            isCollectingFeature = true;
-                            currentFeatureBytes.Clear();
-                            featureStartIndex = (int)reader.TokenStartIndex;
-                        }
-                        else if (reader.TokenType == JsonTokenType.EndObject && reader.CurrentDepth == featureDepth + 1)
-                        {
-                            // End of a feature - parse it
-                            if (isCollectingFeature)
-                            {
-                                var featureEnd = (int)reader.BytesConsumed;
-                                var featureSpan = data.Span.Slice(featureStartIndex, featureEnd - featureStartIndex);
-
-                                var feature = ParseFeature(featureSpan);
-                                if (feature != null)
-                                {
-                                    featureCount++;
-                                    yield return feature;
-
-                                    // Check feature limit
-                                    if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
-                                    {
-                                        yield break;
-                                    }
-                                }
-
-                                isCollectingFeature = false;
-                            }
-                        }
-                        else if (reader.TokenType == JsonTokenType.EndArray && reader.CurrentDepth == featureDepth)
-                        {
-                            // End of features array
-                            inFeaturesArray = false;
-                            yield break;
-                        }
+                        yield break;
                     }
                 }
 
-                jsonReaderState = reader.CurrentState;
-
                 // Keep unconsumed data for next iteration
-                if (lastConsumed < data.Length)
+                if (consumed < data.Length)
                 {
-                    leftover = data.Slice((int)lastConsumed).ToArray();
+                    leftover = data.Slice(consumed).ToArray();
                 }
                 else
                 {
                     leftover = ReadOnlyMemory<byte>.Empty;
                 }
 
-                // Yield control to avoid blocking
-                await Task.Yield();
+                // If we've finished processing the features array, break
+                if (processingState.IsComplete)
+                {
+                    yield break;
+                }
             }
         }
         finally
@@ -162,9 +125,91 @@ internal sealed class StreamingGeoJsonReader
     }
 
     /// <summary>
+    /// Process a chunk of JSON data synchronously to avoid ref struct issues
+    /// </summary>
+    private (List<IFeature> features, JsonReaderState newState, JsonProcessingState newProcessingState, int consumed) ProcessJsonChunk(
+        ReadOnlyMemory<byte> data,
+        JsonReaderState jsonReaderState,
+        JsonProcessingState processingState)
+    {
+        var features = new List<IFeature>();
+        var reader = new Utf8JsonReader(data.Span, false, jsonReaderState);
+        var lastConsumed = 0;
+
+        var inFeaturesArray = processingState.InFeaturesArray;
+        var featureDepth = processingState.FeatureDepth;
+        var isCollectingFeature = processingState.IsCollectingFeature;
+        var featureStartIndex = processingState.FeatureStartIndex;
+        var isComplete = processingState.IsComplete;
+
+        while (reader.Read() && !isComplete)
+        {
+            lastConsumed = (int)reader.BytesConsumed;
+
+            if (reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var propertyName = reader.GetString();
+                if (propertyName == "features" && !inFeaturesArray)
+                {
+                    // Next token should be the start of the features array
+                    if (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
+                    {
+                        inFeaturesArray = true;
+                        featureDepth = reader.CurrentDepth;
+                        lastConsumed = (int)reader.BytesConsumed;
+                    }
+                }
+            }
+            else if (inFeaturesArray)
+            {
+                if (reader.TokenType == JsonTokenType.StartObject && reader.CurrentDepth == featureDepth + 1)
+                {
+                    // Start of a feature
+                    isCollectingFeature = true;
+                    featureStartIndex = (int)reader.TokenStartIndex;
+                }
+                else if (reader.TokenType == JsonTokenType.EndObject && reader.CurrentDepth == featureDepth + 1)
+                {
+                    // End of a feature - parse it
+                    if (isCollectingFeature)
+                    {
+                        var featureEnd = (int)reader.BytesConsumed;
+                        var featureSpan = data.Span.Slice(featureStartIndex, featureEnd - featureStartIndex);
+
+                        var feature = ParseFeature(featureSpan);
+                        if (feature != null)
+                        {
+                            features.Add(feature);
+                        }
+
+                        isCollectingFeature = false;
+                    }
+                }
+                else if (reader.TokenType == JsonTokenType.EndArray && reader.CurrentDepth == featureDepth)
+                {
+                    // End of features array
+                    isComplete = true;
+                    break;
+                }
+            }
+        }
+
+        var newProcessingState = new JsonProcessingState
+        {
+            InFeaturesArray = inFeaturesArray,
+            FeatureDepth = featureDepth,
+            IsCollectingFeature = isCollectingFeature,
+            FeatureStartIndex = featureStartIndex,
+            IsComplete = isComplete
+        };
+
+        return (features, reader.CurrentState, newProcessingState, lastConsumed);
+    }
+
+    /// <summary>
     /// Parse a single GeoJSON feature from a byte span.
     /// </summary>
-    private IFeature? ParseFeature(ReadOnlySpan<byte> featureJson)
+    private Feature? ParseFeature(ReadOnlySpan<byte> featureJson)
     {
         try
         {
@@ -269,13 +314,13 @@ internal sealed class StreamingGeoJsonReader
         }
     }
 
-    private Geometry ParsePoint(JsonElement coords)
+    private Point ParsePoint(JsonElement coords)
     {
         var coordinate = ParseCoordinate(coords);
         return _geometryFactory.CreatePoint(coordinate);
     }
 
-    private Geometry ParseMultiPoint(JsonElement coords)
+    private MultiPoint ParseMultiPoint(JsonElement coords)
     {
         var points = new List<Point>();
         foreach (var pointCoords in coords.EnumerateArray())
@@ -286,13 +331,13 @@ internal sealed class StreamingGeoJsonReader
         return _geometryFactory.CreateMultiPoint(points.ToArray());
     }
 
-    private Geometry ParseLineString(JsonElement coords)
+    private LineString ParseLineString(JsonElement coords)
     {
         var coordinates = ParseCoordinateArray(coords);
         return _geometryFactory.CreateLineString(coordinates);
     }
 
-    private Geometry ParseMultiLineString(JsonElement coords)
+    private MultiLineString ParseMultiLineString(JsonElement coords)
     {
         var lineStrings = new List<LineString>();
         foreach (var lineCoords in coords.EnumerateArray())
@@ -303,7 +348,7 @@ internal sealed class StreamingGeoJsonReader
         return _geometryFactory.CreateMultiLineString(lineStrings.ToArray());
     }
 
-    private Geometry ParsePolygon(JsonElement coords)
+    private Polygon ParsePolygon(JsonElement coords)
     {
         var rings = new List<LinearRing>();
         foreach (var ringCoords in coords.EnumerateArray())
@@ -320,7 +365,7 @@ internal sealed class StreamingGeoJsonReader
         return _geometryFactory.CreatePolygon(shell, holes);
     }
 
-    private Geometry ParseMultiPolygon(JsonElement coords)
+    private MultiPolygon ParseMultiPolygon(JsonElement coords)
     {
         var polygons = new List<Polygon>();
         foreach (var polyCoords in coords.EnumerateArray())
@@ -397,8 +442,7 @@ internal sealed class StreamingGeoJsonReader
 
             // Look for CRS property in the beginning of the document
             // The CRS is typically at the root level, so we can use simple string search
-            var crsIndex = headerJson.IndexOf("\"crs\"", StringComparison.OrdinalIgnoreCase);
-            if (crsIndex == -1)
+            if (!headerJson.Contains("\"crs\"", StringComparison.OrdinalIgnoreCase))
                 return null;
 
             // Try to extract EPSG code from the CRS
