@@ -21,6 +21,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Security;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -2554,6 +2555,16 @@ internal static partial class OgcFeaturesEndpoints
             // Convert GeoJSON feature to internal Feature format (ignore client-supplied ID)
             var internalFeature = ConvertGeoJsonFeatureToInternal(feature, ignoreId: true);
 
+            // Validate geometry if present
+            if (internalFeature.Geometry != null)
+            {
+                var validationResult = WkbValidation.Validate(internalFeature.Geometry);
+                if (!validationResult.IsValid)
+                {
+                    return TypedResults.BadRequest($"Invalid geometry: {validationResult.ErrorMessage}");
+                }
+            }
+
             // Create the feature
             var createdFeature = await featureStore.CreateAsync(layerId, internalFeature, effectiveToken);
 
@@ -2666,6 +2677,16 @@ internal static partial class OgcFeaturesEndpoints
 
             // Convert GeoJSON feature to internal Feature format using the path ID
             var internalFeature = ConvertGeoJsonFeatureToInternal(feature, overrideId: longFeatureId);
+
+            // Validate geometry if present
+            if (internalFeature.Geometry != null)
+            {
+                var validationResult = WkbValidation.Validate(internalFeature.Geometry);
+                if (!validationResult.IsValid)
+                {
+                    return TypedResults.BadRequest($"Invalid geometry: {validationResult.ErrorMessage}");
+                }
+            }
 
             // Update the feature
             var updatedFeature = await featureStore.UpdateAsync(layerId, internalFeature, effectiveToken);
