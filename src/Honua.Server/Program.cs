@@ -639,7 +639,6 @@ static void AddSecurityConfiguration(ConfigurationManager configuration, IHostEn
 
     sources.Insert(insertIndex, securitySource);
 }
-
 // Make Program accessible to WebApplicationFactory
 /// <summary>
 /// Application entry point for test hosting.
