@@ -1,0 +1,438 @@
+{
+  "_description": "Honua Server Caching Configuration Examples",
+
+  "development": {
+    "_description": "Development environment - aggressive caching for debugging, shorter TTLs",
+    "MemoryCache": {
+      "SizeLimit": 1000,
+      "CompactionPercentage": 0.25,
+      "ExpirationScanFrequency": "00:01:00",
+      "TrackStatistics": true,
+      "TrackLinkedCacheEntries": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:00:30",
+      "MaximumBodySize": 1048576,
+      "UseCaseSensitivePaths": false,
+      "Policies": {
+        "ServiceMetadata": {
+          "Expiration": "00:01:00",
+          "Tags": ["service-metadata", "metadata"]
+        },
+        "LayerMetadata": {
+          "Expiration": "00:01:00",
+          "Tags": ["layer-metadata", "metadata"]
+        },
+        "MvtTile": {
+          "Expiration": "00:05:00",
+          "Tags": ["mvt-tiles", "tiles"]
+        }
+      }
+    },
+    "ResponseCache": {
+      "DefaultTTL": "00:02:00",
+      "EnableLogging": true,
+      "EnableMetrics": true
+    }
+  },
+
+  "testing": {
+    "_description": "Test environment - minimal caching to ensure test isolation",
+    "MemoryCache": {
+      "SizeLimit": 100,
+      "CompactionPercentage": 0.50,
+      "ExpirationScanFrequency": "00:00:10",
+      "TrackStatistics": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:00:05",
+      "MaximumBodySize": 65536,
+      "UseCaseSensitivePaths": true,
+      "Policies": {
+        "ServiceMetadata": {
+          "Expiration": "00:00:10",
+          "Tags": ["test-metadata"]
+        },
+        "LayerMetadata": {
+          "Expiration": "00:00:10",
+          "Tags": ["test-metadata"]
+        }
+      }
+    },
+    "ResponseCache": {
+      "DefaultTTL": "00:00:05",
+      "EnableLogging": false,
+      "EnableMetrics": false
+    }
+  },
+
+  "staging": {
+    "_description": "Staging environment - production-like caching with monitoring",
+    "MemoryCache": {
+      "SizeLimit": 10000,
+      "CompactionPercentage": 0.20,
+      "ExpirationScanFrequency": "00:02:00",
+      "TrackStatistics": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:05:00",
+      "MaximumBodySize": 16777216,
+      "UseCaseSensitivePaths": false,
+      "Policies": {
+        "ServiceMetadata": {
+          "Expiration": "00:05:00",
+          "Tags": ["service-metadata", "metadata"]
+        },
+        "LayerMetadata": {
+          "Expiration": "00:05:00",
+          "Tags": ["layer-metadata", "metadata"]
+        },
+        "OgcConformance": {
+          "Expiration": "00:30:00",
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "OgcCollections": {
+          "Expiration": "00:10:00",
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "MvtTile": {
+          "Expiration": "01:00:00",
+          "Tags": ["mvt-tiles", "tiles"]
+        }
+      }
+    },
+    "ResponseCache": {
+      "DefaultTTL": "00:10:00",
+      "EnableLogging": false,
+      "EnableMetrics": true
+    },
+    "Redis": {
+      "ConnectionString": "localhost:6379",
+      "InstanceName": "Honua-Staging",
+      "DefaultDatabase": 1,
+      "ConnectTimeout": 5000,
+      "SyncTimeout": 5000
+    }
+  },
+
+  "production": {
+    "_description": "Production environment - optimized for performance and reliability",
+    "MemoryCache": {
+      "SizeLimit": 50000,
+      "CompactionPercentage": 0.15,
+      "ExpirationScanFrequency": "00:05:00",
+      "TrackStatistics": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:15:00",
+      "MaximumBodySize": 67108864,
+      "UseCaseSensitivePaths": false,
+      "Policies": {
+        "ServiceMetadata": {
+          "Expiration": "00:05:00",
+          "VaryByRouteValue": ["serviceId"],
+          "VaryByQuery": ["f"],
+          "Tags": ["service-metadata", "metadata"]
+        },
+        "LayerMetadata": {
+          "Expiration": "00:05:00",
+          "VaryByRouteValue": ["serviceId", "layerId"],
+          "VaryByQuery": ["f"],
+          "Tags": ["layer-metadata", "metadata"]
+        },
+        "OgcLandingPage": {
+          "Expiration": "00:30:00",
+          "VaryByQuery": ["f"],
+          "VaryByHeader": ["Accept"],
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "OgcConformance": {
+          "Expiration": "01:00:00",
+          "VaryByQuery": ["f"],
+          "VaryByHeader": ["Accept"],
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "OgcCollections": {
+          "Expiration": "00:10:00",
+          "VaryByQuery": ["f"],
+          "VaryByHeader": ["Accept"],
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "OgcCollection": {
+          "Expiration": "00:10:00",
+          "VaryByRouteValue": ["collectionId"],
+          "VaryByQuery": ["f"],
+          "VaryByHeader": ["Accept"],
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "OgcQueryables": {
+          "Expiration": "00:30:00",
+          "VaryByRouteValue": ["collectionId"],
+          "VaryByQuery": ["f"],
+          "VaryByHeader": ["Accept"],
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "OgcOpenApi": {
+          "Expiration": "01:00:00",
+          "VaryByQuery": ["f"],
+          "VaryByHeader": ["Accept"],
+          "Tags": ["ogc-metadata", "metadata"]
+        },
+        "MvtTile": {
+          "Expiration": "01:00:00",
+          "VaryByRouteValue": ["layerId", "z", "x", "y"],
+          "VaryByQuery": ["where"],
+          "Tags": ["mvt-tiles", "tiles"]
+        }
+      }
+    },
+    "ResponseCache": {
+      "DefaultTTL": "00:30:00",
+      "EnableLogging": false,
+      "EnableMetrics": true,
+      "TTLByType": {
+        "layer:definition": "00:30:00",
+        "layer:metadata": "00:30:00",
+        "service:definition": "00:05:00",
+        "service:metadata": "00:05:00",
+        "spatial:reference": "24:00:00",
+        "user:session": "00:20:00"
+      }
+    },
+    "Redis": {
+      "ConnectionString": "${REDIS_CONNECTION_STRING}",
+      "InstanceName": "Honua-Production",
+      "DefaultDatabase": 0,
+      "ConnectTimeout": 10000,
+      "SyncTimeout": 10000,
+      "CommandFlags": "PreferMaster",
+      "ConnectRetry": 3,
+      "AbortOnConnectFail": false
+    },
+    "DistributedCache": {
+      "SlidingExpiration": "02:00:00",
+      "AbsoluteExpirationRelativeToNow": "04:00:00"
+    }
+  },
+
+  "production-multi-instance": {
+    "_description": "Production multi-instance - hybrid caching strategy",
+    "MemoryCache": {
+      "_description": "L1 cache - frequently accessed small objects",
+      "SizeLimit": 20000,
+      "CompactionPercentage": 0.20,
+      "ExpirationScanFrequency": "00:02:00",
+      "TrackStatistics": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:15:00",
+      "MaximumBodySize": 67108864,
+      "UseCaseSensitivePaths": false,
+      "Policies": "/* Same as production */"
+    },
+    "ResponseCache": {
+      "_description": "Hybrid cache configuration",
+      "Strategy": "Hybrid",
+      "L1Cache": {
+        "DefaultTTL": "00:05:00",
+        "MaxSize": 10000,
+        "Types": ["layer:definition", "service:definition", "spatial:reference"]
+      },
+      "L2Cache": {
+        "DefaultTTL": "00:30:00",
+        "Provider": "Redis",
+        "Types": ["layer:metadata", "service:metadata", "user:session"]
+      },
+      "EnableInvalidationBus": true
+    },
+    "Redis": {
+      "ConnectionString": "${REDIS_CONNECTION_STRING}",
+      "InstanceName": "Honua-Production-Cluster",
+      "DefaultDatabase": 0,
+      "ConnectTimeout": 15000,
+      "SyncTimeout": 15000,
+      "CommandFlags": "PreferMaster",
+      "ConnectRetry": 5,
+      "AbortOnConnectFail": false,
+      "ChannelPrefix": "honua:cache:",
+      "PublishSubscribe": {
+        "InvalidationChannel": "cache:invalidate",
+        "HealthChannel": "cache:health"
+      }
+    },
+    "CacheInvalidation": {
+      "Strategy": "MessageBus",
+      "Provider": "Redis",
+      "EnableBroadcast": true,
+      "RetryAttempts": 3,
+      "RetryDelay": "00:00:01"
+    }
+  },
+
+  "container-small": {
+    "_description": "Container deployment - memory constrained (512MB-1GB)",
+    "MemoryCache": {
+      "SizeLimit": 2000,
+      "CompactionPercentage": 0.30,
+      "ExpirationScanFrequency": "00:01:00",
+      "TrackStatistics": false
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:10:00",
+      "MaximumBodySize": 4194304,
+      "Policies": {
+        "ServiceMetadata": {
+          "Expiration": "00:03:00"
+        },
+        "LayerMetadata": {
+          "Expiration": "00:03:00"
+        },
+        "MvtTile": {
+          "Expiration": "00:30:00"
+        }
+      }
+    },
+    "ResponseCache": {
+      "DefaultTTL": "00:05:00",
+      "EnableLogging": false,
+      "EnableMetrics": false
+    }
+  },
+
+  "container-large": {
+    "_description": "Container deployment - high memory (4GB+)",
+    "MemoryCache": {
+      "SizeLimit": 100000,
+      "CompactionPercentage": 0.10,
+      "ExpirationScanFrequency": "00:10:00",
+      "TrackStatistics": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "00:20:00",
+      "MaximumBodySize": 134217728,
+      "Policies": {
+        "ServiceMetadata": {
+          "Expiration": "00:10:00"
+        },
+        "LayerMetadata": {
+          "Expiration": "00:10:00"
+        },
+        "MvtTile": {
+          "Expiration": "02:00:00"
+        },
+        "OgcFeatures": {
+          "Expiration": "00:15:00",
+          "VaryByRouteValue": ["collectionId"],
+          "VaryByQuery": ["limit", "offset", "bbox", "datetime"],
+          "Tags": ["ogc-features", "features"]
+        }
+      }
+    },
+    "ResponseCache": {
+      "DefaultTTL": "00:15:00",
+      "EnableLogging": false,
+      "EnableMetrics": true
+    }
+  },
+
+  "high-availability": {
+    "_description": "High availability setup with cache clustering",
+    "MemoryCache": {
+      "SizeLimit": 30000,
+      "CompactionPercentage": 0.15,
+      "ExpirationScanFrequency": "00:03:00",
+      "TrackStatistics": true
+    },
+    "Redis": {
+      "Cluster": {
+        "Endpoints": [
+          "${REDIS_NODE_1}:6379",
+          "${REDIS_NODE_2}:6379",
+          "${REDIS_NODE_3}:6379"
+        ],
+        "ConnectTimeout": 20000,
+        "SyncTimeout": 20000,
+        "ConfigurationChannel": "__keyspace@0__:config",
+        "TieBreaker": "${REDIS_NODE_1}:6379",
+        "DefaultDatabase": null
+      }
+    },
+    "HealthChecks": {
+      "CacheHealth": {
+        "Interval": "00:00:30",
+        "Timeout": "00:00:10",
+        "FailureThreshold": 3,
+        "Tags": ["cache", "infrastructure"]
+      }
+    },
+    "Monitoring": {
+      "Metrics": {
+        "HitRateThreshold": 0.80,
+        "LatencyThreshold": "00:00:00.100",
+        "ErrorRateThreshold": 0.01
+      },
+      "Alerts": {
+        "LowHitRate": true,
+        "HighLatency": true,
+        "CacheDown": true,
+        "MemoryPressure": true
+      }
+    }
+  },
+
+  "performance-testing": {
+    "_description": "Performance testing configuration",
+    "MemoryCache": {
+      "SizeLimit": 1000000,
+      "CompactionPercentage": 0.05,
+      "ExpirationScanFrequency": "00:30:00",
+      "TrackStatistics": true,
+      "TrackLinkedCacheEntries": true
+    },
+    "OutputCache": {
+      "DefaultExpiration": "01:00:00",
+      "MaximumBodySize": 268435456,
+      "UseCaseSensitivePaths": false
+    },
+    "ResponseCache": {
+      "DefaultTTL": "01:00:00",
+      "EnableLogging": true,
+      "EnableMetrics": true,
+      "EnableDetailedMetrics": true
+    },
+    "Benchmarking": {
+      "WarmupRequests": 1000,
+      "TestDuration": "00:10:00",
+      "CachePreload": true,
+      "MetricsInterval": "00:00:05"
+    }
+  },
+
+  "configuration_notes": {
+    "memory_sizing": {
+      "development": "1,000 entries ≈ 100MB",
+      "small_production": "10,000 entries ≈ 1GB",
+      "large_production": "50,000+ entries ≈ 5GB+",
+      "calculation": "Estimate ~100KB average per entry including overhead"
+    },
+    "ttl_guidelines": {
+      "very_stable": "24 hours (SRID definitions, API schemas)",
+      "stable": "30-60 minutes (layer definitions, service config)",
+      "semi_stable": "5-15 minutes (metadata, collections)",
+      "dynamic": "1-5 minutes (user sessions, temporary data)",
+      "real_time": "30 seconds or less (live data, status)"
+    },
+    "vary_by_patterns": {
+      "route_values": "Use for path parameters (serviceId, layerId, z, x, y)",
+      "query_parameters": "Use for format, filters, pagination (f, where, limit)",
+      "headers": "Use for content negotiation (Accept, Accept-Language)",
+      "user": "Use for user-specific data (authentication, preferences)"
+    },
+    "tag_strategies": {
+      "hierarchical": "service-metadata > layer-metadata > feature-data",
+      "functional": "metadata, tiles, features, admin",
+      "temporal": "short-term, medium-term, long-term",
+      "scope": "global, service-specific, user-specific"
+    }
+  }
+}

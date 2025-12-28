@@ -20,6 +20,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -814,10 +815,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CollectionsQueryFailed(logger, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while retrieving collections.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while retrieving collections.");
         }
     }
 
@@ -887,10 +887,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CollectionQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while retrieving the collection.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while retrieving the collection.");
         }
     }
 
@@ -951,10 +950,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CollectionQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while retrieving the queryables schema.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while retrieving the queryables schema.");
         }
     }
 
@@ -1260,10 +1258,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.ItemsQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while processing the request.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while processing the request.");
         }
     }
 
@@ -1402,10 +1399,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.ItemQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while processing the request.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while processing the request.");
         }
     }
 
@@ -2602,10 +2598,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CreateFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while creating the feature.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while creating the feature.");
         }
     }
 
@@ -2723,10 +2718,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.UpdateFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while updating the feature.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while updating the feature.");
         }
     }
 
@@ -2794,10 +2788,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.DeleteFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while deleting the feature.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while deleting the feature.");
         }
     }
 
@@ -3788,63 +3781,180 @@ internal static partial class OgcFeaturesEndpoints
 
     private static partial class Log
     {
+        /// <summary>
+        /// Logs when an invalid OGC collections request is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that occurred during request validation.</param>
         [LoggerMessage(EventId = 3100, Level = LogLevel.Warning, Message = "Invalid OGC collections request.")]
         public static partial void InvalidCollectionsRequest(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC collections operation is attempted.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that occurred during operation validation.</param>
         [LoggerMessage(EventId = 3101, Level = LogLevel.Warning, Message = "Invalid OGC collections operation.")]
         public static partial void InvalidCollectionsOperation(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when retrieving OGC collections fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3102, Level = LogLevel.Error, Message = "Error retrieving OGC collections.")]
         public static partial void CollectionsQueryFailed(ILogger logger, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC collection ID is provided.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The invalid collection identifier.</param>
+        /// <param name="exception">The exception that occurred during validation.</param>
         [LoggerMessage(EventId = 3103, Level = LogLevel.Warning, Message = "Invalid OGC collection ID {CollectionId}.")]
         public static partial void InvalidCollectionId(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when retrieving a specific OGC collection fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3104, Level = LogLevel.Error, Message = "Error retrieving OGC collection {CollectionId}.")]
         public static partial void CollectionQueryFailed(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC items request is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during request validation.</param>
         [LoggerMessage(EventId = 3105, Level = LogLevel.Warning, Message = "Invalid OGC items request for collection {CollectionId}.")]
         public static partial void InvalidItemsRequest(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC items operation is attempted.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during operation validation.</param>
         [LoggerMessage(EventId = 3106, Level = LogLevel.Warning, Message = "Invalid OGC items operation for collection {CollectionId}.")]
         public static partial void InvalidItemsOperation(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when processing an OGC items request fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3107, Level = LogLevel.Error, Message = "Error processing OGC items request for collection {CollectionId}.")]
         public static partial void ItemsQueryFailed(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC item request is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during request validation.</param>
         [LoggerMessage(EventId = 3108, Level = LogLevel.Warning, Message = "Invalid OGC item request for collection {CollectionId}.")]
         public static partial void InvalidItemRequest(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC item operation is attempted.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during operation validation.</param>
         [LoggerMessage(EventId = 3109, Level = LogLevel.Warning, Message = "Invalid OGC item operation for collection {CollectionId}.")]
         public static partial void InvalidItemOperation(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when processing an OGC item request fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3110, Level = LogLevel.Error, Message = "Error processing OGC item request for collection {CollectionId}.")]
         public static partial void ItemQueryFailed(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC create feature request is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during request validation.</param>
         [LoggerMessage(EventId = 3111, Level = LogLevel.Warning, Message = "Invalid OGC create feature request for collection {CollectionId}.")]
         public static partial void InvalidCreateRequest(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC create feature operation is attempted.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during operation validation.</param>
         [LoggerMessage(EventId = 3112, Level = LogLevel.Warning, Message = "Invalid OGC create feature operation for collection {CollectionId}.")]
         public static partial void InvalidCreateOperation(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when creating an OGC feature fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3113, Level = LogLevel.Error, Message = "Error creating OGC feature for collection {CollectionId}.")]
         public static partial void CreateFailed(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC update request is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during request validation.</param>
         [LoggerMessage(EventId = 3114, Level = LogLevel.Warning, Message = "Invalid OGC update request for collection {CollectionId}.")]
         public static partial void InvalidUpdateRequest(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC update operation is attempted.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during operation validation.</param>
         [LoggerMessage(EventId = 3115, Level = LogLevel.Warning, Message = "Invalid OGC update operation for collection {CollectionId}.")]
         public static partial void InvalidUpdateOperation(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when updating an OGC feature fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3116, Level = LogLevel.Error, Message = "Error updating OGC feature for collection {CollectionId}.")]
         public static partial void UpdateFailed(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC delete request is received.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during request validation.</param>
         [LoggerMessage(EventId = 3117, Level = LogLevel.Warning, Message = "Invalid OGC delete request for collection {CollectionId}.")]
         public static partial void InvalidDeleteRequest(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when an invalid OGC delete operation is attempted.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that occurred during operation validation.</param>
         [LoggerMessage(EventId = 3118, Level = LogLevel.Warning, Message = "Invalid OGC delete operation for collection {CollectionId}.")]
         public static partial void InvalidDeleteOperation(ILogger logger, string collectionId, Exception exception);
 
+        /// <summary>
+        /// Logs when deleting an OGC feature fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="collectionId">The collection identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3119, Level = LogLevel.Error, Message = "Error deleting OGC feature for collection {CollectionId}.")]
         public static partial void DeleteFailed(ILogger logger, string collectionId, Exception exception);
     }

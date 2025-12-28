@@ -1,0 +1,86 @@
+{
+  "_comment": "Rate Limiting Configuration Examples for Honua Server",
+  "_documentation": "See docs/RATE_LIMITING.md for complete documentation",
+
+  "production_default": {
+    "RateLimit": {
+      "MaxRequestsPerWindow": 1000,
+      "WindowSize": "00:10:00"
+    }
+  },
+
+  "development": {
+    "_comment": "Very high limits for development and testing",
+    "RateLimit": {
+      "MaxRequestsPerWindow": 10000,
+      "WindowSize": "00:01:00"
+    }
+  },
+
+  "high_traffic": {
+    "_comment": "For high-traffic production environments",
+    "RateLimit": {
+      "MaxRequestsPerWindow": 5000,
+      "WindowSize": "00:05:00"
+    }
+  },
+
+  "strict_security": {
+    "_comment": "For security-sensitive environments",
+    "RateLimit": {
+      "MaxRequestsPerWindow": 100,
+      "WindowSize": "00:15:00"
+    }
+  },
+
+  "api_gateway": {
+    "_comment": "When behind API gateway with its own rate limiting",
+    "RateLimit": {
+      "MaxRequestsPerWindow": 10000,
+      "WindowSize": "00:01:00"
+    }
+  },
+
+  "geospatial_heavy": {
+    "_comment": "For geospatial workloads with complex queries",
+    "RateLimit": {
+      "MaxRequestsPerWindow": 500,
+      "WindowSize": "00:10:00"
+    }
+  },
+
+  "_environment_variables": {
+    "_comment": "Alternative configuration via environment variables",
+    "_examples": [
+      "RateLimit__MaxRequestsPerWindow=1000",
+      "RateLimit__WindowSize=00:10:00"
+    ]
+  },
+
+  "_docker_compose_example": {
+    "version": "3.8",
+    "services": {
+      "honua-server": {
+        "image": "honua/server:latest",
+        "environment": [
+          "RateLimit__MaxRequestsPerWindow=1000",
+          "RateLimit__WindowSize=00:10:00"
+        ],
+        "ports": [
+          "8080:8080"
+        ]
+      }
+    }
+  },
+
+  "_kubernetes_configmap_example": {
+    "apiVersion": "v1",
+    "kind": "ConfigMap",
+    "metadata": {
+      "name": "honua-config"
+    },
+    "data": {
+      "appsettings.Production.json": "{\n  \"RateLimit\": {\n    \"MaxRequestsPerWindow\": 1000,\n    \"WindowSize\": \"00:10:00\"\n  }\n}"
+    }
+  }
+}

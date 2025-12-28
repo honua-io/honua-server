@@ -93,5 +93,7 @@ internal static class ProtocolErrorWriter
 
     private static bool IsGeoServices(PathString path) =>
         path.StartsWithSegments("/rest/services") ||
-        path.StartsWithSegments("/api/import");
+        path.StartsWithSegments("/api/import") ||
+        path.StartsWithSegments("/collections") ||
+        path.StartsWithSegments("/tiles");
 }
