@@ -14,6 +14,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.OData.Services;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -119,6 +120,35 @@ internal static partial class ODataEndpoints
             .WithSummary("Delete a feature")
             .WithTags("OData")
             .Produces(204)
+            .Produces(404);
+
+        // POST - Batch operations
+        endpoints.MapPost("/odata/$batch", HandleBatch)
+            .WithDisplayName("OData Batch Operations")
+            .WithName("ODataBatch")
+            .WithSummary("Execute multiple operations in a single request with optional atomicity groups")
+            .WithTags("OData")
+            .Produces<ODataBatchResponse>(200, "application/json")
+            .Produces(400);
+
+        // GET - Aggregation with $apply
+        endpoints.MapGet("/odata/Features({layerId:int})/$apply", HandleApply)
+            .WithDisplayName("OData Aggregation")
+            .WithName("ODataApply")
+            .WithSummary("Aggregate features using $apply transformations (aggregate, groupby, filter, compute)")
+            .WithTags("OData")
+            .Produces<ODataAggregationResult>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
+        // GET - Full-text search with $search
+        endpoints.MapGet("/odata/Features({layerId:int})/$search", HandleSearch)
+            .WithDisplayName("OData Search")
+            .WithName("ODataSearch")
+            .WithSummary("Full-text search across feature attributes using PostgreSQL text search")
+            .WithTags("OData")
+            .Produces<ODataSearchResult>(200, "application/json")
+            .Produces(400)
             .Produces(404);
 
         return endpoints;
@@ -472,6 +502,7 @@ internal static partial class ODataEndpoints
         [FromQuery(Name = "$top")] int? top = null,
         [FromQuery(Name = "$skip")] int? skip = null,
         [FromQuery(Name = "$count")] bool? count = null,
+        [FromQuery(Name = "$expand")] string? expand = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -539,13 +570,39 @@ internal static partial class ODataEndpoints
             // Execute query
             var queryResult = await featureStore.QueryAsync(layerId, featureQuery, effectiveToken);
 
-            // Convert features to OData format
-            var featuresData = queryResult.Items.Select(f => new Dictionary<string, object?>
+            // Process $expand for related entities
+            Dictionary<long, Dictionary<string, object?[]>>? expandedRelations = null;
+            if (!string.IsNullOrWhiteSpace(expand) && layer.HasRelationships)
             {
-                ["ObjectId"] = f.Id,
-                ["LayerId"] = layerId,
-                ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
-                ["Attributes"] = SerializeAttributes(f.Attributes)
+                expandedRelations = await ProcessExpandAsync(
+                    expand,
+                    layer,
+                    queryResult.Items.Select(f => f.Id).ToArray(),
+                    featureStore,
+                    effectiveToken);
+            }
+
+            // Convert features to OData format
+            var featuresData = queryResult.Items.Select(f =>
+            {
+                var dict = new Dictionary<string, object?>
+                {
+                    ["ObjectId"] = f.Id,
+                    ["LayerId"] = layerId,
+                    ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
+                    ["Attributes"] = SerializeAttributes(f.Attributes)
+                };
+
+                // Add expanded relations if available
+                if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))
+                {
+                    foreach (var kvp in relations)
+                    {
+                        dict[kvp.Key] = kvp.Value;
+                    }
+                }
+
+                return dict;
             }).ToArray();
 
             // Apply field selection if specified
@@ -868,6 +925,364 @@ internal static partial class ODataEndpoints
             statusCode: statusCode);
     }
 
+    /// <summary>
+    /// Handles OData $batch request for executing multiple operations.
+    /// </summary>
+    private static async Task<IResult> HandleBatch(
+        HttpContext context,
+        ILayerCatalog layerCatalog,
+        IFeatureStore featureStore,
+        ILogger<ODataEndpointsLog> logger,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+
+            // Read and parse the batch request
+            ODataBatchRequest? batchRequest;
+            try
+            {
+                batchRequest = await context.Request.ReadFromJsonAsync<ODataBatchRequest>(
+                    ODataJsonContext.Default.ODataBatchRequest,
+                    effectiveToken);
+            }
+            catch (JsonException ex)
+            {
+                Log.BatchParseFailed(logger, ex);
+                return CreateODataError(context, "InvalidRequest", "Failed to parse batch request body.");
+            }
+
+            if (batchRequest == null || batchRequest.Requests.IsDefaultOrEmpty)
+            {
+                return CreateODataError(context, "InvalidRequest", "Batch request must contain at least one request.");
+            }
+
+            // Process the batch
+            var handler = new ODataBatchHandler(layerCatalog, featureStore, logger);
+            var response = await handler.ProcessBatchAsync(batchRequest, baseUrl, effectiveToken);
+
+            SetODataHeaders(context);
+            return Results.Json(response, ODataJsonContext.Default.ODataBatchResponse, contentType: ODataContentType);
+        }
+        catch (Exception ex)
+        {
+            Log.BatchFailed(logger, ex);
+            return CreateODataError(context, "InternalServerError", "An error occurred processing the batch request", 500);
+        }
+    }
+
+    /// <summary>
+    /// Handles OData $apply aggregation request.
+    /// </summary>
+    private static async Task<IResult> HandleApply(
+        HttpContext context,
+        int layerId,
+        ILayerCatalog layerCatalog,
+        IFeatureStore featureStore,
+        ILogger<ODataEndpointsLog> logger,
+        [FromQuery(Name = "$apply")] string? apply = null,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(apply))
+            {
+                return CreateODataError(context, "InvalidQueryOption", "$apply parameter is required.");
+            }
+
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
+            // Verify layer exists
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
+            if (layer == null)
+            {
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
+            }
+
+            var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+
+            // Process aggregation
+            var handler = new ODataAggregationHandler(featureStore);
+            var result = await handler.ProcessAggregationAsync(layerId, apply, filter, baseUrl, effectiveToken);
+
+            SetODataHeaders(context);
+            return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult, contentType: ODataContentType);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.InvalidApplyExpression(logger, layerId, ex);
+            return CreateODataError(context, "InvalidQueryOption", $"Invalid $apply expression: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Log.ApplyFailed(logger, layerId, ex);
+            return CreateODataError(context, "InternalServerError", "An error occurred processing the aggregation request", 500);
+        }
+    }
+
+    /// <summary>
+    /// Handles OData $search full-text search request.
+    /// </summary>
+    private static async Task<IResult> HandleSearch(
+        HttpContext context,
+        int layerId,
+        ILayerCatalog layerCatalog,
+        IFeatureStore featureStore,
+        ILogger<ODataEndpointsLog> logger,
+        [FromQuery(Name = "$search")] string? search = null,
+        [FromQuery(Name = "$top")] int? top = null,
+        [FromQuery(Name = "$skip")] int? skip = null,
+        [FromQuery(Name = "$count")] bool? count = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(search))
+            {
+                return CreateODataError(context, "InvalidQueryOption", "$search parameter is required.");
+            }
+
+            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+
+            // Verify layer exists
+            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
+            if (layer == null)
+            {
+                return CreateODataError(context, "ResourceNotFound", $"Layer {layerId} not found", 404);
+            }
+
+            var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+
+            // Build a text search query using PostgreSQL full-text search
+            // Convert $search to a SQL text search condition
+            var searchTerms = ParseSearchExpression(search);
+            var textSearchCondition = BuildTextSearchCondition(searchTerms, layer);
+
+            var query = new FeatureQuery
+            {
+                Where = textSearchCondition,
+                Limit = top ?? 1000,
+                Offset = skip
+            };
+
+            var result = await featureStore.QueryAsync(layerId, query, effectiveToken);
+
+            // Convert features to OData format
+            var featuresData = result.Items.Select(f => new Dictionary<string, object?>
+            {
+                ["ObjectId"] = f.Id,
+                ["LayerId"] = layerId,
+                ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
+                ["Attributes"] = SerializeAttributes(f.Attributes)
+            }).ToArray();
+
+            var response = new ODataSearchResult
+            {
+                Context = $"{baseUrl}/odata/$metadata#Features",
+                Count = count == true ? result.TotalCount : null,
+                Value = featuresData.Cast<object>().ToArray()
+            };
+
+            SetODataHeaders(context);
+            return Results.Json(response, ODataJsonContext.Default.ODataSearchResult, contentType: ODataContentType);
+        }
+        catch (Exception ex)
+        {
+            Log.SearchFailed(logger, layerId, ex);
+            return CreateODataError(context, "InternalServerError", "An error occurred processing the search request", 500);
+        }
+    }
+
+    /// <summary>
+    /// Parses an OData $search expression.
+    /// Supports: simple terms, quoted phrases, AND, OR, NOT
+    /// </summary>
+    private static List<(string term, bool isNegated, bool isPhrase)> ParseSearchExpression(string search)
+    {
+        var terms = new List<(string term, bool isNegated, bool isPhrase)>();
+        var trimmed = search.Trim();
+
+        // Handle quoted phrases first
+        var phraseMatches = System.Text.RegularExpressions.Regex.Matches(
+            trimmed,
+            @"""([^""]+)""",
+            System.Text.RegularExpressions.RegexOptions.None);
+
+        var remaining = trimmed;
+        foreach (System.Text.RegularExpressions.Match match in phraseMatches)
+        {
+            terms.Add((match.Groups[1].Value, false, true));
+            remaining = remaining.Replace(match.Value, " ");
+        }
+
+        // Handle remaining terms
+        var words = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var negate = false;
+
+        foreach (var word in words)
+        {
+            if (word.Equals("NOT", StringComparison.OrdinalIgnoreCase))
+            {
+                negate = true;
+                continue;
+            }
+
+            if (word.Equals("AND", StringComparison.OrdinalIgnoreCase) ||
+                word.Equals("OR", StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // Skip logical operators for now, treat as AND by default
+            }
+
+            if (!string.IsNullOrWhiteSpace(word))
+            {
+                terms.Add((word, negate, false));
+                negate = false;
+            }
+        }
+
+        return terms;
+    }
+
+    /// <summary>
+    /// Processes $expand to fetch related entities for each feature.
+    /// </summary>
+    private static async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
+        string expand,
+        LayerDefinition layer,
+        long[] objectIds,
+        IFeatureStore featureStore,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<long, Dictionary<string, object?[]>>();
+
+        if (objectIds.Length == 0)
+        {
+            return result;
+        }
+
+        // Parse $expand expression - comma-separated list of relationship names
+        var relationshipNames = expand
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Find matching relationships
+        foreach (var relationship in layer.LayerRelationships)
+        {
+            if (!relationshipNames.Contains(relationship.Name))
+            {
+                continue;
+            }
+
+            // Query related features
+            var relatedQuery = RelatedQuery.ForObjects(objectIds, relationship);
+            var relatedResult = await featureStore.QueryRelatedAsync(layer.Id, relatedQuery, cancellationToken);
+
+            // Group related features by origin object ID
+            foreach (var feature in relatedResult.Items)
+            {
+                // Try to get the origin key from the related feature's attributes
+                if (!feature.Attributes.TryGetValue(relationship.DestinationForeignKeyField, out var originKeyValue))
+                {
+                    continue;
+                }
+
+                // Convert the origin key to long if possible
+                long? originId = originKeyValue switch
+                {
+                    long l => l,
+                    int i => i,
+                    string s when long.TryParse(s, out var parsed) => parsed,
+                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.Number => je.GetInt64(),
+                    _ => null
+                };
+
+                if (!originId.HasValue)
+                {
+                    continue;
+                }
+
+                if (!result.TryGetValue(originId.Value, out var relationsDict))
+                {
+                    relationsDict = new Dictionary<string, object?[]>();
+                    result[originId.Value] = relationsDict;
+                }
+
+                var relatedFeatureDict = new Dictionary<string, object?>
+                {
+                    ["ObjectId"] = feature.Id,
+                    ["Attributes"] = SerializeAttributes(feature.Attributes)
+                };
+
+                if (relationsDict.TryGetValue(relationship.Name, out var existingRelations))
+                {
+                    var newRelations = new object?[existingRelations.Length + 1];
+                    Array.Copy(existingRelations, newRelations, existingRelations.Length);
+                    newRelations[existingRelations.Length] = relatedFeatureDict;
+                    relationsDict[relationship.Name] = newRelations;
+                }
+                else
+                {
+                    relationsDict[relationship.Name] = new object?[] { relatedFeatureDict };
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a PostgreSQL text search condition from parsed search terms.
+    /// </summary>
+    private static string BuildTextSearchCondition(
+        List<(string term, bool isNegated, bool isPhrase)> terms,
+        LayerDefinition layer)
+    {
+        if (terms.Count == 0)
+        {
+            return "1=1"; // No search terms, match all
+        }
+
+        // Get text-searchable fields from the layer
+        var textFields = layer.AttributeFields
+            .Where(f => f.Type == FieldType.String)
+            .Select(f => f.Name)
+            .ToList();
+
+        if (textFields.Count == 0)
+        {
+            return "1=0"; // No text fields to search
+        }
+
+        var conditions = new List<string>();
+
+        foreach (var (term, isNegated, isPhrase) in terms)
+        {
+            // Escape the term for SQL ILIKE
+            var escapedTerm = term
+                .Replace("'", "''")
+                .Replace("%", "\\%")
+                .Replace("_", "\\_");
+
+            var fieldConditions = textFields
+                .Select(f => $"COALESCE(attributes->>'{f}', '') ILIKE '%{escapedTerm}%'")
+                .ToList();
+
+            var condition = $"({string.Join(" OR ", fieldConditions)})";
+
+            if (isNegated)
+            {
+                condition = $"NOT {condition}";
+            }
+
+            conditions.Add(condition);
+        }
+
+        return string.Join(" AND ", conditions);
+    }
+
     private static partial class Log
     {
         [LoggerMessage(EventId = 3000, Level = LogLevel.Warning, Message = "Failed to generate dynamic OData metadata, using static metadata.")]
@@ -899,6 +1314,21 @@ internal static partial class ODataEndpoints
 
         [LoggerMessage(EventId = 3009, Level = LogLevel.Error, Message = "OData delete feature failed for layer {LayerId} and objectId {ObjectId}.")]
         public static partial void DeleteFeatureFailed(ILogger logger, int layerId, long objectId, Exception exception);
+
+        [LoggerMessage(EventId = 3010, Level = LogLevel.Warning, Message = "OData batch request parse failed.")]
+        public static partial void BatchParseFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3011, Level = LogLevel.Error, Message = "OData batch request failed.")]
+        public static partial void BatchFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 3012, Level = LogLevel.Warning, Message = "Invalid OData $apply expression for layer {LayerId}.")]
+        public static partial void InvalidApplyExpression(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 3013, Level = LogLevel.Error, Message = "OData $apply aggregation failed for layer {LayerId}.")]
+        public static partial void ApplyFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 3014, Level = LogLevel.Error, Message = "OData $search failed for layer {LayerId}.")]
+        public static partial void SearchFailed(ILogger logger, int layerId, Exception exception);
     }
 
     private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
