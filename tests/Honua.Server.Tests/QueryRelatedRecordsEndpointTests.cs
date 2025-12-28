@@ -12,7 +12,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
-using Xunit;
 
 namespace Honua.Server.Tests;
 
@@ -406,7 +405,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 
         foreach (var group in queryResponse.RelatedRecordGroups)
         {
-            group.ObjectId.Should().BeGreaterOrEqualTo(0);
+            group.ObjectId.Should().BeGreaterThanOrEqualTo(0);
 
             if (group.RelatedRecords != null)
             {

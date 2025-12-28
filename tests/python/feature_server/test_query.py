@@ -131,7 +131,7 @@ class TestQueryWhereClause:
         """Query with less-than comparison."""
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "id < 100", "f": "json"},
+            params={"where": "count < 100", "f": "json"},
         )
         assert response.status_code == 200
 
@@ -143,7 +143,7 @@ class TestQueryWhereClause:
         """Query with greater-than comparison."""
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "id > 0", "f": "json"},
+            params={"where": "count > 0", "f": "json"},
         )
         assert response.status_code == 200
 
@@ -179,7 +179,7 @@ class TestQueryWhereClause:
         """Query with BETWEEN operator."""
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "id BETWEEN 1 AND 100", "f": "json"},
+            params={"where": "count BETWEEN 1 AND 100", "f": "json"},
         )
         assert response.status_code == 200
 
@@ -203,7 +203,7 @@ class TestQueryWhereClause:
         """Query with AND logical operator."""
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "id > 0 AND name IS NOT NULL", "f": "json"},
+            params={"where": "count > 0 AND name IS NOT NULL", "f": "json"},
         )
         assert response.status_code == 200
 
@@ -239,7 +239,7 @@ class TestQueryWhereClause:
         """Query with nested parentheses."""
         response = http_client.get(
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "(name = 'a' OR name = 'b') AND id > 0", "f": "json"},
+            params={"where": "(name = 'a' OR name = 'b') AND count > 0", "f": "json"},
         )
         assert response.status_code == 200
 

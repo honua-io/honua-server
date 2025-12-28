@@ -31,7 +31,26 @@
     <PackageReference Include="FluentAssertions" Version="7.2.0" />
     <PackageReference Include="FluentAssertions.Json" Version="6.1.0" />
 
+    <!-- YAML parsing -->
+    <PackageReference Include="YamlDotNet" Version="16.0.0" />
+
     <!-- Data Generation -->
+    <PackageReference Include="FsCheck" Version="3.0.1" />
+    <PackageReference Include="FsCheck.Xunit" Version="3.0.1" />
+    <PackageReference Include="AutoBogus" Version="2.13.1" />
+
+    <!-- Performance Testing -->
+    <PackageReference Include="NBomber" Version="6.1.0" />
+    <PackageReference Include="NBomber.Http" Version="6.1.0" />
+
+    <!-- HTTP Client for Contract Testing -->
+    <PackageReference Include="WireMock.Net" Version="1.6.9" />
+
+    <!-- JSON Schema Validation -->
+    <PackageReference Include="Newtonsoft.Json.Schema" Version="4.0.1" />
+
+    <!-- Dependency overrides -->
+    <PackageReference Include="System.Linq.Dynamic.Core" Version="1.7.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
+using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
@@ -89,8 +91,12 @@ internal static class RouteValidationHelpers
         };
 
         context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = "application/json; charset=utf-8";
 
-        await context.Response.WriteAsJsonAsync(errorResponse);
+        await JsonSerializer.SerializeAsync(
+            context.Response.Body,
+            errorResponse,
+            LimitsEnforcementJsonContext.Default.ApiErrorResponse,
+            context.RequestAborted);
     }
 }

@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Queries.Filters.Cql2;
-using Xunit;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
@@ -54,11 +53,18 @@ public class Cql2LexerTests
     [InlineData("OR", Cql2TokenType.Or)]
     [InlineData("NOT", Cql2TokenType.Not)]
     [InlineData("LIKE", Cql2TokenType.Like)]
+    [InlineData("BETWEEN", Cql2TokenType.Between)]
     [InlineData("IN", Cql2TokenType.In)]
     [InlineData("IS", Cql2TokenType.IsNull)]
     [InlineData("NULL", Cql2TokenType.Null)]
     [InlineData("TRUE", Cql2TokenType.Boolean)]
     [InlineData("FALSE", Cql2TokenType.Boolean)]
+    [InlineData("DIV", Cql2TokenType.Div)]
+    [InlineData("CASEI", Cql2TokenType.Casei)]
+    [InlineData("ACCENTI", Cql2TokenType.Accenti)]
+    [InlineData("DATE", Cql2TokenType.Date)]
+    [InlineData("TIMESTAMP", Cql2TokenType.Timestamp)]
+    [InlineData("INTERVAL", Cql2TokenType.Interval)]
     public void Tokenize_Keywords_ReturnsCorrectTokenTypes(string keyword, Cql2TokenType expectedType)
     {
         // Arrange
@@ -81,6 +87,8 @@ public class Cql2LexerTests
     [InlineData("S_OVERLAPS", Cql2TokenType.S_Overlaps)]
     [InlineData("S_DISJOINT", Cql2TokenType.S_Disjoint)]
     [InlineData("S_EQUALS", Cql2TokenType.S_Equals)]
+    [InlineData("S_DWITHIN", Cql2TokenType.S_DWithin)]
+    [InlineData("S_BEYOND", Cql2TokenType.S_Beyond)]
     public void Tokenize_SpatialPredicates_ReturnsCorrectTokenTypes(string predicate, Cql2TokenType expectedType)
     {
         // Arrange
@@ -102,6 +110,7 @@ public class Cql2LexerTests
     [InlineData("MULTILINESTRING", Cql2TokenType.MultiLineString)]
     [InlineData("MULTIPOLYGON", Cql2TokenType.MultiPolygon)]
     [InlineData("GEOMETRYCOLLECTION", Cql2TokenType.GeometryCollection)]
+    [InlineData("BBOX", Cql2TokenType.Bbox)]
     public void Tokenize_GeometryTypes_ReturnsCorrectTokenTypes(string geometryType, Cql2TokenType expectedType)
     {
         // Arrange
@@ -165,6 +174,12 @@ public class Cql2LexerTests
     [InlineData("(", Cql2TokenType.LeftParen)]
     [InlineData(")", Cql2TokenType.RightParen)]
     [InlineData(",", Cql2TokenType.Comma)]
+    [InlineData("+", Cql2TokenType.Plus)]
+    [InlineData("-", Cql2TokenType.Minus)]
+    [InlineData("*", Cql2TokenType.Star)]
+    [InlineData("/", Cql2TokenType.Slash)]
+    [InlineData("%", Cql2TokenType.Percent)]
+    [InlineData("^", Cql2TokenType.Caret)]
     public void Tokenize_Punctuation_ReturnsCorrectTokenTypes(string punctuation, Cql2TokenType expectedType)
     {
         // Arrange
@@ -244,5 +259,34 @@ public class Cql2LexerTests
         // Act & Assert
         var action = () => lexer.Tokenize();
         action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Tokenize_NegativeNumber_ReturnsMinusAndNumberTokens()
+    {
+        // Arrange
+        var lexer = new Cql2Lexer("-5");
+
+        // Act
+        var tokens = lexer.Tokenize();
+
+        // Assert
+        tokens[0].Type.Should().Be(Cql2TokenType.Minus);
+        tokens[1].Type.Should().Be(Cql2TokenType.Number);
+        tokens[1].Value.Should().Be("5");
+    }
+
+    [Fact]
+    public void Tokenize_IdentifierWithNamespace_ReturnsIdentifierToken()
+    {
+        // Arrange
+        var lexer = new Cql2Lexer("ns:field.subfield");
+
+        // Act
+        var tokens = lexer.Tokenize();
+
+        // Assert
+        tokens[0].Type.Should().Be(Cql2TokenType.Identifier);
+        tokens[0].Value.Should().Be("ns:field.subfield");
     }
 }

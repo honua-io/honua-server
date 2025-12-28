@@ -6,7 +6,6 @@ using DbUp;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Xunit;
 
 namespace Honua.Server.Tests;
 

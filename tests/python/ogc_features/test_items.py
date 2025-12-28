@@ -278,7 +278,7 @@ class TestItemsFiltering:
         """Filter with BETWEEN operator."""
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
-            params={"filter": "id BETWEEN 1 AND 100"},
+            params={"filter": "count BETWEEN 1 AND 100"},
         )
         assert response.status_code == 200
 
@@ -302,7 +302,7 @@ class TestItemsFiltering:
         """Filter with AND logical operator."""
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
-            params={"filter": "name = 'test' AND id > 0"},
+            params={"filter": "name = 'test' AND count > 0"},
         )
         assert response.status_code == 200
 
@@ -338,7 +338,7 @@ class TestItemsFiltering:
         """Filter with nested parentheses."""
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
-            params={"filter": "(name = 'a' OR name = 'b') AND id > 0"},
+            params={"filter": "(name = 'a' OR name = 'b') AND count > 0"},
         )
         assert response.status_code == 200
 
@@ -362,7 +362,7 @@ class TestItemsFiltering:
         """Filter combined with limit."""
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
-            params={"filter": "id > 0", "limit": 5},
+            params={"filter": "count > 0", "limit": 5},
         )
         assert response.status_code == 200
         data = response.json()
@@ -376,7 +376,7 @@ class TestItemsFiltering:
         """Filter combined with offset."""
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
-            params={"filter": "id > 0", "offset": 2, "limit": 5},
+            params={"filter": "count > 0", "offset": 2, "limit": 5},
         )
         assert response.status_code == 200
 

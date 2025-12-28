@@ -668,6 +668,11 @@ public sealed class ODataTestFeatureStore : IFeatureStore
                 SpatialRelationship.Contains => featureGeometry.Contains(filterGeometry),
                 SpatialRelationship.Within => featureGeometry.Within(filterGeometry),
                 SpatialRelationship.EnvelopeIntersects => featureGeometry.EnvelopeInternal.Intersects(filterGeometry.EnvelopeInternal),
+                SpatialRelationship.Crosses => featureGeometry.Crosses(filterGeometry),
+                SpatialRelationship.Touches => featureGeometry.Touches(filterGeometry),
+                SpatialRelationship.Overlaps => featureGeometry.Overlaps(filterGeometry),
+                SpatialRelationship.Disjoint => featureGeometry.Disjoint(filterGeometry),
+                SpatialRelationship.Equals => featureGeometry.Equals(filterGeometry),
                 SpatialRelationship.WithinDistance or SpatialRelationship.BeyondDistance => MatchDistanceFilter(featureGeometry, filterGeometry, spatialFilter),
                 _ => false
             };

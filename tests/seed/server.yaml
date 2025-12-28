@@ -1,0 +1,176 @@
+version: 1
+sql:
+  - "CREATE SCHEMA IF NOT EXISTS honua;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.services (
+          service_name VARCHAR(64) PRIMARY KEY,
+          description TEXT NOT NULL DEFAULT '',
+          srid INT NOT NULL DEFAULT 4326,
+          max_record_count INT NOT NULL DEFAULT 1000,
+          supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
+          capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
+          service_extent GEOMETRY,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.layers (
+          layer_id SERIAL PRIMARY KEY,
+          layer_name TEXT NOT NULL,
+          description TEXT,
+          table_name TEXT NOT NULL,
+          geometry_type TEXT NOT NULL,
+          srid INT NOT NULL DEFAULT 4326,
+          extent GEOMETRY(POLYGON, 4326),
+          min_scale DOUBLE PRECISION,
+          max_scale DOUBLE PRECISION,
+          default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.service_layers (
+          service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
+          layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+          layer_order INT NOT NULL,
+          PRIMARY KEY (service_name, layer_id),
+          UNIQUE (service_name, layer_order)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.layer_fields (
+          layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+          field_name VARCHAR(64) NOT NULL,
+          field_type VARCHAR(32) NOT NULL,
+          field_order INT NOT NULL,
+          max_length INT,
+          nullable BOOLEAN NOT NULL DEFAULT TRUE,
+          default_value TEXT,
+          description TEXT,
+          PRIMARY KEY (layer_id, field_name)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.relationships (
+          layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+          relationship_id INT NOT NULL,
+          name TEXT NOT NULL,
+          related_layer_id INT NOT NULL,
+          relationship_type TEXT NOT NULL,
+          origin_foreign_key TEXT NOT NULL,
+          destination_foreign_key TEXT NOT NULL,
+          description TEXT,
+          PRIMARY KEY (layer_id, relationship_id)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS features (
+          objectid BIGSERIAL PRIMARY KEY,
+          layer_id INT NOT NULL,
+          geometry GEOMETRY,
+          attributes JSONB,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
+  - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
+  - "DELETE FROM honua.service_layers WHERE service_name = 'test';"
+  - "DELETE FROM honua.layer_fields WHERE layer_id = 0;"
+  - "DELETE FROM honua.layers WHERE layer_id = 0;"
+  - "DELETE FROM honua.services WHERE service_name = 'test';"
+  - |
+      INSERT INTO honua.services (
+          service_name,
+          description,
+          srid,
+          max_record_count,
+          supported_formats,
+          capabilities,
+          service_extent
+      )
+      VALUES (
+          'test',
+          'Test service for integration tests',
+          4326,
+          1000,
+          ARRAY['JSON', 'GeoJSON'],
+          ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-180, -90, 180, 90, 4326)
+      )
+      ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description,
+          srid = EXCLUDED.srid,
+          max_record_count = EXCLUDED.max_record_count,
+          supported_formats = EXCLUDED.supported_formats,
+          capabilities = EXCLUDED.capabilities,
+          service_extent = EXCLUDED.service_extent,
+          updated_at = NOW();
+  - |
+      INSERT INTO honua.layers (
+          layer_id,
+          layer_name,
+          description,
+          table_name,
+          geometry_type,
+          srid,
+          extent,
+          default_visibility
+      )
+      VALUES (
+          0,
+          'Test Layer',
+          'Test layer for integration tests',
+          'features',
+          'Point',
+          4326,
+          ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+          true
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          srid = EXCLUDED.srid,
+          extent = EXCLUDED.extent,
+          default_visibility = EXCLUDED.default_visibility;
+  - |
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES ('test', 0, 0)
+      ON CONFLICT (service_name, layer_id) DO UPDATE SET
+          layer_order = EXCLUDED.layer_order;
+  - |
+      INSERT INTO honua.layer_fields (
+          layer_id,
+          field_name,
+          field_type,
+          field_order,
+          max_length,
+          nullable,
+          description
+      )
+      VALUES
+          (0, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+          (0, 'name', 'String', 1, 255, true, 'Name'),
+          (0, 'description', 'String', 2, 500, true, 'Description'),
+          (0, 'category', 'String', 3, 255, true, 'Category'),
+          (0, 'timestamp', 'DateTime', 4, null, true, 'Timestamp'),
+          (0, 'shape', 'Geometry', 5, null, false, 'Geometry')
+      ON CONFLICT (layer_id, field_name) DO UPDATE SET
+          field_type = EXCLUDED.field_type,
+          field_order = EXCLUDED.field_order,
+          max_length = EXCLUDED.max_length,
+          nullable = EXCLUDED.nullable,
+          description = EXCLUDED.description;
+  - "DELETE FROM features WHERE layer_id = 0;"
+  - |
+      INSERT INTO features (objectid, layer_id, geometry, attributes)
+      VALUES
+          (1, 0, ST_SetSRID(ST_MakePoint(-157.8583, 21.3069), 4326),
+              jsonb_build_object('name', 'Honolulu', 'description', 'Test point', 'category', 'city', 'timestamp', NOW())),
+          (2, 0, ST_SetSRID(ST_MakePoint(0.5, 0.5), 4326),
+              jsonb_build_object('name', 'Origin', 'description', 'BBox test', 'category', 'test', 'timestamp', NOW())),
+          (3, 0, ST_SetSRID(ST_MakePoint(1.5, 1.5), 4326),
+              jsonb_build_object('name', 'Second', 'description', 'Extra feature', 'category', 'test', 'timestamp', NOW()));
+  - |
+      SELECT setval(
+          pg_get_serial_sequence('features', 'objectid'),
+          (SELECT COALESCE(MAX(objectid), 0) FROM features)
+      );

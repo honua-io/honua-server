@@ -4,7 +4,6 @@
 using FluentAssertions;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Honua.TestKit.Attributes;
-using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure;
 

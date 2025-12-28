@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Performance baseline testing script for Honua Server
-# Runs BenchmarkDotNet benchmarks and NBomber load tests
+# Runs BenchmarkDotNet benchmarks
 
 set -euo pipefail
 
@@ -82,7 +82,7 @@ done
 
 # Start test database if not running
 echo -e "${YELLOW}Starting test database...${NC}"
-if ! docker ps | grep -q postgis; then
+if ! docker ps --filter "name=honua-perf-test-db" --format '{{.Names}}' | grep -q '^honua-perf-test-db$'; then
     echo "Starting PostgreSQL with PostGIS..."
     docker run -d \
         --name honua-perf-test-db \
@@ -98,6 +98,7 @@ fi
 
 # Set environment for tests
 export ConnectionStrings__DefaultConnection="Server=localhost;Port=5433;Database=honua_test;User Id=postgres;Password=test;"
+export HONUA_BENCH_DB_URL="$ConnectionStrings__DefaultConnection"
 export ASPNETCORE_ENVIRONMENT="Testing"
 
 # Build the project
@@ -114,10 +115,16 @@ fi
 
 if [[ -n "$BENCHMARK_FILTER" ]]; then
     BENCHMARK_ARGS="$BENCHMARK_ARGS --filter *$BENCHMARK_FILTER*"
+else
+    if [[ "$QUICK_MODE" == "true" ]]; then
+        BENCHMARK_ARGS="$BENCHMARK_ARGS --filter *QueryBenchmarks* *ParameterCount:*10)*"
+    else
+        BENCHMARK_ARGS="$BENCHMARK_ARGS --filter *QueryBenchmarks* *SqlGenerationBenchmarks*"
+    fi
 fi
 
 # Export results in multiple formats
-EXPORT_ARGS="--exporters json,html,csv --artifacts $RESULTS_DIR"
+EXPORT_ARGS="--exporters json html csv --artifacts $RESULTS_DIR"
 
 # Run the benchmarks
 echo "Executing: dotnet run --project $BENCHMARK_PROJECT -c Release -- $BENCHMARK_ARGS $EXPORT_ARGS"
@@ -129,30 +136,111 @@ REPORT_SUBDIR="$REPORT_DIR/run_$TIMESTAMP"
 mkdir -p "$REPORT_SUBDIR"
 
 # Move BenchmarkDotNet artifacts
-if [[ -d "$RESULTS_DIR/BenchmarkDotNet.Artifacts" ]]; then
+if [[ -d "$RESULTS_DIR/results" ]]; then
+    cp -r "$RESULTS_DIR/results"/* "$REPORT_SUBDIR/"
+elif [[ -d "$RESULTS_DIR/BenchmarkDotNet.Artifacts" ]]; then
     cp -r "$RESULTS_DIR/BenchmarkDotNet.Artifacts"/* "$REPORT_SUBDIR/"
-fi
-
-# Move NBomber results
-if [[ -d "load-test-results" ]]; then
-    cp -r load-test-results/* "$REPORT_SUBDIR/" 2>/dev/null || true
 fi
 
 echo -e "${GREEN}✅ Benchmarks completed!${NC}"
 echo "Results saved to: $REPORT_SUBDIR"
 
+# Generate a normalized results.json for regression checks if QueryBenchmarks output exists
+QUERY_JSON="$REPORT_SUBDIR/Honua.Benchmarks.QueryBenchmarks-report-full-compressed.json"
+if [[ -f "$QUERY_JSON" ]]; then
+    python3 - "$QUERY_JSON" "$REPORT_SUBDIR/results.json" <<'PY'
+import json
+import math
+from datetime import date
+from pathlib import Path
+import sys
+
+input_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+
+with input_path.open() as f:
+    data = json.load(f)
+
+env = data.get("HostEnvironmentInfo", {})
+
+def percentile(values, p):
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return float(values[0])
+    values = sorted(values)
+    idx = p * (len(values) - 1)
+    lower = int(math.floor(idx))
+    upper = int(math.ceil(idx))
+    if lower == upper:
+        return float(values[lower])
+    weight = idx - lower
+    return float(values[lower] + (values[upper] - values[lower]) * weight)
+
+benchmarks = []
+for bench in data.get("Benchmarks", []):
+    if bench.get("Type") != "QueryBenchmarks":
+        continue
+    stats = bench.get("Statistics", {})
+    memory = bench.get("Memory", {})
+    values = stats.get("OriginalValues") or []
+    p95 = stats.get("Percentiles", {}).get("P95")
+    if p95 is None:
+        p95 = percentile(values, 0.95)
+    p99 = percentile(values, 0.99)
+
+    benchmarks.append({
+        "Method": bench.get("Method"),
+        "Type": bench.get("Type"),
+        "Statistics": {
+            "Mean": stats.get("Mean", 0.0),
+            "StandardError": stats.get("StandardError", 0.0),
+            "Percentile95": p95,
+            "Percentile99": p99,
+        },
+        "Memory": {
+            "AllocatedBytes": memory.get("BytesAllocatedPerOperation", 0.0),
+            "Gen0Collections": memory.get("Gen0Collections", 0.0),
+            "Gen1Collections": memory.get("Gen1Collections", 0.0),
+            "Gen2Collections": memory.get("Gen2Collections", 0.0),
+        },
+    })
+
+results = {
+    "Version": "1.0",
+    "Created": date.today().isoformat(),
+    "Description": "BenchmarkDotNet results for query benchmarks",
+    "Environment": {
+        "Runtime": env.get("RuntimeVersion", ""),
+        "OS": env.get("OsVersion", ""),
+        "Hardware": f"{env.get('ProcessorName', '')} ({env.get('PhysicalCoreCount', '')}C/{env.get('LogicalCoreCount', '')}T)",
+    },
+    "Benchmarks": benchmarks,
+}
+
+with output_path.open("w") as f:
+    json.dump(results, f, indent=2)
+    f.write("\n")
+PY
+fi
+
 # Parse and display key metrics
-if [[ -f "$REPORT_SUBDIR/results.json" ]]; then
+RESULT_JSON="$REPORT_SUBDIR/results.json"
+if [[ ! -f "$RESULT_JSON" ]]; then
+    RESULT_JSON="$(ls "$REPORT_SUBDIR"/*-report-full-compressed.json 2>/dev/null | head -1 || true)"
+fi
+
+if [[ -n "$RESULT_JSON" && -f "$RESULT_JSON" ]]; then
     echo -e "\n${BLUE}📊 Performance Summary${NC}"
     echo "====================="
 
     # Extract key metrics using jq if available
     if command -v jq &> /dev/null; then
         echo "Parsing detailed results..."
-        jq -r '.Benchmarks[] | "\(.Namespace).\(.Type).\(.Method): \(.Statistics.Mean/1000000 | round)ms (±\(.Statistics.StandardError/1000000 | round)ms)"' "$REPORT_SUBDIR/results.json" | head -10
+        jq -r '.Benchmarks[] | "\(.Namespace).\(.Type).\(.Method): \(.Statistics.Mean/1000000 | round)ms (±\(.Statistics.StandardError/1000000 | round)ms)"' "$RESULT_JSON" | head -10
     else
         echo "Install 'jq' for detailed result parsing"
-        echo "Results available in: $REPORT_SUBDIR/results.json"
+        echo "Results available in: $RESULT_JSON"
     fi
 fi
 
@@ -162,11 +250,7 @@ echo "======================"
 echo "Query (100 features):"
 echo "  p50 target: < 50ms"
 echo "  p99 target: < 300ms"
-echo "Load test targets:"
-echo "  Simple queries: > 1000 rps"
-echo "  Spatial queries: > 500 rps"
-echo "Memory targets:"
-echo "  Memory delta: < 50MB after 10k queries"
+echo "Baseline comparisons are based on BenchmarkDotNet results"
 
 # Update baseline if requested
 if [[ "$BASELINE_MODE" == "true" ]]; then
@@ -182,10 +266,7 @@ fi
 # Compare to baseline if it exists
 if [[ -f "$BASELINE_FILE" && -f "$REPORT_SUBDIR/results.json" ]]; then
     echo -e "\n${YELLOW}📊 Comparing to baseline...${NC}"
-    echo "Baseline comparison requires manual analysis of:"
-    echo "  Current: $REPORT_SUBDIR/results.json"
-    echo "  Baseline: $BASELINE_FILE"
-    echo "  Threshold: ±10% performance regression"
+    echo "Run: ./scripts/check-perf-regression.py --baseline $BASELINE_FILE --current $REPORT_SUBDIR/results.json"
 fi
 
 # Cleanup

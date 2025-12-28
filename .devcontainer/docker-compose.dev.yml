@@ -1,0 +1,194 @@
+version: '3.8'
+
+# Development-optimized Docker Compose for devcontainer
+# Includes development tools, hot reload, and debugging support
+
+services:
+  # Honua Server - Development container
+  honua:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ..:/workspace:cached
+      - honua-dev-nuget:/home/vscode/.nuget
+      - honua-dev-cache:/home/vscode/.cache
+      - honua-dev-dotnet:/home/vscode/.dotnet
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: 1
+      DOTNET_RUNNING_IN_CONTAINER: true
+      DOTNET_USE_POLLING_FILE_WATCHER: true
+      DOTNET_WATCH_RESTART_ON_RUDE_EDIT: true
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
+    ports:
+      - "8080:8080"
+      - "5001:5001"  # HTTPS dev port
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - honua-dev
+      - monitoring
+    command: sleep infinity  # Keep container running for devcontainer
+
+  # PostgreSQL - Development database
+  postgres:
+    image: postgis/postgis:17-3.5-alpine
+    environment:
+      POSTGRES_DB: honua_dev
+      POSTGRES_USER: honua_user
+      POSTGRES_PASSWORD: honua_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ../scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - honua-dev
+    restart: unless-stopped
+
+  # Redis - Caching (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - honua-dev
+    restart: unless-stopped
+    profiles:
+      - full-stack
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_dev_data:/prometheus
+    networks:
+      - monitoring
+      - honua-dev
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana - Monitoring dashboards
+  grafana:
+    image: grafana/grafana:10.2.2
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_dev_data:/var/lib/grafana
+      - ../docker/monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ../docker/monitoring/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+  # Loki - Log aggregation
+  loki:
+    image: grafana/loki:2.9.2
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ../docker/monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_dev_data:/loki
+    networks:
+      - monitoring
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Jaeger - Distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+      COLLECTOR_ZIPKIN_HOST_PORT: :9411
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector
+      - "14250:14250"  # Jaeger gRPC
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    networks:
+      - monitoring
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Mailhog - Email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - honua-dev
+    restart: unless-stopped
+    profiles:
+      - full-stack
+
+  # Nginx - Reverse proxy for local development
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../docker/nginx/dev.conf:/etc/nginx/nginx.conf:ro
+      - ../docker/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - honua-dev
+      - monitoring
+    depends_on:
+      - honua
+    restart: unless-stopped
+    profiles:
+      - full-stack
+
+networks:
+  honua-dev:
+    driver: bridge
+  monitoring:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  prometheus_dev_data:
+  grafana_dev_data:
+  loki_dev_data:
+  honua-dev-nuget:
+  honua-dev-cache:
+  honua-dev-dotnet:

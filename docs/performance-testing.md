@@ -6,10 +6,9 @@ This document describes the performance testing infrastructure for Honua Server,
 
 The performance testing suite consists of:
 
-- **BenchmarkDotNet** - Microbenchmarks for precise latency measurements
-- **NBomber** - Load testing framework for throughput and scalability testing
-- **Memory Soak Tests** - Memory leak detection and sustained load testing
-- **CI Integration** - Automated performance regression detection
+- **BenchmarkDotNet** - Microbenchmarks for latency and allocation measurements
+- **NBomber (manual)** - Load testing scenarios run outside CI
+- **CI Integration** - Automated regression checks for BenchmarkDotNet results
 
 ## Quick Start
 
@@ -41,8 +40,8 @@ The performance testing suite consists of:
 # Run only BenchmarkDotNet tests
 dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *Query*
 
-# Run specific benchmark class
-dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *LoadTestBenchmarks*
+# Run SQL generation microbenchmarks
+dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *SqlGeneration*
 ```
 
 ## Performance Targets
@@ -54,70 +53,39 @@ dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *LoadTes
 | **Query (100 features)** | Standard | < 50ms | < 150ms | < 300ms |
 | **Query (1000 features)** | Large | < 150ms | < 400ms | < 800ms |
 | **Spatial Query** | Bbox intersection | < 50ms | < 150ms | < 300ms |
-| **ApplyEdits (10 features)** | Mixed CRUD | < 100ms | < 300ms | < 500ms |
-| **Layer Metadata** | Service info | < 5ms | < 20ms | < 50ms |
 
-### Throughput Targets (NBomber)
+### Load/Soak Targets (Manual)
 
-| Test Scenario | Target RPS | Max Latency (p95) |
-|---------------|------------|-------------------|
-| **Simple Queries** | > 1000 | < 150ms |
-| **Spatial Queries** | > 500 | < 300ms |
-| **Mixed Workload** | > 800 | < 200ms |
-| **Sustained Load** | > 500 (5min) | Stable |
-
-### Memory Targets
-
-| Test | Duration | Target Memory Delta |
-|------|----------|-------------------|
-| **10k Queries** | ~5 minutes | < 50MB |
-| **Mixed Operations** | ~3 minutes | < 20MB |
-| **Connection Pool** | ~2 minutes | < 5MB |
+NBomber scenarios and long-running memory soak checks are run manually and reported separately from CI.
 
 ## Benchmark Classes
 
+### SqlGenerationBenchmarks
+
+Measures SQL string construction overhead for query building:
+
+```csharp
+[Benchmark] SimpleSelectWithStringBuilder()
+[Benchmark] SimpleSelectWithObjectPool()
+[Benchmark] ComplexSpatialQueryWithStringBuilder()
+```
+
 ### QueryBenchmarks
 
-Measures endpoint latency for various query patterns:
+Measures feature store query latency with a seeded PostGIS dataset:
 
 ```csharp
 [Benchmark] SimpleWhereQuery()           // Basic attribute filtering
 [Benchmark] SpatialBboxQuery()           // Spatial intersection
-[Benchmark] CombinedWhereAndSpatial()    // Combined filtering
+[Benchmark] CombinedWhereAndSpatialQuery() // Combined filtering
 [Benchmark] PaginatedQuery()             // Paging performance
 [Benchmark] LargeResultSet()             // 1000+ features
 ```
 
-### LoadTestBenchmarks
-
-Throughput and scalability testing using NBomber:
-
-```csharp
-[Benchmark] SimpleQueryThroughput()      // 1000 rps target
-[Benchmark] SpatialQueryThroughput()     // 500 rps target
-[Benchmark] MixedWorkloadThroughput()    // Mixed scenario
-[Benchmark] SustainedLoadTest()          // 5-minute endurance
-```
-
-### MemorySoakBenchmarks
-
-Memory leak detection and resource management:
-
-```csharp
-[Benchmark] Query_Soak_10k()             // 10,000 queries
-[Benchmark] Mixed_Soak_5k()              // Mixed operations
-[Benchmark] ConnectionPool_Soak_2k()     // Connection handling
-```
-
 ## Test Data Setup
 
-The benchmarks use realistic geospatial datasets:
-
-- **Parcels Layer**: 10,000 features, mixed geometry types
-- **Points of Interest**: 5,000 point features with attributes
-- **Administrative Boundaries**: Complex polygons
-
-Test data is automatically created during benchmark setup.
+Query benchmarks seed a PostGIS table with synthetic point features and JSONB attributes
+in an isolated schema before each run.
 
 ## Results and Analysis
 
@@ -135,12 +103,8 @@ Benchmarks generate multiple output formats:
 benchmark-results/
 ├── run_20241221_143022/
 │   ├── QueryBenchmarks-report.html
-│   ├── LoadTestBenchmarks-report.html
 │   ├── results.json
 │   ├── results.csv
-│   └── load-test-results/
-│       ├── session-20241221_143022.html
-│       └── session-20241221_143022.csv
 ```
 
 ### Key Metrics
@@ -150,12 +114,10 @@ Each benchmark reports:
 - **Mean/Median Latency** - Central tendency
 - **95th/99th Percentile** - Tail latency
 - **Memory Allocations** - GC pressure
-- **Throughput** - Requests per second
-- **Error Rate** - Failure percentage
 
 ## CI Integration
 
-Performance tests run in CI on every pull request:
+BenchmarkDotNet runs in CI on a schedule and on demand; load tests are manual.
 
 ```yaml
 # .github/workflows/performance.yml
@@ -168,17 +130,16 @@ performance:
     - name: Run Performance Benchmarks
       run: ./scripts/run-performance-tests.sh --quick
 
-    - name: Performance Regression Check
-      run: python scripts/check-perf-regression.py --threshold 0.10
+    - name: Baseline Comparison
+      run: ./scripts/check-perf-regression.py --baseline performance-baseline.json --current performance-reports/run_*/results.json --threshold 0.10
 ```
 
 ### Regression Detection
 
-CI fails if performance regresses > 10% from baseline:
+CI flags regressions > 10% from baseline for BenchmarkDotNet metrics:
 
 - **Latency Regression** - p95 latency increase
-- **Throughput Regression** - RPS decrease
-- **Memory Regression** - Memory delta increase
+- **Allocation Regression** - increased allocations per operation
 
 ## Local Development
 
@@ -226,10 +187,9 @@ docker stop honua-perf-test-db && docker rm honua-perf-test-db
 dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --warmupCount 10 --minIterationCount 10
 ```
 
-**Memory Test False Positives**
-- Memory soak tests may show false positives due to GC timing
-- Re-run tests multiple times to confirm memory leaks
-- Check for external processes affecting memory measurements
+**GC Variance**
+- Re-run benchmarks to confirm allocation changes
+- Minimize background processes for stable results
 
 ### Performance Analysis
 
