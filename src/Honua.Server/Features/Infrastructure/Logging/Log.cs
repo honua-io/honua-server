@@ -250,9 +250,9 @@ internal static partial class Log
     [LoggerMessage(
         EventId = 5005,
         Level = LogLevel.Error,
-        Message = "Unhandled exception in {RequestPath}: {ErrorMessage}")]
+        Message = "Unhandled exception in {RequestPath} [CorrelationId: {CorrelationId}]: {ErrorMessage}")]
     public static partial void UnhandledException(
-        ILogger logger, string requestPath, string errorMessage, Exception exception);
+        ILogger logger, string requestPath, string correlationId, string errorMessage, Exception exception);
 
     [LoggerMessage(
         EventId = 5010,

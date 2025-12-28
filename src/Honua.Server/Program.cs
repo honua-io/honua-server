@@ -150,6 +150,9 @@ app.UseResponseCompression();
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
 
+// Add global exception handling middleware (after correlation ID for exception logging)
+app.UseGlobalExceptionHandling();
+
 // Add limits enforcement middleware (after correlation ID, before request logging)
 app.UseLimitsEnforcement();
 

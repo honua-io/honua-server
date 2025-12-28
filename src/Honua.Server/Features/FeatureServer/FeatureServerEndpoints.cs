@@ -1536,20 +1536,20 @@ internal static partial class FeatureServerEndpoints
             var options = tileOptions.Value;
             if (z < options.MinZoom || z > options.MaxZoom)
             {
-                return Results.BadRequest($"Zoom level {z} is outside supported range ({options.MinZoom}-{options.MaxZoom})");
+                return GeoServicesErrorHelpers.CreateBadRequestError($"Zoom level {z} is outside supported range ({options.MinZoom}-{options.MaxZoom})");
             }
 
             // Validate tile coordinates
             if (!TileMath.ValidateTileCoordinates(x, y, z))
             {
-                return Results.BadRequest($"Invalid tile coordinates: x={x}, y={y}, z={z}");
+                return GeoServicesErrorHelpers.CreateBadRequestError($"Invalid tile coordinates: x={x}, y={y}, z={z}");
             }
 
             // Verify layer exists
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return Results.NotFound($"Layer {layerId} not found");
+                return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found");
             }
 
             // Create feature query with optional WHERE clause
@@ -1573,15 +1573,12 @@ internal static partial class FeatureServerEndpoints
         }
         catch (ArgumentException ex)
         {
-            return Results.BadRequest(ex.Message);
+            return GeoServicesErrorHelpers.CreateBadRequestError(ex.Message);
         }
         catch (Exception ex)
         {
             Log.TileGenerationFailed(logger, layerId, z, x, y, ex);
-            return Results.Problem(
-                detail: "An error occurred while generating the tile.",
-                statusCode: 500,
-                title: "Tile generation failed");
+            return GeoServicesErrorHelpers.CreateInternalServerError("An error occurred while generating the tile.");
         }
     }
 

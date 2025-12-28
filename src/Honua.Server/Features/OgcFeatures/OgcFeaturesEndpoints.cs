@@ -20,6 +20,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -814,10 +815,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CollectionsQueryFailed(logger, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while retrieving collections.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while retrieving collections.");
         }
     }
 
@@ -887,10 +887,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CollectionQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while retrieving the collection.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while retrieving the collection.");
         }
     }
 
@@ -951,10 +950,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CollectionQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while retrieving the queryables schema.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while retrieving the queryables schema.");
         }
     }
 
@@ -1260,10 +1258,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.ItemsQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while processing the request.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while processing the request.");
         }
     }
 
@@ -1402,10 +1399,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.ItemQueryFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while processing the request.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while processing the request.");
         }
     }
 
@@ -2602,10 +2598,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.CreateFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while creating the feature.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while creating the feature.");
         }
     }
 
@@ -2723,10 +2718,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.UpdateFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while updating the feature.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while updating the feature.");
         }
     }
 
@@ -2794,10 +2788,9 @@ internal static partial class OgcFeaturesEndpoints
         catch (Exception ex)
         {
             Log.DeleteFailed(logger, collectionId, ex);
-            return TypedResults.Problem(
-                title: "Internal server error",
-                detail: "An error occurred while deleting the feature.",
-                statusCode: 500);
+            return ProtocolErrorWriter.CreateErrorResult(context, 500,
+                "Internal server error",
+                "An error occurred while deleting the feature.");
         }
     }
 
