@@ -28,6 +28,9 @@ internal sealed class FileImportService : IFileImportService
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
     }
 
+    /// <inheritdoc />
+    public ImportLimits Limits { get; } = ImportLimits.Default;
+
     /// <summary>
     /// Supported file extensions mapped to formats
     /// </summary>
@@ -113,6 +116,29 @@ internal sealed class FileImportService : IFileImportService
                 "Import failed: " + ex.Message,
                 stopwatch.Elapsed);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<ImportResult> ImportFileAsync(ImportRequest request, IProgress<ImportProgress>? progress, CancellationToken cancellationToken = default)
+    {
+        // For now, implement without progress reporting by calling the base method
+        // TODO: Add actual progress reporting in future implementation
+        var result = await ImportFileAsync(request, cancellationToken);
+
+        // Report completion
+        progress?.Report(new ImportProgress
+        {
+            JobId = Guid.NewGuid().ToString(),
+            Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
+            TableName = result.TableName,
+            Format = result.Format,
+            FeaturesProcessed = result.FeatureCount,
+            StartedAt = DateTimeOffset.UtcNow.AddSeconds(-1), // Approximate start time
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = result.ErrorMessage
+        });
+
+        return result;
     }
 
     /// <summary>

@@ -128,7 +128,32 @@ internal static class ServiceCollectionExtensions
             return new CrsDetectionService(connectionString);
         });
 
-        // Register file import service with NetTopologySuite support
+        // Register import limits configuration
+        services.AddSingleton(serviceProvider =>
+        {
+            var section = configuration.GetSection("Import:Limits");
+            var limits = new Core.Features.Import.Domain.ImportLimits();
+
+            if (section.Exists())
+            {
+                limits = new Core.Features.Import.Domain.ImportLimits
+                {
+                    BatchSize = int.TryParse(section["BatchSize"], out var batchSize) ? batchSize : limits.BatchSize,
+                    MaxMemoryBytes = long.TryParse(section["MaxMemoryBytes"], out var maxMemory) ? maxMemory : limits.MaxMemoryBytes,
+                    BackgroundJobThresholdBytes = long.TryParse(section["BackgroundJobThresholdBytes"], out var bgThreshold) ? bgThreshold : limits.BackgroundJobThresholdBytes,
+                    MaxPreviewSizeBytes = long.TryParse(section["MaxPreviewSizeBytes"], out var previewSize) ? previewSize : limits.MaxPreviewSizeBytes,
+                    MaxPreviewFeatures = int.TryParse(section["MaxPreviewFeatures"], out var previewFeatures) ? previewFeatures : limits.MaxPreviewFeatures,
+                    StreamBufferSize = int.TryParse(section["StreamBufferSize"], out var bufferSize) ? bufferSize : limits.StreamBufferSize,
+                    UseTransactions = bool.TryParse(section["UseTransactions"], out var useTransactions) ? useTransactions : limits.UseTransactions,
+                    ContinueOnError = bool.TryParse(section["ContinueOnError"], out var continueOnError) ? continueOnError : limits.ContinueOnError,
+                    MaxFeaturesPerFile = int.TryParse(section["MaxFeaturesPerFile"], out var maxFeatures) ? maxFeatures : limits.MaxFeaturesPerFile
+                };
+            }
+
+            return limits;
+        });
+
+        // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -137,8 +162,16 @@ internal static class ServiceCollectionExtensions
                 throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
             }
 
-            var crsDetectionService = serviceProvider.GetRequiredService<ICrsDetectionService>();
-            return new FileImportService(connectionString, crsDetectionService);
+            var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
+            return new StreamingFileImportService(connectionString, limits);
+        });
+
+        // Register background import job service
+        // Note: This uses a scoped service provider to access the import service
+        services.AddScoped<IImportJobService>(serviceProvider =>
+        {
+            var importService = serviceProvider.GetRequiredService<IFileImportService>();
+            return new InMemoryImportJobService(importService);
         });
 
         return services;
