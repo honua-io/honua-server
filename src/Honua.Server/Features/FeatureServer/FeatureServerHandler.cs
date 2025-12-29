@@ -883,10 +883,15 @@ internal sealed class FeatureServerHandler(
         int? outputSrid,
         SqlFragment? sqlFilter)
     {
+        var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
+        var effectiveSqlFilter = hasObjectIds ? null : sqlFilter;
+        var effectiveWhere = hasObjectIds ? null : queryParams.Where;
+
         var query = new FeatureQuery
         {
-            Where = sqlFilter == null ? queryParams.Where : null,
-            SqlFilter = sqlFilter,
+            Where = effectiveSqlFilter == null ? effectiveWhere : null,
+            SqlFilter = effectiveSqlFilter,
+            ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,
             Limit = queryParams.ResultRecordCount ?? service.MaxRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.Srid,

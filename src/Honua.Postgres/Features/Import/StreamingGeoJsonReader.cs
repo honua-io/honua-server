@@ -20,6 +20,7 @@ internal sealed record JsonProcessingState
     public int FeatureDepth { get; init; }
     public bool IsCollectingFeature { get; init; }
     public int FeatureStartIndex { get; init; } = -1;
+    public ArrayBufferWriter<byte>? FeatureBuffer { get; init; }
     public bool IsComplete { get; init; }
 }
 
@@ -140,10 +141,28 @@ internal sealed class StreamingGeoJsonReader
         var featureDepth = processingState.FeatureDepth;
         var isCollectingFeature = processingState.IsCollectingFeature;
         var featureStartIndex = processingState.FeatureStartIndex;
+        var featureBuffer = processingState.FeatureBuffer;
         var isComplete = processingState.IsComplete;
+        var featureBufferOffset = 0;
 
-        while (reader.Read() && !isComplete)
+        void BufferFeatureBytes(int endExclusive)
         {
+            if (featureBuffer == null || endExclusive <= featureBufferOffset)
+            {
+                return;
+            }
+
+            featureBuffer.Write(data.Span.Slice(featureBufferOffset, endExclusive - featureBufferOffset));
+            featureBufferOffset = endExclusive;
+        }
+
+        while (!isComplete)
+        {
+            if (!reader.Read())
+            {
+                break;
+            }
+
             lastConsumed = (int)reader.BytesConsumed;
 
             if (reader.TokenType == JsonTokenType.PropertyName)
@@ -174,15 +193,27 @@ internal sealed class StreamingGeoJsonReader
                     if (isCollectingFeature)
                     {
                         var featureEnd = (int)reader.BytesConsumed;
-                        var featureSpan = data.Span.Slice(featureStartIndex, featureEnd - featureStartIndex);
+                        Feature? feature;
+                        if (featureBuffer != null)
+                        {
+                            BufferFeatureBytes(featureEnd);
+                            feature = ParseFeature(featureBuffer.WrittenSpan);
+                        }
+                        else
+                        {
+                            var featureSpan = data.Span.Slice(featureStartIndex, featureEnd - featureStartIndex);
+                            feature = ParseFeature(featureSpan);
+                        }
 
-                        var feature = ParseFeature(featureSpan);
                         if (feature != null)
                         {
                             features.Add(feature);
                         }
 
                         isCollectingFeature = false;
+                        featureStartIndex = -1;
+                        featureBuffer = null;
+                        featureBufferOffset = 0;
                     }
                 }
                 else if (reader.TokenType == JsonTokenType.EndArray && reader.CurrentDepth == featureDepth)
@@ -194,12 +225,26 @@ internal sealed class StreamingGeoJsonReader
             }
         }
 
+        if (isCollectingFeature)
+        {
+            if (featureBuffer == null && featureStartIndex >= 0 && featureStartIndex < data.Length)
+            {
+                featureBuffer = new ArrayBufferWriter<byte>(data.Length - featureStartIndex);
+                featureBuffer.Write(data.Span.Slice(featureStartIndex));
+            }
+            else
+            {
+                BufferFeatureBytes(data.Length);
+            }
+        }
+
         var newProcessingState = new JsonProcessingState
         {
             InFeaturesArray = inFeaturesArray,
             FeatureDepth = featureDepth,
             IsCollectingFeature = isCollectingFeature,
             FeatureStartIndex = featureStartIndex,
+            FeatureBuffer = featureBuffer,
             IsComplete = isComplete
         };
 

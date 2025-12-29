@@ -4,13 +4,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
@@ -22,9 +19,6 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Use test implementations that can simulate errors
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 

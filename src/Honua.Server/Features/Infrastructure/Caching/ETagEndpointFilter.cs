@@ -1,0 +1,214 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Net;
+using System.Text.Json;
+
+namespace Honua.Server.Features.Infrastructure.Caching;
+
+/// <summary>
+/// Endpoint filter that adds ETag support to specific endpoints.
+/// This is more efficient than global middleware for endpoints that need ETags.
+/// </summary>
+public sealed partial class ETagEndpointFilter : IEndpointFilter
+{
+    private readonly ILogger<ETagEndpointFilter> _logger;
+
+    public ETagEndpointFilter(ILogger<ETagEndpointFilter> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var httpContext = context.HttpContext;
+
+        // Only process GET and HEAD requests
+        if (!HttpMethods.IsGet(httpContext.Request.Method) && !HttpMethods.IsHead(httpContext.Request.Method))
+        {
+            return await next(context);
+        }
+
+        // Get the ETag service
+        var etagService = httpContext.RequestServices.GetService<IETagService>();
+        if (etagService == null)
+        {
+            Log.ETagServiceNotAvailable(_logger, httpContext.Request.Path);
+            return await next(context);
+        }
+
+        // Execute the endpoint
+        var result = await next(context);
+
+        // Handle IResult responses
+        if (result is IResult iResult)
+        {
+            return await HandleIResultWithETag(httpContext, iResult, etagService);
+        }
+
+        // Handle direct object responses
+        if (result != null)
+        {
+            return await HandleObjectWithETag(httpContext, result, etagService);
+        }
+
+        return result;
+    }
+
+    private async ValueTask<IResult> HandleIResultWithETag(HttpContext httpContext, IResult result, IETagService etagService)
+    {
+        // Check if it's a value result we can process
+        if (result is IValueHttpResult valueResult && result is IStatusCodeHttpResult statusResult)
+        {
+            var statusCode = statusResult.StatusCode ?? StatusCodes.Status200OK;
+            if (statusCode != (int)HttpStatusCode.OK)
+            {
+                return result;
+            }
+
+            // Generate ETag from the response value
+            var etag = ComputeETagForValueResult(valueResult.Value, etagService);
+            if (etag == null)
+            {
+                return result; // Could not compute ETag, return original result
+            }
+
+            // Check conditional headers
+            var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
+            var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
+
+            // Validate If-Match header
+            if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
+            {
+                Log.PreconditionFailed(_logger, httpContext.Request.Path, ifMatch, etag);
+                return Results.StatusCode((int)HttpStatusCode.PreconditionFailed);
+            }
+
+            // Check If-None-Match header
+            if (!etagService.IsModified(ifNoneMatch, etag))
+            {
+                Log.NotModified(_logger, httpContext.Request.Path, ifNoneMatch, etag);
+
+                // Return 304 Not Modified with ETag
+                var notModifiedResult = Results.StatusCode((int)HttpStatusCode.NotModified);
+
+                // Set ETag header using a custom result that wraps the 304 response
+                return new NotModifiedWithETagResult(etag, etagService);
+            }
+
+            Log.ETagGenerated(_logger, httpContext.Request.Path, etag);
+
+            // Return the original result with ETag headers
+            return new ResultWithETag(result, etag, etagService);
+        }
+
+        return result;
+    }
+
+    private async ValueTask<object> HandleObjectWithETag(HttpContext httpContext, object result, IETagService etagService)
+    {
+        // For direct object responses, we'll let the JSON serialization happen naturally
+        // and set ETag headers in a response wrapper
+        Log.ETagGeneratedForObject(_logger, httpContext.Request.Path, result.GetType().Name);
+
+        // We can't easily intercept the serialization here, so we'll return the object as-is
+        // and rely on middleware or response processing to add ETags
+        return result;
+    }
+
+    private static string? ComputeETagForValueResult(object? value, IETagService etagService)
+    {
+        try
+        {
+            if (value == null)
+            {
+                return etagService.ComputeETag(string.Empty);
+            }
+
+            var jsonString = JsonSerializer.Serialize(value, (JsonSerializerOptions?)null);
+            return etagService.ComputeETag(jsonString);
+        }
+        catch (Exception)
+        {
+            // If we can't compute ETag, return null
+            return null;
+        }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 4101, Level = LogLevel.Debug,
+            Message = "Generated ETag {ETag} for {Path}")]
+        public static partial void ETagGenerated(ILogger logger, string path, string etag);
+
+        [LoggerMessage(EventId = 4102, Level = LogLevel.Debug,
+            Message = "Generated ETag for object {ObjectType} at {Path}")]
+        public static partial void ETagGeneratedForObject(ILogger logger, string path, string objectType);
+
+        [LoggerMessage(EventId = 4103, Level = LogLevel.Debug,
+            Message = "Resource not modified for {Path}, If-None-Match: {IfNoneMatch}, ETag: {ETag}")]
+        public static partial void NotModified(ILogger logger, string path, string ifNoneMatch, string etag);
+
+        [LoggerMessage(EventId = 4104, Level = LogLevel.Debug,
+            Message = "Precondition failed for {Path}, If-Match: {IfMatch}, ETag: {ETag}")]
+        public static partial void PreconditionFailed(ILogger logger, string path, string ifMatch, string etag);
+
+        [LoggerMessage(EventId = 4105, Level = LogLevel.Warning,
+            Message = "ETag service not available for {Path}")]
+        public static partial void ETagServiceNotAvailable(ILogger logger, string path);
+    }
+
+    /// <summary>
+    /// Custom result that wraps a JSON result with ETag headers.
+    /// </summary>
+    private sealed class ResultWithETag : IResult
+    {
+        private readonly IResult _originalResult;
+        private readonly string _etag;
+        private readonly IETagService _etagService;
+
+        public ResultWithETag(IResult originalResult, string etag, IETagService etagService)
+        {
+            _originalResult = originalResult;
+            _etag = etag;
+            _etagService = etagService;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            // Set ETag headers before executing the original result
+            _etagService.SetCacheHeaders(httpContext.Response, _etag);
+
+            await _originalResult.ExecuteAsync(httpContext);
+        }
+    }
+
+    /// <summary>
+    /// Custom result for 304 Not Modified responses with ETag.
+    /// </summary>
+    private sealed class NotModifiedWithETagResult : IResult
+    {
+        private readonly string _etag;
+        private readonly IETagService _etagService;
+
+        public NotModifiedWithETagResult(string etag, IETagService etagService)
+        {
+            _etag = etag;
+            _etagService = etagService;
+        }
+
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.StatusCode = (int)HttpStatusCode.NotModified;
+
+            // Set ETag header for 304 responses
+            _etagService.SetCacheHeaders(httpContext.Response, _etag);
+
+            // Remove content headers for 304 responses
+            httpContext.Response.Headers.Remove("Content-Type");
+            httpContext.Response.ContentLength = 0;
+
+            return Task.CompletedTask;
+        }
+    }
+}

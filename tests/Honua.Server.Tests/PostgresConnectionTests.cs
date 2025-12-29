@@ -12,15 +12,25 @@ namespace Honua.Server.Tests;
 public sealed class PostgresConnectionTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fixture = new();
+    private string _schemaName = null!;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(PostgresConnectionTests));
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _fixture.DropSchemaAsync(_schemaName);
+        await _fixture.DisposeAsync();
+    }
 
     [Fact]
     public async Task CanConnectToPostgres()
     {
         // Act
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT 1";
         var result = await cmd.ExecuteScalarAsync();
@@ -33,7 +43,7 @@ public sealed class PostgresConnectionTests : IAsyncLifetime
     public async Task PostGisExtensionIsAvailable()
     {
         // Act
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT PostGIS_Version()";
         var result = await cmd.ExecuteScalarAsync();
@@ -49,13 +59,13 @@ public sealed class PostgresConnectionTests : IAsyncLifetime
     public async Task CanCreateSpatialTable()
     {
         // Arrange
-        await _fixture.CreateTestData()
+        await _fixture.CreateTestData(_schemaName)
             .WithTable("test_points", "POINT", 4326)
             .WithPoint("test_points", "Test Point", -122.4194, 37.7749)
             .BuildAsync();
 
         // Act
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT name, ST_AsText(geom) FROM test_points";
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -70,7 +80,7 @@ public sealed class PostgresConnectionTests : IAsyncLifetime
     public async Task CanPerformSpatialQuery()
     {
         // Arrange
-        await _fixture.CreateTestData()
+        await _fixture.CreateTestData(_schemaName)
             .WithTable("cities", "POINT", 4326)
             .WithPoint("cities", "San Francisco", -122.4194, 37.7749)
             .WithPoint("cities", "Oakland", -122.2711, 37.8044)
@@ -78,7 +88,7 @@ public sealed class PostgresConnectionTests : IAsyncLifetime
             .BuildAsync();
 
         // Act - find cities within 50km of San Francisco
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT name FROM cities

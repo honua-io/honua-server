@@ -23,9 +23,19 @@ namespace Honua.Server.Tests.Performance;
 public sealed class ConnectionPoolTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fixture = new();
+    private string _schemaName = null!;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(ConnectionPoolTests));
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _fixture.DropSchemaAsync(_schemaName);
+        await _fixture.DisposeAsync();
+    }
 
     /// <summary>
     /// Verifies that connections are properly returned to the pool after use.
@@ -41,7 +51,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Act - repeatedly acquire and release connections
         for (int i = 0; i < iterations; i++)
         {
-            await using var conn = await _fixture.GetConnectionAsync();
+            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT 1";
             await cmd.ExecuteScalarAsync();
@@ -49,7 +59,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
 
         // Assert - should complete without pool exhaustion
         // If connections weren't returned, we'd hit pool exhaustion
-        await using var finalConn = await _fixture.GetConnectionAsync();
+        await using var finalConn = await _fixture.GetConnectionAsync(_schemaName);
         Assert.True(finalConn.State == System.Data.ConnectionState.Open);
     }
 
@@ -74,7 +84,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
             {
                 try
                 {
-                    await using var conn = await _fixture.GetConnectionAsync();
+                    await using var conn = await _fixture.GetConnectionAsync(_schemaName);
                     await using var cmd = conn.CreateCommand();
                     cmd.CommandText = "SELECT pg_backend_pid()";
                     await cmd.ExecuteScalarAsync();
@@ -112,7 +122,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         {
             try
             {
-                await using var conn = await _fixture.GetConnectionAsync();
+                await using var conn = await _fixture.GetConnectionAsync(_schemaName);
                 await using var cmd = conn.CreateCommand();
                 // Invalid SQL will throw
                 cmd.CommandText = "SELECT * FROM nonexistent_table_12345";
@@ -128,7 +138,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         Assert.Equal(iterations, errorCount);
 
         // Verify pool is still functional
-        await using var verifyConn = await _fixture.GetConnectionAsync();
+        await using var verifyConn = await _fixture.GetConnectionAsync(_schemaName);
         await using var verifyCmd = verifyConn.CreateCommand();
         verifyCmd.CommandText = "SELECT 1";
         var result = await verifyCmd.ExecuteScalarAsync();
@@ -153,7 +163,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Act - sustained connection usage
         while (DateTime.UtcNow < endTime)
         {
-            await using var conn = await _fixture.GetConnectionAsync();
+            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT pg_backend_pid()";
             await cmd.ExecuteScalarAsync();
@@ -185,7 +195,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Arrange - use some connections
         var tasks = Enumerable.Range(0, 10).Select(async _ =>
         {
-            await using var conn = await _fixture.GetConnectionAsync();
+            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT pg_sleep(0.1)";
             await cmd.ExecuteScalarAsync();
@@ -195,7 +205,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         var holdTask = Task.WhenAll(tasks);
 
         // Act - query backend connections while tasks are running
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT count(*)
@@ -227,7 +237,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Act - use transactions
         for (int i = 0; i < iterations; i++)
         {
-            await using var conn = await _fixture.GetConnectionAsync();
+            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var transaction = await conn.BeginTransactionAsync();
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = transaction;
@@ -237,7 +247,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         }
 
         // Assert - pool still functional
-        await using var testConn = await _fixture.GetConnectionAsync();
+        await using var testConn = await _fixture.GetConnectionAsync(_schemaName);
         Assert.True(testConn.State == System.Data.ConnectionState.Open);
     }
 
@@ -254,7 +264,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Act - use and rollback transactions
         for (int i = 0; i < iterations; i++)
         {
-            await using var conn = await _fixture.GetConnectionAsync();
+            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var transaction = await conn.BeginTransactionAsync();
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = transaction;
@@ -264,7 +274,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         }
 
         // Assert - pool still functional
-        await using var testConn = await _fixture.GetConnectionAsync();
+        await using var testConn = await _fixture.GetConnectionAsync(_schemaName);
         Assert.True(testConn.State == System.Data.ConnectionState.Open);
     }
 
@@ -283,7 +293,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Act - burst of concurrent connections
         var tasks = Enumerable.Range(0, burstSize).Select(async _ =>
         {
-            await using var conn = await _fixture.GetConnectionAsync();
+            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT pg_backend_pid()";
             var pid = await cmd.ExecuteScalarAsync();

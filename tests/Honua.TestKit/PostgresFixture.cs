@@ -17,26 +17,19 @@ namespace Honua.TestKit;
 public sealed class PostgresFixture : IAsyncLifetime
 {
     private static readonly ConcurrentDictionary<string, int> _schemaCounters = new();
+    private static readonly SemaphoreSlim _sharedLock = new(1, 1);
+    private static PostgreSqlContainer? _sharedContainer;
+    private static NpgsqlDataSource? _sharedDataSource;
+    private static string? _sharedConnectionString;
+    private static int _sharedRefCount;
+    private static bool _sharedInitialized;
     private const string ExternalConnectionStringEnv = "HONUA_TEST_DB_URL";
     private const string SeedPathEnv = "HONUA_TEST_DB_SEED_PATH";
     private const string SeedProfileEnv = "HONUA_TEST_DB_SEED_PROFILE";
-    private readonly PostgreSqlContainer? _container;
-    private readonly string? _externalConnectionString;
     private string? _connectionString;
 
     public PostgresFixture()
     {
-        _externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
-        if (string.IsNullOrWhiteSpace(_externalConnectionString))
-        {
-            _container = new PostgreSqlBuilder()
-                .WithImage("postgis/postgis:18-3.6")
-                .WithDatabase("honua_test")
-                .WithUsername("test")
-                .WithPassword("test")
-                .WithCommand("-c", "max_connections=200")
-                .Build();
-        }
     }
 
     public string ConnectionString => _connectionString ?? throw new InvalidOperationException("Postgres fixture not initialized.");
@@ -45,36 +38,80 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        if (_externalConnectionString is null)
+        await _sharedLock.WaitAsync();
+        try
         {
-            if (_container is null)
+            if (!_sharedInitialized)
             {
-                throw new InvalidOperationException("Postgres container not configured.");
+                var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
+                if (string.IsNullOrWhiteSpace(externalConnectionString))
+                {
+                    _sharedContainer = new PostgreSqlBuilder()
+                        .WithImage("postgis/postgis:18-3.6")
+                        .WithDatabase("honua_test")
+                        .WithUsername("test")
+                        .WithPassword("test")
+                        .WithCommand("-c", "max_connections=200")
+                        .Build();
+                    await _sharedContainer.StartAsync();
+                    _sharedConnectionString = _sharedContainer.GetConnectionString();
+                }
+                else
+                {
+                    _sharedConnectionString = externalConnectionString;
+                }
+
+                _sharedDataSource = NpgsqlDataSource.Create(_sharedConnectionString);
+
+                await using var conn = await _sharedDataSource.OpenConnectionAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS unaccent;";
+                await cmd.ExecuteNonQueryAsync();
+
+                _sharedInitialized = true;
             }
 
-            await _container.StartAsync();
-            _connectionString = _container.GetConnectionString();
+            _sharedRefCount++;
+            _connectionString = _sharedConnectionString;
+            DataSource = _sharedDataSource ?? throw new InvalidOperationException("Shared data source not initialized.");
         }
-        else
+        finally
         {
-            _connectionString = _externalConnectionString;
+            _sharedLock.Release();
         }
-
-        DataSource = NpgsqlDataSource.Create(ConnectionString);
-
-        // Enable PostGIS extension
-        await using var conn = await DataSource.OpenConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS unaccent;";
-        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync()
     {
-        await DataSource.DisposeAsync();
-        if (_container is not null)
+        await _sharedLock.WaitAsync();
+        try
         {
-            await _container.DisposeAsync();
+            if (_sharedRefCount > 0)
+            {
+                _sharedRefCount--;
+            }
+
+            if (_sharedRefCount == 0 && _sharedInitialized)
+            {
+                if (_sharedDataSource is not null)
+                {
+                    await _sharedDataSource.DisposeAsync();
+                }
+
+                if (_sharedContainer is not null)
+                {
+                    await _sharedContainer.DisposeAsync();
+                }
+
+                _sharedDataSource = null;
+                _sharedContainer = null;
+                _sharedConnectionString = null;
+                _sharedInitialized = false;
+            }
+        }
+        finally
+        {
+            _sharedLock.Release();
         }
     }
 

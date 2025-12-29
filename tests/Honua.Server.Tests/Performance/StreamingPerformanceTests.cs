@@ -164,8 +164,10 @@ public class StreamingPerformanceTests : IDisposable
             $"Streaming memory usage ({streamingMemoryUsage} bytes) should be within 10% of traditional query ({traditionalMemoryUsage} bytes)");
 
         // Streaming might be slightly slower due to per-feature overhead, but should be competitive
-        Assert.True(streamingStopwatch.ElapsedMilliseconds < traditionalStopwatch.ElapsedMilliseconds * 2,
-            $"Streaming time ({streamingStopwatch.ElapsedMilliseconds}ms) should be within 2x of traditional query ({traditionalStopwatch.ElapsedMilliseconds}ms)");
+        var traditionalElapsedMs = Math.Max(traditionalStopwatch.ElapsedMilliseconds, 1);
+        var streamingElapsedMs = streamingStopwatch.ElapsedMilliseconds;
+        Assert.True(streamingElapsedMs <= traditionalElapsedMs * 2,
+            $"Streaming time ({streamingElapsedMs}ms) should be within 2x of traditional query ({traditionalElapsedMs}ms)");
     }
 
     [Fact]

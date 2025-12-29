@@ -20,6 +20,7 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
 
     private readonly ServiceDefinition _testService;
     private readonly LayerDefinition _testLayer;
+    private readonly LayerDefinition _landmarksLayer;
 
     public ODataTestLayerCatalog()
     {
@@ -41,6 +42,24 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
         var spatialRef = new SpatialReference(4326); // WGS84
         var extent = FeatureExtent.Create(-125.0, 30.0, -100.0, 50.0, 4326);
 
+        var landmarksFields = new[]
+        {
+            new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
+            new FieldDefinition("city_id", FieldType.Integer, null, false, null, "Origin city ID"),
+            new FieldDefinition("name", FieldType.String, 255, false, null, "Landmark name"),
+            new FieldDefinition("category", FieldType.String, 100, true, null, "Landmark category"),
+            new FieldDefinition("established_year", FieldType.Integer, null, true, null, "Year established")
+        };
+
+        var relationship = Relationship.Create(
+            relationshipId: 1,
+            name: "Landmarks",
+            relatedLayerId: 1,
+            relationshipType: "esriRelRoleOrigin",
+            originForeignKeyField: "objectid",
+            destinationForeignKeyField: "city_id",
+            description: "City to landmark relationship");
+
         _testLayer = new LayerDefinition(
             Id: 0,
             Name: "US Cities",
@@ -51,12 +70,25 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
             Extent: extent,
             MinScale: null,
             MaxScale: null,
+            DefaultVisibility: true,
+            Relationships: [relationship]);
+
+        _landmarksLayer = new LayerDefinition(
+            Id: 1,
+            Name: "City Landmarks",
+            Description: "Landmarks for OData expand tests",
+            GeometryType: GeometryType.None,
+            SpatialReference: spatialRef,
+            Fields: landmarksFields,
+            Extent: extent,
+            MinScale: null,
+            MaxScale: null,
             DefaultVisibility: true);
 
         _testService = new ServiceDefinition(
             Name: "cities",
             Description: "Cities service for OData integration tests",
-            Layers: [_testLayer],
+            Layers: [_testLayer, _landmarksLayer],
             SpatialReference: spatialRef,
             MaxRecordCount: 1000,
             SupportedFormats: _supportedFormats,
@@ -66,12 +98,17 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(layerId == 0 ? _testLayer : null);
+        return Task.FromResult(layerId switch
+        {
+            0 => _testLayer,
+            1 => _landmarksLayer,
+            _ => null
+        });
     }
 
     public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new[] { _testLayer });
+        return Task.FromResult(new[] { _testLayer, _landmarksLayer });
     }
 
     public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
@@ -87,7 +124,7 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
 
     public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(layerId == 0);
+        return Task.FromResult(layerId is 0 or 1);
     }
 
     public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
@@ -97,11 +134,17 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
 
     public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<Relationship?>(null);
+        if (layerId != 0)
+        {
+            return Task.FromResult<Relationship?>(null);
+        }
+
+        var relationship = _testLayer.LayerRelationships.FirstOrDefault(r => r.RelationshipId == relationshipId);
+        return Task.FromResult<Relationship?>(relationship.RelationshipId == relationshipId ? relationship : null);
     }
 
     public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(Array.Empty<Relationship>());
+        return Task.FromResult(layerId == 0 ? _testLayer.LayerRelationships : Array.Empty<Relationship>());
     }
 }

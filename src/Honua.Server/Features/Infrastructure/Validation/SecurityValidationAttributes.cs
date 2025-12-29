@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
+using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
 
@@ -22,35 +23,35 @@ public sealed class SafeSqlIdentifierAttribute : ValidationAttribute
         "NULL", "TRUE", "FALSE", "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE"
     };
 
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value is not string stringValue)
         {
-            return new ValidationResult("Value must be a string.");
+            return new DataAnnotationsValidationResult("Value must be a string.");
         }
 
         if (string.IsNullOrWhiteSpace(stringValue))
         {
-            return new ValidationResult("SQL identifier cannot be empty.");
+            return new DataAnnotationsValidationResult("SQL identifier cannot be empty.");
         }
 
         if (stringValue.Length > 63) // PostgreSQL identifier limit
         {
-            return new ValidationResult("SQL identifier cannot exceed 63 characters.");
+            return new DataAnnotationsValidationResult("SQL identifier cannot exceed 63 characters.");
         }
 
         if (!_sqlIdentifierRegex.IsMatch(stringValue))
         {
-            return new ValidationResult("SQL identifier can only contain letters, numbers, and underscores, and must start with a letter or underscore.");
+            return new DataAnnotationsValidationResult("SQL identifier can only contain letters, numbers, and underscores, and must start with a letter or underscore.");
         }
 
         // Check for SQL reserved words
         if (IsReservedWord(stringValue))
         {
-            return new ValidationResult($"'{stringValue}' is a reserved SQL keyword and cannot be used as an identifier.");
+            return new DataAnnotationsValidationResult($"'{stringValue}' is a reserved SQL keyword and cannot be used as an identifier.");
         }
 
-        return ValidationResult.Success;
+        return DataAnnotationsValidationResult.Success!;
     }
 
     private static bool IsReservedWord(string identifier)
@@ -77,31 +78,31 @@ public sealed class SafeSqlIdentifierAttribute : ValidationAttribute
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
 public sealed class ValidSridAttribute : ValidationAttribute
 {
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Nullable SRID is allowed
+            return DataAnnotationsValidationResult.Success!; // Nullable SRID is allowed
         }
 
         if (value is not int srid)
         {
-            return new ValidationResult("SRID must be an integer.");
+            return new DataAnnotationsValidationResult("SRID must be an integer.");
         }
 
         // Valid SRID ranges based on EPSG standards
         if (srid < 0 || srid > 999999)
         {
-            return new ValidationResult("SRID must be between 0 and 999,999.");
+            return new DataAnnotationsValidationResult("SRID must be between 0 and 999,999.");
         }
 
         // Common invalid SRIDs
         if (srid == 0)
         {
-            return ValidationResult.Success; // 0 is valid (unknown/undefined)
+            return DataAnnotationsValidationResult.Success!; // 0 is valid (unknown/undefined)
         }
 
-        return ValidationResult.Success;
+        return DataAnnotationsValidationResult.Success!;
     }
 }
 
@@ -118,30 +119,30 @@ public sealed class AllowedFileExtensionAttribute : ValidationAttribute
         _allowedExtensions = new HashSet<string>(allowedExtensions, StringComparer.OrdinalIgnoreCase);
     }
 
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value is not string fileName)
         {
-            return new ValidationResult("File name must be a string.");
+            return new DataAnnotationsValidationResult("File name must be a string.");
         }
 
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            return new ValidationResult("File name cannot be empty.");
+            return new DataAnnotationsValidationResult("File name cannot be empty.");
         }
 
         var extension = Path.GetExtension(fileName);
         if (string.IsNullOrEmpty(extension))
         {
-            return new ValidationResult("File must have an extension.");
+            return new DataAnnotationsValidationResult("File must have an extension.");
         }
 
         if (!_allowedExtensions.Contains(extension))
         {
-            return new ValidationResult($"File extension '{extension}' is not allowed. Allowed extensions: {string.Join(", ", _allowedExtensions)}");
+            return new DataAnnotationsValidationResult($"File extension '{extension}' is not allowed. Allowed extensions: {string.Join(", ", _allowedExtensions)}");
         }
 
-        return ValidationResult.Success;
+        return DataAnnotationsValidationResult.Success!;
     }
 }
 
@@ -158,30 +159,30 @@ public sealed class ValidCoordinateAttribute : ValidationAttribute
         CoordinateType = coordinateType;
     }
 
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Nullable coordinates allowed
+            return DataAnnotationsValidationResult.Success!; // Nullable coordinates allowed
         }
 
         if (value is not double coordinate)
         {
-            return new ValidationResult("Coordinate must be a number.");
+            return new DataAnnotationsValidationResult("Coordinate must be a number.");
         }
 
         if (double.IsNaN(coordinate) || double.IsInfinity(coordinate))
         {
-            return new ValidationResult("Coordinate cannot be NaN or infinity.");
+            return new DataAnnotationsValidationResult("Coordinate cannot be NaN or infinity.");
         }
 
         return CoordinateType switch
         {
             CoordinateType.Longitude when coordinate < -180.0 || coordinate > 180.0 =>
-                new ValidationResult("Longitude must be between -180 and 180 degrees."),
+                new DataAnnotationsValidationResult("Longitude must be between -180 and 180 degrees."),
             CoordinateType.Latitude when coordinate < -90.0 || coordinate > 90.0 =>
-                new ValidationResult("Latitude must be between -90 and 90 degrees."),
-            _ => ValidationResult.Success
+                new DataAnnotationsValidationResult("Latitude must be between -90 and 90 degrees."),
+            _ => DataAnnotationsValidationResult.Success!
         };
     }
 }
@@ -203,24 +204,24 @@ public sealed class SafeStringAttribute : ValidationAttribute
 {
     private static readonly Regex _dangerousPatternRegex = new(@"[<>&""'\x00-\x1f\x7f-\x9f]", RegexOptions.Compiled);
 
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Null strings are allowed
+            return DataAnnotationsValidationResult.Success!; // Null strings are allowed
         }
 
         if (value is not string stringValue)
         {
-            return new ValidationResult("Value must be a string.");
+            return new DataAnnotationsValidationResult("Value must be a string.");
         }
 
         if (_dangerousPatternRegex.IsMatch(stringValue))
         {
-            return new ValidationResult("String contains potentially dangerous characters.");
+            return new DataAnnotationsValidationResult("String contains potentially dangerous characters.");
         }
 
-        return ValidationResult.Success;
+        return DataAnnotationsValidationResult.Success!;
     }
 }
 
@@ -234,34 +235,34 @@ public sealed class SafeWhereClauseAttribute : ValidationAttribute
         @"(;\s*(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER|EXEC|EXECUTE|DECLARE|xp_|sp_))|(\-\-)|(/\*)|(\*/)|(\bUNION\b)|(\bOR\b\s+\d+\s*=\s*\d+)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Null WHERE clauses are allowed
+            return DataAnnotationsValidationResult.Success!; // Null WHERE clauses are allowed
         }
 
         if (value is not string whereClause)
         {
-            return new ValidationResult("WHERE clause must be a string.");
+            return new DataAnnotationsValidationResult("WHERE clause must be a string.");
         }
 
         if (string.IsNullOrWhiteSpace(whereClause))
         {
-            return ValidationResult.Success; // Empty WHERE clauses are allowed
+            return DataAnnotationsValidationResult.Success!; // Empty WHERE clauses are allowed
         }
 
         if (whereClause.Length > 4000) // Reasonable limit for WHERE clauses
         {
-            return new ValidationResult("WHERE clause is too long (maximum 4000 characters).");
+            return new DataAnnotationsValidationResult("WHERE clause is too long (maximum 4000 characters).");
         }
 
         if (_dangerousPatternRegex.IsMatch(whereClause))
         {
-            return new ValidationResult("WHERE clause contains potentially dangerous SQL patterns.");
+            return new DataAnnotationsValidationResult("WHERE clause contains potentially dangerous SQL patterns.");
         }
 
-        return ValidationResult.Success;
+        return DataAnnotationsValidationResult.Success!;
     }
 }
 
@@ -278,28 +279,28 @@ public sealed class ValidPaginationAttribute : ValidationAttribute
         MaxValue = maxValue;
     }
 
-    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Nullable pagination parameters are allowed
+            return DataAnnotationsValidationResult.Success!; // Nullable pagination parameters are allowed
         }
 
         if (value is not int intValue)
         {
-            return new ValidationResult("Pagination parameter must be an integer.");
+            return new DataAnnotationsValidationResult("Pagination parameter must be an integer.");
         }
 
         if (intValue < 0)
         {
-            return new ValidationResult("Pagination parameter cannot be negative.");
+            return new DataAnnotationsValidationResult("Pagination parameter cannot be negative.");
         }
 
         if (intValue > MaxValue)
         {
-            return new ValidationResult($"Pagination parameter cannot exceed {MaxValue}.");
+            return new DataAnnotationsValidationResult($"Pagination parameter cannot exceed {MaxValue}.");
         }
 
-        return ValidationResult.Success;
+        return DataAnnotationsValidationResult.Success!;
     }
 }

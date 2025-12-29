@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
@@ -74,9 +75,10 @@ internal sealed class SecurityHeadersMiddleware
         }
 
         // Content-Security-Policy - Prevent XSS and injection attacks
-        if (!string.IsNullOrEmpty(_options.ContentSecurityPolicy))
+        var cspHeader = BuildContentSecurityPolicy();
+        if (!string.IsNullOrEmpty(cspHeader.policy))
         {
-            headers["Content-Security-Policy"] = _options.ContentSecurityPolicy;
+            headers[cspHeader.headerName] = cspHeader.policy;
         }
 
         // X-Frame-Options - Prevent clickjacking attacks
@@ -121,6 +123,112 @@ internal sealed class SecurityHeadersMiddleware
             }
         }
     }
+
+    /// <summary>
+    /// Builds the Content Security Policy header based on configuration.
+    /// </summary>
+    /// <returns>A tuple containing the header name and policy value</returns>
+    private (string headerName, string policy) BuildContentSecurityPolicy()
+    {
+        // If CSP config is not provided, use the simple string policy
+        if (_options.Csp == null)
+        {
+            return ("Content-Security-Policy", _options.ContentSecurityPolicy);
+        }
+
+        var config = _options.Csp;
+        var headerName = config.ReportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy";
+
+        ContentSecurityPolicyBuilder builder;
+
+        // Create builder based on policy type
+        switch (config.PolicyType)
+        {
+            case CspPolicyType.ApiOnly:
+                builder = ContentSecurityPolicyBuilder.ForApiOnly();
+                break;
+
+            case CspPolicyType.GeospatialApi:
+                builder = ContentSecurityPolicyBuilder.ForGeospatialApi(config.AllowDevelopmentFeatures);
+                break;
+
+            case CspPolicyType.Custom:
+                builder = new ContentSecurityPolicyBuilder(config.AllowDevelopmentFeatures);
+
+                // For custom type, start with no defaults and only use provided directives
+                if (config.CustomDirectives != null)
+                {
+                    foreach (var directive in config.CustomDirectives)
+                    {
+                        builder.AddDirective(directive.Key, directive.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+                    }
+                }
+                break;
+
+            default:
+                // Fallback to geospatial API policy
+                builder = ContentSecurityPolicyBuilder.ForGeospatialApi(config.AllowDevelopmentFeatures);
+                break;
+        }
+
+        // Apply configuration customizations
+        if (config.TrustedTileServers.Length > 0)
+        {
+            builder.AllowTileServers(config.TrustedTileServers);
+        }
+
+        if (config.TrustedCdns.Length > 0)
+        {
+            builder.AllowMappingCdns(config.TrustedCdns);
+        }
+
+        if (config.TrustedGeospatialApis.Length > 0)
+        {
+            builder.AllowGeospatialApis(config.TrustedGeospatialApis);
+        }
+
+        if (config.WebSocketUrls.Length > 0)
+        {
+            builder.AllowWebSockets(config.WebSocketUrls);
+        }
+
+        if (config.AllowedStyleHashes.Length > 0)
+        {
+            builder.AllowInlineStyleHashes(config.AllowedStyleHashes);
+        }
+
+        if (config.AllowedScriptHashes.Length > 0)
+        {
+            builder.AllowInlineScriptHashes(config.AllowedScriptHashes);
+        }
+
+        // Apply custom directives (except for Custom policy type which was handled above)
+        if (config.PolicyType != CspPolicyType.Custom && config.CustomDirectives != null)
+        {
+            foreach (var directive in config.CustomDirectives)
+            {
+                builder.AddDirective(directive.Key, directive.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+
+        // Add report URI if specified
+        if (!string.IsNullOrEmpty(config.ReportUri))
+        {
+            builder.AddDirective("report-uri", config.ReportUri);
+        }
+
+        // Build and validate the policy
+        var policy = builder.Build();
+        var warnings = builder.Validate();
+
+        // Log warnings for policy validation issues
+        foreach (var warning in warnings)
+        {
+            SecurityHeadersLog.SecurityHeadersConfigurationWarning(_logger, warning);
+        }
+
+        return (headerName, policy);
+    }
 }
 
 /// <summary>
@@ -160,12 +268,18 @@ public sealed class SecurityHeadersOptions
 
     /// <summary>
     /// Content Security Policy (CSP) directives.
-    /// Default: Strict policy suitable for APIs.
+    /// Default: Strict policy suitable for geospatial APIs.
     /// </summary>
     public string ContentSecurityPolicy { get; set; } =
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
         "connect-src 'self'; font-src 'self'; media-src 'self'; object-src 'none'; " +
         "frame-ancestors 'none'; form-action 'self'; base-uri 'self'";
+
+    /// <summary>
+    /// CSP policy configuration for different environments.
+    /// When specified, overrides the ContentSecurityPolicy setting based on environment.
+    /// </summary>
+    public ContentSecurityPolicyConfig? Csp { get; set; }
 
     /// <summary>
     /// X-Frame-Options header value.
@@ -211,6 +325,100 @@ public sealed class SecurityHeadersOptions
     /// Key-value pairs of header names and values.
     /// </summary>
     public Dictionary<string, string>? CustomHeaders { get; set; }
+}
+
+/// <summary>
+/// Configuration for Content Security Policy with environment-specific settings.
+/// </summary>
+public sealed class ContentSecurityPolicyConfig
+{
+    /// <summary>
+    /// CSP policy type to use. Determines the base policy before customizations.
+    /// </summary>
+    public CspPolicyType PolicyType { get; set; } = CspPolicyType.GeospatialApi;
+
+    /// <summary>
+    /// Whether to use development-friendly CSP settings.
+    /// When true, allows unsafe-eval and relaxed localhost policies.
+    /// </summary>
+    public bool AllowDevelopmentFeatures { get; set; }
+
+    /// <summary>
+    /// Trusted tile server domains for map rendering.
+    /// These will be added to img-src and connect-src directives.
+    /// </summary>
+    public string[] TrustedTileServers { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Trusted CDN domains for mapping libraries.
+    /// These will be added to script-src, style-src, and font-src directives.
+    /// </summary>
+    public string[] TrustedCdns { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Trusted geospatial API domains.
+    /// These will be added to connect-src directive.
+    /// </summary>
+    public string[] TrustedGeospatialApis { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// WebSocket URLs for real-time data connections.
+    /// These will be added to connect-src directive with ws:// or wss:// protocols.
+    /// </summary>
+    public string[] WebSocketUrls { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// SHA256 hashes of allowed inline styles.
+    /// These will be added to style-src directive as 'sha256-{hash}'.
+    /// </summary>
+    public string[] AllowedStyleHashes { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// SHA256 hashes of allowed inline scripts.
+    /// These will be added to script-src directive as 'sha256-{hash}'.
+    /// </summary>
+    public string[] AllowedScriptHashes { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Custom CSP directives to add or override.
+    /// Key is the directive name, value is the space-separated list of sources.
+    /// </summary>
+    public Dictionary<string, string>? CustomDirectives { get; set; }
+
+    /// <summary>
+    /// Report URI for CSP violation reporting.
+    /// If specified, adds report-uri directive to the policy.
+    /// </summary>
+    public string? ReportUri { get; set; }
+
+    /// <summary>
+    /// Whether to use report-only mode.
+    /// When true, uses Content-Security-Policy-Report-Only header instead of enforcing.
+    /// </summary>
+    public bool ReportOnly { get; set; }
+}
+
+/// <summary>
+/// Predefined CSP policy types for different use cases.
+/// </summary>
+public enum CspPolicyType
+{
+    /// <summary>
+    /// Restrictive policy for API-only endpoints with no browser UI.
+    /// </summary>
+    ApiOnly = 0,
+
+    /// <summary>
+    /// Balanced policy for geospatial APIs that may serve web content.
+    /// Allows necessary resources for map rendering while maintaining security.
+    /// </summary>
+    GeospatialApi = 1,
+
+    /// <summary>
+    /// Custom policy built entirely from configuration.
+    /// Uses only the CustomDirectives specified in config.
+    /// </summary>
+    Custom = 2
 }
 
 /// <summary>

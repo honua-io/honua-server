@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
@@ -75,7 +76,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/upload", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -136,7 +137,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/upload", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("\"featureCount\":3");
     }
@@ -149,7 +150,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/import/limits");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -167,7 +168,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/import/jobs");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("\"jobs\":[]");
     }
@@ -209,7 +210,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/upload", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("wkt_import_table");
         responseContent.Should().Contain("Wkt");
@@ -256,7 +257,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/upload", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("kml_import_table");
         responseContent.Should().Contain("Kml");
@@ -300,7 +301,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/upload", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("gpx_import_table");
         responseContent.Should().Contain("Gpx");
@@ -345,7 +346,7 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/preview", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("totalFeatureCount");
         // Feature count should be limited by MaxPreviewFeatures (default 100)

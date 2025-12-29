@@ -5,14 +5,11 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests;
@@ -47,9 +44,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Replace services with test implementations
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
+        _fixture.UseSeed(Path.Combine("tests", "seed", "server.yaml"));
 
         // Configure test limits
         _fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(_testLimits));

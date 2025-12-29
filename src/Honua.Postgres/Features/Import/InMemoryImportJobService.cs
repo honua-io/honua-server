@@ -46,15 +46,46 @@ internal sealed class InMemoryImportJobService : IImportJobService, IDisposable
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancellationTokens[jobId] = cts;
 
-        // Copy stream to memory for background processing
-        // In production, you'd want to save to a temp file or blob storage
-        var memoryStream = new MemoryStream();
-        await request.FileStream.CopyToAsync(memoryStream, cancellationToken);
-        memoryStream.Position = 0;
+        // Copy stream to a temp file for background processing
+        // In production, you'd want to save to durable storage
+        if (request.FileStream.CanSeek)
+        {
+            request.FileStream.Position = 0;
+        }
+
+        var tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                BufferSize = 64 * 1024,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            }))
+            {
+                await request.FileStream.CopyToAsync(tempStream, cancellationToken);
+            }
+        }
+        catch
+        {
+            TryDeleteTempFile(tempFilePath);
+            throw;
+        }
+
+        var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            BufferSize = 64 * 1024,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
 
         var backgroundRequest = new ImportRequest
         {
-            FileStream = memoryStream,
+            FileStream = backgroundStream,
             FileName = request.FileName,
             TableName = request.TableName,
             SourceSrid = request.SourceSrid,
@@ -63,7 +94,7 @@ internal sealed class InMemoryImportJobService : IImportJobService, IDisposable
         };
 
         // Start background processing
-        _ = ProcessJobAsync(jobId, backgroundRequest, memoryStream, cts.Token);
+        _ = ProcessJobAsync(jobId, backgroundRequest, tempFilePath, cts.Token);
 
         return jobId;
     }
@@ -71,11 +102,12 @@ internal sealed class InMemoryImportJobService : IImportJobService, IDisposable
     private async Task ProcessJobAsync(
         string jobId,
         ImportRequest request,
-        MemoryStream stream,
+        string tempFilePath,
         CancellationToken cancellationToken)
     {
         try
         {
+            await using var stream = request.FileStream;
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 state.Progress = state.Progress with { Status = ImportStatus.Processing };
@@ -128,7 +160,7 @@ internal sealed class InMemoryImportJobService : IImportJobService, IDisposable
         }
         finally
         {
-            await stream.DisposeAsync();
+            TryDeleteTempFile(tempFilePath);
             _cancellationTokens.TryRemove(jobId, out var cts);
             cts?.Dispose();
         }
@@ -191,5 +223,20 @@ internal sealed class InMemoryImportJobService : IImportJobService, IDisposable
         public required ImportRequest Request { get; init; }
         public required DateTimeOffset StartedAt { get; init; }
         public ImportResult? Result { get; set; }
+    }
+
+    private static void TryDeleteTempFile(string tempFilePath)
+    {
+        try
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup; ignore failures
+        }
     }
 }

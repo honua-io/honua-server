@@ -1,9 +1,13 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Diagnostics;
-using Honua.Core.Features.Catalog.Domain;
+using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Core.Features.Tiles.Domain;
+using Honua.Core.Features.Tiles;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.FeatureStore;
 
@@ -31,126 +35,27 @@ internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
     }
 
     /// <inheritdoc />
-    public async Task<IAsyncEnumerable<Feature>> QueryAsync(
-        LayerDefinition layerDefinition,
-        FeatureQuery query,
-        CancellationToken cancellationToken = default)
+    public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        using var scope = _performanceMonitor.StartOperation("query_features")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
-            .WithTag("operation", "query");
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+        var featureIdText = featureId.ToString(CultureInfo.InvariantCulture);
 
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            var result = await _innerStore.QueryAsync(layerDefinition, query, cancellationToken);
-
-            // Count the results as they stream for metrics
-            var monitoredResult = MonitorResults(result, "query", layerDefinition.Id.ToString());
-
-            return monitoredResult;
-        }
-        catch (Exception ex)
-        {
-            scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.QueryFailed(_logger, layerDefinition.Id.ToString(), ex.Message, ex);
-            throw;
-        }
-        finally
-        {
-            MonitoredFeatureStoreLog.QueryCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                stopwatch.Elapsed.TotalMilliseconds);
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<IAsyncEnumerable<Feature>> QueryOptimizedAsync(
-        LayerDefinition layerDefinition,
-        FeatureQuery query,
-        CancellationToken cancellationToken = default)
-    {
-        using var scope = _performanceMonitor.StartOperation("query_features_optimized")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
-            .WithTag("operation", "query_optimized");
-
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            var result = await _innerStore.QueryOptimizedAsync(layerDefinition, query, cancellationToken);
-            return MonitorResults(result, "query_optimized", layerDefinition.Id.ToString());
-        }
-        catch (Exception ex)
-        {
-            scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.QueryFailed(_logger, layerDefinition.Id.ToString(), ex.Message, ex);
-            throw;
-        }
-        finally
-        {
-            MonitoredFeatureStoreLog.QueryCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                stopwatch.Elapsed.TotalMilliseconds);
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<long> CountAsync(
-        LayerDefinition layerDefinition,
-        FeatureQuery query,
-        CancellationToken cancellationToken = default)
-    {
-        using var scope = _performanceMonitor.StartOperation("count_features")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
-            .WithTag("operation", "count");
-
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            var result = await _innerStore.CountAsync(layerDefinition, query, cancellationToken);
-
-            _performanceMonitor.RecordDatabaseQuery("count", layerDefinition.Id.ToString(), stopwatch.Elapsed, 1);
-
-            MonitoredFeatureStoreLog.CountCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                result,
-                stopwatch.Elapsed.TotalMilliseconds);
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.CountFailed(_logger, layerDefinition.Id.ToString(), ex.Message, ex);
-            throw;
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<Feature?> GetAsync(
-        LayerDefinition layerDefinition,
-        object id,
-        string[]? outFields = null,
-        CancellationToken cancellationToken = default)
-    {
         using var scope = _performanceMonitor.StartOperation("get_feature")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
+            .WithTag("layer_id", layerIdText)
             .WithTag("operation", "get");
 
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var result = await _innerStore.GetAsync(layerDefinition, id, outFields, cancellationToken);
+            var result = await _innerStore.GetAsync(layerId, featureId, cancellationToken);
 
-            _performanceMonitor.RecordDatabaseQuery("get", layerDefinition.Id.ToString(), stopwatch.Elapsed, result != null ? 1 : 0);
+            _performanceMonitor.RecordDatabaseQuery("get", layerIdText, stopwatch.Elapsed, result != null ? 1 : 0);
 
-            MonitoredFeatureStoreLog.GetCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                id.ToString()!,
+            MonitoredFeatureStoreLog.GetCompleted(
+                _logger,
+                layerIdText,
+                featureIdText,
                 result != null,
                 stopwatch.Elapsed.TotalMilliseconds);
 
@@ -159,132 +64,234 @@ internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
         catch (Exception ex)
         {
             scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.GetFailed(_logger, layerDefinition.Id.ToString(), id.ToString()!, ex.Message, ex);
+            MonitoredFeatureStoreLog.GetFailed(_logger, layerIdText, featureIdText, ex.Message, ex);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public async Task<ApplyEditsResult> ApplyEditsAsync(
-        LayerDefinition layerDefinition,
-        ApplyEditsRequest request,
-        CancellationToken cancellationToken = default)
+    public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        using var scope = _performanceMonitor.StartOperation("apply_edits")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
-            .WithTag("operation", "apply_edits");
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("query_features")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "query");
 
         var stopwatch = Stopwatch.StartNew();
-        var totalOperations = (request.Adds?.Count ?? 0) + (request.Updates?.Count ?? 0) + (request.Deletes?.Count ?? 0);
 
         try
         {
-            var result = await _innerStore.ApplyEditsAsync(layerDefinition, request, cancellationToken);
+            var result = await _innerStore.QueryAsync(layerId, query, cancellationToken);
+            var itemCount = result.Items.Length;
 
-            _performanceMonitor.RecordDatabaseQuery("apply_edits", layerDefinition.Id.ToString(), stopwatch.Elapsed, totalOperations);
+            _performanceMonitor.RecordDatabaseQuery("query", layerIdText, stopwatch.Elapsed, itemCount);
 
-            MonitoredFeatureStoreLog.ApplyEditsCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                request.Adds?.Count ?? 0,
-                request.Updates?.Count ?? 0,
-                request.Deletes?.Count ?? 0,
-                stopwatch.Elapsed.TotalMilliseconds);
+            MonitoredFeatureStoreLog.QueryCompleted(_logger, layerIdText, stopwatch.Elapsed.TotalMilliseconds);
+            MonitoredFeatureStoreLog.StreamingQueryCompleted(_logger, layerIdText, "query", itemCount, stopwatch.Elapsed.TotalMilliseconds);
 
             return result;
         }
         catch (Exception ex)
         {
             scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.ApplyEditsFailed(_logger, layerDefinition.Id.ToString(), ex.Message, ex);
+            MonitoredFeatureStoreLog.QueryFailed(_logger, layerIdText, ex.Message, ex);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public async Task<Feature> CreateAsync(
-        LayerDefinition layerDefinition,
-        Feature feature,
+    public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("count_features")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "count");
+
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var result = await _innerStore.CountAsync(layerId, query, cancellationToken);
+
+            var recordCount = result > int.MaxValue ? int.MaxValue : (int)result;
+            _performanceMonitor.RecordDatabaseQuery("count", layerIdText, stopwatch.Elapsed, recordCount);
+
+            MonitoredFeatureStoreLog.CountCompleted(_logger, layerIdText, result, stopwatch.Elapsed.TotalMilliseconds);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.WithTag("error", ex.GetType().Name);
+            MonitoredFeatureStoreLog.CountFailed(_logger, layerIdText, ex.Message, ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("get_extent")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "extent");
+
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var result = await _innerStore.GetExtentAsync(layerId, query, cancellationToken);
+
+            _performanceMonitor.RecordDatabaseQuery("extent", layerIdText, stopwatch.Elapsed, result != null ? 1 : 0);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.WithTag("error", ex.GetType().Name);
+            MonitoredFeatureStoreLog.QueryFailed(_logger, layerIdText, ex.Message, ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<byte[]?> GetMvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query = null,
         CancellationToken cancellationToken = default)
     {
+        return await GetMvtTileInternalAsync(layerId, x, y, z, query, tileOptions: null, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<byte[]?> GetMvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        TileOptions tileOptions,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetMvtTileInternalAsync(layerId, x, y, z, query, tileOptions, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("query_related")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "query_related");
+
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var result = await _innerStore.QueryRelatedAsync(layerId, query, cancellationToken);
+            var itemCount = result.Items.Length;
+
+            _performanceMonitor.RecordDatabaseQuery("query_related", layerIdText, stopwatch.Elapsed, itemCount);
+
+            MonitoredFeatureStoreLog.StreamingQueryCompleted(_logger, layerIdText, "related", itemCount, stopwatch.Elapsed.TotalMilliseconds);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.WithTag("error", ex.GetType().Name);
+            MonitoredFeatureStoreLog.QueryFailed(_logger, layerIdText, ex.Message, ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
         using var scope = _performanceMonitor.StartOperation("create_feature")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
+            .WithTag("layer_id", layerIdText)
             .WithTag("operation", "create");
 
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var result = await _innerStore.CreateAsync(layerDefinition, feature, cancellationToken);
+            var result = await _innerStore.CreateAsync(layerId, feature, cancellationToken);
 
-            _performanceMonitor.RecordDatabaseQuery("create", layerDefinition.Id.ToString(), stopwatch.Elapsed, 1);
+            _performanceMonitor.RecordDatabaseQuery("create", layerIdText, stopwatch.Elapsed, 1);
 
-            MonitoredFeatureStoreLog.CreateCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                stopwatch.Elapsed.TotalMilliseconds);
+            MonitoredFeatureStoreLog.CreateCompleted(_logger, layerIdText, stopwatch.Elapsed.TotalMilliseconds);
 
             return result;
         }
         catch (Exception ex)
         {
             scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.CreateFailed(_logger, layerDefinition.Id.ToString(), ex.Message, ex);
+            MonitoredFeatureStoreLog.CreateFailed(_logger, layerIdText, ex.Message, ex);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public async Task<Feature> UpdateAsync(
-        LayerDefinition layerDefinition,
-        Feature feature,
-        CancellationToken cancellationToken = default)
+    public async Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
         using var scope = _performanceMonitor.StartOperation("update_feature")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
+            .WithTag("layer_id", layerIdText)
             .WithTag("operation", "update");
 
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var result = await _innerStore.UpdateAsync(layerDefinition, feature, cancellationToken);
+            var result = await _innerStore.UpdateAsync(layerId, feature, cancellationToken);
 
-            _performanceMonitor.RecordDatabaseQuery("update", layerDefinition.Id.ToString(), stopwatch.Elapsed, 1);
+            _performanceMonitor.RecordDatabaseQuery("update", layerIdText, stopwatch.Elapsed, 1);
 
-            MonitoredFeatureStoreLog.UpdateCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                stopwatch.Elapsed.TotalMilliseconds);
+            MonitoredFeatureStoreLog.UpdateCompleted(_logger, layerIdText, stopwatch.Elapsed.TotalMilliseconds);
 
             return result;
         }
         catch (Exception ex)
         {
             scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.UpdateFailed(_logger, layerDefinition.Id.ToString(), ex.Message, ex);
+            MonitoredFeatureStoreLog.UpdateFailed(_logger, layerIdText, ex.Message, ex);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public async Task<bool> DeleteAsync(
-        LayerDefinition layerDefinition,
-        object id,
-        CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+        var featureIdText = featureId.ToString(CultureInfo.InvariantCulture);
+
         using var scope = _performanceMonitor.StartOperation("delete_feature")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
+            .WithTag("layer_id", layerIdText)
             .WithTag("operation", "delete");
 
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var result = await _innerStore.DeleteAsync(layerDefinition, id, cancellationToken);
+            var result = await _innerStore.DeleteAsync(layerId, featureId, cancellationToken);
 
-            _performanceMonitor.RecordDatabaseQuery("delete", layerDefinition.Id.ToString(), stopwatch.Elapsed, result ? 1 : 0);
+            _performanceMonitor.RecordDatabaseQuery("delete", layerIdText, stopwatch.Elapsed, result ? 1 : 0);
 
-            MonitoredFeatureStoreLog.DeleteCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                id.ToString()!,
+            MonitoredFeatureStoreLog.DeleteCompleted(
+                _logger,
+                layerIdText,
+                featureIdText,
                 result,
                 stopwatch.Elapsed.TotalMilliseconds);
 
@@ -293,37 +300,37 @@ internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
         catch (Exception ex)
         {
             scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.DeleteFailed(_logger, layerDefinition.Id.ToString(), id.ToString()!, ex.Message, ex);
+            MonitoredFeatureStoreLog.DeleteFailed(_logger, layerIdText, featureIdText, ex.Message, ex);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public async Task<byte[]> GetMvtTileAsync(
-        LayerDefinition layerDefinition,
-        TileCoordinate coordinate,
-        FeatureQuery query,
+    public async Task<FeatureEditResult> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
         CancellationToken cancellationToken = default)
     {
-        using var scope = _performanceMonitor.StartOperation("get_mvt_tile")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
-            .WithTag("operation", "mvt_tile")
-            .WithTag("tile_z", coordinate.Z.ToString())
-            .WithTag("tile_x", coordinate.X.ToString())
-            .WithTag("tile_y", coordinate.Y.ToString());
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("apply_edits")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "apply_edits");
 
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var result = await _innerStore.GetMvtTileAsync(layerDefinition, coordinate, query, cancellationToken);
+            var result = await _innerStore.ApplyEditsAsync(layerId, editBatch, cancellationToken);
 
-            _performanceMonitor.RecordDatabaseQuery("mvt_tile", layerDefinition.Id.ToString(), stopwatch.Elapsed, 1);
+            _performanceMonitor.RecordDatabaseQuery("apply_edits", layerIdText, stopwatch.Elapsed, editBatch.TotalOperations);
 
-            MonitoredFeatureStoreLog.MvtTileCompleted(_logger,
-                layerDefinition.Id.ToString(),
-                coordinate.Z, coordinate.X, coordinate.Y,
-                result.Length,
+            MonitoredFeatureStoreLog.ApplyEditsCompleted(
+                _logger,
+                layerIdText,
+                editBatch.Creates.Length,
+                editBatch.Updates.Length,
+                editBatch.Deletes.Length,
                 stopwatch.Elapsed.TotalMilliseconds);
 
             return result;
@@ -331,50 +338,62 @@ internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
         catch (Exception ex)
         {
             scope.WithTag("error", ex.GetType().Name);
-            MonitoredFeatureStoreLog.MvtTileFailed(_logger,
-                layerDefinition.Id.ToString(),
-                coordinate.Z, coordinate.X, coordinate.Y,
-                ex.Message, ex);
+            MonitoredFeatureStoreLog.ApplyEditsFailed(_logger, layerIdText, ex.Message, ex);
             throw;
         }
     }
 
-    /// <inheritdoc />
-    public Task<Envelope?> GetExtentAsync(
-        LayerDefinition layerDefinition,
-        FeatureQuery query,
-        CancellationToken cancellationToken = default)
+    private async Task<byte[]?> GetMvtTileInternalAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        TileOptions? tileOptions,
+        CancellationToken cancellationToken)
     {
-        using var scope = _performanceMonitor.StartOperation("get_extent")
-            .WithTag("layer_id", layerDefinition.Id.ToString())
-            .WithTag("operation", "extent");
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
 
-        return _innerStore.GetExtentAsync(layerDefinition, query, cancellationToken);
-    }
+        using var scope = _performanceMonitor.StartOperation("get_mvt_tile")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "mvt_tile")
+            .WithTag("tile_z", z.ToString(CultureInfo.InvariantCulture))
+            .WithTag("tile_x", x.ToString(CultureInfo.InvariantCulture))
+            .WithTag("tile_y", y.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>
-    /// Monitors streaming results to count features for metrics.
-    /// </summary>
-    private async IAsyncEnumerable<Feature> MonitorResults(
-        IAsyncEnumerable<Feature> features,
-        string queryType,
-        string layerId,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var count = 0;
         var stopwatch = Stopwatch.StartNew();
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        try
         {
-            count++;
-            yield return feature;
+            byte[]? result = tileOptions is null
+                ? await _innerStore.GetMvtTileAsync(layerId, x, y, z, query, cancellationToken)
+                : await _innerStore.GetMvtTileAsync(layerId, x, y, z, query, tileOptions, cancellationToken);
+
+            _performanceMonitor.RecordDatabaseQuery("mvt_tile", layerIdText, stopwatch.Elapsed, result != null ? 1 : 0);
+
+            MonitoredFeatureStoreLog.MvtTileCompleted(
+                _logger,
+                layerIdText,
+                z,
+                x,
+                y,
+                result?.Length ?? 0,
+                stopwatch.Elapsed.TotalMilliseconds);
+
+            return result;
         }
-
-        stopwatch.Stop();
-
-        // Record the final metrics
-        _performanceMonitor.RecordDatabaseQuery(queryType, layerId, stopwatch.Elapsed, count);
-
-        MonitoredFeatureStoreLog.StreamingQueryCompleted(_logger, layerId, queryType, count, stopwatch.Elapsed.TotalMilliseconds);
+        catch (Exception ex)
+        {
+            scope.WithTag("error", ex.GetType().Name);
+            MonitoredFeatureStoreLog.MvtTileFailed(
+                _logger,
+                layerIdText,
+                z,
+                x,
+                y,
+                ex.Message,
+                ex);
+            throw;
+        }
     }
 }
