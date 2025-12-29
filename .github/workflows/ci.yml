@@ -85,13 +85,12 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        if: ${{ secrets.CODECOV_TOKEN != '' }}
         with:
           files: ./tests/TestResults/**/coverage.cobertura.xml
           flags: combined
           name: honua-server-coverage
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
+          fail_ci_if_error: false
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
