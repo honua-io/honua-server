@@ -24,7 +24,7 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
     /// <param name="jsonOptions">JSON serialization options used by the HTTP pipeline</param>
     public ETagEndpointFilter(
         ILogger<ETagEndpointFilter> logger,
-        IOptions<HttpJsonOptions> jsonOptions)
+        IOptions<JsonOptions> jsonOptions)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serializerOptions = jsonOptions?.Value?.SerializerOptions
