@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
@@ -14,9 +16,10 @@ namespace Honua.Postgres.Features.HealthCheck;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed class PostgresDatabaseHealthChecker(IConfiguration configuration) : IDatabaseHealthChecker
+internal sealed class PostgresDatabaseHealthChecker(IConfiguration configuration, ISchemaContext? schemaContext = null) : IDatabaseHealthChecker
 {
     private readonly string? _connectionString = configuration.GetConnectionString("honua");
+    private readonly ISchemaContext? _schemaContext = schemaContext;
 
     /// <summary>
     /// Checks PostgreSQL database connectivity and responsiveness
@@ -32,6 +35,7 @@ internal sealed class PostgresDatabaseHealthChecker(IConfiguration configuration
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
 
             // Execute a simple query to verify database is responsive with timeout
             await using var command = new NpgsqlCommand("SELECT 1", connection);

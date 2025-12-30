@@ -5,13 +5,11 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests;
@@ -27,22 +25,21 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     private readonly WebAppFixture _fixture = new();
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
-    private const long TestFeatureId = 123;
+    private const long TestFeatureId = 1;
 
     public async Task InitializeAsync()
     {
-        // Replace services with test implementations
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
-
-        var testAttachmentStore = new TestAttachmentStore();
-        await testAttachmentStore.SeedTestData(TestLayerId, TestFeatureId);
-        _fixture.ReplaceService<IAttachmentStore>(testAttachmentStore);
-
         await _fixture.InitializeAsync();
+        var storagePath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
+        await AttachmentTestData.SeedAsync(_fixture.Postgres, TestLayerId, TestFeatureId, storagePath);
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        var storagePath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
+        await AttachmentTestData.CleanupAsync(_fixture.Postgres, TestLayerId, TestFeatureId, storagePath);
+        await _fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Operation(Operations.QueryAttachments)]
@@ -57,7 +54,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
@@ -77,7 +74,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}",
             new StringContent(string.Empty, Encoding.UTF8, "application/json"));
 
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
@@ -121,7 +118,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment", form);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AddAttachmentResponse);
@@ -193,7 +190,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment", form);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.UpdateAttachmentResponse);
@@ -242,7 +239,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.DeleteAttachmentsResponse);
@@ -284,7 +281,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -341,7 +338,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId=999");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);

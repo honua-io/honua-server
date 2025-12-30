@@ -8,19 +8,25 @@ using DbUp;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Caching;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration.Json;
 using Npgsql;
 using Serilog;
 using Serilog.Enrichers.Span;
@@ -33,6 +39,11 @@ using Serilog.Enrichers.Span;
 // Dependency flow: Server → (Core + Infrastructure), Infrastructure → Core
 
 var builder = WebApplication.CreateBuilder(args);
+
+var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
+
+// Load optional security configuration without overriding environment-specific settings.
+AddSecurityConfiguration(builder.Configuration, builder.Environment);
 
 // Skip Aspire configuration during testing to avoid connection string conflicts
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
@@ -91,6 +102,13 @@ if (!isTestEnvironment)
     RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
 
+if (useTestSchemaHeaders)
+{
+    builder.Services.AddScoped<SchemaContext>();
+    builder.Services.AddScoped<ISchemaContext>(serviceProvider =>
+        serviceProvider.GetRequiredService<SchemaContext>());
+}
+
 // Configure limits with validation
 ConfigureLimits(builder.Services, builder.Configuration);
 
@@ -110,6 +128,9 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
+
+// Register shared validation services
+builder.Services.AddValidationServices();
 
 // Register FeatureServer services - they will use the shared geometry converter
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFormatter,
@@ -133,9 +154,15 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 builder.Services.AddApiKeyAuthentication();
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
+// Configure CORS policies
+builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 
 // Configure output caching for metadata endpoints
 ConfigureOutputCaching(builder.Services);
+// Configure ETag support for cache validation
+builder.Services.AddETags();
+// Configure performance monitoring services
+builder.Services.AddPerformanceMonitoring();
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
@@ -145,6 +172,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
         Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Server.Features.OData.Models.ODataJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.OgcFeatures.OgcJsonContext.Default);
 });
 
@@ -159,8 +187,19 @@ app.UseResponseCompression();
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
 
+if (useTestSchemaHeaders)
+{
+    app.UseTestSchemaHeaders();
+}
+
+// Add performance monitoring middleware (tracks request duration and memory)
+app.UsePerformanceMonitoring();
+
 // Add global exception handling middleware (after correlation ID for exception logging)
 app.UseGlobalExceptionHandling();
+
+// Add CORS middleware before auth to handle preflight requests
+app.UseHonuaCors(app.Environment);
 
 // Add limits enforcement middleware (after correlation ID, before request logging)
 app.UseLimitsEnforcement();
@@ -209,6 +248,9 @@ app.MapHealthEndpoints();
 // Configure admin endpoints
 app.MapAdminEndpoints();
 
+// Configure security endpoints (CSP violation reporting)
+app.MapCspViolationReportEndpoint();
+
 // Configure FeatureServer endpoints
 app.MapFeatureServerEndpoints();
 
@@ -229,6 +271,9 @@ if (useAspire)
 {
     app.MapDefaultEndpoints();
 }
+
+// Map metrics endpoints for monitoring APIs
+app.MapMetricsEndpoints();
 
 app.Run();
 
@@ -531,6 +576,64 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
     services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
 
     // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
+}
+
+static void AddSecurityConfiguration(ConfigurationManager configuration, IHostEnvironment environment)
+{
+    const string securitySettingsFile = "appsettings.Security.json";
+    configuration.AddJsonFile(securitySettingsFile, optional: true, reloadOnChange: true);
+
+    var sources = configuration.Sources;
+    var securityIndex = -1;
+    for (var i = sources.Count - 1; i >= 0; i--)
+    {
+        if (sources[i] is JsonConfigurationSource jsonSource &&
+            string.Equals(jsonSource.Path, securitySettingsFile, StringComparison.OrdinalIgnoreCase))
+        {
+            securityIndex = i;
+            break;
+        }
+    }
+
+    if (securityIndex < 0)
+    {
+        return;
+    }
+
+    var securitySource = sources[securityIndex];
+    sources.RemoveAt(securityIndex);
+
+    var envSettingsPath = $"appsettings.{environment.EnvironmentName}.json";
+    var insertIndex = -1;
+    for (var i = 0; i < sources.Count; i++)
+    {
+        if (sources[i] is JsonConfigurationSource jsonSource &&
+            string.Equals(jsonSource.Path, envSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            insertIndex = i;
+            break;
+        }
+    }
+
+    if (insertIndex < 0)
+    {
+        for (var i = 0; i < sources.Count; i++)
+        {
+            if (sources[i] is JsonConfigurationSource jsonSource &&
+                string.Equals(jsonSource.Path, "appsettings.json", StringComparison.OrdinalIgnoreCase))
+            {
+                insertIndex = i + 1;
+                break;
+            }
+        }
+    }
+
+    if (insertIndex < 0)
+    {
+        insertIndex = 0;
+    }
+
+    sources.Insert(insertIndex, securitySource);
 }
 
 // Make Program accessible to WebApplicationFactory

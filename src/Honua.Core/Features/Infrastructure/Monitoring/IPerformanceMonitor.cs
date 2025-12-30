@@ -1,3 +1,6 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
 /// <summary>
@@ -26,6 +29,12 @@ public interface IPerformanceMonitor
     /// <param name="statusCode">HTTP response status code</param>
     /// <param name="duration">Request processing duration</param>
     void RecordHttpRequest(string method, string endpoint, int statusCode, TimeSpan duration);
+
+    /// <summary>
+    /// Updates the active HTTP request counter by the provided delta.
+    /// </summary>
+    /// <param name="delta">Positive to increment, negative to decrement</param>
+    void RecordActiveHttpRequestDelta(int delta);
 
     /// <summary>
     /// Records memory usage metrics.

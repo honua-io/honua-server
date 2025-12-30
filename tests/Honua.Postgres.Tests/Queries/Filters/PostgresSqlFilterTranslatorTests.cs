@@ -1,11 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Queries.Filters;
-using Xunit;
 
 namespace Honua.Postgres.Tests.Queries.Filters;
 

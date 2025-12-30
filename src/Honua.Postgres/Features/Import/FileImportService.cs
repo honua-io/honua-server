@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Newtonsoft.Json;
@@ -21,11 +23,13 @@ internal sealed class FileImportService : IFileImportService
 {
     private readonly string _connectionString;
     private readonly ICrsDetectionService _crsDetectionService;
+    private readonly ISchemaContext? _schemaContext;
 
-    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService)
+    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
+        _schemaContext = schemaContext;
     }
 
     /// <inheritdoc />
@@ -454,8 +458,7 @@ internal sealed class FileImportService : IFileImportService
         bool overwriteExisting,
         CancellationToken cancellationToken)
     {
-        using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
 
         // Validate table name before any operations
         ValidateTableName(tableName);
@@ -471,6 +474,14 @@ internal sealed class FileImportService : IFileImportService
         await ExecuteInsertStatements(connection, tableName, features, sourceSrid, targetSrid, wkbWriter, cancellationToken);
 
         return features.Count();
+    }
+
+    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    {
+        var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        return connection;
     }
 
     /// <summary>

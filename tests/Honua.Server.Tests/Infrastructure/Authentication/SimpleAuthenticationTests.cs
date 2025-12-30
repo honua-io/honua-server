@@ -81,6 +81,13 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
             {
                 builder.UseEnvironment("Development");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", ""); // Empty password
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                    });
+                });
             });
         using var client = factory.CreateClient();
 
@@ -102,6 +109,13 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 builder.UseEnvironment("Production"); // Even in production
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                    });
+                });
             });
         using var client = factory.CreateClient();
 

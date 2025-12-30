@@ -13,6 +13,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for health endpoints.
 /// </summary>
 [Protocol(Protocols.Health)]
+[Collection("Database")]
 public sealed class HealthEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

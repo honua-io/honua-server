@@ -1,6 +1,7 @@
-using System.Text.Json;
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Microsoft.AspNetCore.Authorization;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -17,8 +18,7 @@ public static class MetricsEndpoints
     public static WebApplication MapMetricsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/metrics")
-            .WithTags("Metrics")
-            .WithOpenApi();
+            .WithTags("Metrics");
 
         // Public health metrics (no auth required)
         group.MapGet("/health", GetHealthMetrics)
@@ -53,7 +53,7 @@ public static class MetricsEndpoints
         group.MapGet("/prometheus", GetPrometheusMetrics)
             .WithName("GetPrometheusMetrics")
             .WithSummary("Get metrics in Prometheus format")
-            .Produces<string>("text/plain");
+            .Produces<string>(200, "text/plain");
 
         return app;
     }

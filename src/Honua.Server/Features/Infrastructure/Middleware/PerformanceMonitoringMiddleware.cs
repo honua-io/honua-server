@@ -1,5 +1,10 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Diagnostics;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
 
@@ -32,9 +37,19 @@ internal sealed class PerformanceMonitoringMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var stopwatch = Stopwatch.StartNew();
+        var endpoint = GetNormalizedEndpoint(context.Request.Path);
+        IOperationScope? operationScope = null;
+
+        if (_options.EnableDetailedRequestTracking)
+        {
+            operationScope = _performanceMonitor.StartOperation("http_request");
+            operationScope
+                .WithTag("method", context.Request.Method)
+                .WithTag("endpoint", endpoint);
+        }
 
         // Track active request count
-        PerformanceMetrics.ActiveHttpRequests.Add(1);
+        _performanceMonitor.RecordActiveHttpRequestDelta(1);
 
         // Record memory usage if enabled and at sampling interval
         if (_options.EnableMemoryTracking && ShouldSampleMemory())
@@ -49,6 +64,12 @@ internal sealed class PerformanceMonitoringMiddleware
         }
         catch (Exception ex)
         {
+            operationScope?.WithTag("error", ex.GetType().Name);
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            }
+
             // Log performance impact of exceptions
             PerformanceMonitoringLog.RequestExceptionOccurred(_logger,
                 context.Request.Method,
@@ -62,10 +83,16 @@ internal sealed class PerformanceMonitoringMiddleware
             stopwatch.Stop();
 
             // Decrement active request count
-            PerformanceMetrics.ActiveHttpRequests.Add(-1);
+            _performanceMonitor.RecordActiveHttpRequestDelta(-1);
 
             // Record request metrics
-            RecordRequestMetrics(context, stopwatch.Elapsed);
+            RecordRequestMetrics(context, endpoint, stopwatch.Elapsed);
+
+            if (operationScope is not null)
+            {
+                operationScope.WithTag("status_code", context.Response.StatusCode.ToString(CultureInfo.InvariantCulture));
+                operationScope.Dispose();
+            }
 
             // Log slow requests
             if (stopwatch.Elapsed > _options.SlowRequestThreshold)
@@ -82,10 +109,9 @@ internal sealed class PerformanceMonitoringMiddleware
     /// <summary>
     /// Records HTTP request performance metrics.
     /// </summary>
-    private void RecordRequestMetrics(HttpContext context, TimeSpan duration)
+    private void RecordRequestMetrics(HttpContext context, string endpoint, TimeSpan duration)
     {
         var method = context.Request.Method;
-        var endpoint = GetNormalizedEndpoint(context.Request.Path);
         var statusCode = context.Response.StatusCode;
 
         _performanceMonitor.RecordHttpRequest(method, endpoint, statusCode, duration);
@@ -175,46 +201,16 @@ internal sealed class PerformanceMonitoringMiddleware
 }
 
 /// <summary>
-/// Configuration options for performance monitoring middleware.
-/// </summary>
-public sealed class PerformanceMonitoringOptions
-{
-    /// <summary>
-    /// Gets or sets whether memory tracking is enabled.
-    /// Default is true.
-    /// </summary>
-    public bool EnableMemoryTracking { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets the threshold for considering a request slow.
-    /// Default is 1 second.
-    /// </summary>
-    public TimeSpan SlowRequestThreshold { get; set; } = TimeSpan.FromSeconds(1);
-
-    /// <summary>
-    /// Gets or sets the interval for memory sampling (every N requests).
-    /// Default is 100 (sample every 100th request).
-    /// </summary>
-    public int MemorySamplingInterval { get; set; } = 100;
-
-    /// <summary>
-    /// Gets or sets whether to track detailed request metrics.
-    /// Default is true.
-    /// </summary>
-    public bool EnableDetailedRequestTracking { get; set; } = true;
-}
-
-/// <summary>
 /// Extension methods for registering performance monitoring middleware.
 /// </summary>
-public static class PerformanceMonitoringMiddlewareExtensions
+internal static class PerformanceMonitoringMiddlewareExtensions
 {
     /// <summary>
     /// Adds performance monitoring middleware to the application pipeline.
     /// </summary>
     /// <param name="app">The application builder</param>
     /// <returns>The application builder for chaining</returns>
-    public static IApplicationBuilder UsePerformanceMonitoring(this IApplicationBuilder app)
+    internal static IApplicationBuilder UsePerformanceMonitoring(this IApplicationBuilder app)
     {
         return app.UseMiddleware<PerformanceMonitoringMiddleware>();
     }
@@ -225,7 +221,7 @@ public static class PerformanceMonitoringMiddlewareExtensions
     /// <param name="services">The service collection</param>
     /// <param name="configure">Optional configuration action</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddPerformanceMonitoring(
+    internal static IServiceCollection AddPerformanceMonitoring(
         this IServiceCollection services,
         Action<PerformanceMonitoringOptions>? configure = null)
     {
@@ -241,7 +237,7 @@ public static class PerformanceMonitoringMiddlewareExtensions
         });
 
         // Register performance monitor
-        services.AddSingleton<IPerformanceMonitor, DefaultPerformanceMonitor>();
+        services.AddDefaultPerformanceMonitor();
 
         return services;
     }

@@ -1,24 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using OpenTelemetry;
-using OpenTelemetry.Logs;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Trace;
-
-namespace Honua.ServiceDefaults;
-
-/// <summary>
-/// Service default configuration extensions for application setup.
-/// </summary>
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
-
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Middleware;
-using Honua.Server.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry;
@@ -31,7 +14,7 @@ namespace Honua.ServiceDefaults;
 /// <summary>
 /// Service default configuration extensions for application setup.
 /// </summary>
-public static class Extensions
+public static partial class Extensions
 {
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
@@ -75,7 +58,7 @@ public static class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter("Honua.Server"))
+                .AddMeter("Honua"))
             .WithTracing(tracing => tracing
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation());
@@ -106,7 +89,7 @@ public static class Extensions
     public static IHostApplicationBuilder AddPerformanceMonitoring(this IHostApplicationBuilder builder)
     {
         // Add performance monitoring services
-        builder.Services.AddSingleton<IPerformanceMonitor, DefaultPerformanceMonitor>();
+        builder.Services.AddDefaultPerformanceMonitor();
 
         // Configure performance monitoring options
         builder.Services.Configure<PerformanceMonitoringOptions>(options =>
@@ -157,8 +140,8 @@ public static class Extensions
                     // Log high memory pressure
                     if (memoryUsage.IsHighMemoryPressure)
                     {
-                        _logger.LogWarning(
-                            "High memory pressure detected: {Pressure:F1}% ({AllocatedMB:F0}MB allocated)",
+                        MemoryMonitoringLog.HighMemoryPressureDetected(
+                            _logger,
                             memoryUsage.MemoryPressurePercentage,
                             memoryUsage.AllocatedBytes / (1024.0 * 1024.0));
                     }
@@ -172,11 +155,26 @@ public static class Extensions
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error in memory monitoring service");
+                    MemoryMonitoringLog.MemoryMonitoringServiceFailed(_logger, ex);
                     await Task.Delay(_interval, stoppingToken);
                 }
             }
         }
+    }
+
+    private static partial class MemoryMonitoringLog
+    {
+        [LoggerMessage(
+            EventId = 8501,
+            Level = LogLevel.Warning,
+            Message = "High memory pressure detected: {Pressure:F1}% ({AllocatedMB:F0}MB allocated)")]
+        public static partial void HighMemoryPressureDetected(ILogger logger, double pressure, double allocatedMB);
+
+        [LoggerMessage(
+            EventId = 8502,
+            Level = LogLevel.Error,
+            Message = "Error in memory monitoring service")]
+        public static partial void MemoryMonitoringServiceFailed(ILogger logger, Exception exception);
     }
 
     public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
@@ -198,9 +196,6 @@ public static class Extensions
                 Predicate = r => r.Tags.Contains("live")
             });
         }
-
-        // Map metrics endpoints
-        app.MapMetricsEndpoints();
 
         return app;
     }

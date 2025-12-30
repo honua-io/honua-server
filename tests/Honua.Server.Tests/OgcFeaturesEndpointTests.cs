@@ -3,13 +3,11 @@
 
 using System.Net.Http.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests;
 
@@ -17,14 +15,13 @@ namespace Honua.Server.Tests;
 /// Integration tests for OGC API Features Core endpoints (landing page and conformance)
 /// </summary>
 [Protocol(Protocols.OgcApiFeatures)]
+[Collection("Database")]
 public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync()
     {
-        // Replace with test implementation for OGC collections tests
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
         await _fixture.InitializeAsync();
     }
 
@@ -198,7 +195,7 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         var response = await client.GetAsync($"/ogc/features/collections/{invalidCollectionId}");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

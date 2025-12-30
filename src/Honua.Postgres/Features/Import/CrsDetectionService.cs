@@ -4,6 +4,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Postgres.Features.Import;
@@ -16,6 +18,7 @@ namespace Honua.Postgres.Features.Import;
 internal sealed class CrsDetectionService : ICrsDetectionService
 {
     private readonly string _connectionString;
+    private readonly ISchemaContext? _schemaContext;
 
     /// <summary>
     /// Common EPSG codes and their variations for quick lookup
@@ -55,9 +58,10 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{4,5})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public CrsDetectionService(string connectionString)
+    public CrsDetectionService(string connectionString, ISchemaContext? schemaContext = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _schemaContext = schemaContext;
     }
 
     /// <inheritdoc />
@@ -219,8 +223,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
     {
         try
         {
-            using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await using var connection = await OpenConnectionAsync();
 
             using var command = new NpgsqlCommand(
                 "SELECT 1 FROM spatial_ref_sys WHERE srid = @srid LIMIT 1",
@@ -245,8 +248,7 @@ internal sealed class CrsDetectionService : ICrsDetectionService
     {
         try
         {
-            using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await using var connection = await OpenConnectionAsync();
 
             // Try to find exact or similar WKT match
             // Note: This is a simplified approach - full WKT comparison is complex
@@ -275,5 +277,13 @@ internal sealed class CrsDetectionService : ICrsDetectionService
             // If we can't query PostGIS, return null
             return null;
         }
+    }
+
+    private async Task<NpgsqlConnection> OpenConnectionAsync()
+    {
+        var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync().ConfigureAwait(false);
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema).ConfigureAwait(false);
+        return connection;
     }
 }

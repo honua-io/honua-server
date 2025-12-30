@@ -5,14 +5,11 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests;
 
@@ -30,9 +27,6 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Replace the real ILayerCatalog with test implementation
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
@@ -79,7 +73,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/rest/services/nonexistent/FeatureServer");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -144,7 +138,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -162,7 +156,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Layer 999 not found in service");
@@ -177,7 +171,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/invalid");
 
         // Assert - Should return 404 because 'invalid' doesn't match int route constraint
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -189,7 +183,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer", null);
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
     }
 
     [IntegrationTest]
@@ -201,7 +195,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}", null);
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
     }
 
     [IntegrationTest]
@@ -431,7 +425,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test'; DROP TABLE users; --");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -449,7 +443,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=invalid syntax here");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -467,7 +461,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}/query");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -485,7 +479,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999/query");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Layer 999 not found in service");
@@ -530,6 +524,274 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         // All features should have null geometry
         queryResponse.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
+    }
+
+    // ObjectIds parameter tests (Issue #156)
+
+    /// <summary>
+    /// Tests query with single objectId parameter returns only that feature
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithSingleObjectId_ReturnsOneFeature()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(1);
+
+        // Verify the returned feature has the correct objectId
+        var feature = queryResponse.Features[0];
+        var objectIdValue = feature.Attributes["objectid"];
+        objectIdValue.Should().NotBeNull();
+        ReadObjectIdValue(objectIdValue).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Tests query with multiple objectIds parameter returns multiple specific features
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithMultipleObjectIds_ReturnsSpecificFeatures()
+    {
+        // Act - Request features with objectIds 1, 3, 5
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,3,5");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(3);
+
+        // Verify the returned features have the correct objectIds
+        var returnedObjectIds = queryResponse.Features
+            .Select(f => ReadObjectIdValue(f.Attributes["objectid"]))
+            .ToArray();
+        returnedObjectIds.Should().Contain(new long[] { 1, 3, 5 });
+    }
+
+    /// <summary>
+    /// Tests query with objectIds parameter via POST request
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_PostWithObjectIds_ReturnsSpecificFeatures()
+    {
+        // Arrange
+        var json = """
+            {
+                "objectIds": [2, 4],
+                "returnGeometry": true,
+                "f": "json"
+            }
+            """;
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(2);
+
+        // Verify the returned features have the correct objectIds
+        var returnedObjectIds = queryResponse.Features
+            .Select(f => ReadObjectIdValue(f.Attributes["objectid"]))
+            .ToArray();
+        returnedObjectIds.Should().Contain(new long[] { 2, 4 });
+    }
+
+    /// <summary>
+    /// Tests combining objectIds with where clause (objectIds should take precedence)
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithObjectIdsAndWhereClause_ObjectIdsHavePrecedence()
+    {
+        // Act - Request objectId 1 with a where clause that would normally filter it out
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1&where=objectid>100");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(1);
+
+        // Verify objectIds parameter took precedence over where clause
+        var objectIdValue = queryResponse.Features[0].Attributes["objectid"];
+        ReadObjectIdValue(objectIdValue).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Tests objectIds parameter with returnIdsOnly=true
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithObjectIdsAndReturnIdsOnly_ReturnsOnlyIds()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,2,3&returnIdsOnly=true");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.ObjectIds.Should().NotBeNull();
+        queryResponse.ObjectIds!.Should().HaveCount(3);
+        queryResponse.ObjectIds.Should().Contain(new long[] { 1, 2, 3 });
+        queryResponse.Count.Should().BeNull();
+        queryResponse.Features.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Tests objectIds parameter with returnCountOnly=true
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithObjectIdsAndReturnCountOnly_ReturnsCount()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,2,3&returnCountOnly=true");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Count.Should().Be(3);
+        queryResponse.ObjectIds.Should().BeNull();
+        queryResponse.Features.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Tests error handling for invalid objectId formats
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithInvalidObjectIdFormat_Returns400()
+    {
+        // Act - Invalid objectId format (non-numeric)
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,invalid,3");
+
+        // Assert
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
+
+        // Verify error details mention objectIds parameter specifically
+        var details = errorElement.GetProperty("details").EnumerateArray()
+            .Select(d => d.GetString())
+            .ToArray();
+        details.Should().Contain(d => d!.Contains("objectIds"));
+    }
+
+    /// <summary>
+    /// Tests objectIds parameter with form data POST request
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_PostFormDataWithObjectIds_ReturnsSpecificFeatures()
+    {
+        // Arrange - Form data POST
+        var formData = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("objectIds", "1,5"),
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("returnGeometry", "true")
+        });
+
+        // Act
+        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", formData);
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().HaveCount(2);
+
+        // Verify the returned features have the correct objectIds
+        var returnedObjectIds = queryResponse.Features
+            .Select(f => ReadObjectIdValue(f.Attributes["objectid"]))
+            .ToArray();
+        returnedObjectIds.Should().Contain(new long[] { 1, 5 });
+    }
+
+    /// <summary>
+    /// Tests objectIds parameter with non-existent IDs returns empty result
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithNonExistentObjectIds_ReturnsEmptyResult()
+    {
+        // Act - Request objectIds that don't exist (TestFeatureStore has IDs 1-5)
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=999,1000");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().BeEmpty();
+        queryResponse.ExceededTransferLimit.Should().BeFalse();
     }
 
     // Query paging tests (Issue #8)
@@ -864,7 +1126,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -893,7 +1155,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -929,7 +1191,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         // Test GeoServices REST JSON format
         var geoServicesResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=objectid,name");
-        geoServicesResponse.Should().BeSuccessful();
+        geoServicesResponse.BeSuccessful();
 
         var geoServicesContent = await geoServicesResponse.Content.ReadAsStringAsync();
         var geoServicesQueryResponse = JsonSerializer.Deserialize<QueryResponse>(
@@ -940,12 +1202,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             f.Attributes.Keys.Should().Contain("objectid");
             f.Attributes.Keys.Should().Contain("name");
             // Should not contain other fields like description, etc.
-            f.Attributes.Keys.Should().HaveCountLessOrEqualTo(2);
+            f.Attributes.Keys.Count.Should().BeLessThanOrEqualTo(2);
         });
 
         // Test GeoJSON format
         var geoJsonResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&outFields=objectid,name");
-        geoJsonResponse.Should().BeSuccessful();
+        geoJsonResponse.BeSuccessful();
 
         var geoJsonContent = await geoJsonResponse.Content.ReadAsStringAsync();
         var geoJsonQueryResponse = JsonSerializer.Deserialize<GeoJsonFeatureSet>(
@@ -956,7 +1218,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             f.Properties.Keys.Should().Contain("objectid");
             f.Properties.Keys.Should().Contain("name");
             // Should not contain other fields like description, etc.
-            f.Properties.Keys.Should().HaveCountLessOrEqualTo(2);
+            f.Properties.Keys.Count.Should().BeLessThanOrEqualTo(2);
         });
     }
 
@@ -970,7 +1232,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     {
         // Test GeoServices REST JSON format
         var geoServicesResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&returnGeometry=false");
-        geoServicesResponse.Should().BeSuccessful();
+        geoServicesResponse.BeSuccessful();
 
         var geoServicesContent = await geoServicesResponse.Content.ReadAsStringAsync();
         var geoServicesQueryResponse = JsonSerializer.Deserialize<QueryResponse>(
@@ -980,7 +1242,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         // Test GeoJSON format
         var geoJsonResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&returnGeometry=false");
-        geoJsonResponse.Should().BeSuccessful();
+        geoJsonResponse.BeSuccessful();
 
         var geoJsonContent = await geoJsonResponse.Content.ReadAsStringAsync();
         var geoJsonQueryResponse = JsonSerializer.Deserialize<GeoJsonFeatureSet>(
@@ -1010,7 +1272,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -1040,7 +1302,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=invalid");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1063,7 +1325,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&resultRecordCount=1");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
 
         var content = await response.Content.ReadAsStringAsync();
         var geoJsonResponse = JsonSerializer.Deserialize<GeoJsonFeatureSet>(
@@ -1591,6 +1853,19 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         applyEditsResponse!.UpdateResults.Should().HaveCount(1);
         applyEditsResponse.UpdateResults![0].Success.Should().BeFalse();
         applyEditsResponse.UpdateResults[0].Error.Should().NotBeNull();
+    }
+
+    private static long ReadObjectIdValue(object? value)
+    {
+        return value switch
+        {
+            null => throw new InvalidOperationException("ObjectId value is null."),
+            JsonElement element when element.ValueKind == JsonValueKind.Number => element.GetInt64(),
+            JsonElement element when element.ValueKind == JsonValueKind.String &&
+                long.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            IConvertible convertible => Convert.ToInt64(convertible, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException($"Unsupported objectId value type: {value.GetType().Name}")
+        };
     }
 
     #endregion

@@ -66,7 +66,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         // Note: In current implementation, this will still return 200 with empty tables
         // because we're using a default connection string. In a full implementation,
         // this should return 404 for non-existent connection IDs.
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.OK);
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -79,7 +79,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/api/admin/connections//tables");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -91,6 +91,6 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/api/admin/connections/test/tables", null);
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
     }
 }

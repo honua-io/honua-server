@@ -23,12 +23,11 @@ fi
 echo "5. Pre-pulling Docker images for faster tests..."
 docker pull postgis/postgis:16-3.4-alpine > /dev/null 2>&1 || echo "   ⚠️ Could not pre-pull PostGIS image"
 
-echo "6. Running all tests (Unit + Integration + Architecture)..."
+echo "6. Running all .NET tests..."
 mkdir -p ./tests/TestResults
 dotnet test Honua.sln \
     --no-restore \
     --configuration Release \
-    --filter "Category=Unit|Category=Integration|Category=Architecture" \
     --logger "console;verbosity=minimal" \
     --results-directory ./tests/TestResults \
     --collect:"XPlat Code Coverage" \

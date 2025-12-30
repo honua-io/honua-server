@@ -7,6 +7,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
@@ -35,7 +36,7 @@ public class ImportEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/import/formats");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -83,7 +84,7 @@ public class ImportEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/preview", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -175,7 +176,7 @@ public class ImportEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/import/upload", content);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.BeSuccessful();
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var responseContent = await response.Content.ReadAsStringAsync();

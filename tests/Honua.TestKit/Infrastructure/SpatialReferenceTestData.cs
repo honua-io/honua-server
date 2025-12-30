@@ -11,14 +11,14 @@ namespace Honua.TestKit.Infrastructure;
 /// </summary>
 public static class SpatialReferenceTestData
 {
-    public static async Task SeedLayersAsync(PostgresFixture fixture)
+    public static Task SeedLayersAsync(PostgresFixture fixture, string schemaName)
     {
-        await fixture.ApplySeedAsync(ResolveSeedPath());
+        return fixture.ApplySeedAsync(ResolveSeedPath(), schemaName);
     }
 
-    public static async Task<long> InsertPointAsync(PostgresFixture fixture, int layerId, double lon, double lat, string name)
+    public static async Task<long> InsertPointAsync(PostgresFixture fixture, string schemaName, int layerId, double lon, double lat, string name)
     {
-        await using var connection = await fixture.GetConnectionAsync();
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO features (layer_id, geometry, attributes)
@@ -39,9 +39,9 @@ public static class SpatialReferenceTestData
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    public static async Task<int?> GetGeometrySridAsync(PostgresFixture fixture, long objectId, int layerId)
+    public static async Task<int?> GetGeometrySridAsync(PostgresFixture fixture, string schemaName, long objectId, int layerId)
     {
-        await using var connection = await fixture.GetConnectionAsync();
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT ST_SRID(geometry)
@@ -60,7 +60,7 @@ public static class SpatialReferenceTestData
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
-    public static async Task CleanupAsync(PostgresFixture fixture)
+    public static async Task CleanupAsync(PostgresFixture fixture, string schemaName)
     {
         var sql = $"""
             DELETE FROM features WHERE layer_id IN ({SpatialReferenceTestLayerCatalog.PointLayerId}, {SpatialReferenceTestLayerCatalog.LineLayerId}, {SpatialReferenceTestLayerCatalog.PolygonLayerId});
@@ -70,7 +70,7 @@ public static class SpatialReferenceTestData
             DELETE FROM honua.services WHERE service_name = '{SpatialReferenceTestLayerCatalog.ServiceId}';
             """;
 
-        await fixture.ExecuteAsync(sql);
+        await fixture.ExecuteAsync(sql, schemaName);
     }
 
     private static string ResolveSeedPath()

@@ -4,12 +4,9 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
@@ -22,9 +19,6 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Replace the real services with test implementations
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -63,7 +57,7 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
 
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().HaveCountLessOrEqualTo(2);
+        features.Length.Should().BeLessThanOrEqualTo(2);
 
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
         numberReturned.Should().BeLessThanOrEqualTo(2);
@@ -190,7 +184,7 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
 
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().HaveCountLessOrEqualTo(1);
+        features.Length.Should().BeLessThanOrEqualTo(1);
 
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
         numberReturned.Should().BeLessThanOrEqualTo(1);

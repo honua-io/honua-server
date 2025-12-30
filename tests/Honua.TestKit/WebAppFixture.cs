@@ -10,6 +10,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
+using Honua.TestKit.Seeding;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -28,28 +29,48 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class WebAppFixture : IAsyncLifetime
 {
-    private readonly PostgresFixture _postgres;
+    private static readonly SemaphoreSlim _sharedLock = new(1, 1);
+    private static WebApplicationFactory<Program>? _sharedFactory;
+    private static PostgresFixture? _sharedPostgres;
+    private static int _sharedRefCount;
+    private static bool _sharedInitialized;
+
+    private PostgresFixture? _postgres;
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
-    private readonly Action<IWebHostBuilder>? _configureWebHost;
+    private Action<IWebHostBuilder>? _configureWebHost;
     private WebApplicationFactory<Program>? _factory;
     private string? _currentSchema;
+    private bool _useSharedServer;
+    private string? _seedPath;
+    private string? _seedProfile;
 
-    public WebAppFixture(Action<IWebHostBuilder>? configureWebHost = null)
+    public WebAppFixture()
     {
-        _postgres = new PostgresFixture();
-        _configureWebHost = configureWebHost;
     }
 
     public HttpClient Client { get; private set; } = null!;
 
-    public PostgresFixture Postgres => _postgres;
+    public PostgresFixture Postgres => _useSharedServer
+        ? _sharedPostgres ?? throw new InvalidOperationException("Shared Postgres fixture not initialized.")
+        : _postgres ?? throw new InvalidOperationException("Postgres fixture not initialized.");
 
-    public PostgresFixture PostgresFixture => _postgres;
+    public PostgresFixture PostgresFixture => Postgres;
 
     public string? CurrentSchema => _currentSchema;
 
+    private bool HasCustomConfiguration => _serviceConfigurations.Count > 0 || _configureWebHost != null;
+
     public async Task InitializeAsync()
     {
+        _useSharedServer = !HasCustomConfiguration;
+
+        if (_useSharedServer)
+        {
+            await InitializeSharedAsync();
+            return;
+        }
+
+        _postgres = new PostgresFixture();
         await _postgres.InitializeAsync();
 
         _factory = new WebApplicationFactory<Program>()
@@ -68,7 +89,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:honua"] = _postgres.ConnectionString
+                        ["ConnectionStrings:honua"] = _postgres.ConnectionString,
+                        ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString
                     });
                 });
 
@@ -108,9 +130,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                     });
 
                     // Override specific services for testing
-                    // Use CITE-compatible layer catalog for conformance tests
                     services.RemoveAll<ILayerCatalog>();
-                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalogForCite>();
+                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
 
                     // Override database connection provider with test-specific implementation
                     services.RemoveAll<IDatabaseConnectionProvider>();
@@ -129,13 +150,115 @@ public sealed class WebAppFixture : IAsyncLifetime
             });
 
         Client = _factory.CreateClient();
+
+        if (string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            await SeedSchemaAsync(_currentSchema);
+        }
+    }
+
+    private async Task InitializeSharedAsync()
+    {
+        await _sharedLock.WaitAsync();
+        try
+        {
+            if (!_sharedInitialized)
+            {
+                Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", "true");
+
+                _sharedPostgres = new PostgresFixture();
+                await _sharedPostgres.InitializeAsync();
+
+                var attachmentsPath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
+
+                _sharedFactory = new WebApplicationFactory<Program>()
+                    .WithWebHostBuilder(builder =>
+                    {
+                        builder.UseEnvironment("Development");
+                        builder.UseSetting("HONUA_DEV_AUTH", "true");
+
+                        builder.ConfigureAppConfiguration((context, configBuilder) =>
+                        {
+                            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                            {
+                                ["ConnectionStrings:honua"] = _sharedPostgres.ConnectionString,
+                                ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
+                                ["HONUA_DEV_AUTH"] = "true",
+                                ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
+                                ["Database:QueryCache:EnableAutomaticCaching"] = "false",
+                                ["Attachments:StoragePath"] = attachmentsPath
+                            });
+                        });
+                    });
+
+                _sharedInitialized = true;
+            }
+
+            _sharedRefCount++;
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+
+        if (string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            _currentSchema = await Postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+        }
+
+        await SeedSchemaAsync(_currentSchema);
+
+        Client = CreateClient(_currentSchema);
     }
 
     public async Task DisposeAsync()
     {
+        if (_useSharedServer)
+        {
+            if (_currentSchema is not null)
+            {
+                await Postgres.DropSchemaAsync(_currentSchema);
+            }
+
+            Client.Dispose();
+
+            await _sharedLock.WaitAsync();
+            try
+            {
+                if (_sharedRefCount > 0)
+                {
+                    _sharedRefCount--;
+                }
+
+                if (_sharedRefCount == 0 && _sharedInitialized)
+                {
+                    if (_sharedFactory is not null)
+                    {
+                        await _sharedFactory.DisposeAsync();
+                    }
+
+                    if (_sharedPostgres is not null)
+                    {
+                        await _sharedPostgres.DisposeAsync();
+                    }
+
+                    _sharedFactory = null;
+                    _sharedPostgres = null;
+                    _sharedInitialized = false;
+                }
+            }
+            finally
+            {
+                _sharedLock.Release();
+            }
+
+            return;
+        }
+
         if (_currentSchema is not null)
         {
-            await _postgres.DropSchemaAsync(_currentSchema);
+            await Postgres.DropSchemaAsync(_currentSchema);
         }
 
         Client.Dispose();
@@ -143,7 +266,11 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             await _factory.DisposeAsync();
         }
-        await _postgres.DisposeAsync();
+
+        if (_postgres is not null)
+        {
+            await _postgres.DisposeAsync();
+        }
     }
 
     /// <summary>
@@ -152,6 +279,26 @@ public sealed class WebAppFixture : IAsyncLifetime
     public WebAppFixture ConfigureServices(Action<IServiceCollection> configure)
     {
         _serviceConfigurations.Add(configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Configure the web host before initialization.
+    /// </summary>
+    public WebAppFixture ConfigureWebHost(Action<IWebHostBuilder> configure)
+    {
+        _configureWebHost = _configureWebHost == null ? configure : _configureWebHost + configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Configure a seed file to apply when creating the test schema.
+    /// Must be called before InitializeAsync.
+    /// </summary>
+    public WebAppFixture UseSeed(string seedPath, string? profile = null)
+    {
+        _seedPath = ResolveSeedPath(seedPath);
+        _seedProfile = profile;
         return this;
     }
 
@@ -189,7 +336,10 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public T GetService<T>() where T : notnull
     {
-        return _factory!.Services.GetRequiredService<T>();
+        var factory = (_useSharedServer ? _sharedFactory : _factory)
+            ?? throw new InvalidOperationException("Web application factory not initialized.");
+
+        return factory.Services.GetRequiredService<T>();
     }
 
     /// <summary>
@@ -197,7 +347,8 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public T? GetOptionalService<T>() where T : class
     {
-        return _factory!.Services.GetService<T>();
+        var factory = _useSharedServer ? _sharedFactory : _factory;
+        return factory?.Services.GetService<T>();
     }
 
     /// <summary>
@@ -206,8 +357,54 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public async Task<string> CreateIsolatedSchemaAsync(string testClassName)
     {
-        _currentSchema = await _postgres.CreateIsolatedSchemaAsync(testClassName);
+        if (!string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            return _currentSchema;
+        }
+
+        _currentSchema = await Postgres.CreateIsolatedSchemaAsync(testClassName);
+        await SeedSchemaAsync(_currentSchema);
         return _currentSchema;
+    }
+
+    private Task SeedSchemaAsync(string schemaName)
+    {
+        if (!_useSharedServer && string.IsNullOrWhiteSpace(_seedPath))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_seedPath))
+        {
+            return Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile);
+        }
+
+        return ServerTestData.SeedAsync(Postgres, schemaName);
+    }
+
+    private static string ResolveSeedPath(string seedPath)
+    {
+        if (Path.IsPathRooted(seedPath) || File.Exists(seedPath))
+        {
+            return seedPath;
+        }
+
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        if (directory != null)
+        {
+            var candidate = Path.Combine(directory.FullName, seedPath);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return seedPath;
     }
 
 
@@ -217,7 +414,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public async Task ResetAsync()
     {
-        await _postgres.ResetAsync();
+        await Postgres.ResetAsync();
     }
 
     /// <summary>
@@ -225,7 +422,14 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public HttpClient CreateClient(Action<HttpClient>? configure = null)
     {
-        var client = _factory!.CreateClient();
+        var factory = (_useSharedServer ? _sharedFactory : _factory)
+            ?? throw new InvalidOperationException("Web application factory not initialized.");
+
+        var client = factory.CreateClient();
+        if (_useSharedServer && !string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
+        }
         configure?.Invoke(client);
         return client;
     }
@@ -240,6 +444,13 @@ public sealed class WebAppFixture : IAsyncLifetime
             _currentSchema = schemaName;
         }
 
-        return CreateClient();
+        var client = CreateClient();
+        if (_useSharedServer && !string.IsNullOrWhiteSpace(schemaName))
+        {
+            client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema");
+            client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", schemaName);
+        }
+
+        return client;
     }
 }
