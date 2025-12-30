@@ -150,7 +150,12 @@ def get_honua_architecture_rules() -> str:
 - Layered organization instead of vertical slices.
 """
 
-def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str = "mock", process_blocking: bool = False) -> str:
+def analyze_with_llm(
+    context: str,
+    api_key: Optional[str] = None,
+    provider: str = "mock",
+    process_blocking: bool = False,
+    is_test: bool = False) -> str:
     """Analyze code using LLM API"""
 
     if provider == "mock" or not api_key:
@@ -158,9 +163,9 @@ def analyze_with_llm(context: str, api_key: Optional[str] = None, provider: str 
 
     # TODO: Implement actual LLM providers
     if provider == "openai":
-        return analyze_with_openai(context, api_key)
+        return analyze_with_openai(context, api_key, is_test)
     elif provider == "anthropic":
-        return analyze_with_anthropic(context, api_key)
+        return analyze_with_anthropic(context, api_key, is_test)
     else:
         return mock_analysis(process_blocking)
 
@@ -181,7 +186,7 @@ def mock_analysis(process_blocking: bool) -> str:
 
 *Note: This is a mock review. Configure OPENAI_API_KEY or ANTHROPIC_API_KEY for full LLM analysis.*"""
 
-def analyze_with_openai(context: str, api_key: str) -> str:
+def analyze_with_openai(context: str, api_key: str, is_test: bool) -> str:
     """Analyze using OpenAI API"""
     try:
         import openai
@@ -199,14 +204,19 @@ def analyze_with_openai(context: str, api_key: str) -> str:
 Review only the provided diff. Focus on correctness and architectural rule compliance. Be concise and cite file/line when possible.
 If the diff is in test code, do not flag reflection/dynamic/AOT-breaking patterns as violations."""
 
+        focus_items = [
+            "- Dependency direction",
+            "- Minimal API usage (no controllers)",
+            "- Infrastructure encapsulation (internal types)",
+            "- Public XML docs",
+            "- Dependency count limits",
+            "- Sync-over-async"
+        ]
+        if not is_test:
+            focus_items.insert(3, "- AOT-safe patterns (source-generated JSON/logging)")
+
         user_prompt = f"""Review only the diff below. Do not ask for full files. Focus on:
-- Dependency direction
-- Minimal API usage (no controllers)
-- Infrastructure encapsulation (internal types)
-- AOT-safe patterns (source-generated JSON/logging) in production code only
-- Public XML docs
-- Dependency count limits
-- Sync-over-async
+{chr(10).join(focus_items)}
 
 Return findings in this exact format:
 
@@ -285,7 +295,7 @@ def extract_assessment_level(analysis_text: str) -> str:
 
     return "APPROVED"
 
-def analyze_with_anthropic(context: str, api_key: str) -> str:
+def analyze_with_anthropic(context: str, api_key: str, is_test: bool) -> str:
     """Analyze using Anthropic Claude API (placeholder)"""
     # TODO: Implement Anthropic integration
     prompt = f"""You are an expert software architect reviewing code for the Honua geospatial server.
@@ -473,8 +483,9 @@ def main():
         if segment["part_total"] > 1:
             label = f"{label} (part {segment['part_index']}/{segment['part_total']})"
 
+        is_test = is_test_path(segment["file"])
         test_note = ""
-        if is_test_path(segment["file"]):
+        if is_test:
             test_note = "\nNote: This diff is in test code. Reflection/dynamic/AOT-breaking patterns are allowed here; do not flag them."
 
         chunk_context = f"## Diff Chunk {index}/{len(segments)}\n### {label}{test_note}\n```diff\n{segment['diff']}\n```"
@@ -482,7 +493,8 @@ def main():
             chunk_context,
             api_key,
             provider,
-            process_blocking=process_blocking
+            process_blocking=process_blocking,
+            is_test=is_test
         )
         chunk_assessment = extract_assessment_level(chunk_analysis)
         chunk_results.append({
