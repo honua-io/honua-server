@@ -777,6 +777,12 @@ public sealed class QueryParameters
     /// When true, a "distance" field will be added to each feature's attributes.
     /// </summary>
     public bool ReturnDistance { get; init; }
+
+    /// <summary>
+    /// Array of object IDs to retrieve. When specified, only features with these IDs will be returned.
+    /// This parameter provides an alternative to using a WHERE clause for object ID filtering.
+    /// </summary>
+    public long[]? ObjectIds { get; init; }
 }
 
 internal sealed class RawJsonStringConverter : JsonConverter<string?>

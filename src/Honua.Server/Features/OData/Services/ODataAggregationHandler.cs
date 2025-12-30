@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.OData.Services;
@@ -40,18 +42,26 @@ internal sealed class ODataAggregationHandler
 
         // Build the query
         var query = new FeatureQuery();
+        query = ApplyODataFilter(query, filter);
 
-        if (!string.IsNullOrWhiteSpace(filter))
+        if (aggregation.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(aggregation.FilterExpression))
         {
-            query = query with { Where = filter };
+            query = ApplyODataFilter(query, aggregation.FilterExpression);
         }
 
-        // Get all features (we'll aggregate in memory for now)
-        // TODO: Push aggregation to database for better performance
-        var result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
-
-        // Apply aggregation
-        var aggregatedValues = ApplyAggregation(result.Items, aggregation);
+        object[] aggregatedValues;
+        if (_featureStore is IStreamingFeatureStore streamingStore &&
+            aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
+        {
+            var stream = streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken);
+            aggregatedValues = await ApplyAggregationStreamingAsync(stream, aggregation);
+        }
+        else
+        {
+            // Fallback to in-memory aggregation for non-aggregate/groupby operations
+            var result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
+            aggregatedValues = ApplyAggregation(result.Items, aggregation);
+        }
 
         return new ODataAggregationResult
         {
@@ -242,6 +252,71 @@ internal sealed class ODataAggregationHandler
         }
     }
 
+    private static async Task<object[]> ApplyAggregationStreamingAsync(
+        IAsyncEnumerable<Feature> features,
+        ParsedAggregation aggregation)
+    {
+        return aggregation.Type switch
+        {
+            AggregationType.Aggregate => await ApplySimpleAggregationStreamingAsync(
+                features,
+                aggregation.Aggregates ?? ImmutableArray<AggregateExpression>.Empty),
+            AggregationType.GroupBy => await ApplyGroupByAggregationStreamingAsync(
+                features,
+                aggregation.GroupByFields ?? ImmutableArray<string>.Empty,
+                aggregation.Aggregates ?? ImmutableArray<AggregateExpression>.Empty),
+            _ => throw new ArgumentException($"Unsupported aggregation type: {aggregation.Type}")
+        };
+    }
+
+    private static async Task<object[]> ApplySimpleAggregationStreamingAsync(
+        IAsyncEnumerable<Feature> features,
+        ImmutableArray<AggregateExpression> aggregates)
+    {
+        var accumulators = CreateAccumulators(aggregates);
+
+        await foreach (var feature in features)
+        {
+            UpdateAccumulators(accumulators, feature);
+        }
+
+        var result = new Dictionary<string, object?>();
+        foreach (var accumulator in accumulators)
+        {
+            result[accumulator.Alias] = accumulator.GetResult();
+        }
+
+        return new object[] { result };
+    }
+
+    private static async Task<object[]> ApplyGroupByAggregationStreamingAsync(
+        IAsyncEnumerable<Feature> features,
+        ImmutableArray<string> groupByFields,
+        ImmutableArray<AggregateExpression> aggregates)
+    {
+        var groups = new Dictionary<string, GroupAggregationState>();
+
+        await foreach (var feature in features)
+        {
+            var key = GetGroupKey(feature, groupByFields);
+            if (!groups.TryGetValue(key, out var state))
+            {
+                state = new GroupAggregationState(groupByFields, aggregates, feature);
+                groups[key] = state;
+            }
+
+            state.Update(feature);
+        }
+
+        var results = new List<object>(groups.Count);
+        foreach (var state in groups.Values)
+        {
+            results.Add(state.ToResult());
+        }
+
+        return results.ToArray();
+    }
+
     private static object[] ApplySimpleAggregation(List<Feature> features, ImmutableArray<AggregateExpression> aggregates)
     {
         var result = new Dictionary<string, object?>();
@@ -286,6 +361,28 @@ internal sealed class ODataAggregationHandler
         }
 
         return results.ToArray();
+    }
+
+    private static List<AggregateAccumulator> CreateAccumulators(ImmutableArray<AggregateExpression> aggregates)
+    {
+        var accumulators = new List<AggregateAccumulator>(aggregates.Length);
+        foreach (var aggregate in aggregates)
+        {
+            accumulators.Add(new AggregateAccumulator(aggregate));
+        }
+
+        return accumulators;
+    }
+
+    private static void UpdateAccumulators(List<AggregateAccumulator> accumulators, Feature feature)
+    {
+        foreach (var accumulator in accumulators)
+        {
+            if (TryGetNumericValue(feature, accumulator.Field, out var value))
+            {
+                accumulator.AddValue(value);
+            }
+        }
     }
 
     private static object[] ApplyCompute(List<Feature> features, string computeExpression)
@@ -338,9 +435,34 @@ internal sealed class ODataAggregationHandler
         return feature.Attributes.TryGetValue(field, out var value) ? value : null;
     }
 
+    private static bool TryGetNumericValue(Feature feature, string field, out double value)
+    {
+        if (field == "*")
+        {
+            value = 1d;
+            return true;
+        }
+
+        var fieldValue = GetFieldValue(feature, field);
+        if (fieldValue == null)
+        {
+            value = 0d;
+            return false;
+        }
+
+        value = GetNumericValue(fieldValue);
+        return true;
+    }
+
     private static List<double> GetFieldValues(List<Feature> features, string field)
     {
         var values = new List<double>();
+
+        if (field == "*")
+        {
+            values.AddRange(Enumerable.Repeat(1d, features.Count));
+            return values;
+        }
 
         foreach (var feature in features)
         {
@@ -388,6 +510,106 @@ internal sealed class ODataAggregationHandler
         };
     }
 
+    private sealed class AggregateAccumulator
+    {
+        public AggregateAccumulator(AggregateExpression expression)
+        {
+            Field = expression.Field;
+            Alias = expression.Alias;
+            Function = expression.Function.ToLowerInvariant();
+        }
+
+        public string Field { get; }
+        public string Alias { get; }
+        public string Function { get; }
+
+        private double _sum;
+        private long _count;
+        private double? _min;
+        private double? _max;
+        private HashSet<double>? _distinct;
+
+        public void AddValue(double value)
+        {
+            switch (Function)
+            {
+                case "sum":
+                    _sum += value;
+                    _count++;
+                    break;
+                case "avg":
+                case "average":
+                    _sum += value;
+                    _count++;
+                    break;
+                case "min":
+                    _min = _min.HasValue ? Math.Min(_min.Value, value) : value;
+                    _count++;
+                    break;
+                case "max":
+                    _max = _max.HasValue ? Math.Max(_max.Value, value) : value;
+                    _count++;
+                    break;
+                case "count":
+                    _count++;
+                    break;
+                case "countdistinct":
+                    _distinct ??= new HashSet<double>();
+                    _distinct.Add(value);
+                    break;
+                default:
+                    throw new ArgumentException($"Unsupported aggregate function: {Function}");
+            }
+        }
+
+        [SuppressMessage("Performance", "CA1859:Use concrete types when possible")]
+        public object? GetResult()
+        {
+            return Function switch
+            {
+                "sum" => _count == 0 ? null : _sum,
+                "avg" or "average" => _count == 0 ? null : _sum / _count,
+                "min" => _count == 0 ? null : _min,
+                "max" => _count == 0 ? null : _max,
+                "count" => _count,
+                "countdistinct" => _distinct?.Count ?? 0,
+                _ => throw new ArgumentException($"Unsupported aggregate function: {Function}")
+            };
+        }
+    }
+
+    private sealed class GroupAggregationState
+    {
+        private readonly Dictionary<string, object?> _values;
+        private readonly List<AggregateAccumulator> _accumulators;
+
+        public GroupAggregationState(
+            ImmutableArray<string> groupByFields,
+            ImmutableArray<AggregateExpression> aggregates,
+            Feature firstFeature)
+        {
+            _values = new Dictionary<string, object?>();
+            foreach (var field in groupByFields)
+            {
+                _values[field] = GetFieldValue(firstFeature, field);
+            }
+
+            _accumulators = CreateAccumulators(aggregates);
+        }
+
+        public void Update(Feature feature) => UpdateAccumulators(_accumulators, feature);
+
+        public Dictionary<string, object?> ToResult()
+        {
+            foreach (var accumulator in _accumulators)
+            {
+                _values[accumulator.Alias] = accumulator.GetResult();
+            }
+
+            return _values;
+        }
+    }
+
     private static Dictionary<string, object?> FeatureToDictionary(Feature feature)
     {
         var dict = new Dictionary<string, object?>
@@ -401,5 +623,83 @@ internal sealed class ODataAggregationHandler
         }
 
         return dict;
+    }
+
+    private static FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression)
+    {
+        if (string.IsNullOrWhiteSpace(filterExpression))
+        {
+            return query;
+        }
+
+        var (sqlFragment, whereClause) = ODataEndpoints.ConvertODataFilterToSqlFragment(filterExpression);
+        return MergeFilters(query, sqlFragment, whereClause);
+    }
+
+    private static FeatureQuery MergeFilters(FeatureQuery query, SqlFragment? sqlFragment, string? whereClause)
+    {
+        if (sqlFragment == null && string.IsNullOrWhiteSpace(whereClause))
+        {
+            return query;
+        }
+
+        if (query.SqlFilter != null)
+        {
+            if (sqlFragment != null)
+            {
+                var offset = query.SqlFilter.Parameters.Count;
+                var reindexedSql = ReindexSqlParameters(sqlFragment.Sql, offset);
+                var combinedSql = $"({query.SqlFilter.Sql}) AND ({reindexedSql})";
+                var combinedParameters = query.SqlFilter.Parameters.Concat(sqlFragment.Parameters).ToArray();
+                return query with { SqlFilter = new SqlFragment(combinedSql, combinedParameters), Where = null };
+            }
+
+            if (!string.IsNullOrWhiteSpace(whereClause))
+            {
+                var combinedSql = $"({query.SqlFilter.Sql}) AND ({whereClause})";
+                return query with { SqlFilter = new SqlFragment(combinedSql, query.SqlFilter.Parameters), Where = null };
+            }
+        }
+
+        if (sqlFragment != null)
+        {
+            if (!string.IsNullOrWhiteSpace(query.Where))
+            {
+                var combinedSql = $"({query.Where}) AND ({sqlFragment.Sql})";
+                return query with { SqlFilter = new SqlFragment(combinedSql, sqlFragment.Parameters), Where = null };
+            }
+
+            return query with { SqlFilter = sqlFragment, Where = null };
+        }
+
+        if (!string.IsNullOrWhiteSpace(whereClause))
+        {
+            if (!string.IsNullOrWhiteSpace(query.Where))
+            {
+                return query with { Where = $"({query.Where}) AND ({whereClause})" };
+            }
+
+            return query with { Where = whereClause };
+        }
+
+        return query;
+    }
+
+    private static string ReindexSqlParameters(string sql, int offset)
+    {
+        if (offset == 0)
+        {
+            return sql;
+        }
+
+        return Regex.Replace(
+            sql,
+            @"@p(\d+)",
+            match =>
+            {
+                var index = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                return $"@p{index + offset}";
+            },
+            RegexOptions.None);
     }
 }

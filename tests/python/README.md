@@ -75,6 +75,7 @@ The test suite automatically:
 |----------|-------------|---------|
 | `HONUA_TEST_PORT` | Base server port (worker index is added) | 5555 |
 | `HONUA_TEST_TIMEOUT` | Server startup timeout (seconds) | 60 |
+| `HONUA_TEST_CONFIGURATION` | dotnet build configuration for the test server | Debug |
 | `HONUA_TEST_DB_URL` | Use external PostGIS database (opt-in) | unset |
 | `HONUA_TEST_DB_SEED_PATH` | Auto-apply YAML seed to new schemas | unset |
 | `HONUA_TEST_DB_SEED_PROFILE` | Seed profile name | unset |

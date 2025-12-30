@@ -1,13 +1,14 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Net;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Middleware;
-using Honua.TestKit.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
@@ -17,14 +18,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 /// </summary>
 [Collection("Database")]
 [Protocol(Protocols.Infrastructure)]
-public class PerformanceMonitoringMiddlewareTests : IClassFixture<WebAppFixture>
+public class PerformanceMonitoringMiddlewareTests
 {
-    private readonly WebAppFixture _fixture;
-
-    public PerformanceMonitoringMiddlewareTests(WebAppFixture fixture)
-    {
-        _fixture = fixture;
-    }
 
     [IntegrationTest]
     [Operation(Operations.Monitoring)]
@@ -181,21 +176,31 @@ public class PerformanceMonitoringMiddlewareTests : IClassFixture<WebAppFixture>
         bool addErrorEndpoint = false)
     {
         var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
 
         // Configure services
         configureServices?.Invoke(builder.Services);
 
         var app = builder.Build();
 
+        app.UseExceptionHandler(errorApp =>
+        {
+            errorApp.Run(context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                return Task.CompletedTask;
+            });
+        });
+
         // Add performance monitoring middleware
         app.UseMiddleware<PerformanceMonitoringMiddleware>();
 
         // Add test endpoints
-        app.MapGet("/test", () => Results.Ok("test response"));
+        app.MapGet("/test", (HttpContext _) => Results.Ok("test response"));
 
         if (addSlowEndpoint)
         {
-            app.MapGet("/slow", async () =>
+            app.MapGet("/slow", async (HttpContext _) =>
             {
                 await Task.Delay(50); // Simulate slow operation
                 return Results.Ok("slow response");
@@ -204,10 +209,11 @@ public class PerformanceMonitoringMiddlewareTests : IClassFixture<WebAppFixture>
 
         if (addErrorEndpoint)
         {
-            app.MapGet("/error", () => throw new InvalidOperationException("Test error"));
+            app.MapGet("/error", (HttpContext _) => throw new InvalidOperationException("Test error"));
         }
 
-        return app.CreateClient();
+        app.StartAsync().GetAwaiter().GetResult();
+        return app.GetTestClient();
     }
 
     /// <summary>

@@ -24,6 +24,11 @@ public readonly record struct FeatureQuery
     public SqlFragment? SqlFilter { get; init; }
 
     /// <summary>
+    /// Optional list of object IDs to filter by
+    /// </summary>
+    public ImmutableArray<long>? ObjectIds { get; init; }
+
+    /// <summary>
     /// Fields to return (null means all fields)
     /// </summary>
     public ImmutableArray<string>? OutFields { get; init; }

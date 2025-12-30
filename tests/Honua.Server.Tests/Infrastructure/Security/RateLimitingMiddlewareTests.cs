@@ -29,12 +29,13 @@ public class RateLimitingMiddlewareTests : IAsyncLifetime
     public RateLimitingMiddlewareTests(ITestOutputHelper output)
     {
         _output = output;
-        _fixture = new WebAppFixture(
-            builder =>
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
             {
                 // Configure rate limiting for testing
                 builder.UseSetting("RateLimit:MaxRequestsPerWindow", "5");
                 builder.UseSetting("RateLimit:WindowSize", "00:01:00"); // 1 minute window
+                builder.UseSetting("RateLimit:TrustProxyHeaders", "true");
                 builder.UseEnvironment(Environments.Production); // Enable rate limiting
             });
     }

@@ -104,9 +104,20 @@ class HonuaServer:
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",
         })
 
+        configuration = os.getenv("HONUA_TEST_CONFIGURATION", "Debug")
+
         # Start the server process
         self._process = subprocess.Popen(
-            ["dotnet", "run", "--no-build", "--no-launch-profile", "--project", str(server_project)],
+            [
+                "dotnet",
+                "run",
+                "--no-build",
+                "--no-launch-profile",
+                "--configuration",
+                configuration,
+                "--project",
+                str(server_project),
+            ],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

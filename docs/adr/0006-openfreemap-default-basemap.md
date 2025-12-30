@@ -37,3 +37,5 @@ Basemap__Provider=maptiler     # requires Basemap__ApiKey
 ### Notes
 - Users can always point MapLibre at any tile source
 - Self-hosted tiles possible but not documented for MVP
+- Post-MVP, we may migrate the default basemap to Protomaps to support self-hosted/offline deployments
+  and tighter control over tile data (would require hosting PMTiles plus style/sprites/glyphs).

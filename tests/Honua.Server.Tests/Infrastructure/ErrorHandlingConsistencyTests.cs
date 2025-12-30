@@ -4,12 +4,9 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.TestKit;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -20,8 +17,6 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
@@ -150,7 +145,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         // Arrange - Test 400 Bad Request scenarios
         var testCases = new[]
         {
-            "/rest/services/0/FeatureServer/0/query?where=invalid'syntax", // FeatureServer
+            "/rest/services/test/FeatureServer/0/query?where=invalid'syntax", // FeatureServer
             "/ogc/features/collections/0/items?limit=invalid",             // OGC API Features
             "/tiles/0/-1/0/0.mvt",                                         // MVT (invalid zoom)
             "/odata/Features(0)?$filter=invalid syntax",                  // OData

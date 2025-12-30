@@ -1,3 +1,6 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Globalization;
 using System.Text;
 
@@ -85,7 +88,10 @@ internal sealed class PrometheusFormatter
             _builder.Append('{');
             for (int i = 0; i < labels.Length; i += 2)
             {
-                if (i > 0) _builder.Append(',');
+                if (i > 0)
+                {
+                    _builder.Append(',');
+                }
                 _builder.Append($"{NormalizeLabelName(labels[i])}=\"{EscapeLabelValue(labels[i + 1])}\"");
             }
             _builder.Append('}');

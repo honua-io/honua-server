@@ -72,27 +72,31 @@ internal static partial class AttachmentHandler
     {
         try
         {
-            LogAddAttachment(logger, layerId, featureId, file.FileName);
+            var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+            LogAddAttachment(logger, layerId, featureId, safeFileName);
 
             // Security Layer 1: Validate file name for path traversal and dangerous patterns
             var fileNameValidation = FileUploadSecurity.ValidateFileName(file.FileName);
             if (!fileNameValidation.IsValid)
             {
                 LogSecurityValidationFailed(logger, layerId, featureId, "filename", fileNameValidation.ErrorMessage);
-                return GeoServicesErrorHelpers.CreateBadRequestError("Invalid file name");
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Invalid file name",
+                    [fileNameValidation.ErrorMessage ?? "File name validation failed"]);
             }
 
             // Security Layer 2: Validate file size against configured limits
             if (file.Length > limits.MaxAttachmentSize)
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
-                    $"File size exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
+                    $"File size ({file.Length:N0} bytes) exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
             }
 
             // Security Layer 3: Validate MIME type against allowed types
             if (!IsAllowedMimeType(file.ContentType, limits.AllowedMimeTypes))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError("File type is not allowed");
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    $"File type '{file.ContentType}' is not allowed");
             }
 
             // Security Layer 4: Validate file content for malicious signatures
@@ -100,7 +104,9 @@ internal static partial class AttachmentHandler
             if (!contentValidation.IsValid)
             {
                 LogSecurityValidationFailed(logger, layerId, featureId, "content", contentValidation.ErrorMessage);
-                return GeoServicesErrorHelpers.CreateBadRequestError("File content validation failed");
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Invalid file content",
+                    [contentValidation.ErrorMessage ?? "File content validation failed"]);
             }
 
             // Check if feature already has maximum number of attachments
@@ -119,15 +125,12 @@ internal static partial class AttachmentHandler
                     $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
             }
 
-            // Sanitize filename before storage
-            var sanitizedFilename = FileUploadSecurity.SanitizeFileName(file.FileName);
-
             // Upload the attachment
             await using var stream = file.OpenReadStream();
             var attachment = await attachmentStore.UploadAsync(
                 layerId,
                 featureId,
-                sanitizedFilename,
+                safeFileName,
                 file.ContentType,
                 stream,
                 keywords,
@@ -147,7 +150,8 @@ internal static partial class AttachmentHandler
         }
         catch (Exception ex)
         {
-            LogAddAttachmentError(logger, layerId, featureId, file.FileName, ex);
+            var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+            LogAddAttachmentError(logger, layerId, featureId, safeFileName, ex);
             return GeoServicesErrorHelpers.CreateInternalServerError("Failed to add attachment");
         }
     }

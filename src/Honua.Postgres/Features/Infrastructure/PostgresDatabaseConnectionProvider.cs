@@ -21,10 +21,12 @@ namespace Honua.Postgres.Features.Infrastructure;
 /// </remarks>
 internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
-    ILogger<PostgresDatabaseConnectionProvider> logger) : IDatabaseConnectionProvider
+    ILogger<PostgresDatabaseConnectionProvider> logger,
+    ISchemaContext? schemaContext = null) : IDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ISchemaContext? _schemaContext = schemaContext;
 
     /// <summary>
     /// Opens a PostgreSQL connection with automatic retry for transient failures
@@ -43,6 +45,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
         return connection;
     }
 }

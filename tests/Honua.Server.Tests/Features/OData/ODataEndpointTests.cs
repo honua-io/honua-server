@@ -4,12 +4,9 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.OData;
 
@@ -26,8 +23,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new ODataTestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new ODataTestFeatureStore());
+        _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
 
@@ -108,6 +104,37 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers?$filter=name")]
+    public async Task Layers_WithFilter_ReturnsMatchingLayer()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Layers?$filter=name eq 'City Landmarks'");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().HaveCount(1);
+        values[0].GetProperty("Name").GetString().Should().Be("City Landmarks");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers?$top=1&$skip=1")]
+    public async Task Layers_WithTopAndSkip_ReturnsPaginatedResults()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Layers?$top=1&$skip=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsCollection()
     {
@@ -124,6 +151,20 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId},{objectId})")]
+    public async Task Feature_WithObjectId_ReturnsFeature()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId},1)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("ObjectId").GetInt64().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$top=5")]
     public async Task Features_WithTop_LimitsResults()
     {
@@ -134,7 +175,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
 
         var items = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
-        items.Should().HaveCountLessOrEqualTo(5);
+        items.Length.Should().BeLessThanOrEqualTo(5);
     }
 
     [IntegrationTest]
@@ -229,6 +270,21 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$orderby=bad-field")]
+    public async Task Features_WithInvalidOrderBy_ReturnsODataError()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=bad-field");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("error", out var errorProperty).Should().BeTrue();
+        errorProperty.GetProperty("code").GetString().Should().Be("InvalidQuery");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId},{objectId})")]
     public async Task Features_NonExistentLayer_ReturnsODataNotFoundError()
     {
@@ -274,7 +330,10 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         // NextLink should be present if there are more results
         var hasNextLink = document.RootElement.TryGetProperty("@odata.nextLink", out var nextLink);
-        // This test depends on the number of test features available
-        // If more than 2 features exist, nextLink should be present
+        hasNextLink.Should().BeTrue();
+        var nextLinkValue = nextLink.GetString();
+        nextLinkValue.Should().NotBeNullOrEmpty();
+        nextLinkValue.Should().Contain("$skip=2");
+        nextLinkValue.Should().Contain("$top=2");
     }
 }

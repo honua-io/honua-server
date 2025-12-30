@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
@@ -224,6 +225,51 @@ public sealed class ODataTestFeatureStore : IFeatureStore
                 .Add("rating", 4.2)
                 .Add("notes", "City of Trees"))
         };
+
+        _layerFeatures[1] = new List<Feature>
+        {
+            Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 1L)
+                .Add("city_id", 1L)
+                .Add("name", "Golden Gate Bridge")
+                .Add("category", "Bridge")
+                .Add("established_year", 1937L)),
+
+            Feature.Create(2, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 2L)
+                .Add("city_id", 1L)
+                .Add("name", "Coit Tower")
+                .Add("category", "Tower")
+                .Add("established_year", 1933L)),
+
+            Feature.Create(3, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 3L)
+                .Add("city_id", 2L)
+                .Add("name", "Griffith Observatory")
+                .Add("category", "Observatory")
+                .Add("established_year", 1935L)),
+
+            Feature.Create(4, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 4L)
+                .Add("city_id", 2L)
+                .Add("name", "Hollywood Sign")
+                .Add("category", "Landmark")
+                .Add("established_year", 1923L)),
+
+            Feature.Create(5, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 5L)
+                .Add("city_id", 3L)
+                .Add("name", "California State Capitol")
+                .Add("category", "Government")
+                .Add("established_year", 1874L)),
+
+            Feature.Create(6, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 6L)
+                .Add("city_id", 6L)
+                .Add("name", "Space Needle")
+                .Add("category", "Tower")
+                .Add("established_year", 1962L))
+        };
     }
 
     public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -257,6 +303,11 @@ public sealed class ODataTestFeatureStore : IFeatureStore
         if (query.SpatialFilter != null)
         {
             filteredFeatures = ApplySpatialFilter(filteredFeatures, query.SpatialFilter.Value);
+        }
+
+        if (query.OrderBy.HasValue && query.OrderBy.Value.Length > 0)
+        {
+            filteredFeatures = ApplyOrdering(filteredFeatures, query.OrderBy.Value);
         }
 
         var allFilteredFeatures = filteredFeatures.ToList();
@@ -402,6 +453,11 @@ public sealed class ODataTestFeatureStore : IFeatureStore
         // Comprehensive WHERE clause parsing for OData-style filters converted to SQL
         var normalized = whereClause.Trim();
 
+        if (TryApplySearchCondition(features, normalized, out var searchFiltered))
+        {
+            return searchFiltered;
+        }
+
         // Handle AND logical operator (split and apply both conditions)
         if (normalized.Contains(" AND ", StringComparison.OrdinalIgnoreCase))
         {
@@ -453,6 +509,21 @@ public sealed class ODataTestFeatureStore : IFeatureStore
                 ">=" => f.Id >= targetId,
                 "<=" => f.Id <= targetId,
                 _ => false
+            });
+        }
+
+        // Handle null comparisons (field = null, field <> null)
+        var nullMatch = Regex.Match(normalized, @"(?<field>\w+)\s*(?<op>=|<>)\s*null", RegexOptions.IgnoreCase);
+        if (nullMatch.Success)
+        {
+            var field = nullMatch.Groups["field"].Value;
+            var op = nullMatch.Groups["op"].Value;
+
+            return features.Where(f =>
+            {
+                var hasValue = f.Attributes.TryGetValue(field, out var attrValue);
+                var isNull = !hasValue || attrValue == null;
+                return op == "=" ? isNull : !isNull;
             });
         }
 
@@ -561,6 +632,320 @@ public sealed class ODataTestFeatureStore : IFeatureStore
         }
 
         return features;
+    }
+
+    private static bool TryApplySearchCondition(
+        IEnumerable<Feature> features,
+        string normalized,
+        out IEnumerable<Feature> filtered)
+    {
+        filtered = Array.Empty<Feature>();
+
+        if (!normalized.Contains("ILIKE", StringComparison.OrdinalIgnoreCase) ||
+            !normalized.Contains("COALESCE(", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var orGroups = SplitTopLevel(normalized, " OR ")
+            .Select(part => part.Trim())
+            .Where(part => part.Length > 0)
+            .ToArray();
+
+        if (orGroups.Length == 0)
+        {
+            return false;
+        }
+
+        var parsedGroups = new List<List<(string term, bool isNegated)>>();
+
+        foreach (var group in orGroups)
+        {
+            var conditions = SplitTopLevel(group, " AND ")
+                .Select(part => part.Trim())
+                .Where(part => part.Length > 0)
+                .ToArray();
+
+            if (conditions.Length == 0)
+            {
+                continue;
+            }
+
+            var parsedConditions = new List<(string term, bool isNegated)>();
+
+            foreach (var condition in conditions)
+            {
+                var trimmed = condition.Trim();
+                var isNegated = trimmed.StartsWith("NOT ", StringComparison.OrdinalIgnoreCase);
+                if (isNegated)
+                {
+                    trimmed = trimmed[4..].Trim();
+                }
+
+                trimmed = TrimOuterParentheses(trimmed);
+
+                var match = Regex.Match(trimmed, @"ILIKE\s+'%([^']*)%'", RegexOptions.IgnoreCase);
+                if (!match.Success)
+                {
+                    return false;
+                }
+
+                var term = match.Groups[1].Value
+                    .Replace("\\%", "%", StringComparison.Ordinal)
+                    .Replace("\\_", "_", StringComparison.Ordinal)
+                    .Replace("''", "'", StringComparison.Ordinal);
+
+                parsedConditions.Add((term, isNegated));
+            }
+
+            if (parsedConditions.Count > 0)
+            {
+                parsedGroups.Add(parsedConditions);
+            }
+        }
+
+        if (parsedGroups.Count == 0)
+        {
+            return false;
+        }
+
+        filtered = features.Where(feature =>
+        {
+            var stringValues = feature.Attributes.Values
+                .Select(value => value switch
+                {
+                    string text => text,
+                    JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString() ?? string.Empty,
+                    _ => string.Empty
+                })
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .ToArray();
+
+            foreach (var group in parsedGroups)
+            {
+                var groupMatches = true;
+
+                foreach (var (term, isNegated) in group)
+                {
+                    var matches = stringValues.Any(text => text.Contains(term, StringComparison.OrdinalIgnoreCase));
+                    if (isNegated)
+                    {
+                        if (matches)
+                        {
+                            groupMatches = false;
+                            break;
+                        }
+                    }
+                    else if (!matches)
+                    {
+                        groupMatches = false;
+                        break;
+                    }
+                }
+
+                if (groupMatches)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
+        return true;
+    }
+
+    private static List<string> SplitTopLevel(string input, string separator)
+    {
+        var results = new List<string>();
+        var depth = 0;
+        var start = 0;
+
+        for (var i = 0; i <= input.Length - separator.Length; i++)
+        {
+            var c = input[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+            }
+
+            if (depth == 0 && input.AsSpan(i, separator.Length).Equals(separator, StringComparison.OrdinalIgnoreCase))
+            {
+                results.Add(input[start..i]);
+                i += separator.Length - 1;
+                start = i + 1;
+            }
+        }
+
+        if (start <= input.Length)
+        {
+            results.Add(input[start..]);
+        }
+
+        return results;
+    }
+
+    private static string TrimOuterParentheses(string value)
+    {
+        var trimmed = value.Trim();
+
+        while (trimmed.StartsWith('(') && trimmed.EndsWith(')'))
+        {
+            var depth = 0;
+            var isBalanced = true;
+
+            for (var i = 0; i < trimmed.Length; i++)
+            {
+                if (trimmed[i] == '(')
+                {
+                    depth++;
+                }
+                else if (trimmed[i] == ')')
+                {
+                    depth--;
+                    if (depth == 0 && i < trimmed.Length - 1)
+                    {
+                        isBalanced = false;
+                        break;
+                    }
+                }
+            }
+
+            if (!isBalanced || depth != 0)
+            {
+                break;
+            }
+
+            trimmed = trimmed[1..^1].Trim();
+        }
+
+        return trimmed;
+    }
+
+    private static IEnumerable<Feature> ApplyOrdering(IEnumerable<Feature> features, ImmutableArray<OrderByClause> orderBy)
+    {
+        IOrderedEnumerable<Feature>? ordered = null;
+
+        foreach (var clause in orderBy)
+        {
+            var comparer = CreateOrderByComparer(clause.FieldType);
+            Func<Feature, object?> keySelector = feature => GetOrderByValue(feature, clause.Field);
+
+            ordered = ordered == null
+                ? (clause.Ascending ? features.OrderBy(keySelector, comparer) : features.OrderByDescending(keySelector, comparer))
+                : (clause.Ascending ? ordered.ThenBy(keySelector, comparer) : ordered.ThenByDescending(keySelector, comparer));
+        }
+
+        return ordered ?? features;
+    }
+
+    private static object? GetOrderByValue(Feature feature, string field)
+    {
+        var normalized = field.Trim();
+        var fieldLower = normalized.ToLowerInvariant();
+
+        if (fieldLower == "objectid")
+        {
+            return feature.Id;
+        }
+
+        if (fieldLower is "layerid" or "layer_id")
+        {
+            return 0;
+        }
+
+        if (feature.Attributes.TryGetValue(normalized, out var value))
+        {
+            return value;
+        }
+
+        foreach (var kvp in feature.Attributes)
+        {
+            if (kvp.Key.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return kvp.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static Comparer<object?> CreateOrderByComparer(FieldType? fieldType)
+    {
+        return Comparer<object?>.Create((left, right) => CompareOrderByValues(left, right, fieldType));
+    }
+
+    private static int CompareOrderByValues(object? left, object? right, FieldType? fieldType)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return 0;
+        }
+
+        if (left is null)
+        {
+            return 1;
+        }
+
+        if (right is null)
+        {
+            return -1;
+        }
+
+        try
+        {
+            switch (fieldType)
+            {
+                case FieldType.Integer:
+                case FieldType.BigInteger:
+                    return Convert.ToInt64(left, CultureInfo.InvariantCulture)
+                        .CompareTo(Convert.ToInt64(right, CultureInfo.InvariantCulture));
+                case FieldType.Float:
+                case FieldType.Double:
+                    return Convert.ToDouble(left, CultureInfo.InvariantCulture)
+                        .CompareTo(Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                case FieldType.Boolean:
+                    return Convert.ToBoolean(left, CultureInfo.InvariantCulture)
+                        .CompareTo(Convert.ToBoolean(right, CultureInfo.InvariantCulture));
+                case FieldType.Date:
+                case FieldType.DateTime:
+                    return Convert.ToDateTime(left, CultureInfo.InvariantCulture)
+                        .CompareTo(Convert.ToDateTime(right, CultureInfo.InvariantCulture));
+            }
+        }
+        catch (FormatException)
+        {
+        }
+        catch (InvalidCastException)
+        {
+        }
+
+        if (left is IComparable leftComparable && left.GetType() == right.GetType())
+        {
+            return leftComparable.CompareTo(right);
+        }
+
+        if (left is IConvertible && right is IConvertible)
+        {
+            try
+            {
+                var leftNumber = Convert.ToDouble(left, CultureInfo.InvariantCulture);
+                var rightNumber = Convert.ToDouble(right, CultureInfo.InvariantCulture);
+                return leftNumber.CompareTo(rightNumber);
+            }
+            catch (FormatException)
+            {
+            }
+            catch (InvalidCastException)
+            {
+            }
+        }
+
+        return string.Compare(left.ToString(), right.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ConvertSqlFragmentToWhereClause(SqlFragment sqlFragment)
@@ -761,7 +1146,106 @@ public sealed class ODataTestFeatureStore : IFeatureStore
 
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(QueryResult<Feature>.Empty());
+        if (!_layerFeatures.TryGetValue(query.Relationship.RelatedLayerId, out var relatedFeatures))
+        {
+            return Task.FromResult(QueryResult<Feature>.Empty());
+        }
+
+        var originIds = query.ObjectIds.ToHashSet();
+        var destinationField = query.Relationship.DestinationForeignKeyField;
+
+        var matched = relatedFeatures
+            .Select(feature =>
+            {
+                var attributes = feature.Attributes as ImmutableDictionary<string, object?>
+                    ?? feature.Attributes.ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                if (TryGetLongAttributeValue(attributes, destinationField, out var originId) &&
+                    originIds.Contains(originId))
+                {
+                    return (feature, originId, isMatch: true);
+                }
+
+                return (feature, originId: 0L, isMatch: false);
+            })
+            .Where(item => item.isMatch)
+            .ToList();
+
+        IEnumerable<(Feature feature, long originId)> filtered = matched.Select(item => (item.feature, item.originId));
+
+        if (!string.IsNullOrWhiteSpace(query.Where))
+        {
+            filtered = ApplyWhereFilter(filtered.Select(item => item.feature), query.Where)
+                .Select(feature =>
+                {
+                    var attributes = feature.Attributes as ImmutableDictionary<string, object?>
+                        ?? feature.Attributes.ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                    TryGetLongAttributeValue(attributes, destinationField, out var originId);
+                    return (feature, originId);
+                });
+        }
+
+        var filteredList = filtered.ToList();
+        var totalCount = filteredList.Count;
+
+        var limitedFeatures = new List<(Feature feature, long originId)>();
+        var hasMoreResults = false;
+
+        if (query.Limit.HasValue)
+        {
+            var limit = query.Limit.Value;
+            foreach (var group in filteredList.GroupBy(item => item.originId))
+            {
+                var groupList = group.ToList();
+                if (groupList.Count > limit)
+                {
+                    hasMoreResults = true;
+                }
+                limitedFeatures.AddRange(groupList.Take(limit));
+            }
+        }
+        else
+        {
+            limitedFeatures = filteredList;
+        }
+
+        var resultFeatures = limitedFeatures.Select(item => item.feature).ToList();
+
+        if (query.OutFields?.Length > 0)
+        {
+            resultFeatures = resultFeatures.Select(feature => FilterFields(feature, query.OutFields.Value)).ToList();
+        }
+
+        return Task.FromResult(QueryResult<Feature>.Create(
+            totalCount,
+            resultFeatures.ToImmutableArray(),
+            hasMoreResults));
+    }
+
+    private static bool TryGetLongAttributeValue(ImmutableDictionary<string, object?> attributes, string field, out long value)
+    {
+        value = default;
+
+        if (!attributes.TryGetValue(field, out var rawValue) || rawValue == null)
+        {
+            return false;
+        }
+
+        return rawValue switch
+        {
+            long longValue => AssignValue(longValue, out value),
+            int intValue => AssignValue(intValue, out value),
+            string stringValue when long.TryParse(stringValue, out var parsed) => AssignValue(parsed, out value),
+            JsonElement element when element.ValueKind == JsonValueKind.Number => AssignValue(element.GetInt64(), out value),
+            _ => false
+        };
+    }
+
+    private static bool AssignValue(long newValue, out long value)
+    {
+        value = newValue;
+        return true;
     }
 
     public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)

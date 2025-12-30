@@ -1,5 +1,10 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Diagnostics;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Caching;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
@@ -66,7 +71,7 @@ internal sealed class MonitoredResponseCacheDecorator : IResponseCache
         using var scope = _performanceMonitor.StartOperation("cache_set")
             .WithTag("cache_type", GetCacheType(key))
             .WithTag("operation", "set")
-            .WithTag("expiration_seconds", expiration.TotalSeconds.ToString());
+            .WithTag("expiration_seconds", expiration.TotalSeconds.ToString(CultureInfo.InvariantCulture));
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -128,7 +133,7 @@ internal sealed class MonitoredResponseCacheDecorator : IResponseCache
 
             _performanceMonitor.RecordCacheMetrics(cacheType, "miss");
             scope.WithTag("result", "miss")
-                 .WithTag("factory_time_ms", factoryStopwatch.Elapsed.TotalMilliseconds.ToString());
+                 .WithTag("factory_time_ms", factoryStopwatch.Elapsed.TotalMilliseconds.ToString(CultureInfo.InvariantCulture));
 
             MonitoredCacheLog.CacheGetOrCreateMiss(_logger,
                 cacheType, key,
