@@ -38,17 +38,22 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                         app.UseGlobalExceptionHandling();
                         app.Run(async context =>
                         {
-                            var path = context.Request.Path;
-                            if (path == "/throw-argument")
-                                throw new ArgumentException("Invalid argument provided");
-                            if (path == "/throw-unauthorized")
-                                throw new UnauthorizedAccessException("Access denied");
-                            if (path == "/throw-timeout")
-                                throw new TimeoutException("Operation timed out");
-                            if (path == "/throw-general")
-                                throw new InvalidOperationException("Something went wrong");
-                            if (path == "/throw-unhandled")
-                                throw new NotImplementedException("This is not implemented");
+                            var path = context.Request.Path.Value;
+
+                            // Handle different exception types based on path
+                            if (path != null)
+                            {
+                                if (path.Contains("throw-argument"))
+                                    throw new ArgumentException("Invalid argument provided");
+                                if (path.Contains("throw-unauthorized"))
+                                    throw new UnauthorizedAccessException("Access denied");
+                                if (path.Contains("throw-timeout"))
+                                    throw new TimeoutException("Operation timed out");
+                                if (path.Contains("throw-general"))
+                                    throw new InvalidOperationException("Something went wrong");
+                                if (path.Contains("throw-unhandled"))
+                                    throw new NotImplementedException("This is not implemented");
+                            }
 
                             await context.Response.WriteAsync("OK");
                         });
@@ -70,15 +75,14 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Be("Bad Request");
-        error.Error.Details.Should().Contain("Invalid request parameters.");
+        problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
+        problemDetails.GetProperty("detail").GetString().Should().Be("Invalid request parameters.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(400);
     }
 
     [Fact]
@@ -91,12 +95,11 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(401);
-        error.Error.Message.Should().Be("Unauthorized");
-        error.Error.Details.Should().Contain("Access denied.");
+        problemDetails.GetProperty("title").GetString().Should().Be("Unauthorized");
+        problemDetails.GetProperty("detail").GetString().Should().Be("Access denied.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(401);
     }
 
     [Fact]
@@ -109,12 +112,11 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.RequestTimeout);
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(408);
-        error.Error.Message.Should().Be("Request Timeout");
-        error.Error.Details.Should().Contain("The request timed out.");
+        problemDetails.GetProperty("title").GetString().Should().Be("Request Timeout");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The request timed out.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(408);
     }
 
     [Fact]
@@ -127,12 +129,11 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(500);
-        error.Error.Message.Should().Be("Internal Server Error");
-        error.Error.Details.Should().Contain("An unexpected error occurred.");
+        problemDetails.GetProperty("title").GetString().Should().Be("Internal Server Error");
+        problemDetails.GetProperty("detail").GetString().Should().Be("An unexpected error occurred.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(500);
     }
 
     [Fact]

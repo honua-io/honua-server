@@ -20,9 +20,19 @@ namespace Honua.Server.Tests.Performance;
 public sealed class QueryPlanVerificationTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fixture = new();
+    private string _schemaName = null!;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(QueryPlanVerificationTests));
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _fixture.DropSchemaAsync(_schemaName);
+        await _fixture.DisposeAsync();
+    }
 
     /// <summary>
     /// Verifies that spatial queries use the GIST index on geometry column.
@@ -40,7 +50,7 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 geom GEOMETRY(POINT, 4326)
             );
             CREATE INDEX idx_test_spatial_geom ON test_spatial_index USING GIST(geom);
-            """);
+            """, _schemaName);
 
         // Insert enough data to trigger index usage
         await _fixture.ExecuteAsync("""
@@ -52,13 +62,13 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                     37.0 + (random() * 0.5)
                 ), 4326)
             FROM generate_series(1, 1000) AS i;
-            """);
+            """, _schemaName);
 
         // Analyze table for accurate query planning
-        await _fixture.ExecuteAsync("ANALYZE test_spatial_index;");
+        await _fixture.ExecuteAsync("ANALYZE test_spatial_index;", _schemaName);
 
         // Act - get execution plan for spatial query
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             EXPLAIN (FORMAT JSON)
@@ -91,7 +101,7 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 attributes JSONB
             );
             CREATE INDEX idx_test_jsonb_attrs ON test_jsonb_index USING GIN(attributes);
-            """);
+            """, _schemaName);
 
         // Insert enough data to trigger index usage
         await _fixture.ExecuteAsync("""
@@ -102,13 +112,13 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 'value', i * 10
             )
             FROM generate_series(1, 1000) AS i;
-            """);
+            """, _schemaName);
 
         // Analyze table
-        await _fixture.ExecuteAsync("ANALYZE test_jsonb_index;");
+        await _fixture.ExecuteAsync("ANALYZE test_jsonb_index;", _schemaName);
 
         // Act - get execution plan for JSONB containment query
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             EXPLAIN (FORMAT JSON)
@@ -142,7 +152,7 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 name TEXT
             );
             CREATE INDEX idx_test_layer_id ON test_layer_index(layer_id);
-            """);
+            """, _schemaName);
 
         // Insert data across multiple layers
         await _fixture.ExecuteAsync("""
@@ -151,12 +161,12 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 (i % 10) + 1,
                 'Feature_' || i
             FROM generate_series(1, 10000) AS i;
-            """);
+            """, _schemaName);
 
-        await _fixture.ExecuteAsync("ANALYZE test_layer_index;");
+        await _fixture.ExecuteAsync("ANALYZE test_layer_index;", _schemaName);
 
         // Act - get execution plan for layer_id filter
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             EXPLAIN (FORMAT JSON)
@@ -187,18 +197,18 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
             CREATE INDEX idx_test_pagination_id ON test_pagination(id);
-            """);
+            """, _schemaName);
 
         await _fixture.ExecuteAsync("""
             INSERT INTO test_pagination (name)
             SELECT 'Item_' || i
             FROM generate_series(1, 10000) AS i;
-            """);
+            """, _schemaName);
 
-        await _fixture.ExecuteAsync("ANALYZE test_pagination;");
+        await _fixture.ExecuteAsync("ANALYZE test_pagination;", _schemaName);
 
         // Act - get execution plan with LIMIT/OFFSET
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             EXPLAIN (ANALYZE, FORMAT JSON)
@@ -233,7 +243,7 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
             CREATE INDEX idx_combined_layer ON test_combined(layer_id);
             CREATE INDEX idx_combined_geom ON test_combined USING GIST(geom);
             CREATE INDEX idx_combined_attrs ON test_combined USING GIN(attributes);
-            """);
+            """, _schemaName);
 
         await _fixture.ExecuteAsync("""
             INSERT INTO test_combined (layer_id, geom, attributes)
@@ -242,12 +252,12 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 ST_SetSRID(ST_MakePoint(-122.0 + random(), 37.0 + random()), 4326),
                 jsonb_build_object('type', CASE WHEN i % 2 = 0 THEN 'A' ELSE 'B' END)
             FROM generate_series(1, 5000) AS i;
-            """);
+            """, _schemaName);
 
-        await _fixture.ExecuteAsync("ANALYZE test_combined;");
+        await _fixture.ExecuteAsync("ANALYZE test_combined;", _schemaName);
 
         // Act - get execution plan for combined query
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             EXPLAIN (FORMAT JSON)
@@ -283,7 +293,7 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
             );
             CREATE INDEX idx_baseline_layer ON test_baseline(layer_id);
             CREATE INDEX idx_baseline_geom ON test_baseline USING GIST(geometry);
-            """);
+            """, _schemaName);
 
         await _fixture.ExecuteAsync("""
             INSERT INTO test_baseline (layer_id, geometry, attributes)
@@ -292,12 +302,12 @@ public sealed class QueryPlanVerificationTests : IAsyncLifetime
                 ST_SetSRID(ST_MakePoint(-122.0 + (random() * 0.5), 37.0 + (random() * 0.5)), 4326),
                 jsonb_build_object('name', 'Feature_' || i, 'population', (random() * 10000)::int)
             FROM generate_series(1, 1000) AS i;
-            """);
+            """, _schemaName);
 
-        await _fixture.ExecuteAsync("ANALYZE test_baseline;");
+        await _fixture.ExecuteAsync("ANALYZE test_baseline;", _schemaName);
 
         // Act - execute query with timing
-        await using var conn = await _fixture.GetConnectionAsync();
+        await using var conn = await _fixture.GetConnectionAsync(_schemaName);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             EXPLAIN (ANALYZE, FORMAT JSON)

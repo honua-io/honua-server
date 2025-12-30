@@ -89,8 +89,13 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
 
         var filteredFeatures = features.AsEnumerable();
 
-        // Apply WHERE clause filtering
-        if (!string.IsNullOrEmpty(query.Where))
+        // Apply objectIds filtering (takes precedence over WHERE)
+        if (query.ObjectIds.HasValue && query.ObjectIds.Value.Length > 0)
+        {
+            var objectIdSet = query.ObjectIds.Value.ToHashSet();
+            filteredFeatures = filteredFeatures.Where(feature => objectIdSet.Contains(feature.Id));
+        }
+        else if (!string.IsNullOrEmpty(query.Where))
         {
             filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
         }
@@ -202,7 +207,12 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
 
         var filteredFeatures = features.AsEnumerable();
 
-        if (!string.IsNullOrEmpty(query.Where))
+        if (query.ObjectIds.HasValue && query.ObjectIds.Value.Length > 0)
+        {
+            var objectIdSet = query.ObjectIds.Value.ToHashSet();
+            filteredFeatures = filteredFeatures.Where(feature => objectIdSet.Contains(feature.Id));
+        }
+        else if (!string.IsNullOrEmpty(query.Where))
         {
             filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
         }

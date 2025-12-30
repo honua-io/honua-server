@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Attachments;
@@ -16,7 +17,7 @@ using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,8 @@ internal static class ServiceCollectionExtensions
     /// <returns>Updated service collection</returns>
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
+        var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
+
         // Register NpgsqlDataSource as specified in Issue #3
         services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
@@ -58,8 +61,8 @@ internal static class ServiceCollectionExtensions
             dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = 30;
             dataSourceBuilder.ConnectionStringBuilder.WriteBufferSize = 16384; // 16KB
             dataSourceBuilder.ConnectionStringBuilder.ReadBufferSize = 16384; // 16KB
-            dataSourceBuilder.ConnectionStringBuilder.NoResetOnClose = true;
-            dataSourceBuilder.ConnectionStringBuilder.Multiplexing = true;
+            dataSourceBuilder.ConnectionStringBuilder.NoResetOnClose = !schemaHeadersEnabled;
+            dataSourceBuilder.ConnectionStringBuilder.Multiplexing = !schemaHeadersEnabled;
 
             if (dataSourceBuilder.ConnectionStringBuilder.Multiplexing)
             {
@@ -95,7 +98,10 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAttachmentStore>(serviceProvider =>
             new PostgresAttachmentStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                schemaName: "honua"));
+                schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
+                    ? "honua"
+                    : configuration["Attachments:Schema"],
+                storageBasePath: configuration["Attachments:StoragePath"]));
 
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
@@ -113,8 +119,23 @@ internal static class ServiceCollectionExtensions
             geometryColumn: "geometry",
             primaryKeyColumn: "objectid"));
 
-        // Register database connection provider with resilience policies
-        services.AddScoped<IDatabaseConnectionProvider, PostgresDatabaseConnectionProvider>();
+        // PERFORMANCE OPTIMIZATION: Register query cache configuration
+        services.Configure<QueryCacheOptions>(configuration.GetSection("Database:QueryCache"));
+        if (schemaHeadersEnabled)
+        {
+            services.Configure<QueryCacheOptions>(options => options.EnableAutomaticCaching = false);
+        }
+
+        // PERFORMANCE OPTIMIZATION: Register prepared statement cache as singleton
+        // Singleton ensures cache persistence across requests for optimal performance
+        services.AddSingleton<PreparedStatementCache>();
+
+        // PERFORMANCE OPTIMIZATION: Register high-frequency query preparation service
+        // Pre-prepares known frequently-used queries for optimal initial performance
+        services.AddHostedService<HighFrequencyQueryPreparationService>();
+
+        // Register enhanced database connection provider with prepared statement caching
+        services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
 
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
@@ -125,7 +146,7 @@ internal static class ServiceCollectionExtensions
                 throw new InvalidOperationException("DefaultConnection connection string is required for CRS detection services");
             }
 
-            return new CrsDetectionService(connectionString);
+            return new CrsDetectionService(connectionString, serviceProvider.GetService<ISchemaContext>());
         });
 
         // Register import limits configuration
@@ -163,7 +184,7 @@ internal static class ServiceCollectionExtensions
             }
 
             var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
-            return new StreamingFileImportService(connectionString, limits);
+            return new StreamingFileImportService(connectionString, limits, serviceProvider.GetService<ISchemaContext>());
         });
 
         // Register background import job service

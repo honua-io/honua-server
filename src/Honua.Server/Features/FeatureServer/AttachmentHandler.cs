@@ -7,6 +7,7 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Security;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -70,7 +71,16 @@ internal static partial class AttachmentHandler
     {
         try
         {
-            LogAddAttachment(logger, layerId, featureId, file.FileName);
+            var fileNameValidation = FileUploadSecurity.ValidateFileName(file.FileName);
+            if (!fileNameValidation.IsValid)
+            {
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Invalid file name",
+                    [fileNameValidation.ErrorMessage ?? "File name validation failed"]);
+            }
+
+            var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+            LogAddAttachment(logger, layerId, featureId, safeFileName);
 
             // Validate file size
             if (file.Length > limits.MaxAttachmentSize)
@@ -84,6 +94,14 @@ internal static partial class AttachmentHandler
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"File type '{file.ContentType}' is not allowed");
+            }
+
+            var contentValidation = await FileUploadSecurity.ValidateFileContentAsync(file, cancellationToken);
+            if (!contentValidation.IsValid)
+            {
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Invalid file content",
+                    [contentValidation.ErrorMessage ?? "File content validation failed"]);
             }
 
             // Check if feature already has maximum number of attachments
@@ -107,7 +125,7 @@ internal static partial class AttachmentHandler
             var attachment = await attachmentStore.UploadAsync(
                 layerId,
                 featureId,
-                file.FileName,
+                safeFileName,
                 file.ContentType,
                 stream,
                 keywords,
@@ -127,7 +145,8 @@ internal static partial class AttachmentHandler
         }
         catch (Exception ex)
         {
-            LogAddAttachmentError(logger, layerId, featureId, file.FileName, ex);
+            var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+            LogAddAttachmentError(logger, layerId, featureId, safeFileName, ex);
             return GeoServicesErrorHelpers.CreateInternalServerError("Failed to add attachment");
         }
     }

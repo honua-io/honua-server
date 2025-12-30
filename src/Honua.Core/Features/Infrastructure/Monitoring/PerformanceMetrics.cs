@@ -1,3 +1,6 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Diagnostics.Metrics;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
@@ -9,12 +12,12 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This class defines all performance counters and histograms used throughout the application
 /// for consistent monitoring and telemetry collection.
 /// </remarks>
-public sealed class PerformanceMetrics
+internal sealed class PerformanceMetrics
 {
     /// <summary>
     /// The meter name for Honua Server metrics.
     /// </summary>
-    public const string MeterName = "Honua.Server";
+    public const string MeterName = "Honua";
 
     /// <summary>
     /// The meter instance for creating metrics instruments.
@@ -84,6 +87,7 @@ public sealed class PerformanceMetrics
     /// </summary>
     public static readonly ObservableGauge<long> AllocatedMemoryBytes = Meter.CreateObservableGauge<long>(
         "honua_memory_allocated_bytes",
+        () => MemoryMonitor.GetMemoryUsage().AllocatedBytes,
         "bytes",
         "Currently allocated memory in bytes");
 

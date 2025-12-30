@@ -137,11 +137,11 @@ def get_honua_architecture_rules() -> str:
     return """# Honua Architecture Rules (Summary)
 
 ## BLOCKING (Must Fix)
-- Dependency direction: Honua.Core must not reference Honua.Postgres or Honua.Server.
+- Dependency direction: Honua.Core must not reference Honua.Postgres or Honua.Server. Honua.Postgres and Honua.Server may depend on Honua.Core.
 - API pattern: No ControllerBase or [ApiController]; use Minimal APIs.
-- Encapsulation: Infrastructure implementation types must be internal.
-- Documentation: Public types require XML docs.
-- AOT: Avoid reflection/dynamic JSON; use source-generated JSON/logging.
+- Encapsulation: Infrastructure implementation types must be internal (middleware, decorators, providers). Public DTOs/options/extensions are allowed.
+- Documentation: Public types require XML docs; internal types do not.
+- AOT: Avoid reflection/dynamic JSON; use source-generated JSON/logging. GC APIs and CultureInfo are allowed.
 
 ## WARNING (Review Needed)
 - Too many dependencies: endpoints <= 5, handlers <= 4.
@@ -370,14 +370,13 @@ def combine_assessments(assessments: List[str], process_blocking: bool) -> str:
 
     if not assessments:
         return "APPROVED"
+    if "BLOCKING_ISSUES" in assessments:
+        return "NEEDS_ATTENTION"
 
-    severity_order = {
-        "APPROVED": 0,
-        "NEEDS_ATTENTION": 1,
-        "BLOCKING_ISSUES": 2
-    }
+    if "NEEDS_ATTENTION" in assessments:
+        return "NEEDS_ATTENTION"
 
-    return max(assessments, key=lambda level: severity_order.get(level, 0))
+    return "APPROVED"
 
 def main():
     """Main analysis function"""

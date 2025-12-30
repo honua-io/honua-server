@@ -22,12 +22,13 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<Honua.Core.Features.Catalog.Abstractions.ILayerCatalog>(new SpatialReferenceTestLayerCatalog());
+        _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
 
-        await SpatialReferenceTestData.SeedLayersAsync(_fixture.Postgres);
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         await SpatialReferenceTestData.InsertPointAsync(
             _fixture.Postgres,
+            schema,
             SpatialReferenceTestLayerCatalog.PointLayerId,
             -122.4194,
             37.7749,
@@ -36,7 +37,6 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await SpatialReferenceTestData.CleanupAsync(_fixture.Postgres);
         await _fixture.DisposeAsync();
     }
 
@@ -113,8 +113,10 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         applyResponse.AddResults[0].ObjectId.Should().NotBeNull();
 
         var objectId = applyResponse.AddResults[0].ObjectId!.Value;
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         var srid = await SpatialReferenceTestData.GetGeometrySridAsync(
             _fixture.Postgres,
+            schema,
             objectId,
             SpatialReferenceTestLayerCatalog.LineLayerId);
         srid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);
@@ -200,8 +202,10 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         applyResponse.AddResults[0].ObjectId.Should().NotBeNull();
 
         var objectId = applyResponse.AddResults[0].ObjectId!.Value;
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         var srid = await SpatialReferenceTestData.GetGeometrySridAsync(
             _fixture.Postgres,
+            schema,
             objectId,
             SpatialReferenceTestLayerCatalog.PolygonLayerId);
         srid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);

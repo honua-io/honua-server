@@ -95,5 +95,6 @@ internal static class ProtocolErrorWriter
         path.StartsWithSegments("/rest/services") ||
         path.StartsWithSegments("/api/import") ||
         path.StartsWithSegments("/collections") ||
+        path.StartsWithSegments("/ogc/features") ||
         path.StartsWithSegments("/tiles");
 }

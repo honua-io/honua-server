@@ -5,6 +5,8 @@ using System.Data.Common;
 using System.Globalization;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -16,9 +18,12 @@ namespace Honua.Postgres.Features.Admin;
 /// <remarks>
 /// Initialize the PostgreSQL table discovery service.
 /// </remarks>
-internal sealed class PostgreSqlTableDiscoveryService(ILogger<PostgreSqlTableDiscoveryService> logger) : ITableDiscoveryService
+internal sealed class PostgreSqlTableDiscoveryService(
+    ILogger<PostgreSqlTableDiscoveryService> logger,
+    ISchemaContext? schemaContext = null) : ITableDiscoveryService
 {
     private readonly ILogger<PostgreSqlTableDiscoveryService> _logger = logger;
+    private readonly ISchemaContext? _schemaContext = schemaContext;
 
     /// <inheritdoc />
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
@@ -33,6 +38,7 @@ internal sealed class PostgreSqlTableDiscoveryService(ILogger<PostgreSqlTableDis
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
 
             // Query both geometry_columns and geography_columns for spatial tables
             const string sql = """
@@ -127,6 +133,7 @@ internal sealed class PostgreSqlTableDiscoveryService(ILogger<PostgreSqlTableDis
             // Use the existing connection - no need to open/close it
             NpgsqlConnection npgsqlConnection = connection as NpgsqlConnection
                 ?? throw new ArgumentException("Connection must be an NpgsqlConnection", nameof(connection));
+            await SchemaSearchPath.ApplyAsync(npgsqlConnection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
 
             // Query both geometry_columns and geography_columns for spatial tables
             const string sql = """

@@ -1,7 +1,11 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Net;
 using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.TestKit.Infrastructure;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -12,6 +16,11 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(Protocols.MetricsApi)]
 public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
 {
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly WebAppFixture _fixture;
 
     public MetricsEndpointsTests(WebAppFixture fixture)
@@ -25,17 +34,18 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     public async Task GetHealthMetrics_ShouldReturnBasicHealthData()
     {
         // Act
-        var response = await _fixture.HttpClient.GetAsync("/api/metrics/health");
+        var response = await _fixture.Client.GetAsync("/api/metrics/health");
+        var content = await response.Content.ReadAsStringAsync();
+        var allowHeader = response.Headers.TryGetValues("Allow", out var allowValues)
+            ? string.Join(", ", allowValues)
+            : "none";
 
         // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(
+            response.StatusCode == HttpStatusCode.OK,
+            $"Expected OK, got {response.StatusCode}. Allow: {allowHeader}. Body: {content}");
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
-
-        var content = await response.Content.ReadAsStringAsync();
-        var healthMetrics = JsonSerializer.Deserialize<HealthMetrics>(content, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var healthMetrics = JsonSerializer.Deserialize<HealthMetrics>(content, _jsonOptions);
 
         Assert.NotNull(healthMetrics);
         Assert.Equal("healthy", healthMetrics.Status);
@@ -51,21 +61,22 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     public async Task GetPerformanceMetrics_ShouldRequireAuthentication()
     {
         // Act
-        var response = await _fixture.HttpClient.GetAsync("/api/metrics/performance");
+        var response = await _fixture.Client.GetAsync("/api/metrics/performance");
+        var content = await response.Content.ReadAsStringAsync();
+        var allowHeader = response.Headers.TryGetValues("Allow", out var allowValues)
+            ? string.Join(", ", allowValues)
+            : "none";
 
         // Assert
         // In development, endpoints may not require auth, so we check for either OK or Unauthorized
-        Assert.True(
-            response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.Unauthorized,
-            $"Expected OK or Unauthorized, got {response.StatusCode}");
+        if (response.StatusCode != HttpStatusCode.OK && response.StatusCode != HttpStatusCode.Unauthorized)
+        {
+            Assert.Fail($"Expected OK or Unauthorized, got {response.StatusCode}. Allow: {allowHeader}. Body: {content}");
+        }
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
-            var content = await response.Content.ReadAsStringAsync();
-            var perfMetrics = JsonSerializer.Deserialize<PerformanceMetricsResponse>(content, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var perfMetrics = JsonSerializer.Deserialize<PerformanceMetricsResponse>(content, _jsonOptions);
 
             Assert.NotNull(perfMetrics);
             Assert.True(perfMetrics.Timestamp != default, "Timestamp should be set");
@@ -81,16 +92,13 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     public async Task GetDatabaseMetrics_ShouldReturnDatabaseStats()
     {
         // Act
-        var response = await _fixture.HttpClient.GetAsync("/api/metrics/database");
+        var response = await _fixture.Client.GetAsync("/api/metrics/database");
 
         // Assert
         if (response.StatusCode == HttpStatusCode.OK)
         {
             var content = await response.Content.ReadAsStringAsync();
-            var dbMetrics = JsonSerializer.Deserialize<DatabaseMetrics>(content, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var dbMetrics = JsonSerializer.Deserialize<DatabaseMetrics>(content, _jsonOptions);
 
             Assert.NotNull(dbMetrics);
             Assert.True(dbMetrics.Timestamp != default, "Timestamp should be set");
@@ -107,16 +115,13 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     public async Task GetCacheMetrics_ShouldReturnCacheStats()
     {
         // Act
-        var response = await _fixture.HttpClient.GetAsync("/api/metrics/cache");
+        var response = await _fixture.Client.GetAsync("/api/metrics/cache");
 
         // Assert
         if (response.StatusCode == HttpStatusCode.OK)
         {
             var content = await response.Content.ReadAsStringAsync();
-            var cacheMetrics = JsonSerializer.Deserialize<CacheMetrics>(content, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var cacheMetrics = JsonSerializer.Deserialize<CacheMetrics>(content, _jsonOptions);
 
             Assert.NotNull(cacheMetrics);
             Assert.True(cacheMetrics.Timestamp != default, "Timestamp should be set");
@@ -132,7 +137,7 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     public async Task GetMemoryMetrics_ShouldReturnMemoryStats()
     {
         // Act
-        var response = await _fixture.HttpClient.GetAsync("/api/metrics/memory");
+        var response = await _fixture.Client.GetAsync("/api/metrics/memory");
 
         // Assert
         if (response.StatusCode == HttpStatusCode.OK)
@@ -156,7 +161,7 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     public async Task GetPrometheusMetrics_ShouldReturnTextFormat()
     {
         // Act
-        var response = await _fixture.HttpClient.GetAsync("/api/metrics/prometheus");
+        var response = await _fixture.Client.GetAsync("/api/metrics/prometheus");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -182,7 +187,7 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         Assert.True(lines.Length > 0, "Should have metric lines");
 
         // Each metric line should have a value and timestamp
-        var metricLines = lines.Where(line => !line.StartsWith("#")).ToList();
+        var metricLines = lines.Where(line => !line.StartsWith('#')).ToList();
         foreach (var line in metricLines)
         {
             var parts = line.Split(' ');

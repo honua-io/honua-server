@@ -1063,7 +1063,7 @@ internal static partial class ODataEndpoints
 
             var query = new FeatureQuery
             {
-                Where = textSearchCondition,
+                SqlFilter = new SqlFragment(textSearchCondition, Array.Empty<object?>()),
                 Limit = top ?? 1000,
                 Offset = skip
             };
@@ -1100,50 +1100,59 @@ internal static partial class ODataEndpoints
     /// Parses an OData $search expression.
     /// Supports: simple terms, quoted phrases, AND, OR, NOT
     /// </summary>
-    private static List<(string term, bool isNegated, bool isPhrase)> ParseSearchExpression(string search)
+    private static List<List<(string term, bool isNegated, bool isPhrase)>> ParseSearchExpression(string search)
     {
-        var terms = new List<(string term, bool isNegated, bool isPhrase)>();
-        var trimmed = search.Trim();
-
-        // Handle quoted phrases first
-        var phraseMatches = System.Text.RegularExpressions.Regex.Matches(
-            trimmed,
-            @"""([^""]+)""",
-            System.Text.RegularExpressions.RegexOptions.None);
-
-        var remaining = trimmed;
-        foreach (System.Text.RegularExpressions.Match match in phraseMatches)
-        {
-            terms.Add((match.Groups[1].Value, false, true));
-            remaining = remaining.Replace(match.Value, " ");
-        }
-
-        // Handle remaining terms
-        var words = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var termGroups = new List<List<(string term, bool isNegated, bool isPhrase)>>();
+        var currentGroup = new List<(string term, bool isNegated, bool isPhrase)>();
         var negate = false;
 
-        foreach (var word in words)
+        var tokenMatches = System.Text.RegularExpressions.Regex.Matches(
+            search,
+            "\"[^\"]+\"|\\S+",
+            System.Text.RegularExpressions.RegexOptions.None);
+
+        foreach (System.Text.RegularExpressions.Match match in tokenMatches)
         {
-            if (word.Equals("NOT", StringComparison.OrdinalIgnoreCase))
+            var token = match.Value;
+
+            if (token.Equals("OR", StringComparison.OrdinalIgnoreCase))
+            {
+                if (currentGroup.Count > 0)
+                {
+                    termGroups.Add(currentGroup);
+                    currentGroup = new List<(string term, bool isNegated, bool isPhrase)>();
+                }
+                negate = false;
+                continue;
+            }
+
+            if (token.Equals("AND", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (token.Equals("NOT", StringComparison.OrdinalIgnoreCase))
             {
                 negate = true;
                 continue;
             }
 
-            if (word.Equals("AND", StringComparison.OrdinalIgnoreCase) ||
-                word.Equals("OR", StringComparison.OrdinalIgnoreCase))
-            {
-                continue; // Skip logical operators for now, treat as AND by default
-            }
+            var isPhrase = token.Length >= 2 && token.StartsWith('"') && token.EndsWith('"');
+            var term = isPhrase ? token[1..^1] : token.Trim('(', ')');
 
-            if (!string.IsNullOrWhiteSpace(word))
+            if (!string.IsNullOrWhiteSpace(term))
             {
-                terms.Add((word, negate, false));
+                currentGroup.Add((term, negate, isPhrase));
                 negate = false;
             }
         }
 
-        return terms;
+        if (currentGroup.Count > 0)
+        {
+            termGroups.Add(currentGroup);
+        }
+
+        return termGroups;
     }
 
     /// <summary>
@@ -1237,7 +1246,7 @@ internal static partial class ODataEndpoints
     /// Builds a PostgreSQL text search condition from parsed search terms.
     /// </summary>
     private static string BuildTextSearchCondition(
-        List<(string term, bool isNegated, bool isPhrase)> terms,
+        List<List<(string term, bool isNegated, bool isPhrase)>> terms,
         LayerDefinition layer)
     {
         if (terms.Count == 0)
@@ -1256,31 +1265,57 @@ internal static partial class ODataEndpoints
             return "1=0"; // No text fields to search
         }
 
-        var conditions = new List<string>();
+        var groupConditions = new List<string>();
 
-        foreach (var (term, isNegated, isPhrase) in terms)
+        foreach (var group in terms)
         {
-            // Escape the term for SQL ILIKE
-            var escapedTerm = term
-                .Replace("'", "''")
-                .Replace("%", "\\%")
-                .Replace("_", "\\_");
-
-            var fieldConditions = textFields
-                .Select(f => $"COALESCE(attributes->>'{f}', '') ILIKE '%{escapedTerm}%'")
-                .ToList();
-
-            var condition = $"({string.Join(" OR ", fieldConditions)})";
-
-            if (isNegated)
+            if (group.Count == 0)
             {
-                condition = $"NOT {condition}";
+                continue;
             }
 
-            conditions.Add(condition);
+            var groupParts = new List<string>();
+
+            foreach (var (term, isNegated, isPhrase) in group)
+            {
+                // Escape the term for SQL ILIKE
+                var escapedTerm = term
+                    .Replace("'", "''")
+                    .Replace("%", "\\%")
+                    .Replace("_", "\\_");
+
+                var fieldConditions = textFields
+                    .Select(f => $"COALESCE(attributes->>'{f}', '') ILIKE '%{escapedTerm}%'")
+                    .ToList();
+
+                var condition = $"({string.Join(" OR ", fieldConditions)})";
+
+                if (isNegated)
+                {
+                    condition = $"NOT {condition}";
+                }
+
+                groupParts.Add(condition);
+            }
+
+            if (groupParts.Count == 0)
+            {
+                continue;
+            }
+
+            var groupCondition = groupParts.Count == 1
+                ? groupParts[0]
+                : $"({string.Join(" AND ", groupParts)})";
+
+            groupConditions.Add(groupCondition);
         }
 
-        return string.Join(" AND ", conditions);
+        if (groupConditions.Count == 0)
+        {
+            return "1=1";
+        }
+
+        return string.Join(" OR ", groupConditions);
     }
 
     private static partial class Log
@@ -1662,7 +1697,7 @@ internal static partial class ODataEndpoints
     /// Converts basic OData $filter expressions to SQL WHERE clauses
     /// Supports: eq, ne, gt, lt, ge, le, contains, startswith, endswith, geo.distance, geo.intersects
     /// </summary>
-    private static (SqlFragment? sqlFragment, string? whereClause) ConvertODataFilterToSqlFragment(string? odataFilter)
+    internal static (SqlFragment? sqlFragment, string? whereClause) ConvertODataFilterToSqlFragment(string? odataFilter)
     {
         if (string.IsNullOrWhiteSpace(odataFilter))
             return (null, null);
@@ -1822,7 +1857,7 @@ internal static partial class ODataEndpoints
         // Example: name eq 'value' -> attributes->>'name' = $n
         sql = System.Text.RegularExpressions.Regex.Replace(
             sql,
-            @"\b(?<field>\w+)\s*(?<op>=|<>|>|<|>=|<=)\s*(?<value>('([^']*)')|(-?\d+(?:\.\d+)?))",
+            @"\b(?<field>\w+)\s*(?<op>=|<>|>|<|>=|<=)\s*(?<value>('([^']*)')|(-?\d+(?:\.\d+)?)|true|false|null)",
             match =>
             {
                 var field = match.Groups["field"].Value;
@@ -1832,27 +1867,38 @@ internal static partial class ODataEndpoints
                 var isCoreField = fieldLower == "objectid" || fieldLower == "layerid";
 
                 var fieldSql = MapODataField(field);
+                var valueLower = value.ToLowerInvariant();
 
-                // Add parameter for value
+                if (valueLower == "null")
+                {
+                    return op == "<>"
+                        ? $"{fieldSql} IS NOT NULL"
+                        : $"{fieldSql} IS NULL";
+                }
+
                 var valueParamIndex = paramIndex++;
+
+                if (valueLower is "true" or "false")
+                {
+                    var castedField = isCoreField ? fieldSql : $"({fieldSql})::boolean";
+                    parameters.Add(bool.Parse(valueLower));
+                    return $"{castedField} {op} @p{valueParamIndex}";
+                }
+
                 if (value.StartsWith('\'') && value.EndsWith('\''))
                 {
-                    // Remove quotes and add as string parameter
                     parameters.Add(value.Substring(1, value.Length - 2));
-                }
-                else
-                {
-                    // Numeric value
-                    if (double.TryParse(value, out var numValue))
-                    {
-                        parameters.Add(numValue);
-                    }
-                    else
-                    {
-                        parameters.Add(value);
-                    }
+                    return $"{fieldSql} {op} @p{valueParamIndex}";
                 }
 
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var numValue))
+                {
+                    var castedField = isCoreField ? fieldSql : $"({fieldSql})::double precision";
+                    parameters.Add(numValue);
+                    return $"{castedField} {op} @p{valueParamIndex}";
+                }
+
+                parameters.Add(value);
                 return $"{fieldSql} {op} @p{valueParamIndex}";
             },
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);

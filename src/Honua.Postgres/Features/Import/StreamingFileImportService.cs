@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.Xml;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -25,6 +27,7 @@ internal sealed class StreamingFileImportService : IFileImportService
     private readonly string _connectionString;
     private readonly ImportLimits _limits;
     private readonly StreamingGeoJsonReader _geoJsonReader;
+    private readonly ISchemaContext? _schemaContext;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
@@ -45,11 +48,13 @@ internal sealed class StreamingFileImportService : IFileImportService
 
     public StreamingFileImportService(
         string connectionString,
-        ImportLimits? limits = null)
+        ImportLimits? limits = null,
+        ISchemaContext? schemaContext = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _limits = limits ?? ImportLimits.Default;
         _geoJsonReader = new StreamingGeoJsonReader(_limits);
+        _schemaContext = schemaContext;
     }
 
     /// <inheritdoc/>
@@ -165,8 +170,7 @@ internal sealed class StreamingFileImportService : IFileImportService
         string jobId,
         CancellationToken cancellationToken)
     {
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
 
         // Validate and prepare table
         var allowedTableName = GetAllowedTableName(request.TableName);
@@ -946,6 +950,14 @@ internal sealed class StreamingFileImportService : IFileImportService
         await using var command = new NpgsqlCommand(CreateImportTableSql, connection);
         command.Parameters.AddWithValue("table_name", tableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    {
+        var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        return connection;
     }
 
     private static void ValidateTableName(string tableName)

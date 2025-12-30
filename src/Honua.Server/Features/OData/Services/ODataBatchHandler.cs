@@ -553,7 +553,9 @@ internal sealed partial class ODataBatchHandler
             ["ObjectId"] = feature.Id,
             ["LayerId"] = layerId,
             ["Geometry"] = feature.Geometry != null ? Convert.ToBase64String(feature.Geometry) : null,
-            ["Attributes"] = JsonSerializer.Serialize(feature.Attributes, ODataJsonContext.Default.DictionaryStringObject)
+            ["Attributes"] = JsonSerializer.Serialize(
+                feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                ODataJsonContext.Default.DictionaryStringObject)
         };
     }
 

@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Server.Features.Infrastructure.Validation;
 using Xunit.Abstractions;
+using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -40,7 +41,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(input, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         if (!shouldBeValid && result != null)
@@ -70,7 +71,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(input, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         _output.WriteLine($"SRID {input}: {(isValid ? "Valid" : $"Invalid - {result?.ErrorMessage}")}");
@@ -97,7 +98,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(input, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         _output.WriteLine($"{type} {input}: {(isValid ? "Valid" : $"Invalid - {result?.ErrorMessage}")}");
@@ -120,7 +121,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(fileName, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         _output.WriteLine($"File '{fileName}' with allowed {string.Join(", ", allowedExtensions)}: {(isValid ? "Valid" : $"Invalid - {result?.ErrorMessage}")}");
@@ -144,7 +145,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(input, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         _output.WriteLine($"String '{input}': {(isValid ? "Safe" : $"Unsafe - {result?.ErrorMessage}")}");
@@ -170,7 +171,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(input, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         _output.WriteLine($"WHERE clause '{input}': {(isValid ? "Safe" : $"Dangerous - {result?.ErrorMessage}")}");
@@ -193,7 +194,7 @@ public class InputValidationAttributesTests
         var result = attribute.GetValidationResult(input, context);
 
         // Assert
-        bool isValid = result == ValidationResult.Success;
+        bool isValid = result == DataAnnotationsValidationResult.Success;
         Assert.Equal(shouldBeValid, isValid);
 
         _output.WriteLine($"Pagination value {input}: {(isValid ? "Valid" : $"Invalid - {result?.ErrorMessage}")}");
@@ -212,8 +213,8 @@ public class InputValidationAttributesTests
         var invalidResult = attribute.GetValidationResult(600, context);
 
         // Assert
-        Assert.Equal(ValidationResult.Success, validResult);
-        Assert.NotEqual(ValidationResult.Success, invalidResult);
+        Assert.Equal(DataAnnotationsValidationResult.Success, validResult);
+        Assert.NotEqual(DataAnnotationsValidationResult.Success, invalidResult);
 
         _output.WriteLine($"Custom max value test: 400 is valid, 600 is invalid with max 500");
     }

@@ -3,12 +3,9 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 using Microsoft.OData.Client;
 
 namespace Honua.Server.Tests.Features.OData;
@@ -33,8 +30,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new ODataTestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new ODataTestFeatureStore());
+        _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
 
@@ -132,8 +128,8 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
         // Assert
         layers.Should().NotBeEmpty();
-        layers.Should().ContainSingle(layer => layer.Id == TestLayerId);
-        layers.First().Name.Should().Be("US Cities");
+        layers.Should().Contain(layer => layer.Id == 0 && layer.Name == "US Cities");
+        layers.Should().Contain(layer => layer.Id == 1 && layer.Name == "City Landmarks");
     }
 
     [IntegrationTest]
@@ -171,6 +167,12 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         // Assert
         var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
         features.Should().HaveCount(5);
+
+        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
+        var nextLink = nextLinkElement.GetString();
+        nextLink.Should().NotBeNullOrEmpty();
+        nextLink.Should().Contain("$skip=5");
+        nextLink.Should().Contain("$top=5");
     }
 
     [IntegrationTest]
@@ -257,6 +259,68 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
         document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
         countElement.GetInt64().Should().Be(TotalTestFeatures); // Total count, not limited results
+    }
+
+    #endregion
+
+    #region Query Tests - $orderby
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$orderby=ObjectId desc")]
+    public async Task FeaturesQuery_WithOrderByObjectIdDesc_ReturnsDescendingOrder()
+    {
+        // Arrange & Act
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=ObjectId desc&$top=3");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        // Assert
+        var objectIds = document.RootElement.GetProperty("value")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("ObjectId").GetInt64())
+            .ToList();
+
+        objectIds.Should().BeInDescendingOrder();
+        objectIds.First().Should().Be(TotalTestFeatures);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$orderby=population desc")]
+    public async Task FeaturesQuery_WithOrderByPopulationDesc_ReturnsHighestPopulationFirst()
+    {
+        // Arrange & Act
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=population desc&$top=1");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        // Assert
+        var feature = document.RootElement.GetProperty("value").EnumerateArray().First();
+        feature.GetProperty("ObjectId").GetInt64().Should().Be(2);
+
+        var attributesJson = feature.GetProperty("Attributes").GetString();
+        attributesJson.Should().NotBeNullOrEmpty();
+        using var attributesDocument = JsonDocument.Parse(attributesJson!);
+        attributesDocument.RootElement.GetProperty("population").GetInt64().Should().Be(3979576);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$orderby=state asc,population desc")]
+    public async Task FeaturesQuery_WithOrderByMultipleFields_ReturnsDeterministicResults()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$orderby=state asc,population desc&$top=2");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
+        features.Length.Should().Be(2);
+
+        // Arizona cities ordered by population: Phoenix then Tucson
+        features[0].GetProperty("ObjectId").GetInt64().Should().Be(10);
+        features[1].GetProperty("ObjectId").GetInt64().Should().Be(12);
     }
 
     #endregion
@@ -420,6 +484,67 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
     #endregion
 
+    #region Query Tests - $filter with Boolean/Null/Numeric Fields
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=is_capital eq true")]
+    public async Task FeaturesQuery_WithFilterBoolean_ReturnsCapitals()
+    {
+        var filter = "is_capital eq true";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        features.Should().HaveCount(5); // Sacramento, Salt Lake City, Denver, Phoenix, Boise
+
+        var objectIds = features.Select(f => f.GetProperty("ObjectId").GetInt64()).ToArray();
+        objectIds.Should().Contain(new long[] { 3, 8, 9, 10, 15 });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=notes eq null")]
+    public async Task FeaturesQuery_WithFilterNull_ReturnsNullNotes()
+    {
+        var filter = "notes eq null";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        features.Should().HaveCount(4); // San Francisco, San Diego, Salt Lake City, Tucson
+
+        var objectIds = features.Select(f => f.GetProperty("ObjectId").GetInt64()).ToArray();
+        objectIds.Should().Contain(new long[] { 1, 4, 8, 12 });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataFilter)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=population gt 1000000")]
+    public async Task FeaturesQuery_WithFilterNumericField_ReturnsLargeCities()
+    {
+        var filter = "population gt 1000000";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        features.Should().HaveCount(4); // Los Angeles, San Diego, San Jose, Phoenix
+
+        var objectIds = features.Select(f => f.GetProperty("ObjectId").GetInt64()).ToArray();
+        objectIds.Should().Contain(new long[] { 2, 4, 5, 10 });
+    }
+
+    #endregion
+
     #region Query Tests - $filter with String Functions
 
     [IntegrationTest]
@@ -545,7 +670,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
         // Assert
         document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
-        countElement.GetInt64().Should().Be(1); // Only one layer in test catalog
+        countElement.GetInt64().Should().Be(2);
     }
 
     [IntegrationTest]
@@ -561,7 +686,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         // Assert
         var layer = document.RootElement.GetProperty("value").EnumerateArray().First();
         layer.TryGetProperty("Name", out var nameElement).Should().BeTrue();
-        nameElement.GetString().Should().Be("US Cities");
+        nameElement.GetString().Should().BeOneOf("US Cities", "City Landmarks");
     }
 
     #endregion

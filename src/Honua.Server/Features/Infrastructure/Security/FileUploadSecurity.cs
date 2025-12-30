@@ -12,6 +12,11 @@ namespace Honua.Server.Features.Infrastructure.Security;
 public static class FileUploadSecurity
 {
     /// <summary>
+    /// Default maximum file size allowed for validation (100MB).
+    /// </summary>
+    public const long DefaultMaxFileSizeBytes = 100 * 1024 * 1024;
+
+    /// <summary>
     /// Maximum file size for security scanning (10MB).
     /// Files larger than this should be processed in chunks.
     /// </summary>
@@ -40,6 +45,9 @@ public static class FileUploadSecurity
         "application/octet-stream", // For shapefiles and other binary formats
         "application/zip", // For zipped shapefiles
         "application/x-zip-compressed",
+        "application/geopackage+sqlite3",
+        "application/x-sqlite3",
+        "application/wkt",
         "text/csv",
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -64,6 +72,8 @@ public static class FileUploadSecurity
         ".csv", ".tsv", ".txt",
         ".xls", ".xlsx",
         ".geojson", ".json",
+        ".gpkg",
+        ".wkt",
         ".gpx",
         ".kml", ".kmz",
         ".gml", ".xml",
@@ -81,7 +91,13 @@ public static class FileUploadSecurity
     /// <summary>
     /// Validates a file upload for security threats.
     /// </summary>
-    public static async Task<FileValidationResult> ValidateFileAsync(IFormFile file, CancellationToken cancellationToken = default)
+    public static Task<FileValidationResult> ValidateFileAsync(IFormFile file, CancellationToken cancellationToken = default)
+        => ValidateFileAsync(file, null, cancellationToken);
+
+    /// <summary>
+    /// Validates a file upload for security threats with a custom size limit.
+    /// </summary>
+    public static async Task<FileValidationResult> ValidateFileAsync(IFormFile file, long? maxFileSizeBytes, CancellationToken cancellationToken = default)
     {
         if (file == null || file.Length == 0)
         {
@@ -110,7 +126,7 @@ public static class FileUploadSecurity
         }
 
         // 4. Check file size
-        var sizeResult = ValidateFileSize(file.Length);
+        var sizeResult = ValidateFileSize(file.Length, maxFileSizeBytes ?? DefaultMaxFileSizeBytes);
         if (!sizeResult.IsValid)
         {
             return sizeResult;
@@ -206,10 +222,8 @@ public static class FileUploadSecurity
     /// <summary>
     /// Validates the file size against configured limits.
     /// </summary>
-    public static FileValidationResult ValidateFileSize(long fileSize)
+    public static FileValidationResult ValidateFileSize(long fileSize, long maxFileSizeBytes = DefaultMaxFileSizeBytes)
     {
-        const long maxFileSizeBytes = 100 * 1024 * 1024; // 100MB default limit
-
         if (fileSize <= 0)
         {
             return FileValidationResult.Invalid("File size must be greater than zero.");

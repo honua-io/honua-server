@@ -1,6 +1,7 @@
-using System.Diagnostics.Metrics;
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
@@ -8,20 +9,13 @@ namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 /// Unit tests for DefaultPerformanceMonitor functionality.
 /// </summary>
 [Collection("Metrics")]
-public class DefaultPerformanceMonitorTests : IDisposable
+public class DefaultPerformanceMonitorTests
 {
     private readonly DefaultPerformanceMonitor _monitor;
-    private readonly MeterProvider _meterProvider;
 
     public DefaultPerformanceMonitorTests()
     {
         _monitor = new DefaultPerformanceMonitor();
-
-        // Create meter provider for testing
-        _meterProvider = Meter.CreateMeterProvider(builder =>
-        {
-            builder.AddMeter(PerformanceMetrics.MeterName);
-        });
     }
 
     [Fact]
@@ -200,8 +194,4 @@ public class DefaultPerformanceMonitorTests : IDisposable
         // The chaining should work and dispose properly
     }
 
-    public void Dispose()
-    {
-        _meterProvider?.Dispose();
-    }
 }
