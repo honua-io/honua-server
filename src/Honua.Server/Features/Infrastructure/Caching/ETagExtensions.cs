@@ -8,14 +8,14 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// <summary>
 /// Extension methods for configuring ETag support.
 /// </summary>
-public static class ETagExtensions
+internal static class ETagExtensions
 {
     /// <summary>
     /// Adds ETag services to the service collection.
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddETags(this IServiceCollection services)
+    internal static IServiceCollection AddETags(this IServiceCollection services)
     {
         services.AddSingleton<IETagService, ETagService>();
         return services;
@@ -27,7 +27,7 @@ public static class ETagExtensions
     /// </summary>
     /// <param name="app">The application builder</param>
     /// <returns>The application builder for chaining</returns>
-    public static IApplicationBuilder UseETags(this IApplicationBuilder app)
+    internal static IApplicationBuilder UseETags(this IApplicationBuilder app)
     {
         return app.UseMiddleware<ETagMiddleware>();
     }
@@ -37,7 +37,7 @@ public static class ETagExtensions
     /// </summary>
     /// <param name="builder">The route handler builder</param>
     /// <returns>The route handler builder for chaining</returns>
-    public static RouteHandlerBuilder WithETag(this RouteHandlerBuilder builder)
+    internal static RouteHandlerBuilder WithETag(this RouteHandlerBuilder builder)
     {
         return builder.AddEndpointFilter<ETagEndpointFilter>();
     }
@@ -47,7 +47,7 @@ public static class ETagExtensions
     /// </summary>
     /// <param name="builder">The endpoint convention builder</param>
     /// <returns>The endpoint convention builder for chaining</returns>
-    public static IEndpointConventionBuilder WithETag(this IEndpointConventionBuilder builder)
+    internal static IEndpointConventionBuilder WithETag(this IEndpointConventionBuilder builder)
     {
         if (builder is RouteHandlerBuilder routeHandlerBuilder)
         {

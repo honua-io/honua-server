@@ -31,6 +31,12 @@ public interface IPerformanceMonitor
     void RecordHttpRequest(string method, string endpoint, int statusCode, TimeSpan duration);
 
     /// <summary>
+    /// Updates the active HTTP request counter by the provided delta.
+    /// </summary>
+    /// <param name="delta">Positive to increment, negative to decrement</param>
+    void RecordActiveHttpRequestDelta(int delta);
+
+    /// <summary>
     /// Records memory usage metrics.
     /// </summary>
     /// <param name="allocatedBytes">Currently allocated memory in bytes</param>

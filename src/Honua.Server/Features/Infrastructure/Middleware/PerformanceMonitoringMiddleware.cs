@@ -49,7 +49,7 @@ internal sealed class PerformanceMonitoringMiddleware
         }
 
         // Track active request count
-        PerformanceMetrics.ActiveHttpRequests.Add(1);
+        _performanceMonitor.RecordActiveHttpRequestDelta(1);
 
         // Record memory usage if enabled and at sampling interval
         if (_options.EnableMemoryTracking && ShouldSampleMemory())
@@ -83,7 +83,7 @@ internal sealed class PerformanceMonitoringMiddleware
             stopwatch.Stop();
 
             // Decrement active request count
-            PerformanceMetrics.ActiveHttpRequests.Add(-1);
+            _performanceMonitor.RecordActiveHttpRequestDelta(-1);
 
             // Record request metrics
             RecordRequestMetrics(context, endpoint, stopwatch.Elapsed);
@@ -203,14 +203,14 @@ internal sealed class PerformanceMonitoringMiddleware
 /// <summary>
 /// Extension methods for registering performance monitoring middleware.
 /// </summary>
-public static class PerformanceMonitoringMiddlewareExtensions
+internal static class PerformanceMonitoringMiddlewareExtensions
 {
     /// <summary>
     /// Adds performance monitoring middleware to the application pipeline.
     /// </summary>
     /// <param name="app">The application builder</param>
     /// <returns>The application builder for chaining</returns>
-    public static IApplicationBuilder UsePerformanceMonitoring(this IApplicationBuilder app)
+    internal static IApplicationBuilder UsePerformanceMonitoring(this IApplicationBuilder app)
     {
         return app.UseMiddleware<PerformanceMonitoringMiddleware>();
     }
@@ -221,7 +221,7 @@ public static class PerformanceMonitoringMiddlewareExtensions
     /// <param name="services">The service collection</param>
     /// <param name="configure">Optional configuration action</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddPerformanceMonitoring(
+    internal static IServiceCollection AddPerformanceMonitoring(
         this IServiceCollection services,
         Action<PerformanceMonitoringOptions>? configure = null)
     {
@@ -237,7 +237,7 @@ public static class PerformanceMonitoringMiddlewareExtensions
         });
 
         // Register performance monitor
-        services.AddSingleton<IPerformanceMonitor, DefaultPerformanceMonitor>();
+        services.AddDefaultPerformanceMonitor();
 
         return services;
     }

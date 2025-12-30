@@ -13,7 +13,7 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This implementation provides comprehensive performance monitoring using the .NET Metrics API
 /// and integrates with OpenTelemetry for telemetry export.
 /// </remarks>
-public sealed class DefaultPerformanceMonitor : IPerformanceMonitor
+internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
 {
     /// <inheritdoc />
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
@@ -41,6 +41,12 @@ public sealed class DefaultPerformanceMonitor : IPerformanceMonitor
 
         PerformanceMetrics.HttpRequestDuration.Record(duration.TotalMilliseconds, tags);
         PerformanceMetrics.HttpRequestCount.Add(1, tags);
+    }
+
+    /// <inheritdoc />
+    public void RecordActiveHttpRequestDelta(int delta)
+    {
+        PerformanceMetrics.ActiveHttpRequests.Add(delta);
     }
 
     /// <inheritdoc />

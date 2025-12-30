@@ -12,7 +12,7 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This class defines all performance counters and histograms used throughout the application
 /// for consistent monitoring and telemetry collection.
 /// </remarks>
-public sealed class PerformanceMetrics
+internal sealed class PerformanceMetrics
 {
     /// <summary>
     /// The meter name for Honua Server metrics.

@@ -58,7 +58,7 @@ public static partial class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter(PerformanceMetrics.MeterName))
+                .AddMeter("Honua"))
             .WithTracing(tracing => tracing
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation());
@@ -89,7 +89,7 @@ public static partial class Extensions
     public static IHostApplicationBuilder AddPerformanceMonitoring(this IHostApplicationBuilder builder)
     {
         // Add performance monitoring services
-        builder.Services.AddSingleton<IPerformanceMonitor, DefaultPerformanceMonitor>();
+        builder.Services.AddDefaultPerformanceMonitor();
 
         // Configure performance monitoring options
         builder.Services.Configure<PerformanceMonitoringOptions>(options =>

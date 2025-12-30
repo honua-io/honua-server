@@ -15,12 +15,21 @@ internal sealed partial class ETagMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<ETagMiddleware> _logger;
 
+    /// <summary>
+    /// Creates a new instance of the middleware.
+    /// </summary>
+    /// <param name="next">The next middleware in the pipeline</param>
+    /// <param name="logger">The logger instance</param>
     public ETagMiddleware(RequestDelegate next, ILogger<ETagMiddleware> logger)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Invokes the middleware for the current request.
+    /// </summary>
+    /// <param name="context">The current HTTP context</param>
     public async Task InvokeAsync(HttpContext context)
     {
         // Only process GET and HEAD requests

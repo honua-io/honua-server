@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
 
@@ -10,15 +12,26 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// Endpoint filter that adds ETag support to specific endpoints.
 /// This is more efficient than global middleware for endpoints that need ETags.
 /// </summary>
-public sealed partial class ETagEndpointFilter : IEndpointFilter
+internal sealed partial class ETagEndpointFilter : IEndpointFilter
 {
     private readonly ILogger<ETagEndpointFilter> _logger;
+    private readonly JsonSerializerOptions _serializerOptions;
 
-    public ETagEndpointFilter(ILogger<ETagEndpointFilter> logger)
+    /// <summary>
+    /// Creates a new endpoint filter that computes ETags for JSON responses.
+    /// </summary>
+    /// <param name="logger">The logger instance</param>
+    /// <param name="jsonOptions">JSON serialization options used by the HTTP pipeline</param>
+    public ETagEndpointFilter(
+        ILogger<ETagEndpointFilter> logger,
+        IOptions<HttpJsonOptions> jsonOptions)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _serializerOptions = jsonOptions?.Value?.SerializerOptions
+            ?? throw new ArgumentNullException(nameof(jsonOptions));
     }
 
+    /// <inheritdoc />
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var httpContext = context.HttpContext;
@@ -67,7 +80,7 @@ public sealed partial class ETagEndpointFilter : IEndpointFilter
             }
 
             // Generate ETag from the response value
-            var etag = ComputeETagForValueResult(valueResult.Value, etagService);
+            var etag = ComputeETagForValueResult(valueResult.Value, etagService, _serializerOptions);
             if (etag == null)
             {
                 return result; // Could not compute ETag, return original result
@@ -116,7 +129,10 @@ public sealed partial class ETagEndpointFilter : IEndpointFilter
         return result;
     }
 
-    private static string? ComputeETagForValueResult(object? value, IETagService etagService)
+    private static string? ComputeETagForValueResult(
+        object? value,
+        IETagService etagService,
+        JsonSerializerOptions serializerOptions)
     {
         try
         {
@@ -125,8 +141,14 @@ public sealed partial class ETagEndpointFilter : IEndpointFilter
                 return etagService.ComputeETag(string.Empty);
             }
 
-            var jsonString = JsonSerializer.Serialize(value, (JsonSerializerOptions?)null);
-            return etagService.ComputeETag(jsonString);
+            var typeInfo = serializerOptions.GetTypeInfo(value.GetType());
+            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, typeInfo);
+            return etagService.ComputeETag(jsonBytes);
+        }
+        catch (NotSupportedException)
+        {
+            // Type info not available in AOT-friendly serializer options.
+            return null;
         }
         catch (Exception)
         {
