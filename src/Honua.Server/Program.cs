@@ -128,6 +128,8 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IQueryFo
     Honua.Server.Features.FeatureServer.Services.QueryFormatter>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeatureQueryValidator,
     Honua.Server.Features.FeatureServer.Services.FeatureQueryValidator>();
+builder.Services.AddScoped<Honua.Core.Features.Geometry.Abstractions.IGeometryValidator,
+    Honua.Server.Features.FeatureServer.Services.GeometryValidator>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.FeatureServerServices>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 

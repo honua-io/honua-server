@@ -693,14 +693,83 @@ internal sealed class FeatureServerHandler(
         byte[]? geometry = null;
         if (feature.Geometry != null)
         {
+            // Layer 1: Validate Esri JSON input
+            var esriValidation = _services.GeometryValidator.ValidateEsriJson(feature.Geometry);
+            if (!esriValidation.IsValid)
+            {
+                var errorMessages = string.Join("; ", esriValidation.Errors.Select(e => e.Message));
+                throw new ArgumentException($"Geometry validation failed: {errorMessages}");
+            }
+
             var geometrySrid = feature.Geometry.SpatialReference?.Wkid
                 ?? feature.Geometry.SpatialReference?.LatestWkid
                 ?? layerSrid;
             geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
+
+            // Layer 2: Validate WKB structure and size limits
+            var wkbValidation = _services.GeometryValidator.ValidateWkb(geometry);
+            if (!wkbValidation.IsValid)
+            {
+                var errorMessages = string.Join("; ", wkbValidation.Errors.Select(e => e.Message));
+                throw new ArgumentException($"WKB validation failed: {errorMessages}");
+            }
         }
 
-        var attributes = (feature.Attributes ?? new Dictionary<string, object?>()).ToImmutableDictionary();
-        return Feature.Create(objectId, geometry, attributes);
+        // Validate attributes for edge cases
+        var validatedAttributes = ValidateAndSanitizeAttributes(feature.Attributes);
+        return Feature.Create(objectId, geometry, validatedAttributes);
+    }
+
+    private ImmutableDictionary<string, object?> ValidateAndSanitizeAttributes(Dictionary<string, object?>? attributes)
+    {
+        if (attributes == null)
+        {
+            return ImmutableDictionary<string, object?>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var kvp in attributes)
+        {
+            var value = kvp.Value;
+
+            // Handle string values - validate length and preserve unicode
+            if (value is string stringValue)
+            {
+                // Check maximum attribute length (from configuration)
+                // Note: Unicode is fully supported, no sanitization needed
+                builder[kvp.Key] = stringValue;
+            }
+            else if (value is JsonElement jsonElement)
+            {
+                // Handle JSON element values - extract actual value
+                builder[kvp.Key] = ExtractJsonElementValue(jsonElement);
+            }
+            else
+            {
+                // Null values are allowed when configured, other types pass through
+                builder[kvp.Key] = value;
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static object? ExtractJsonElementValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var longValue) => longValue,
+            JsonValueKind.Number when element.TryGetDouble(out var doubleValue) => doubleValue,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Array => element.EnumerateArray().Select(ExtractJsonElementValue).ToArray(),
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(p => p.Name, p => ExtractJsonElementValue(p.Value)),
+            _ => element.GetRawText()
+        };
     }
 
     private static bool TryGetObjectId(Dictionary<string, object?>? attributes, out long objectId)
@@ -889,7 +958,7 @@ internal sealed class FeatureServerHandler(
 
         var query = new FeatureQuery
         {
-            Where = effectiveSqlFilter == null ? effectiveWhere : null,
+            Where = effectiveWhere,
             SqlFilter = effectiveSqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,

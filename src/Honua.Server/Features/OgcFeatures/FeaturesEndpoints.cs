@@ -15,6 +15,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -444,6 +445,16 @@ internal static partial class FeaturesEndpoints
                 geometryWkb = wkb;
             }
 
+            if (geometryWkb != null)
+            {
+                var validationResult = WkbValidation.Validate(geometryWkb);
+                if (!validationResult.IsValid)
+                {
+                    return GeoServicesErrorHelpers.CreateBadRequestError(
+                        $"Invalid geometry: {validationResult.ErrorMessage}");
+                }
+            }
+
             var attributes = requestFeature.Properties ?? new Dictionary<string, object?>();
             var feature = Feature.Create(0, geometryWkb, attributes.ToImmutableDictionary());
 
@@ -500,6 +511,16 @@ internal static partial class FeaturesEndpoints
                     return GeoServicesErrorHelpers.CreateBadRequestError(error ?? "Invalid geometry.");
                 }
                 geometryWkb = wkb;
+            }
+
+            if (geometryWkb != null)
+            {
+                var validationResult = WkbValidation.Validate(geometryWkb);
+                if (!validationResult.IsValid)
+                {
+                    return GeoServicesErrorHelpers.CreateBadRequestError(
+                        $"Invalid geometry: {validationResult.ErrorMessage}");
+                }
             }
 
             var attributes = requestFeature.Properties ?? new Dictionary<string, object?>();

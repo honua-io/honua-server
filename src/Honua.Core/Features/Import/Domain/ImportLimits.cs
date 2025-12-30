@@ -67,6 +67,37 @@ public sealed record ImportLimits
     public int MaxFeaturesPerFile { get; init; }
 
     /// <summary>
+    /// Whether to validate geometry during import.
+    /// Default: true.
+    /// </summary>
+    public bool ValidateGeometry { get; init; } = true;
+
+    /// <summary>
+    /// Maximum number of vertices allowed per geometry.
+    /// Default: 10000 vertices.
+    /// </summary>
+    public int MaxVertices { get; init; } = 10000;
+
+    /// <summary>
+    /// Maximum number of rings allowed per polygon geometry.
+    /// Default: 100 rings.
+    /// </summary>
+    public int MaxRings { get; init; } = 100;
+
+    /// <summary>
+    /// Maximum WKB size in bytes per geometry.
+    /// Default: 1MB (1048576 bytes).
+    /// </summary>
+    public long MaxWkbSize { get; init; } = 1024 * 1024;
+
+    /// <summary>
+    /// Whether to skip invalid geometries or fail the import.
+    /// When true, invalid geometries are skipped; when false, import fails.
+    /// Default: true (skip invalid).
+    /// </summary>
+    public bool SkipInvalidGeometry { get; init; } = true;
+
+    /// <summary>
     /// Default configuration for standard import operations.
     /// </summary>
     public static ImportLimits Default => new();

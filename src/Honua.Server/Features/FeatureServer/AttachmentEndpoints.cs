@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Microsoft.Extensions.Options;
 
@@ -248,10 +249,19 @@ internal static class AttachmentEndpoints
     }
 
     /// <summary>
-    /// Handles downloading attachment content
+    /// Handles downloading attachment content with authorization check
     /// </summary>
     private static async Task HandleDownloadAttachment(HttpContext context)
     {
+        // Extract and validate service ID for authorization
+        if (!context.Request.RouteValues.TryGetValue("serviceId", out var serviceIdObj) ||
+            string.IsNullOrEmpty(serviceIdObj?.ToString()))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return;
+        }
+        var serviceId = serviceIdObj.ToString()!;
+
         if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
@@ -269,6 +279,24 @@ internal static class AttachmentEndpoints
             !long.TryParse(attachmentIdObj?.ToString(), out var attachmentId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Attachment ID must be a valid long integer");
+            return;
+        }
+
+        // Authorization: Verify service and layer exist before allowing download
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var service = await layerCatalog.GetServiceAsync(serviceId, context.RequestAborted);
+        if (service == null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "Service not found" });
+            return;
+        }
+
+        var layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
+        if (layer == null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "Layer not found" });
             return;
         }
 

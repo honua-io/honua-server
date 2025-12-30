@@ -96,6 +96,19 @@ def analyze_dependencies(file_path: str, content: str) -> List[str]:
 
     return violations
 
+def is_test_path(file_path: str) -> bool:
+    """Return True if the file path is considered test code."""
+    normalized = file_path.replace("\\", "/").lower()
+    if normalized.startswith("tests/") or "/tests/" in normalized:
+        return True
+    if normalized.startswith("test/") or "/test/" in normalized:
+        return True
+    if normalized.endswith(".tests.cs") or normalized.endswith(".test.cs"):
+        return True
+    if ".tests." in normalized or ".test." in normalized:
+        return True
+    return False
+
 def analyze_api_patterns(file_path: str, content: str) -> List[str]:
     """Check for API pattern violations"""
     violations = []
@@ -137,6 +150,11 @@ def analyze_design_patterns(file_path: str, content: str) -> List[str]:
     # Check for deep inheritance (simple check)
     if ": " in content and content.count(": ") > 2:
         issues.append(f"⚠️  WARNING: Possible deep inheritance - consider composition")
+
+    # Check for reflection/dynamic usage (skip for tests)
+    if not is_test_path(file_path):
+        if "System.Reflection" in content or ".GetType(" in content or "dynamic " in content:
+            issues.append(f"⚠️  WARNING: Possible reflection/dynamic usage - review AOT compatibility")
 
     return issues
 

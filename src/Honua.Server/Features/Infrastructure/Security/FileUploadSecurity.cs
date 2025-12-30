@@ -415,7 +415,16 @@ public static class FileUploadSecurity
 
         // Remove dangerous characters
         var invalidChars = Path.GetInvalidFileNameChars();
-        var sanitized = new string(baseName.Where(c => !invalidChars.Contains(c) && c >= 32 && c != '<' && c != '>' && c != '"' && c != '\'').ToArray());
+        var sanitized = new string(baseName.Where(c => !invalidChars.Contains(c)
+            && c >= 32
+            && c != '<'
+            && c != '>'
+            && c != '"'
+            && c != '\''
+            && c != ':'
+            && c != '|'
+            && c != '?'
+            && c != '*').ToArray());
         sanitized = sanitized.Replace("\0", string.Empty, StringComparison.Ordinal);
 
         // Collapse path traversal patterns
