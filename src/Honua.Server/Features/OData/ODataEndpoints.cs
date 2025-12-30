@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -734,6 +735,13 @@ internal static partial class ODataEndpoints
                 {
                     return CreateODataError(context, "InvalidRequest", "Geometry must be a valid Base64-encoded WKB string");
                 }
+
+                // Validate WKB geometry
+                var validationResult = WkbValidation.Validate(geometry);
+                if (!validationResult.IsValid)
+                {
+                    return CreateODataError(context, "InvalidRequest", $"Invalid geometry: {validationResult.ErrorMessage}");
+                }
             }
 
             // Build attributes
@@ -816,6 +824,13 @@ internal static partial class ODataEndpoints
                 catch (FormatException)
                 {
                     return CreateODataError(context, "InvalidRequest", "Geometry must be a valid Base64-encoded WKB string");
+                }
+
+                // Validate WKB geometry
+                var validationResult = WkbValidation.Validate(geometry);
+                if (!validationResult.IsValid)
+                {
+                    return CreateODataError(context, "InvalidRequest", $"Invalid geometry: {validationResult.ErrorMessage}");
                 }
             }
 

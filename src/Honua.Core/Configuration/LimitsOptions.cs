@@ -46,6 +46,16 @@ public sealed class LimitsOptions
     /// Database connection and concurrency limits.
     /// </summary>
     public ConnectionLimits Connections { get; init; } = new();
+
+    /// <summary>
+    /// File import operation limits.
+    /// </summary>
+    public ImportLimits Imports { get; init; } = new();
+
+    /// <summary>
+    /// Geometry validation options for security and data quality enforcement.
+    /// </summary>
+    public GeometryValidationOptions Validation { get; init; } = new();
 }
 
 /// <summary>
@@ -252,4 +262,149 @@ public sealed class ConnectionLimits
     /// Range: 10 seconds to 10 minutes.
     /// </summary>
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(120);
+}
+
+/// <summary>
+/// File import operation limits.
+/// Applied to geospatial file import endpoints.
+/// </summary>
+public sealed class ImportLimits
+{
+    /// <summary>
+    /// Maximum file size for preview operations in bytes.
+    /// Range: 1MB to 50MB.
+    /// </summary>
+    [Range(1048576, 52428800, ErrorMessage = "MaxPreviewSize must be between 1MB and 50MB")]
+    public long MaxPreviewSize { get; init; } = 10 * 1024 * 1024; // 10MB
+
+    /// <summary>
+    /// Maximum file size for synchronous import operations in bytes.
+    /// Files larger than this trigger background job processing.
+    /// Range: 10MB to 500MB.
+    /// </summary>
+    [Range(10485760, 524288000, ErrorMessage = "MaxSyncImportSize must be between 10MB and 500MB")]
+    public long MaxSyncImportSize { get; init; } = 50 * 1024 * 1024; // 50MB
+
+    /// <summary>
+    /// Maximum file size for any import operation in bytes.
+    /// Range: 50MB to 5GB.
+    /// </summary>
+    [Range(52428800, 5368709120, ErrorMessage = "MaxImportSize must be between 50MB and 5GB")]
+    public long MaxImportSize { get; init; } = 500 * 1024 * 1024; // 500MB
+
+    /// <summary>
+    /// Maximum number of features to return in a preview.
+    /// Range: 10-1,000.
+    /// </summary>
+    [Range(10, 1000, ErrorMessage = "MaxPreviewFeatures must be between 10 and 1,000")]
+    public int MaxPreviewFeatures { get; init; } = 100;
+
+    /// <summary>
+    /// Batch size for feature insertion during import.
+    /// Range: 100-10,000.
+    /// </summary>
+    [Range(100, 10000, ErrorMessage = "BatchSize must be between 100 and 10,000")]
+    public int BatchSize { get; init; } = 1000;
+}
+
+/// <summary>
+/// Geometry validation options for security and data quality enforcement.
+/// Controls three-layer validation: input format, WKB structure, and topology.
+/// </summary>
+public sealed class GeometryValidationOptions
+{
+    /// <summary>
+    /// Validation strictness level for geometry processing.
+    /// </summary>
+    public ValidationMode Mode { get; init; } = ValidationMode.Repair;
+
+    /// <summary>
+    /// Maximum number of vertices allowed in a single geometry.
+    /// Prevents DoS attacks from complex geometries. Range: 1,000-100,000.
+    /// </summary>
+    [Range(1000, 100000, ErrorMessage = "MaxVertices must be between 1,000 and 100,000")]
+    public int MaxVertices { get; init; } = 10000;
+
+    /// <summary>
+    /// Maximum number of rings allowed in a polygon geometry.
+    /// Range: 10-1,000.
+    /// </summary>
+    [Range(10, 1000, ErrorMessage = "MaxRings must be between 10 and 1,000")]
+    public int MaxRings { get; init; } = 100;
+
+    /// <summary>
+    /// Maximum decimal places for coordinate precision.
+    /// Controls output precision and storage efficiency. Range: 1-15.
+    /// </summary>
+    [Range(1, 15, ErrorMessage = "CoordinatePrecision must be between 1 and 15")]
+    public int CoordinatePrecision { get; init; } = 6;
+
+    /// <summary>
+    /// Maximum WKB size in bytes.
+    /// Prevents memory exhaustion from large geometries. Range: 100KB-10MB.
+    /// </summary>
+    [Range(102400, 10485760, ErrorMessage = "MaxWkbSize must be between 100KB and 10MB")]
+    public long MaxWkbSize { get; init; } = 1048576; // 1MB
+
+    /// <summary>
+    /// Timeout for geometry validation operations.
+    /// Range: 1-30 seconds.
+    /// </summary>
+    public TimeSpan ValidationTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Whether to allow null geometries in features.
+    /// When true, features can have null geometry (attribute-only features).
+    /// </summary>
+    public bool AllowNullGeometry { get; init; } = true;
+
+    /// <summary>
+    /// Whether to allow null attribute values.
+    /// When true, attribute values can be null.
+    /// </summary>
+    public bool AllowNullAttributes { get; init; } = true;
+
+    /// <summary>
+    /// Maximum length of string attribute values.
+    /// Prevents memory issues from very long strings. Range: 1,000-1,000,000.
+    /// </summary>
+    [Range(1000, 1000000, ErrorMessage = "MaxAttributeLength must be between 1,000 and 1,000,000")]
+    public int MaxAttributeLength { get; init; } = 100000;
+
+    /// <summary>
+    /// Whether to enable PostGIS topology validation using ST_IsValid().
+    /// </summary>
+    public bool EnableTopologyValidation { get; init; } = true;
+
+    /// <summary>
+    /// Whether to automatically repair invalid geometries using ST_MakeValid().
+    /// Only applies when Mode is Repair.
+    /// </summary>
+    public bool EnableAutoRepair { get; init; } = true;
+}
+
+/// <summary>
+/// Validation strictness mode for geometry processing.
+/// </summary>
+public enum ValidationMode
+{
+    /// <summary>
+    /// Reject any invalid geometry with an error response.
+    /// Most strict mode - no corrections applied.
+    /// </summary>
+    Strict,
+
+    /// <summary>
+    /// Attempt to repair invalid geometries automatically.
+    /// Uses ST_MakeValid() for topology issues.
+    /// Default mode balancing quality and usability.
+    /// </summary>
+    Repair,
+
+    /// <summary>
+    /// Accept geometries with minimal validation.
+    /// Only basic structural validation is performed.
+    /// Least strict mode for maximum compatibility.
+    /// </summary>
+    Accept
 }

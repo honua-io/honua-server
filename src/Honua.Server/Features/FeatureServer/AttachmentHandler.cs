@@ -57,7 +57,7 @@ internal static partial class AttachmentHandler
     }
 
     /// <summary>
-    /// Adds an attachment to a feature
+    /// Adds an attachment to a feature with comprehensive security validation.
     /// </summary>
     public static async Task<IResult> AddAttachmentAsync(
         int layerId,
@@ -71,34 +71,38 @@ internal static partial class AttachmentHandler
     {
         try
         {
+            var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+            LogAddAttachment(logger, layerId, featureId, safeFileName);
+
+            // Security Layer 1: Validate file name for path traversal and dangerous patterns
             var fileNameValidation = FileUploadSecurity.ValidateFileName(file.FileName);
             if (!fileNameValidation.IsValid)
             {
+                LogSecurityValidationFailed(logger, layerId, featureId, "filename", fileNameValidation.ErrorMessage);
                 return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Invalid file name",
                     [fileNameValidation.ErrorMessage ?? "File name validation failed"]);
             }
 
-            var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
-            LogAddAttachment(logger, layerId, featureId, safeFileName);
-
-            // Validate file size
+            // Security Layer 2: Validate file size against configured limits
             if (file.Length > limits.MaxAttachmentSize)
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"File size ({file.Length:N0} bytes) exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
             }
 
-            // Validate MIME type
+            // Security Layer 3: Validate MIME type against allowed types
             if (!IsAllowedMimeType(file.ContentType, limits.AllowedMimeTypes))
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(
                     $"File type '{file.ContentType}' is not allowed");
             }
 
+            // Security Layer 4: Validate file content for malicious signatures
             var contentValidation = await FileUploadSecurity.ValidateFileContentAsync(file, cancellationToken);
             if (!contentValidation.IsValid)
             {
+                LogSecurityValidationFailed(logger, layerId, featureId, "content", contentValidation.ErrorMessage);
                 return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Invalid file content",
                     [contentValidation.ErrorMessage ?? "File content validation failed"]);
@@ -374,6 +378,9 @@ internal static partial class AttachmentHandler
 
     [LoggerMessage(EventId = 2014, Level = LogLevel.Error, Message = "Failed to download attachment {AttachmentId} from layer {LayerId}, feature {FeatureId}")]
     private static partial void LogDownloadAttachmentError(ILogger<AttachmentOperations> logger, int layerId, long featureId, long attachmentId, Exception ex);
+
+    [LoggerMessage(EventId = 2015, Level = LogLevel.Warning, Message = "Security validation failed for {ValidationType} on layer {LayerId}, feature {FeatureId}: {Reason}")]
+    private static partial void LogSecurityValidationFailed(ILogger<AttachmentOperations> logger, int layerId, long featureId, string validationType, string? reason);
 
     #endregion
 }

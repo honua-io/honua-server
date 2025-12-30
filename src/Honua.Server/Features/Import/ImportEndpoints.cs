@@ -302,7 +302,8 @@ internal static partial class ImportEndpoints
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, tableName, ex);
-            await WriteErrorAsync(context, "Import failed: " + ex.Message, StatusCodes.Status400BadRequest);
+            // Provide generic error message - details logged for debugging
+            await WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {

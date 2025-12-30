@@ -14,6 +14,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
+using Coordinate = NetTopologySuite.Geometries.Coordinate;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -345,7 +346,7 @@ internal sealed class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Insert a single feature into the database.
     /// </summary>
-    private static async Task InsertFeatureAsync(
+    private async Task InsertFeatureAsync(
         NpgsqlConnection connection,
         string tableName,
         IFeature feature,
@@ -365,7 +366,50 @@ internal sealed class StreamingFileImportService : IFileImportService
         await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection);
         command.Parameters.AddWithValue("table_name", tableName);
 
-        var wkb = feature.Geometry == null ? null : wkbWriter.Write(feature.Geometry);
+        byte[]? wkb = null;
+        if (feature.Geometry != null)
+        {
+            // Validate geometry before insertion if validation is enabled
+            if (_limits.ValidateGeometry)
+            {
+                var validationError = ValidateGeometry(feature.Geometry);
+                if (validationError != null)
+                {
+                    if (_limits.SkipInvalidGeometry)
+                    {
+                        // Skip invalid geometry but still insert the feature without geometry
+                        wkb = null;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Geometry validation failed: {validationError}");
+                    }
+                }
+                else
+                {
+                    wkb = wkbWriter.Write(feature.Geometry);
+
+                    // Validate WKB size
+                    if (wkb.Length > _limits.MaxWkbSize)
+                    {
+                        if (_limits.SkipInvalidGeometry)
+                        {
+                            wkb = null;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException(
+                                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes)");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                wkb = wkbWriter.Write(feature.Geometry);
+            }
+        }
+
         var wkbParameter = new NpgsqlParameter("wkb", NpgsqlDbType.Bytea)
         {
             Value = wkb ?? (object)DBNull.Value
@@ -383,6 +427,83 @@ internal sealed class StreamingFileImportService : IFileImportService
         command.Parameters.Add(propertiesParameter);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Validates a geometry against configured limits.
+    /// Returns null if valid, or an error message if invalid.
+    /// </summary>
+    private string? ValidateGeometry(Geometry geometry)
+    {
+        // Count vertices
+        var vertexCount = CountVertices(geometry);
+        if (vertexCount > _limits.MaxVertices)
+        {
+            return $"Vertex count ({vertexCount:N0}) exceeds maximum allowed ({_limits.MaxVertices:N0})";
+        }
+
+        // Count rings for polygon geometries
+        var ringCount = CountRings(geometry);
+        if (ringCount > _limits.MaxRings)
+        {
+            return $"Ring count ({ringCount:N0}) exceeds maximum allowed ({_limits.MaxRings:N0})";
+        }
+
+        // Validate coordinate values
+        if (!ValidateCoordinates(geometry))
+        {
+            return "Geometry contains invalid coordinates (NaN or Infinity)";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Counts the total number of vertices in a geometry.
+    /// </summary>
+    private static int CountVertices(Geometry geometry)
+    {
+        return geometry.NumPoints;
+    }
+
+    /// <summary>
+    /// Counts the total number of rings in polygon geometries.
+    /// </summary>
+    private static int CountRings(Geometry geometry)
+    {
+        return geometry switch
+        {
+            Polygon polygon => 1 + polygon.NumInteriorRings,
+            MultiPolygon multiPolygon => multiPolygon.Geometries
+                .OfType<Polygon>()
+                .Sum(p => 1 + p.NumInteriorRings),
+            GeometryCollection collection => collection.Geometries
+                .Sum(CountRings),
+            _ => 0
+        };
+    }
+
+    /// <summary>
+    /// Validates that all coordinates in the geometry are finite numbers.
+    /// </summary>
+    private static bool ValidateCoordinates(Geometry geometry)
+    {
+        foreach (var coord in geometry.Coordinates)
+        {
+            if (double.IsNaN(coord.X) || double.IsInfinity(coord.X) ||
+                double.IsNaN(coord.Y) || double.IsInfinity(coord.Y))
+            {
+                return false;
+            }
+
+            // Check Z if present
+            if (!double.IsNaN(coord.Z) && double.IsInfinity(coord.Z))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <inheritdoc/>
