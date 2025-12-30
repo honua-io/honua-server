@@ -62,7 +62,8 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             Distance = queryParams.Distance,
             Units = queryParams.Units,
             NearestCount = queryParams.NearestCount,
-            ReturnDistance = queryParams.ReturnDistance
+            ReturnDistance = queryParams.ReturnDistance,
+            ObjectIds = queryParams.ObjectIds
         };
 
         return QueryValidationResult.Success(validatedParams);

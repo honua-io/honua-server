@@ -2,18 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.OData.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.OData;
 
@@ -29,14 +26,11 @@ namespace Honua.Server.Tests.Features.OData;
 public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
-    private ODataTestFeatureStore _featureStore = null!;
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()
     {
-        _featureStore = new ODataTestFeatureStore();
-        _fixture.ReplaceService<ILayerCatalog>(new ODataTestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(_featureStore);
+        _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
 
@@ -160,9 +154,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Batch_WithDeleteRequest_DeletesFeature()
     {
         // Create a feature to delete
-        var created = await _featureStore.CreateAsync(
-            TestLayerId,
-            Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "To Delete")));
+        var createdId = await InsertFeatureAsync("To Delete");
 
         var batchRequest = new ODataBatchRequest
         {
@@ -170,7 +162,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
             {
                 Id = "delete-1",
                 Method = "DELETE",
-                Url = $"Features({TestLayerId},{created.Id})"
+                Url = $"Features({TestLayerId},{createdId})"
             })
         };
 
@@ -218,6 +210,104 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         var responses = document.RootElement.GetProperty("responses");
         var firstResponse = responses[0];
         firstResponse.GetProperty("status").GetInt32().Should().Be(404);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithAtomicityGroupFailure_RollsBackChanges()
+    {
+        var initialCount = await CountFeaturesAsync();
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(
+                new ODataBatchRequestItem
+                {
+                    Id = "invalid-1",
+                    Method = "GET",
+                    Url = "BadUrl",
+                    AtomicityGroup = "group-1"
+                },
+                new ODataBatchRequestItem
+                {
+                    Id = "create-1",
+                    Method = "POST",
+                    Url = $"Features({TestLayerId})",
+                    AtomicityGroup = "group-1",
+                    Body = new Dictionary<string, object?>
+                    {
+                        ["Attributes"] = new Dictionary<string, object?>
+                        {
+                            ["name"] = "Atomic Group City",
+                            ["population"] = 4242L
+                        }
+                    }
+                })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var responses = document.RootElement.GetProperty("responses");
+        responses.GetArrayLength().Should().Be(2);
+
+        int? invalidStatus = null;
+        int? createStatus = null;
+        foreach (var item in responses.EnumerateArray())
+        {
+            var id = item.GetProperty("id").GetString();
+            var status = item.GetProperty("status").GetInt32();
+            if (id == "invalid-1")
+            {
+                invalidStatus = status;
+            }
+            else if (id == "create-1")
+            {
+                createStatus = status;
+            }
+        }
+
+        invalidStatus.Should().Be(400);
+        createStatus.Should().Be(424);
+        var finalCount = await CountFeaturesAsync();
+        finalCount.Should().Be(initialCount);
+    }
+
+    private async Task<long> InsertFeatureAsync(string name)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layerId", TestLayerId);
+        command.Parameters.AddWithValue("name", name);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<long> CountFeaturesAsync()
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = @layerId;";
+        command.Parameters.AddWithValue("layerId", TestLayerId);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     #endregion
@@ -338,9 +428,73 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataApply)]
     [Endpoint("GET /odata/Features({layerId})/$apply")]
+    public async Task Apply_WithCompute_ReturnsComputedField()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=compute(population mul 2 as DoublePopulation)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value");
+        values.GetArrayLength().Should().BeGreaterThan(0);
+
+        var firstValue = values[0];
+        firstValue.TryGetProperty("population", out var population).Should().BeTrue();
+        firstValue.TryGetProperty("DoublePopulation", out var doublePopulation).Should().BeTrue();
+
+        var populationValue = population.GetInt64();
+        doublePopulation.GetDouble().Should().Be(populationValue * 2d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataApply)]
+    [Endpoint("GET /odata/Features({layerId})/$apply")]
+    public async Task Apply_WithFilter_ReturnsFilteredFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=filter(state eq 'California')");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().HaveCount(5);
+
+        foreach (var value in values)
+        {
+            value.TryGetProperty("state", out var state).Should().BeTrue();
+            state.GetString().Should().Be("California");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataApply)]
+    [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithoutApplyParam_ReturnsError()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$apply");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
+        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataApply)]
+    [Endpoint("GET /odata/Features({layerId})/$apply")]
+    public async Task Apply_WithInvalidExpression_ReturnsError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -387,6 +541,56 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataSearch)]
     [Endpoint("GET /odata/Features({layerId})/$search")]
+    public async Task Search_WithAndTerms_ReturnsIntersection()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$search?$search=San AND California");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value");
+        values.GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (var value in values.EnumerateArray())
+        {
+            var attributesJson = value.GetProperty("Attributes").GetString();
+            attributesJson.Should().NotBeNullOrEmpty();
+
+            using var attributesDoc = JsonDocument.Parse(attributesJson!);
+            var name = attributesDoc.RootElement.GetProperty("name").GetString() ?? string.Empty;
+            var state = attributesDoc.RootElement.GetProperty("state").GetString() ?? string.Empty;
+
+            name.Should().Contain("San");
+            state.Should().Be("California");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})/$search")]
+    public async Task Search_WithOrTerms_ReturnsUnion()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$search?$search=Seattle OR Phoenix");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        var objectIds = values.Select(value => value.GetProperty("ObjectId").GetInt64()).ToArray();
+
+        objectIds.Should().Contain(6L);
+        objectIds.Should().Contain(10L);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithQuotedPhrase_ReturnsMatchingFeatures()
     {
         var response = await _fixture.Client.GetAsync(
@@ -404,6 +608,33 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataSearch)]
     [Endpoint("GET /odata/Features({layerId})/$search")]
+    public async Task Search_WithNotTerm_ExcludesMatches()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$search?$search=NOT San");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value");
+        values.GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (var value in values.EnumerateArray())
+        {
+            var attributesJson = value.GetProperty("Attributes").GetString();
+            attributesJson.Should().NotBeNullOrEmpty();
+
+            using var attributesDoc = JsonDocument.Parse(attributesJson!);
+            var name = attributesDoc.RootElement.GetProperty("name").GetString() ?? string.Empty;
+            name.Contains("San", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithCount_ReturnsCountAndResults()
     {
         var response = await _fixture.Client.GetAsync(
@@ -415,7 +646,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("@odata.count", out var count).Should().BeTrue();
-        count.GetInt64().Should().BeGreaterOrEqualTo(0);
+        count.GetInt64().Should().BeGreaterThanOrEqualTo(0);
     }
 
     [IntegrationTest]
@@ -471,12 +702,10 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$expand")]
     public async Task Features_WithExpand_ReturnsODataVersionHeader()
     {
-        // $expand requires relationships which the test layer may not have
-        // This test verifies the endpoint accepts the $expand parameter without error
+        // Verify endpoint accepts $expand and returns OData headers
         var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$expand=RelatedFeatures");
+            $"/odata/Features({TestLayerId})?$expand=Landmarks");
 
-        // Should return OK even if no relationships exist (expand is a no-op in that case)
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
         values.Should().Contain("4.0");
@@ -488,7 +717,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Features_WithExpandAndFilter_ReturnsFilteredResults()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$expand=Details&$filter=name eq 'San Francisco'");
+            $"/odata/Features({TestLayerId})?$expand=Landmarks&$filter=ObjectId eq 1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -496,8 +725,28 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         var values = document.RootElement.GetProperty("value");
-        // Filter should still work with $expand
-        values.GetArrayLength().Should().BeGreaterOrEqualTo(0);
+        values.GetArrayLength().Should().Be(1);
+
+        var feature = values[0];
+        feature.TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
+        landmarks.ValueKind.Should().Be(JsonValueKind.Array);
+
+        var landmarkNames = new List<string>();
+        foreach (var landmark in landmarks.EnumerateArray())
+        {
+            var attributesJson = landmark.GetProperty("Attributes").GetString();
+            attributesJson.Should().NotBeNullOrEmpty();
+
+            using var attributesDoc = JsonDocument.Parse(attributesJson!);
+            var name = attributesDoc.RootElement.GetProperty("name").GetString();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                landmarkNames.Add(name);
+            }
+        }
+
+        landmarkNames.Should().Contain("Golden Gate Bridge");
+        landmarkNames.Should().Contain("Coit Tower");
     }
 
     [IntegrationTest]
@@ -506,7 +755,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Features_WithExpandAndTop_ReturnsPaginatedResults()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$expand=Related&$top=5");
+            $"/odata/Features({TestLayerId})?$expand=Landmarks&$top=5");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

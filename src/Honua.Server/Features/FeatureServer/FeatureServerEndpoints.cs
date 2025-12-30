@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
@@ -39,7 +40,8 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns metadata for a FeatureServer service including all layers")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .CacheOutput("ServiceMetadata");
+            .CacheOutput("ServiceMetadata")
+            .WithETag();
         // .Produces<FeatureServerResponse>(200, "application/json")
         // .Produces(404);
 
@@ -50,7 +52,8 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns detailed layer metadata for a specific layer")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .CacheOutput("LayerMetadata");
+            .CacheOutput("LayerMetadata")
+            .WithETag();
         // .Produces<LayerResponse>(200, "application/json")
         // .Produces(404);
 
@@ -60,7 +63,8 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query features from a FeatureServer layer using GET")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via GET parameters")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithETag();
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
@@ -71,7 +75,8 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query features from a FeatureServer layer using POST")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithETag();
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
@@ -339,7 +344,8 @@ internal static partial class FeatureServerEndpoints
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
-            HasAttachments = true // Attachments are supported (implemented in Phase 2)
+            HasAttachments = layer.SupportsAttachments,
+            SupportsQueryRelated = layer.HasRelationships
         };
     }
 
@@ -471,7 +477,7 @@ internal static partial class FeatureServerEndpoints
 
         if (!TryBuildQueryParameters(context.Request.Query, out QueryParameters? queryParams, out string? error))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid query parameters");
+            await WriteQueryParseErrorAsync(context, error);
             return;
         }
 
@@ -509,7 +515,7 @@ internal static partial class FeatureServerEndpoints
         var (queryParams, parseError) = await TryParseQueryParametersAsync(context);
         if (parseError is not null)
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, parseError);
+            await WriteQueryParseErrorAsync(context, parseError);
             return;
         }
 
@@ -665,6 +671,7 @@ internal static partial class FeatureServerEndpoints
     private static bool TryBuildQueryParameters(IQueryCollection query, out QueryParameters queryParams, out string? error)
     {
         string? where = TryGetQueryValue(query, "where");
+        string? objectIdsValue = TryGetQueryValue(query, "objectIds");
         string? outFields = TryGetQueryValue(query, "outFields");
         string? orderByFields = TryGetQueryValue(query, "orderByFields");
         string? geometry = TryGetQueryValue(query, "geometry");
@@ -674,6 +681,33 @@ internal static partial class FeatureServerEndpoints
         string? spatialRel = TryGetQueryValue(query, "spatialRel");
         string? units = TryGetQueryValue(query, "units");
         string format = TryGetQueryValue(query, "f") ?? "json";
+
+        // Parse objectIds parameter (comma-separated list of IDs)
+        long[]? objectIds = null;
+        if (!string.IsNullOrWhiteSpace(objectIdsValue))
+        {
+            string[] objectIdStrings = objectIdsValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var objectIdList = new List<long>();
+
+            foreach (string idString in objectIdStrings)
+            {
+                if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
+                {
+                    objectIdList.Add(id);
+                }
+                else
+                {
+                    error = $"Invalid objectIds value: {idString}";
+                    queryParams = new QueryParameters();
+                    return false;
+                }
+            }
+
+            if (objectIdList.Count > 0)
+            {
+                objectIds = objectIdList.ToArray();
+            }
+        }
 
         if (!TryParseQueryBool(query, "returnGeometry", true, out bool returnGeometry, out error))
         {
@@ -732,6 +766,7 @@ internal static partial class FeatureServerEndpoints
         queryParams = new QueryParameters
         {
             Where = where,
+            ObjectIds = objectIds,
             OutFields = outFields,
             OrderByFields = orderByFields,
             ReturnGeometry = returnGeometry,
@@ -753,6 +788,20 @@ internal static partial class FeatureServerEndpoints
         };
 
         return true;
+    }
+
+    private static Task WriteQueryParseErrorAsync(HttpContext context, string? error)
+    {
+        if (!string.IsNullOrWhiteSpace(error) &&
+            error.StartsWith("Invalid objectId", StringComparison.OrdinalIgnoreCase))
+        {
+            return RouteValidationHelpers.WriteValidationErrorAsync(
+                context,
+                "Invalid query parameters",
+                details: [error]);
+        }
+
+        return RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid query parameters");
     }
 
     private static string? TryGetQueryValue(IQueryCollection query, string key)
@@ -1536,7 +1585,10 @@ internal static partial class FeatureServerEndpoints
             var options = tileOptions.Value;
             if (z < options.MinZoom || z > options.MaxZoom)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError($"Zoom level {z} is outside supported range ({options.MinZoom}-{options.MaxZoom})");
+                var details = new[] { $"Supported zoom range is {options.MinZoom}-{options.MaxZoom}." };
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    $"Zoom level {z} is outside supported range ({options.MinZoom}-{options.MaxZoom})",
+                    details);
             }
 
             // Validate tile coordinates

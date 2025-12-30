@@ -4180,6 +4180,14 @@ That's it. Two options. OpenFreeMap works out of the box.
 
 ---
 
+### Future: Protomaps (Post-MVP)
+
+We may migrate the default basemap to Protomaps after MVP to support self-hosted/offline deployments
+and tighter control over tile data. This would require hosting PMTiles plus the associated style,
+sprites, and glyphs, so it is intentionally deferred.
+
+---
+
 ### API Client
 
 ```csharp

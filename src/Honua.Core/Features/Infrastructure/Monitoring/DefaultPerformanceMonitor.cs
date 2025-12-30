@@ -1,4 +1,8 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Diagnostics;
+using System.Globalization;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
@@ -32,11 +36,17 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
         {
             new("method", method),
             new("endpoint", endpoint),
-            new("status_code", statusCode.ToString())
+            new("status_code", statusCode.ToString(CultureInfo.InvariantCulture))
         };
 
         PerformanceMetrics.HttpRequestDuration.Record(duration.TotalMilliseconds, tags);
         PerformanceMetrics.HttpRequestCount.Add(1, tags);
+    }
+
+    /// <inheritdoc />
+    public void RecordActiveHttpRequestDelta(int delta)
+    {
+        PerformanceMetrics.ActiveHttpRequests.Add(delta);
     }
 
     /// <inheritdoc />
@@ -67,7 +77,7 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
     /// <inheritdoc />
     public IOperationScope StartOperation(string operationName)
     {
-        return new OperationScope(operationName, this);
+        return new OperationScope(operationName);
     }
 
     /// <inheritdoc />
@@ -107,14 +117,12 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
     private sealed class OperationScope : IOperationScope
     {
         private readonly string _operationName;
-        private readonly DefaultPerformanceMonitor _monitor;
         private readonly Stopwatch _stopwatch;
         private readonly Dictionary<string, string> _tags;
 
-        public OperationScope(string operationName, DefaultPerformanceMonitor monitor)
+        public OperationScope(string operationName)
         {
             _operationName = operationName;
-            _monitor = monitor;
             _tags = new Dictionary<string, string>();
             _stopwatch = Stopwatch.StartNew();
         }

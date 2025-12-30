@@ -71,10 +71,12 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
-  - "DELETE FROM honua.service_layers WHERE service_name = 'test';"
-  - "DELETE FROM honua.layer_fields WHERE layer_id = 0;"
-  - "DELETE FROM honua.layers WHERE layer_id = 0;"
-  - "DELETE FROM honua.services WHERE service_name = 'test';"
+  - "DELETE FROM honua.relationships;"
+  - "DELETE FROM honua.service_layers;"
+  - "DELETE FROM honua.layer_fields;"
+  - "DELETE FROM honua.layers;"
+  - "DELETE FROM honua.services;"
+  - "DELETE FROM features WHERE layer_id IN (0, 1, 2);"
   - |
       INSERT INTO honua.services (
           service_name,
@@ -113,16 +115,37 @@ sql:
           extent,
           default_visibility
       )
-      VALUES (
-          0,
-          'Test Layer',
-          'Test layer for integration tests',
-          'features',
-          'Point',
-          4326,
-          ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-          true
-      )
+      VALUES
+          (
+              0,
+              'Test Layer',
+              'Test layer for integration tests',
+              'features',
+              'Point',
+              4326,
+              ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+              true
+          ),
+          (
+              1,
+              'Related Test Layer 1',
+              'Related layer for relationship testing',
+              'features',
+              'Point',
+              4326,
+              ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+              true
+          ),
+          (
+              2,
+              'Secondary Related Layer',
+              'Secondary related layer for relationship testing',
+              'features',
+              'Point',
+              4326,
+              ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+              true
+          )
       ON CONFLICT (layer_id) DO UPDATE SET
           layer_name = EXCLUDED.layer_name,
           description = EXCLUDED.description,
@@ -133,7 +156,10 @@ sql:
           default_visibility = EXCLUDED.default_visibility;
   - |
       INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-      VALUES ('test', 0, 0)
+      VALUES
+          ('test', 0, 0),
+          ('test', 1, 1),
+          ('test', 2, 2)
       ON CONFLICT (service_name, layer_id) DO UPDATE SET
           layer_order = EXCLUDED.layer_order;
   - |
@@ -152,23 +178,71 @@ sql:
           (0, 'description', 'String', 2, 500, true, 'Description'),
           (0, 'category', 'String', 3, 255, true, 'Category'),
           (0, 'timestamp', 'DateTime', 4, null, true, 'Timestamp'),
-          (0, 'shape', 'Geometry', 5, null, false, 'Geometry')
+          (1, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+          (1, 'name', 'String', 1, 255, true, 'Name field'),
+          (1, 'related_id', 'Integer', 2, null, true, 'Foreign key to origin layer'),
+          (1, 'description', 'String', 3, 500, true, 'Description'),
+          (2, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+          (2, 'name', 'String', 1, 255, true, 'Name field'),
+          (2, 'secondary_id', 'Integer', 2, null, true, 'Foreign key to origin layer'),
+          (2, 'type', 'String', 3, 100, true, 'Type field')
       ON CONFLICT (layer_id, field_name) DO UPDATE SET
           field_type = EXCLUDED.field_type,
           field_order = EXCLUDED.field_order,
           max_length = EXCLUDED.max_length,
           nullable = EXCLUDED.nullable,
           description = EXCLUDED.description;
-  - "DELETE FROM features WHERE layer_id = 0;"
+  - |
+      INSERT INTO honua.relationships (
+          layer_id,
+          relationship_id,
+          name,
+          related_layer_id,
+          relationship_type,
+          origin_foreign_key,
+          destination_foreign_key,
+          description
+      )
+      VALUES
+          (0, 1, 'Test Relationship', 1, 'esriRelRoleOrigin', 'objectid', 'related_id', 'Test relationship between layer 0 and layer 1'),
+          (0, 2, 'Secondary Relationship', 2, 'esriRelRoleOrigin', 'objectid', 'secondary_id', 'Secondary test relationship')
+      ON CONFLICT (layer_id, relationship_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          related_layer_id = EXCLUDED.related_layer_id,
+          relationship_type = EXCLUDED.relationship_type,
+          origin_foreign_key = EXCLUDED.origin_foreign_key,
+          destination_foreign_key = EXCLUDED.destination_foreign_key,
+          description = EXCLUDED.description;
   - |
       INSERT INTO features (objectid, layer_id, geometry, attributes)
       VALUES
-          (1, 0, ST_SetSRID(ST_MakePoint(-157.8583, 21.3069), 4326),
-              jsonb_build_object('name', 'Honolulu', 'description', 'Test point', 'category', 'city', 'timestamp', NOW())),
-          (2, 0, ST_SetSRID(ST_MakePoint(0.5, 0.5), 4326),
-              jsonb_build_object('name', 'Origin', 'description', 'BBox test', 'category', 'test', 'timestamp', NOW())),
-          (3, 0, ST_SetSRID(ST_MakePoint(1.5, 1.5), 4326),
-              jsonb_build_object('name', 'Second', 'description', 'Extra feature', 'category', 'test', 'timestamp', NOW()));
+          (1, 0, ST_SetSRID(ST_MakePoint(-122.5, 37.5), 4326),
+              jsonb_build_object('objectid', 1, 'name', 'Test Feature', 'description', 'A test feature for integration tests', 'category', 'test', 'timestamp', '2023-01-02T00:00:00Z')),
+          (2, 0, ST_SetSRID(ST_MakePoint(-122.7, 37.7), 4326),
+              jsonb_build_object('objectid', 2, 'name', 'Another Feature', 'description', 'Another test feature', 'category', 'sample', 'timestamp', '2023-01-05T12:00:00Z')),
+          (3, 0, null,
+              jsonb_build_object('objectid', 3, 'name', 'Third Feature', 'description', 'Third test feature', 'category', 'test', 'timestamp', '2023-02-10T00:00:00Z')),
+          (4, 0, ST_SetSRID(ST_MakePoint(-121.9, 37.3), 4326),
+              jsonb_build_object('objectid', 4, 'name', 'Fourth Feature', 'description', 'Fourth test feature', 'category', 'sample', 'timestamp', '2022-12-31T23:00:00Z')),
+          (5, 0, ST_SetSRID(ST_MakePoint(-122.3, 37.8), 4326),
+              jsonb_build_object('objectid', 5, 'name', 'Fifth Feature', 'description', 'Fifth test feature', 'category', 'test', 'timestamp', '2023-01-20T00:00:00Z')),
+          (101, 1, ST_SetSRID(ST_MakePoint(-122.4, 37.6), 4326),
+              jsonb_build_object('objectid', 101, 'name', 'Related Feature 1', 'related_id', 1, 'description', 'First related feature')),
+          (102, 1, ST_SetSRID(ST_MakePoint(-122.6, 37.4), 4326),
+              jsonb_build_object('objectid', 102, 'name', 'Related Feature 2', 'related_id', 1, 'description', 'Second related feature')),
+          (103, 1, ST_SetSRID(ST_MakePoint(-122.8, 37.9), 4326),
+              jsonb_build_object('objectid', 103, 'name', 'Related Feature 3', 'related_id', 2, 'description', 'Third related feature')),
+          (104, 1, ST_SetSRID(ST_MakePoint(-122.2, 37.8), 4326),
+              jsonb_build_object('objectid', 104, 'name', 'Related Feature 4', 'related_id', 2, 'description', 'Fourth related feature')),
+          (201, 2, ST_SetSRID(ST_MakePoint(-121.5, 38.5), 4326),
+              jsonb_build_object('objectid', 201, 'name', 'Secondary Related Feature 1', 'secondary_id', 1, 'type', 'secondary')),
+          (202, 2, ST_SetSRID(ST_MakePoint(-121.7, 38.3), 4326),
+              jsonb_build_object('objectid', 202, 'name', 'Secondary Related Feature 2', 'secondary_id', 1, 'type', 'secondary'))
+      ON CONFLICT (objectid) DO UPDATE SET
+          layer_id = EXCLUDED.layer_id,
+          geometry = EXCLUDED.geometry,
+          attributes = EXCLUDED.attributes,
+          updated_at = NOW();
   - |
       SELECT setval(
           pg_get_serial_sequence('features', 'objectid'),

@@ -22,14 +22,12 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<Honua.Core.Features.Catalog.Abstractions.ILayerCatalog>(new SpatialReferenceTestLayerCatalog());
+        _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
-        await SpatialReferenceTestData.SeedLayersAsync(_fixture.Postgres);
     }
 
     public async Task DisposeAsync()
     {
-        await SpatialReferenceTestData.CleanupAsync(_fixture.Postgres);
         await _fixture.DisposeAsync();
     }
 
@@ -65,8 +63,10 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         created.Should().NotBeNull();
         created!.Id.Should().NotBeNull();
 
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         var srid = await SpatialReferenceTestData.GetGeometrySridAsync(
             _fixture.Postgres,
+            schema,
             created.Id!.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         srid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);

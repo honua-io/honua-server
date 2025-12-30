@@ -15,12 +15,12 @@ namespace Honua.Server.Tests;
 /// Validates Kubernetes-compatible health checks with PostgreSQL connectivity
 /// </summary>
 [Protocol("Infrastructure")]
-public sealed class HealthEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
-    public HealthEndpointsTests(WebApplicationFactory<Program> factory)
+    public HealthEndpointsTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
         _client = _factory.CreateClient();

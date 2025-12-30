@@ -1611,6 +1611,26 @@ WHERE layer_id = $1");
 
             sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
         }
+
+        if (query.ObjectIds.HasValue && !query.ObjectIds.Value.IsDefaultOrEmpty)
+        {
+            var objectIds = query.ObjectIds.Value;
+            var placeholders = new string[objectIds.Length];
+
+            for (var i = 0; i < objectIds.Length; i++)
+            {
+                placeholders[i] = $"${paramIndex + i}";
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $" AND objectid = ANY(ARRAY[{string.Join(", ", placeholders)}])");
+
+            foreach (var objectId in objectIds)
+            {
+                parameters.Add(objectId);
+            }
+
+            paramIndex += objectIds.Length;
+        }
     }
 
     private static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
@@ -2777,15 +2797,7 @@ WHERE layer_id = $1");
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken);
         using var command = new NpgsqlCommand(parameterizedQuery.Sql, connection);
 
-        // Add layer ID parameter
-        command.Parameters.AddWithValue("@layer_id", layerId);
-
-        // Add WHERE clause parameters
-        var paramIndex = 1;
-        foreach (var parameter in parameterizedQuery.WhereParameters)
-        {
-            command.Parameters.AddWithValue($"@param{paramIndex++}", parameter);
-        }
+        AddQueryParameters(command, query, layerId, parameterizedQuery.WhereParameters);
 
         try
         {

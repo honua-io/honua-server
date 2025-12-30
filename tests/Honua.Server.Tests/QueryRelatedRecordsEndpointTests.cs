@@ -4,14 +4,11 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests;
 
@@ -30,9 +27,6 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Replace services with test implementations that support relationships
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalogWithRelationships())
-                .ReplaceService<IFeatureStore>(new TestFeatureStoreWithRelationships());
         await _fixture.InitializeAsync();
     }
 
@@ -154,7 +148,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             {
                 f.Attributes.Keys.Should().Contain("objectid");
                 f.Attributes.Keys.Should().Contain("name");
-                f.Attributes.Keys.Should().HaveCountLessOrEqualTo(2);
+                f.Attributes.Keys.Count.Should().BeLessThanOrEqualTo(2);
             });
         }
     }
@@ -200,7 +194,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
 
-        relatedRecords?.Features.Should().HaveCountLessOrEqualTo(1);
+        relatedRecords.Should().NotBeNull();
+        relatedRecords!.Features.Length.Should().BeLessThanOrEqualTo(1);
     }
 
     [IntegrationTest]
@@ -322,7 +317,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/nonexistent/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
@@ -341,7 +336,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/999/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Layer 999 not found in service");
@@ -357,7 +352,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId=999");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.NotFound);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Relationship 999 not found for layer");
@@ -502,7 +497,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords", null);
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
     }
 
     [IntegrationTest]
@@ -515,7 +510,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords");
 
         // Assert
-        response.Should().HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
     }
 
     #endregion

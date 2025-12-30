@@ -19,6 +19,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="MaxScale">Maximum scale for layer visibility (optional)</param>
 /// <param name="DefaultVisibility">Whether layer is visible by default</param>
 /// <param name="Relationships">Relationships defined for this layer (optional)</param>
+/// <param name="SupportsAttachments">Whether this layer supports file attachments (default true)</param>
 public record LayerDefinition(
     int Id,
     string Name,
@@ -30,7 +31,8 @@ public record LayerDefinition(
     double? MinScale = null,
     double? MaxScale = null,
     bool DefaultVisibility = true,
-    Relationship[]? Relationships = null)
+    Relationship[]? Relationships = null,
+    bool SupportsAttachments = true)
 {
     /// <summary>
     /// The geometry field definition (if layer has geometry)
@@ -147,8 +149,9 @@ public record LayerDefinition(
     /// <param name="name">Layer name</param>
     /// <param name="geometryType">Geometry type</param>
     /// <param name="spatialReference">Coordinate system</param>
+    /// <param name="supportsAttachments">Whether this layer supports file attachments</param>
     /// <returns>Layer definition with standard ID and geometry fields</returns>
-    public static LayerDefinition CreateBasic(int id, string name, GeometryType geometryType, SpatialReference? spatialReference = null)
+    public static LayerDefinition CreateBasic(int id, string name, GeometryType geometryType, SpatialReference? spatialReference = null, bool supportsAttachments = true)
     {
         var srs = spatialReference ?? SpatialReference.WGS84;
         var fields = new List<FieldDefinition>
@@ -167,6 +170,7 @@ public record LayerDefinition(
             Description: null,
             geometryType,
             srs,
-            fields.ToArray());
+            fields.ToArray(),
+            SupportsAttachments: supportsAttachments);
     }
 }

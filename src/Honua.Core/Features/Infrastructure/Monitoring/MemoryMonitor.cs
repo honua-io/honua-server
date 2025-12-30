@@ -1,3 +1,6 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
 /// <summary>
@@ -15,20 +18,39 @@ public static class MemoryMonitor
     /// <returns>Current memory usage information</returns>
     public static MemoryUsage GetMemoryUsage()
     {
-        var gcInfo = GC.GetGCMemoryInfo();
-
-        return new MemoryUsage
+        try
         {
-            AllocatedBytes = GC.GetTotalMemoryForced(forceFullCollection: false),
-            Gen0Collections = GC.CollectionCount(0),
-            Gen1Collections = GC.CollectionCount(1),
-            Gen2Collections = GC.CollectionCount(2),
-            HeapSizeBytes = gcInfo.HeapSizeBytes,
-            HighMemoryLoadThresholdBytes = gcInfo.HighMemoryLoadThresholdBytes,
-            MemoryLoadBytes = gcInfo.MemoryLoadBytes,
-            TotalAvailableMemoryBytes = gcInfo.TotalAvailableMemoryBytes,
-            Timestamp = DateTimeOffset.UtcNow
-        };
+            var gcInfo = GC.GetGCMemoryInfo();
+
+            return new MemoryUsage
+            {
+                AllocatedBytes = GC.GetTotalMemory(forceFullCollection: false),
+                Gen0Collections = GC.CollectionCount(0),
+                Gen1Collections = GC.CollectionCount(1),
+                Gen2Collections = GC.CollectionCount(2),
+                HeapSizeBytes = gcInfo.HeapSizeBytes,
+                HighMemoryLoadThresholdBytes = gcInfo.HighMemoryLoadThresholdBytes,
+                MemoryLoadBytes = gcInfo.MemoryLoadBytes,
+                TotalAvailableMemoryBytes = gcInfo.TotalAvailableMemoryBytes,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+        }
+        catch (NotSupportedException)
+        {
+            var allocatedBytes = GC.GetTotalMemory(forceFullCollection: false);
+            return new MemoryUsage
+            {
+                AllocatedBytes = allocatedBytes,
+                Gen0Collections = GC.CollectionCount(0),
+                Gen1Collections = GC.CollectionCount(1),
+                Gen2Collections = GC.CollectionCount(2),
+                HeapSizeBytes = allocatedBytes,
+                HighMemoryLoadThresholdBytes = 0,
+                MemoryLoadBytes = allocatedBytes,
+                TotalAvailableMemoryBytes = 0,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+        }
     }
 
     /// <summary>
@@ -38,7 +60,7 @@ public static class MemoryMonitor
     /// <returns>Total allocated memory in bytes</returns>
     public static long GetAllocatedMemory(bool forceFullCollection = false)
     {
-        return GC.GetTotalMemoryForced(forceFullCollection);
+        return GC.GetTotalMemory(forceFullCollection);
     }
 
     /// <summary>

@@ -4,12 +4,9 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
@@ -26,8 +23,6 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
@@ -290,7 +285,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
 
         var defaultLimit = new Honua.Core.Configuration.LimitsOptions().Query.DefaultRecordCount;
-        features.Should().HaveCountLessOrEqualTo(defaultLimit);
+        features.Length.Should().BeLessThanOrEqualTo(defaultLimit);
         numberReturned.Should().BeLessThanOrEqualTo(defaultLimit);
     }
 

@@ -17,25 +17,40 @@ internal sealed class RateLimitingMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly RateLimitOptions _options;
+    private readonly IWebHostEnvironment _environment;
+    private readonly HashSet<IPAddress> _trustedProxies;
     private readonly ConcurrentDictionary<IPAddress, ClientRateLimit> _clients = new();
-    public RateLimitingMiddleware(RequestDelegate next, ILogger<RateLimitingMiddleware> logger, IOptions<RateLimitOptions> options)
+    private long _lastCleanupTick;
+
+    public RateLimitingMiddleware(
+        RequestDelegate next,
+        ILogger<RateLimitingMiddleware> logger,
+        IOptions<RateLimitOptions> options,
+        IWebHostEnvironment environment)
     {
         _next = next;
         _logger = logger;
         _options = options.Value;
+        _environment = environment ?? throw new ArgumentNullException(nameof(environment));
+        _trustedProxies = BuildTrustedProxySet(_options.TrustedProxies);
+        _lastCleanupTick = Environment.TickCount64;
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
         // Skip rate limiting for health checks and development environment
         // This ensures monitoring systems and local development are not rate limited
-        if (IsExemptPath(context.Request.Path) || IsLocalRequest(context))
+        var trustProxyHeaders = ShouldTrustProxyHeaders(context);
+        if (IsExemptPath(context.Request.Path) ||
+            (_environment.IsDevelopment() && IsLocalRequest(context, trustProxyHeaders)))
         {
             await _next(context);
             return;
         }
 
-        var clientIp = GetClientIpAddress(context);
+        CleanupIfNeeded();
+
+        var clientIp = GetClientIpAddress(context, trustProxyHeaders);
         if (clientIp == null)
         {
             // Cannot determine client IP, allow request through
@@ -71,16 +86,16 @@ internal sealed class RateLimitingMiddleware
                path.StartsWithSegments("/favicon.ico");
     }
 
-    private static bool IsLocalRequest(HttpContext context)
+    private static bool IsLocalRequest(HttpContext context, bool trustProxyHeaders)
     {
         var request = context.Request;
 
-        if (TryGetHeaderIp(request, "X-Forwarded-For", out var forwardedIp))
+        if (trustProxyHeaders && TryGetHeaderIp(request, "X-Forwarded-For", out var forwardedIp))
         {
             return IPAddress.IsLoopback(forwardedIp);
         }
 
-        if (TryGetHeaderIp(request, "X-Real-IP", out var realIp))
+        if (trustProxyHeaders && TryGetHeaderIp(request, "X-Real-IP", out var realIp))
         {
             return IPAddress.IsLoopback(realIp);
         }
@@ -111,14 +126,14 @@ internal sealed class RateLimitingMiddleware
         return false;
     }
 
-    private static IPAddress? GetClientIpAddress(HttpContext context)
+    private static IPAddress? GetClientIpAddress(HttpContext context, bool trustProxyHeaders)
     {
         var request = context.Request;
 
         // Check X-Forwarded-For header first (when behind proxy)
         // Format: X-Forwarded-For: client, proxy1, proxy2
         // We want the first (leftmost) IP which is the original client
-        if (request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
+        if (trustProxyHeaders && request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
         {
             var firstIp = forwardedFor.ToString().Split(',')[0].Trim();
             if (IPAddress.TryParse(firstIp, out var ip))
@@ -126,7 +141,7 @@ internal sealed class RateLimitingMiddleware
         }
 
         // Check X-Real-IP header (single IP, set by some proxies)
-        if (request.Headers.TryGetValue("X-Real-IP", out var realIp))
+        if (trustProxyHeaders && request.Headers.TryGetValue("X-Real-IP", out var realIp))
         {
             if (IPAddress.TryParse(realIp.ToString(), out var ip))
                 return ip;
@@ -134,6 +149,75 @@ internal sealed class RateLimitingMiddleware
 
         // Fall back to connection remote IP (direct connection or misconfigured proxy)
         return context.Connection.RemoteIpAddress;
+    }
+
+    private bool ShouldTrustProxyHeaders(HttpContext context)
+    {
+        if (!_options.TrustProxyHeaders)
+        {
+            return false;
+        }
+
+        if (_trustedProxies.Count == 0)
+        {
+            return true;
+        }
+
+        var remoteIp = context.Connection.RemoteIpAddress;
+        return remoteIp != null && _trustedProxies.Contains(remoteIp);
+    }
+
+    private static HashSet<IPAddress> BuildTrustedProxySet(string[] trustedProxies)
+    {
+        var proxies = new HashSet<IPAddress>();
+        foreach (var proxy in trustedProxies ?? Array.Empty<string>())
+        {
+            if (IPAddress.TryParse(proxy, out var ip))
+            {
+                proxies.Add(ip);
+            }
+        }
+
+        return proxies;
+    }
+
+    private void CleanupIfNeeded()
+    {
+        var intervalMs = (long)_options.CleanupInterval.TotalMilliseconds;
+        if (intervalMs <= 0)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref _lastCleanupTick);
+        if (now - last < intervalMs)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastCleanupTick, now, last) != last)
+        {
+            return;
+        }
+
+        var currentTime = DateTimeOffset.UtcNow;
+        var removed = 0;
+        foreach (var (ip, client) in _clients)
+        {
+            if (client.IsExpired(currentTime))
+            {
+                if (_clients.TryRemove(ip, out _))
+                {
+                    removed++;
+                }
+            }
+        }
+
+        if (removed > 0 && _logger.IsEnabled(LogLevel.Debug))
+        {
+            Log.RateLimitCacheCleanup(_logger, removed);
+        }
     }
 
     private async Task HandleRateLimitExceededAsync(HttpContext context, IPAddress clientIp)
@@ -220,6 +304,24 @@ public sealed class RateLimitOptions
     /// Default: 10 minutes.
     /// </summary>
     public TimeSpan WindowSize { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Whether to trust proxy headers (X-Forwarded-For, X-Real-IP) for client IP detection.
+    /// Default: false.
+    /// </summary>
+    public bool TrustProxyHeaders { get; set; }
+
+    /// <summary>
+    /// List of trusted proxy IPs allowed to supply forwarded headers.
+    /// Empty list trusts all proxies when TrustProxyHeaders is true.
+    /// </summary>
+    public string[] TrustedProxies { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Interval for cleaning up idle client entries to prevent unbounded memory growth.
+    /// Default: 10 minutes.
+    /// </summary>
+    public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(10);
 }
 
 /// <summary>

@@ -4,14 +4,11 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests;
 
@@ -29,8 +26,6 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
         await _fixture.InitializeAsync();
     }
 
@@ -262,7 +257,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
         // Should return at most nearestCount features
-        queryResponse.Features.Should().HaveCountLessOrEqualTo(nearestCount);
+        queryResponse.Features.Length.Should().BeLessThanOrEqualTo(nearestCount);
     }
 
     /// <summary>
@@ -329,7 +324,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
-        queryResponse.Features.Should().HaveCountLessOrEqualTo(5);
+        queryResponse.Features.Length.Should().BeLessThanOrEqualTo(5);
     }
 
     /// <summary>

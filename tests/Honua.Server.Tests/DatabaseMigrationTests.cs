@@ -28,6 +28,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        await _postgres.DropSchemaAsync(_schemaName);
         await _postgres.DisposeAsync();
     }
 

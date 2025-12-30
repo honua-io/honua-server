@@ -3,7 +3,9 @@
 
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Security;
 
 namespace Honua.Server.Features.Import;
 
@@ -22,7 +24,8 @@ internal static partial class ImportEndpoints
     public static void MapImportEndpoints(this WebApplication app)
     {
         RouteGroupBuilder group = app.MapGroup("/api/import")
-            .WithTags("Import");
+            .WithTags("Import")
+            .RequireAdminAuthorization();
 
         // Get supported file formats
         _ = group.Map("/formats", HandleGetSupportedFormats)
@@ -131,21 +134,22 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        // Check file size (10MB limit for preview)
-        const long maxPreviewSize = 10 * 1024 * 1024;
-        if (file.Length > maxPreviewSize)
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var previewValidation = await FileUploadSecurity.ValidateFileAsync(
+            file,
+            importService.Limits.MaxPreviewSizeBytes,
+            cancellationToken);
+        if (!previewValidation.IsValid)
         {
-            await WriteErrorAsync(context,
-                $"File too large for preview. Maximum size: {maxPreviewSize / 1024 / 1024}MB",
-                StatusCodes.Status400BadRequest);
+            await WriteErrorAsync(context, previewValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
             return;
         }
 
-        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        SupportedFileFormat? format = importService.DetectFormat(file.FileName);
+        var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+        SupportedFileFormat? format = importService.DetectFormat(safeFileName);
         if (format == null)
         {
-            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(file.FileName)}",
+            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -153,7 +157,7 @@ internal static partial class ImportEndpoints
         try
         {
             using Stream stream = file.OpenReadStream();
-            FilePreview preview = await importService.PreviewFileAsync(stream, file.FileName, cancellationToken);
+            FilePreview preview = await importService.PreviewFileAsync(stream, safeFileName, cancellationToken);
             IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
             await result.ExecuteAsync(context);
         }
@@ -213,10 +217,22 @@ internal static partial class ImportEndpoints
         }
 
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        SupportedFileFormat? format = importService.DetectFormat(file.FileName);
+        var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
+        var uploadValidation = await FileUploadSecurity.ValidateFileAsync(
+            file,
+            maxFileSizeBytes,
+            cancellationToken);
+        if (!uploadValidation.IsValid)
+        {
+            await WriteErrorAsync(context, uploadValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+        SupportedFileFormat? format = importService.DetectFormat(safeFileName);
         if (format == null)
         {
-            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(file.FileName)}",
+            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -238,7 +254,7 @@ internal static partial class ImportEndpoints
             var importRequest = new ImportRequest
             {
                 FileStream = stream,
-                FileName = file.FileName,
+                FileName = safeFileName,
                 TableName = tableName,
                 SourceSrid = sourceSrid,
                 TargetSrid = targetSrid,
