@@ -27,7 +27,7 @@ public static class WkbValidation
     /// </summary>
     public const int DefaultMaxRings = 100;
 
-    private static readonly WKBReader WkbReader = new();
+    private static readonly WKBReader _wkbReader = new();
 
     /// <summary>
     /// Validates WKB geometry data for security and size limits.
@@ -60,7 +60,7 @@ public static class WkbValidation
         Geometry geometry;
         try
         {
-            geometry = WkbReader.Read(wkb);
+            geometry = _wkbReader.Read(wkb);
         }
         catch (Exception ex)
         {
