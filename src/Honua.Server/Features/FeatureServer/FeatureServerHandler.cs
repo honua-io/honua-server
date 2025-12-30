@@ -958,7 +958,7 @@ internal sealed class FeatureServerHandler(
 
         var query = new FeatureQuery
         {
-            Where = effectiveSqlFilter == null ? effectiveWhere : null,
+            Where = effectiveWhere,
             SqlFilter = effectiveSqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,

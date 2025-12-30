@@ -99,9 +99,11 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
         }
         else
         {
-            var whereClause = query.SqlFilter is not null
-                ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
-                : query.Where;
+            var whereClause = !string.IsNullOrEmpty(query.Where)
+                ? query.Where
+                : query.SqlFilter is not null
+                    ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
+                    : null;
 
             if (!string.IsNullOrEmpty(whereClause))
             {
@@ -223,9 +225,11 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
         }
         else
         {
-            var whereClause = query.SqlFilter is not null
-                ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
-                : query.Where;
+            var whereClause = !string.IsNullOrEmpty(query.Where)
+                ? query.Where
+                : query.SqlFilter is not null
+                    ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
+                    : null;
 
             if (!string.IsNullOrEmpty(whereClause))
             {
