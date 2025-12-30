@@ -9,6 +9,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Caching;
 using Honua.Server.Features.FeatureServer;
@@ -25,8 +26,8 @@ using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration.Json;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Serilog;
 using Serilog.Enrichers.Span;
@@ -570,7 +571,8 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
         var distributedCache = sp.GetService<IDistributedCache>();
         var options = sp.GetRequiredService<IOptions<CacheOptions>>();
         var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
-        return new RedisCacheService(distributedCache, options, logger);
+        var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
+        return new RedisCacheService(distributedCache, options, logger, performanceMonitor);
     });
 
     // Register interfaces pointing to the singleton

@@ -129,13 +129,16 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     /// <inheritdoc />
     public async Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
     {
-        string cacheKey = $"{RelationshipKeyPrefix}{layerId}:{relationshipId}";
+        LayerDefinition? cachedLayer = await GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (cachedLayer != null)
+        {
+            var relationship = cachedLayer.LayerRelationships
+                .FirstOrDefault(r => r.RelationshipId == relationshipId);
 
-        return await _cacheService.GetOrSetAsync(
-            cacheKey,
-            ct => _innerCatalog.GetRelationshipAsync(layerId, relationshipId, ct),
-            _options.LayerTtl,
-            cancellationToken).ConfigureAwait(false);
+            return relationship.RelationshipId == 0 ? null : relationship;
+        }
+
+        return await _innerCatalog.GetRelationshipAsync(layerId, relationshipId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

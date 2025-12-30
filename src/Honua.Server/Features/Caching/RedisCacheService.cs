@@ -17,13 +17,15 @@ namespace Honua.Server.Features.Caching;
 /// <remarks>
 /// Uses IDistributedCache (provided by Aspire's Redis integration) for primary caching.
 /// Falls back to in-memory caching when Redis is unavailable to maintain availability.
-/// Tracks cache metrics (hits/misses) using PerformanceMetrics.
+/// Tracks cache metrics (hits/misses) using <see cref="IPerformanceMonitor"/>.
 /// </remarks>
-internal sealed class RedisCacheService : ICacheService, ICacheHealthChecker, IDisposable
+internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, IDisposable
 {
+    private const string CacheType = "layer-catalog";
     private readonly IDistributedCache? _distributedCache;
     private readonly CacheOptions _options;
     private readonly ILogger<RedisCacheService> _logger;
+    private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ConcurrentDictionary<string, CacheEntry> _fallbackCache = new();
     private readonly Timer _cleanupTimer;
     private volatile bool _isUsingFallback;
@@ -33,17 +35,19 @@ internal sealed class RedisCacheService : ICacheService, ICacheHealthChecker, ID
     public RedisCacheService(
         IDistributedCache? distributedCache,
         IOptions<CacheOptions> options,
-        ILogger<RedisCacheService> logger)
+        ILogger<RedisCacheService> logger,
+        IPerformanceMonitor performanceMonitor)
     {
         _distributedCache = distributedCache;
         _options = options.Value;
         _logger = logger;
+        _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
 
         // If no distributed cache is provided, start in fallback mode
         if (_distributedCache == null)
         {
             _isUsingFallback = true;
-            _logger.LogInformation("Redis not configured, using in-memory fallback cache");
+            RedisCacheServiceLog.RedisNotConfigured(_logger);
         }
 
         // Start cleanup timer for fallback cache (every minute)
@@ -252,7 +256,7 @@ internal sealed class RedisCacheService : ICacheService, ICacheHealthChecker, ID
                     // Try a simple operation to test connectivity
                     await _distributedCache.GetAsync("__health_check__", cancellationToken).ConfigureAwait(false);
                     _isUsingFallback = false;
-                    _logger.LogInformation("Redis connection restored, switching from fallback mode");
+                    RedisCacheServiceLog.RedisConnectionRestored(_logger);
                     return true;
                 }
                 catch
@@ -287,7 +291,7 @@ internal sealed class RedisCacheService : ICacheService, ICacheHealthChecker, ID
         {
             _isUsingFallback = true;
             _lastRedisFailure = DateTime.UtcNow;
-            _logger.LogWarning(ex, "Redis connection failed, switching to in-memory fallback cache");
+            RedisCacheServiceLog.RedisConnectionFailed(_logger, ex);
         }
     }
 
@@ -321,23 +325,23 @@ internal sealed class RedisCacheService : ICacheService, ICacheHealthChecker, ID
 
         if (expiredKeys.Count > 0)
         {
-            _logger.LogDebug("Cleaned up {Count} expired cache entries from fallback cache", expiredKeys.Count);
+            RedisCacheServiceLog.CleanupExpiredCacheEntries(_logger, expiredKeys.Count);
         }
     }
 
-    private static void RecordCacheHit()
+    private void RecordCacheHit()
     {
-        PerformanceMetrics.CacheOperationCount.Add(1, new KeyValuePair<string, object?>("operation", "hit"));
+        _performanceMonitor.RecordCacheMetrics(CacheType, "hit");
     }
 
-    private static void RecordCacheMiss()
+    private void RecordCacheMiss()
     {
-        PerformanceMetrics.CacheOperationCount.Add(1, new KeyValuePair<string, object?>("operation", "miss"));
+        _performanceMonitor.RecordCacheMetrics(CacheType, "miss");
     }
 
-    private static void RecordCacheEviction()
+    private void RecordCacheEviction()
     {
-        PerformanceMetrics.CacheOperationCount.Add(1, new KeyValuePair<string, object?>("operation", "eviction"));
+        _performanceMonitor.RecordCacheMetrics(CacheType, "eviction");
     }
 
     public void Dispose()
@@ -351,4 +355,19 @@ internal sealed class RedisCacheService : ICacheService, ICacheHealthChecker, ID
     }
 
     private sealed record CacheEntry(byte[] Data, DateTime ExpiresAt);
+
+    private static partial class RedisCacheServiceLog
+    {
+        [LoggerMessage(1001, LogLevel.Information, "Redis not configured, using in-memory fallback cache")]
+        public static partial void RedisNotConfigured(ILogger logger);
+
+        [LoggerMessage(1002, LogLevel.Information, "Redis connection restored, switching from fallback mode")]
+        public static partial void RedisConnectionRestored(ILogger logger);
+
+        [LoggerMessage(1003, LogLevel.Warning, "Redis connection failed, switching to in-memory fallback cache")]
+        public static partial void RedisConnectionFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(1004, LogLevel.Debug, "Cleaned up {Count} expired cache entries from fallback cache")]
+        public static partial void CleanupExpiredCacheEntries(ILogger logger, int count);
+    }
 }

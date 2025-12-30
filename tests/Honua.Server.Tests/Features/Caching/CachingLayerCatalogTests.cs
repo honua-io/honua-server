@@ -3,13 +3,14 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Caching;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Caching;
 
@@ -23,6 +24,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     private readonly RedisCacheService _cacheService;
     private readonly CachingLayerCatalog _cachingCatalog;
     private readonly CacheOptions _options;
+    private readonly IPerformanceMonitor _performanceMonitor;
 
     public CachingLayerCatalogTests()
     {
@@ -38,10 +40,12 @@ public sealed class CachingLayerCatalogTests : IDisposable
             KeyPrefix = "test:"
         };
 
+        _performanceMonitor = Substitute.For<IPerformanceMonitor>();
         _cacheService = new RedisCacheService(
             null, // No Redis - tests fallback mode
             Options.Create(_options),
-            new MockLogger<RedisCacheService>());
+            new MockLogger<RedisCacheService>(),
+            _performanceMonitor);
 
         _cachingCatalog = new CachingLayerCatalog(
             _innerCatalog,
@@ -222,7 +226,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
 
         // Assert
         relationship.Should().NotBeNull();
-        _innerCatalog.GetRelationshipCallCount.Should().Be(1);
+        _innerCatalog.GetRelationshipCallCount.Should().Be(0);
     }
 
     [UnitTest]
@@ -253,6 +257,12 @@ public sealed class CachingLayerCatalogTests : IDisposable
 
     internal sealed class MockLayerCatalog : ILayerCatalog
     {
+        private static readonly string[] _defaultFormats = ["json", "geojson"];
+        private static readonly string[] _defaultCapabilities = ["Query"];
+        private static readonly Relationship[] _defaultRelationships =
+        [
+            Relationship.Create(1, "TestRelationship", 2, "esriRelCardinalityOneToMany", "id", "layer_id")
+        ];
         public int GetLayerCallCount { get; set; }
         public int ListLayersCallCount { get; set; }
         public int GetServiceCallCount { get; set; }
@@ -322,7 +332,8 @@ public sealed class CachingLayerCatalogTests : IDisposable
                 {
                     new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
                     new FieldDefinition("name", FieldType.String, Length: 100)
-                });
+                },
+                Relationships: _defaultRelationships);
         }
 
         private static ServiceDefinition CreateTestService(string name)
@@ -333,8 +344,8 @@ public sealed class CachingLayerCatalogTests : IDisposable
                 new[] { CreateTestLayer(1) },
                 SpatialReference.WGS84,
                 1000,
-                new[] { "json", "geojson" },
-                new[] { "Query" });
+                _defaultFormats,
+                _defaultCapabilities);
         }
     }
 

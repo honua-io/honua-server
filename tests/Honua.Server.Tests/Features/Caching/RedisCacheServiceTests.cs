@@ -3,12 +3,13 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Caching;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Caching;
 
@@ -20,6 +21,7 @@ public sealed class RedisCacheServiceTests : IDisposable
 {
     private readonly RedisCacheService _cacheService;
     private readonly CacheOptions _options;
+    private readonly IPerformanceMonitor _performanceMonitor;
 
     public RedisCacheServiceTests()
     {
@@ -32,10 +34,12 @@ public sealed class RedisCacheServiceTests : IDisposable
             KeyPrefix = "test:"
         };
 
+        _performanceMonitor = Substitute.For<IPerformanceMonitor>();
         _cacheService = new RedisCacheService(
             null, // No Redis - tests fallback mode
             Options.Create(_options),
-            new MockLogger<RedisCacheService>());
+            new MockLogger<RedisCacheService>(),
+            _performanceMonitor);
     }
 
     public void Dispose()
@@ -48,7 +52,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetAsync_WhenKeyNotFound_ReturnsNull()
     {
         // Act
-        var result = await _cacheService.GetAsync<TestCacheItem>("nonexistent");
+        var result = await _cacheService.GetAsync<FieldDefinition>("nonexistent");
 
         // Assert
         result.Should().BeNull();
@@ -59,16 +63,16 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task SetAsync_ThenGetAsync_ReturnsCachedValue()
     {
         // Arrange
-        var item = new TestCacheItem { Id = 1, Name = "Test" };
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
 
         // Act
         await _cacheService.SetAsync("item:1", item);
-        var result = await _cacheService.GetAsync<TestCacheItem>("item:1");
+        var result = await _cacheService.GetAsync<FieldDefinition>("item:1");
 
         // Assert
         result.Should().NotBeNull();
-        result!.Id.Should().Be(1);
-        result.Name.Should().Be("Test");
+        result!.Name.Should().Be("objectid");
+        result.Type.Should().Be(FieldType.Integer);
     }
 
     [UnitTest]
@@ -76,7 +80,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task SetAsync_WithTtl_ExpiresAfterTtl()
     {
         // Arrange
-        var item = new TestCacheItem { Id = 1, Name = "Test" };
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
         var shortTtl = TimeSpan.FromMilliseconds(50);
 
         // Act
@@ -85,7 +89,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         // Wait for expiration
         await Task.Delay(100);
 
-        var result = await _cacheService.GetAsync<TestCacheItem>("item:short");
+        var result = await _cacheService.GetAsync<FieldDefinition>("item:short");
 
         // Assert
         result.Should().BeNull();
@@ -96,12 +100,12 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task RemoveAsync_RemovesCachedValue()
     {
         // Arrange
-        var item = new TestCacheItem { Id = 1, Name = "Test" };
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
         await _cacheService.SetAsync("item:remove", item);
 
         // Act
         await _cacheService.RemoveAsync("item:remove");
-        var result = await _cacheService.GetAsync<TestCacheItem>("item:remove");
+        var result = await _cacheService.GetAsync<FieldDefinition>("item:remove");
 
         // Assert
         result.Should().BeNull();
@@ -115,16 +119,16 @@ public sealed class RedisCacheServiceTests : IDisposable
         var factoryCalled = false;
 
         // Act
-        var result = await _cacheService.GetOrSetAsync<TestCacheItem>("item:factory", async ct =>
+        var result = await _cacheService.GetOrSetAsync<FieldDefinition>("item:factory", async ct =>
         {
             factoryCalled = true;
-            return new TestCacheItem { Id = 2, Name = "FromFactory" };
+            return new FieldDefinition("fromFactory", FieldType.String, Length: 20);
         });
 
         // Assert
         factoryCalled.Should().BeTrue();
         result.Should().NotBeNull();
-        result!.Name.Should().Be("FromFactory");
+        result!.Name.Should().Be("fromFactory");
     }
 
     [UnitTest]
@@ -132,21 +136,21 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetOrSetAsync_WhenCached_DoesNotCallFactory()
     {
         // Arrange
-        var item = new TestCacheItem { Id = 1, Name = "Cached" };
+        var item = new FieldDefinition("cached", FieldType.Integer, Nullable: false);
         await _cacheService.SetAsync("item:cached", item);
         var factoryCalled = false;
 
         // Act
-        var result = await _cacheService.GetOrSetAsync<TestCacheItem>("item:cached", async ct =>
+        var result = await _cacheService.GetOrSetAsync<FieldDefinition>("item:cached", async ct =>
         {
             factoryCalled = true;
-            return new TestCacheItem { Id = 2, Name = "NotUsed" };
+            return new FieldDefinition("notUsed", FieldType.String, Length: 20);
         });
 
         // Assert
         factoryCalled.Should().BeFalse();
         result.Should().NotBeNull();
-        result!.Name.Should().Be("Cached");
+        result!.Name.Should().Be("cached");
     }
 
     [UnitTest]
@@ -154,17 +158,17 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task RemoveByPatternAsync_RemovesMatchingKeys()
     {
         // Arrange
-        await _cacheService.SetAsync("layer:1", new TestCacheItem { Id = 1, Name = "Layer1" });
-        await _cacheService.SetAsync("layer:2", new TestCacheItem { Id = 2, Name = "Layer2" });
-        await _cacheService.SetAsync("service:1", new TestCacheItem { Id = 3, Name = "Service1" });
+        await _cacheService.SetAsync("layer:1", new FieldDefinition("Layer1", FieldType.String, Length: 10));
+        await _cacheService.SetAsync("layer:2", new FieldDefinition("Layer2", FieldType.String, Length: 10));
+        await _cacheService.SetAsync("service:1", new FieldDefinition("Service1", FieldType.String, Length: 10));
 
         // Act
         await _cacheService.RemoveByPatternAsync("layer:*");
 
         // Assert
-        var layer1 = await _cacheService.GetAsync<TestCacheItem>("layer:1");
-        var layer2 = await _cacheService.GetAsync<TestCacheItem>("layer:2");
-        var service1 = await _cacheService.GetAsync<TestCacheItem>("service:1");
+        var layer1 = await _cacheService.GetAsync<FieldDefinition>("layer:1");
+        var layer2 = await _cacheService.GetAsync<FieldDefinition>("layer:2");
+        var service1 = await _cacheService.GetAsync<FieldDefinition>("service:1");
 
         layer1.Should().BeNull();
         layer2.Should().BeNull();
@@ -206,22 +210,23 @@ public sealed class RedisCacheServiceTests : IDisposable
         using var cache = new RedisCacheService(
             null,
             Options.Create(options),
-            new MockLogger<RedisCacheService>());
+            new MockLogger<RedisCacheService>(),
+            _performanceMonitor);
 
         // Act - Add more entries than limit
-        await cache.SetAsync("a", new TestCacheItem { Id = 1, Name = "A" });
-        await cache.SetAsync("b", new TestCacheItem { Id = 2, Name = "B" });
-        await cache.SetAsync("c", new TestCacheItem { Id = 3, Name = "C" });
-        await cache.SetAsync("d", new TestCacheItem { Id = 4, Name = "D" });
+        await cache.SetAsync("a", new FieldDefinition("A", FieldType.String, Length: 10));
+        await cache.SetAsync("b", new FieldDefinition("B", FieldType.String, Length: 10));
+        await cache.SetAsync("c", new FieldDefinition("C", FieldType.String, Length: 10));
+        await cache.SetAsync("d", new FieldDefinition("D", FieldType.String, Length: 10));
 
         // Assert - Newest entries should be present
-        var d = await cache.GetAsync<TestCacheItem>("d");
+        var d = await cache.GetAsync<FieldDefinition>("d");
         d.Should().NotBeNull();
 
         // At least one old entry should have been evicted
-        var a = await cache.GetAsync<TestCacheItem>("a");
-        var b = await cache.GetAsync<TestCacheItem>("b");
-        var c = await cache.GetAsync<TestCacheItem>("c");
+        var a = await cache.GetAsync<FieldDefinition>("a");
+        var b = await cache.GetAsync<FieldDefinition>("b");
+        var c = await cache.GetAsync<FieldDefinition>("c");
 
         // Total should not exceed limit
         var presentCount = new[] { a, b, c, d }.Count(x => x != null);
@@ -237,20 +242,15 @@ public sealed class RedisCacheServiceTests : IDisposable
         using var disabledCache = new RedisCacheService(
             null,
             Options.Create(options),
-            new MockLogger<RedisCacheService>());
+            new MockLogger<RedisCacheService>(),
+            _performanceMonitor);
 
         // Act
-        await disabledCache.SetAsync("key", new TestCacheItem { Id = 1, Name = "Test" });
-        var result = await disabledCache.GetAsync<TestCacheItem>("key");
+        await disabledCache.SetAsync("key", new FieldDefinition("Test", FieldType.String, Length: 10));
+        var result = await disabledCache.GetAsync<FieldDefinition>("key");
 
         // Assert
         result.Should().BeNull();
-    }
-
-    internal sealed class TestCacheItem
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = string.Empty;
     }
 
     internal sealed class MockLogger<T> : ILogger<T>
