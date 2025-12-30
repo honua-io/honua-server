@@ -21,7 +21,7 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// Layer 2: WKB structure validation
 /// Layer 3: PostGIS topology validation
 /// </summary>
-internal sealed class GeometryValidator : IGeometryValidator
+internal sealed partial class GeometryValidator : IGeometryValidator
 {
     private readonly GeometryValidationOptions _options;
     private readonly IDatabaseConnectionProvider _connectionProvider;
@@ -183,7 +183,7 @@ internal sealed class GeometryValidator : IGeometryValidator
 
         try
         {
-            await using var connection = await _connectionProvider.GetConnectionAsync(cts.Token);
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cts.Token);
 
             // Check if geometry is valid using PostGIS ST_IsValid
             await using var cmd = connection.CreateCommand();
@@ -216,7 +216,7 @@ internal sealed class GeometryValidator : IGeometryValidator
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Topology validation failed");
+            LogTopologyValidationFailed(_logger, ex);
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.InvalidTopology,
                 $"Topology validation error: {ex.Message}");
@@ -236,7 +236,7 @@ internal sealed class GeometryValidator : IGeometryValidator
 
         try
         {
-            await using var connection = await _connectionProvider.GetConnectionAsync(cts.Token);
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cts.Token);
 
             // First get the validation reason
             string? originalReason = null;
@@ -292,7 +292,7 @@ internal sealed class GeometryValidator : IGeometryValidator
                     repairs.Add($"Geometry type changed from {originalType} to {repairedType}");
                 }
 
-                _logger.LogDebug("Geometry repaired: {OriginalReason}", originalReason);
+                LogGeometryRepaired(_logger, originalReason);
 
                 return new GeometryRepairResult
                 {
@@ -312,7 +312,7 @@ internal sealed class GeometryValidator : IGeometryValidator
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Geometry repair failed");
+            LogGeometryRepairFailed(_logger, ex);
             return GeometryRepairResult.Failed($"Repair error: {ex.Message}");
         }
     }
@@ -605,6 +605,19 @@ internal sealed class GeometryValidator : IGeometryValidator
             _ => ValidationErrorCode.InvalidTopology
         };
     }
+
+    #endregion
+
+    #region Logging
+
+    [LoggerMessage(EventId = 2501, Level = LogLevel.Warning, Message = "Topology validation failed")]
+    private static partial void LogTopologyValidationFailed(ILogger<GeometryValidator> logger, Exception exception);
+
+    [LoggerMessage(EventId = 2502, Level = LogLevel.Debug, Message = "Geometry repaired: {OriginalReason}")]
+    private static partial void LogGeometryRepaired(ILogger<GeometryValidator> logger, string? originalReason);
+
+    [LoggerMessage(EventId = 2503, Level = LogLevel.Warning, Message = "Geometry repair failed")]
+    private static partial void LogGeometryRepairFailed(ILogger<GeometryValidator> logger, Exception exception);
 
     #endregion
 }

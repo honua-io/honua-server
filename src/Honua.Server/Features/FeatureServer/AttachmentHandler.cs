@@ -2,12 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
 
 namespace Honua.Server.Features.FeatureServer;
