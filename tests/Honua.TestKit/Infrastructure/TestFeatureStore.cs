@@ -432,6 +432,8 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
             sql = sql.Replace($"@p{i}", literal, StringComparison.Ordinal);
         }
 
+        sql = sql.Replace("\"", string.Empty, StringComparison.Ordinal);
+
         return sql;
     }
 
@@ -536,6 +538,12 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
     {
         if (feature.Attributes.TryGetValue(fieldName, out value))
         {
+            return true;
+        }
+
+        if (string.Equals(fieldName, "objectid", StringComparison.OrdinalIgnoreCase))
+        {
+            value = feature.Id;
             return true;
         }
 
