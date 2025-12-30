@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: tests/python/requirements.txt
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
@@ -103,7 +103,7 @@ jobs:
         working-directory: tests/python
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./tests/TestResults/**/coverage.cobertura.xml
           flags: combined
