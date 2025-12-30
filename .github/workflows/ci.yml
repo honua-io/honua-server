@@ -79,7 +79,7 @@ jobs:
           docker pull postgis/postgis:16-3.4-alpine || true
           docker pull postgis/postgis:18-3.6 || true
 
-      - name: Run All Tests (Unit + Integration + Architecture)
+      - name: Run .NET Tests
         timeout-minutes: 25
         run: |
           dotnet test Honua.sln \
