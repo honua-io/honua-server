@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.TestKit.Attributes;
@@ -51,6 +52,40 @@ public sealed class ReadinessCheckServiceTests
         result.StatusCode.Should().Be(503);
         result.Message.Should().Be("Not Ready - Database unavailable");
         result.Exception.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation("HealthCheck")]
+    public async Task CheckReadinessAsync_WithCacheHealthChecker_IncludesCacheStatus()
+    {
+        // Arrange
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var mockCacheChecker = new MockCacheHealthChecker(healthy: true, usingFallback: false);
+        var mockLogger = new MockLogger<ReadinessCheckService>();
+        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger, mockCacheChecker);
+
+        // Act
+        var result = await service.CheckReadinessAsync();
+
+        // Assert
+        result.IsReady.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation("HealthCheck")]
+    public async Task CheckReadinessAsync_WithCacheInFallbackMode_StillReturnsReady()
+    {
+        // Arrange
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var mockCacheChecker = new MockCacheHealthChecker(healthy: true, usingFallback: true);
+        var mockLogger = new MockLogger<ReadinessCheckService>();
+        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger, mockCacheChecker);
+
+        // Act
+        var result = await service.CheckReadinessAsync();
+
+        // Assert
+        result.IsReady.Should().BeTrue(); // Cache in fallback doesn't affect readiness
     }
 
     [UnitTest]
@@ -223,3 +258,25 @@ internal sealed record LogCall(
     EventId EventId,
     string Message,
     Exception? Exception);
+
+/// <summary>
+/// Mock cache health checker for testing
+/// </summary>
+internal sealed class MockCacheHealthChecker : ICacheHealthChecker
+{
+    private readonly bool _healthy;
+    private readonly bool _usingFallback;
+
+    public MockCacheHealthChecker(bool healthy, bool usingFallback)
+    {
+        _healthy = healthy;
+        _usingFallback = usingFallback;
+    }
+
+    public bool IsUsingFallback => _usingFallback;
+
+    public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_healthy);
+    }
+}

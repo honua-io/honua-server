@@ -5,8 +5,13 @@ using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 using DbUp;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
+using Honua.Core.Features.Caching;
+using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Caching;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
@@ -20,7 +25,9 @@ using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration.Json;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Serilog;
 using Serilog.Enrichers.Span;
@@ -111,6 +118,9 @@ ConfigureTileOptions(builder.Services, builder.Configuration);
 
 // Configure rate limiting options
 ConfigureRateLimiting(builder.Services, builder.Configuration);
+
+// Configure caching options and register cache services
+ConfigureCaching(builder.Services, builder.Configuration);
 
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
@@ -277,6 +287,44 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
 {
     // Register PostgreSQL services (the only direct Infrastructure reference)
     Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+
+    // Wrap ILayerCatalog with caching decorator
+    // This uses the decorator pattern to add caching behavior transparently
+    var innerCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerCatalog));
+    if (innerCatalogDescriptor != null)
+    {
+        services.Remove(innerCatalogDescriptor);
+
+        services.AddScoped<ILayerCatalog>(sp =>
+        {
+            // Resolve the inner catalog (PostgresLayerCatalog)
+            ILayerCatalog innerCatalog;
+            if (innerCatalogDescriptor.ImplementationFactory != null)
+            {
+                innerCatalog = (ILayerCatalog)innerCatalogDescriptor.ImplementationFactory(sp);
+            }
+            else if (innerCatalogDescriptor.ImplementationType != null)
+            {
+                innerCatalog = (ILayerCatalog)ActivatorUtilities.CreateInstance(sp, innerCatalogDescriptor.ImplementationType);
+            }
+            else
+            {
+                throw new InvalidOperationException("Unable to resolve inner ILayerCatalog implementation");
+            }
+
+            // Check if caching is enabled
+            var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
+            if (!cacheOptions.Enabled)
+            {
+                return innerCatalog;
+            }
+
+            // Wrap with caching decorator
+            var cacheService = sp.GetRequiredService<ICacheService>();
+            var options = sp.GetRequiredService<IOptions<CacheOptions>>();
+            return new CachingLayerCatalog(innerCatalog, cacheService, options);
+        });
+    }
 }
 
 // Configure limits with validation
@@ -505,6 +553,33 @@ static void ConfigureRateLimiting(IServiceCollection services, IConfiguration co
     {
         configuration.GetSection(RateLimitOptions.SectionName).Bind(options);
     });
+}
+
+// Configure caching services with Redis and in-memory fallback
+static void ConfigureCaching(IServiceCollection services, IConfiguration configuration)
+{
+    // Bind cache configuration
+    services.Configure<CacheOptions>(options =>
+    {
+        configuration.GetSection(CacheOptions.SectionName).Bind(options);
+    });
+
+    // Register RedisCacheService (handles both Redis and fallback modes)
+    // IDistributedCache is optionally provided by Aspire's AddRedisDistributedCache
+    services.AddSingleton<RedisCacheService>(sp =>
+    {
+        var distributedCache = sp.GetService<IDistributedCache>();
+        var options = sp.GetRequiredService<IOptions<CacheOptions>>();
+        var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
+        var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
+        return new RedisCacheService(distributedCache, options, logger, performanceMonitor);
+    });
+
+    // Register interfaces pointing to the singleton
+    services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
+    services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
+
+    // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
 }
 
 static void AddSecurityConfiguration(ConfigurationManager configuration, IHostEnvironment environment)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Catalog.Domain;
@@ -48,6 +49,7 @@ public record ServiceDefinition(
     /// <summary>
     /// All unique field definitions as ReadOnlySpan for efficient enumeration
     /// </summary>
+    [JsonIgnore]
     public ReadOnlySpan<FieldDefinition> AllFieldsSpan =>
         AllFieldsMemory.Span;
 
@@ -87,6 +89,7 @@ public record ServiceDefinition(
     /// <summary>
     /// All unique geometry types as ReadOnlySpan for efficient enumeration
     /// </summary>
+    [JsonIgnore]
     public ReadOnlySpan<GeometryType> GeometryTypesSpan =>
         GeometryTypesMemory.Span;
 
