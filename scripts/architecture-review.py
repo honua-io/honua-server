@@ -141,7 +141,8 @@ def get_honua_architecture_rules() -> str:
 - API pattern: No ControllerBase or [ApiController]; use Minimal APIs.
 - Encapsulation: Infrastructure implementation types must be internal (middleware, decorators, providers). Public DTOs/options/extensions are allowed.
 - Documentation: Public types require XML docs; internal types do not.
-- AOT: Avoid reflection/dynamic JSON; use source-generated JSON/logging. GC APIs and CultureInfo are allowed.
+- AOT: Avoid reflection/dynamic JSON in production code; use source-generated JSON/logging. GC APIs and CultureInfo are allowed.
+- Tests: Reflection or AOT-breaking code is allowed in test projects.
 
 ## WARNING (Review Needed)
 - Too many dependencies: endpoints <= 5, handlers <= 4.
@@ -195,13 +196,14 @@ def analyze_with_openai(context: str, api_key: str) -> str:
 
 {get_honua_architecture_rules()}
 
-Review only the provided diff. Focus on correctness and architectural rule compliance. Be concise and cite file/line when possible."""
+Review only the provided diff. Focus on correctness and architectural rule compliance. Be concise and cite file/line when possible.
+If the diff is in test code, do not flag reflection/dynamic/AOT-breaking patterns as violations."""
 
         user_prompt = f"""Review only the diff below. Do not ask for full files. Focus on:
 - Dependency direction
 - Minimal API usage (no controllers)
 - Infrastructure encapsulation (internal types)
-- AOT-safe patterns (source-generated JSON/logging)
+- AOT-safe patterns (source-generated JSON/logging) in production code only
 - Public XML docs
 - Dependency count limits
 - Sync-over-async
@@ -312,6 +314,19 @@ def get_changed_files(base_ref: str, head_ref: str) -> List[str]:
     except subprocess.CalledProcessError as e:
         print(f"Error getting changed files: {e}")
         return []
+
+def is_test_path(file_path: str) -> bool:
+    """Return True if the file path is considered test code."""
+    normalized = file_path.replace("\\", "/").lower()
+    if normalized.startswith("tests/") or "/tests/" in normalized:
+        return True
+    if normalized.startswith("test/") or "/test/" in normalized:
+        return True
+    if normalized.endswith(".tests.cs") or normalized.endswith(".test.cs"):
+        return True
+    if ".tests." in normalized or ".test." in normalized:
+        return True
+    return False
 
 def get_file_diff(file_path: str, base_ref: str, head_ref: str) -> str:
     """Get diff for a file."""
@@ -458,7 +473,11 @@ def main():
         if segment["part_total"] > 1:
             label = f"{label} (part {segment['part_index']}/{segment['part_total']})"
 
-        chunk_context = f"## Diff Chunk {index}/{len(segments)}\n### {label}\n```diff\n{segment['diff']}\n```"
+        test_note = ""
+        if is_test_path(segment["file"]):
+            test_note = "\nNote: This diff is in test code. Reflection/dynamic/AOT-breaking patterns are allowed here; do not flag them."
+
+        chunk_context = f"## Diff Chunk {index}/{len(segments)}\n### {label}{test_note}\n```diff\n{segment['diff']}\n```"
         chunk_analysis = analyze_with_llm(
             chunk_context,
             api_key,
