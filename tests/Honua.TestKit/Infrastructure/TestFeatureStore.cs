@@ -4,9 +4,11 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -95,9 +97,16 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
             var objectIdSet = query.ObjectIds.Value.ToHashSet();
             filteredFeatures = filteredFeatures.Where(feature => objectIdSet.Contains(feature.Id));
         }
-        else if (!string.IsNullOrEmpty(query.Where))
+        else
         {
-            filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
+            var whereClause = query.SqlFilter is not null
+                ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
+                : query.Where;
+
+            if (!string.IsNullOrEmpty(whereClause))
+            {
+                filteredFeatures = ApplyWhereFilter(filteredFeatures, whereClause);
+            }
         }
 
         // Apply spatial filtering
@@ -212,9 +221,16 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
             var objectIdSet = query.ObjectIds.Value.ToHashSet();
             filteredFeatures = filteredFeatures.Where(feature => objectIdSet.Contains(feature.Id));
         }
-        else if (!string.IsNullOrEmpty(query.Where))
+        else
         {
-            filteredFeatures = ApplyWhereFilter(filteredFeatures, query.Where);
+            var whereClause = query.SqlFilter is not null
+                ? ConvertSqlFragmentToWhereClause(query.SqlFilter)
+                : query.Where;
+
+            if (!string.IsNullOrEmpty(whereClause))
+            {
+                filteredFeatures = ApplyWhereFilter(filteredFeatures, whereClause);
+            }
         }
 
         if (query.TemporalFilter.HasValue)
@@ -400,6 +416,61 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
     {
         _layerFeatures.Clear();
         GC.SuppressFinalize(this);
+    }
+
+    private static string? ConvertSqlFragmentToWhereClause(SqlFragment sqlFragment)
+    {
+        if (string.IsNullOrWhiteSpace(sqlFragment.Sql))
+        {
+            return null;
+        }
+
+        var sql = sqlFragment.Sql;
+        for (var i = sqlFragment.Parameters.Count - 1; i >= 0; i--)
+        {
+            var literal = FormatSqlLiteral(sqlFragment.Parameters[i]);
+            sql = sql.Replace($"@p{i}", literal, StringComparison.Ordinal);
+        }
+
+        return sql;
+    }
+
+    private static string FormatSqlLiteral(object? value)
+    {
+        if (value == null)
+        {
+            return "NULL";
+        }
+
+        if (value is JsonElement element)
+        {
+            return FormatSqlLiteral(ConvertJsonElement(element));
+        }
+
+        return value switch
+        {
+            string strValue => $"'{strValue.Replace("'", "''")}'",
+            bool boolValue => boolValue ? "true" : "false",
+            DateTime dateTime => $"'{dateTime.ToString("O", CultureInfo.InvariantCulture)}'",
+            DateTimeOffset dateTimeOffset => $"'{dateTimeOffset.ToString("O", CultureInfo.InvariantCulture)}'",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? "NULL",
+            _ => $"'{value.ToString()?.Replace("'", "''")}'"
+        };
+    }
+
+    private static object? ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue :
+                                    element.TryGetDouble(out var doubleValue) ? doubleValue :
+                                    element.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.ToString()
+        };
     }
 
     private static IEnumerable<Feature> ApplyWhereFilter(IEnumerable<Feature> features, string whereClause)

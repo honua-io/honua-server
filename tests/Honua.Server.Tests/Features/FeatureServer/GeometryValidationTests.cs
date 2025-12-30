@@ -185,9 +185,12 @@ public sealed class GeometryValidationTests : IAsyncLifetime
 
         queryResponse.Be200Ok();
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
-        // Verify the response contains our unicode strings
-        queryContent.Should().Contain("日本語");
-        queryContent.Should().Contain("Spécial");
+        using var document = JsonDocument.Parse(queryContent);
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().BeGreaterThan(0);
+        var attributes = features[0].GetProperty("attributes");
+        attributes.GetProperty("name").GetString().Should().Be(unicodeName);
+        attributes.GetProperty("description").GetString().Should().Be(unicodeDescription);
     }
 
     #endregion
