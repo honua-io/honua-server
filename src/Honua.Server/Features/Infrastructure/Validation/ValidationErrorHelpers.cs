@@ -44,16 +44,11 @@ public static class ValidationErrorHelpers
     /// <returns>BadRequest result with RFC 7807 Problem Details format</returns>
     public static IResult CreateOgcValidationError(string title, string detail, string? instance = null)
     {
-        var problemDetails = new
-        {
-            type = "about:blank",
+        return ProblemDetailsHelpers.CreateOgcProblem(
+            StatusCodes.Status400BadRequest,
             title,
-            status = StatusCodes.Status400BadRequest,
             detail,
-            instance
-        };
-
-        return Results.BadRequest(problemDetails);
+            instance);
     }
 
     /// <summary>

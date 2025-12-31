@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Builder;
@@ -49,6 +50,10 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new UnauthorizedAccessException("Access denied");
                                 if (path.Contains("throw-timeout"))
                                     throw new TimeoutException("Operation timed out");
+                                if (path.Contains("throw-notfound"))
+                                    throw new ResourceNotFoundException("Resource missing");
+                                if (path.Contains("throw-conflict"))
+                                    throw new ResourceConflictException("Resource conflict");
                                 if (path.Contains("throw-general"))
                                     throw new InvalidOperationException("Something went wrong");
                                 if (path.Contains("throw-unhandled"))
@@ -137,6 +142,56 @@ public class GlobalExceptionMiddlewareTests : IDisposable
     }
 
     [Fact]
+    public async Task GlobalExceptionMiddleware_ResourceNotFoundException_Returns404NotFound()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-notfound");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Not Found");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The requested resource was not found.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(404);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_ResourceConflictException_Returns409Conflict()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-conflict");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Conflict");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The request could not be completed due to a conflict.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(409);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_OgcPath_ResourceConflictException_ReturnsProblemDetails()
+    {
+        // Act
+        var response = await _client.GetAsync("/ogc/features/throw-conflict");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Conflict");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(409);
+    }
+    [Fact]
     public async Task GlobalExceptionMiddleware_SuccessfulRequest_PassesThrough()
     {
         // Act
@@ -199,20 +254,21 @@ public class GlobalExceptionMiddlewareTests : IDisposable
     }
 
     [Fact]
-    public async Task GlobalExceptionMiddleware_OgcFeaturesPath_ReturnsGeoServicesErrorFormat()
+    public async Task GlobalExceptionMiddleware_OgcFeaturesPath_ReturnsProblemDetailsFormat()
     {
         // Act
-        var response = await _client.GetAsync("/collections/throw-general");
+        var response = await _client.GetAsync("/ogc/features/throw-general");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Be("Bad Request");
+        problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
+        problemDetails.GetProperty("detail").GetString().Should().Be("Invalid operation.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(400);
     }
 
     public void Dispose()

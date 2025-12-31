@@ -33,21 +33,15 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
-        // Should NOT be RFC 7807 Problem Details format
-        content.Should().NotContain("\"type\":");
-        content.Should().NotContain("\"title\":");
-        content.Should().NotContain("\"status\":");
-
-        // Should be GeoServices standardized error format
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
-        error.Should().NotBeNull();
-        error!.Error.Should().NotBeNull();
-        error.Error.Code.Should().Be(404);
-        error.Error.Message.Should().NotBeNullOrEmpty();
+        problem.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+        problem.GetProperty("detail").GetString().Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -61,11 +55,11 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(404);
-        error.Error.Message.Should().NotBeNullOrEmpty();
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+        problem.GetProperty("detail").GetString().Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -79,11 +73,11 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().NotContain("\"type\":"); // Not RFC 7807 format
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(404);
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+        problem.GetProperty("detail").GetString().Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -97,10 +91,10 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(404);
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
     }
 
     [Fact]
@@ -118,11 +112,10 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().NotContain("\"type\":"); // Not RFC 7807 format
+        var problem = JsonSerializer.Deserialize<JsonElement>(responseContent);
 
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(responseContent);
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(400);
+        problem.GetProperty("title").GetString().Should().Be("Bad Request");
+        problem.GetProperty("status").GetInt32().Should().Be(400);
     }
 
     [Fact]
@@ -140,10 +133,10 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(responseContent);
+        var problem = JsonSerializer.Deserialize<JsonElement>(responseContent);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(400);
+        problem.GetProperty("title").GetString().Should().Be("Bad Request");
+        problem.GetProperty("status").GetInt32().Should().Be(400);
     }
 
     [Fact]
@@ -157,14 +150,14 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(404);
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
     }
 
     [Fact]
-    public async Task OgcFeaturesErrors_ConsistentWithOtherProtocols_SameErrorStructure()
+    public async Task OgcFeaturesErrors_UseProblemDetails_WhileFeatureServerUsesGeoServices()
     {
         // Act - Get error from OGC API Features endpoint
         var ogcResponse = await _fixture.Client.GetAsync("/ogc/features/collections/non-existent");
@@ -172,23 +165,23 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         // Act - Get error from FeatureServer endpoint for comparison
         var fsResponse = await _fixture.Client.GetAsync("/rest/services/non-existent/FeatureServer");
 
-        // Assert - Both should have the same error response format
+        // Assert - OGC uses RFC 7807, FeatureServer uses GeoServices
         ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         fsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var ogcContent = await ogcResponse.Content.ReadAsStringAsync();
         var fsContent = await fsResponse.Content.ReadAsStringAsync();
 
-        var ogcError = JsonSerializer.Deserialize<ApiErrorResponse>(ogcContent);
+        var ogcProblem = JsonSerializer.Deserialize<JsonElement>(ogcContent);
         var fsError = JsonSerializer.Deserialize<ApiErrorResponse>(fsContent);
 
-        // Both should use the same error response structure
-        ogcError.Should().NotBeNull();
+        ogcProblem.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+        ogcProblem.GetProperty("status").GetInt32().Should().Be(404);
+
         fsError.Should().NotBeNull();
 
-        ogcError!.Error.Code.Should().Be(fsError!.Error.Code);
-        ogcError.Error.Should().BeEquivalentTo(fsError.Error, options =>
-            options.Excluding(e => e.Message).Excluding(e => e.Details)); // Message content may differ
+        fsError!.Error.Code.Should().Be(404);
+        fsError.Error.Message.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -216,7 +209,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
         if (response.StatusCode == HttpStatusCode.InternalServerError)
         {
             var content = await response.Content.ReadAsStringAsync();
-            var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+            var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
             // Should not contain sensitive information like stack traces, connection strings, etc.
             content.Should().NotContain("Exception");
@@ -226,8 +219,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
             content.Should().NotContain("Server=");
 
             // Should have generic error message
-            error.Should().NotBeNull();
-            error!.Error.Message.Should().Be("Internal server error");
+            problem.GetProperty("title").GetString().Should().NotBeNullOrEmpty();
         }
     }
 }

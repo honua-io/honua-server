@@ -312,17 +312,20 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
                 throw new InvalidOperationException("Unable to resolve inner ILayerCatalog implementation");
             }
 
-            // Check if caching is enabled
+            // Apply caching decorator if enabled
             var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
-            if (!cacheOptions.Enabled)
+            ILayerCatalog catalog = innerCatalog;
+            if (cacheOptions.Enabled)
             {
-                return innerCatalog;
+                var cacheService = sp.GetRequiredService<ICacheService>();
+                var options = sp.GetRequiredService<IOptions<CacheOptions>>();
+                catalog = new CachingLayerCatalog(catalog, cacheService, options);
             }
 
-            // Wrap with caching decorator
-            var cacheService = sp.GetRequiredService<ICacheService>();
-            var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-            return new CachingLayerCatalog(innerCatalog, cacheService, options);
+            // Always wrap with monitoring for catalog metadata queries
+            var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
+            var logger = sp.GetRequiredService<ILogger<MonitoredLayerCatalogDecorator>>();
+            return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, logger);
         });
     }
 }
@@ -639,7 +642,6 @@ static void AddSecurityConfiguration(ConfigurationManager configuration, IHostEn
 
     sources.Insert(insertIndex, securitySource);
 }
-
 // Make Program accessible to WebApplicationFactory
 /// <summary>
 /// Application entry point for test hosting.

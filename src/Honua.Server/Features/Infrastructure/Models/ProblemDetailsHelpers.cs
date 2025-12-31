@@ -1,0 +1,83 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+namespace Honua.Server.Features.Infrastructure.Models;
+
+internal static class ProblemDetailsHelpers
+{
+    internal const string ContentType = "application/problem+json";
+    private const string OgcType = "about:blank";
+    private const string AdminType = "https://honua.io/problems/admin";
+
+    public static IResult CreateOgcProblem(HttpContext context, int statusCode, string detail)
+        => CreateProblem(context, OgcType, statusCode, GetTitle(statusCode), detail);
+
+    public static IResult CreateOgcProblem(HttpContext context, int statusCode, string title, string detail)
+        => CreateProblem(context, OgcType, statusCode, title, detail);
+
+    public static IResult CreateOgcProblem(int statusCode, string title, string detail, string? instance = null)
+        => CreateProblem(OgcType, statusCode, title, detail, instance);
+
+    public static IResult CreateAdminProblem(HttpContext context, int statusCode, string detail)
+        => CreateProblem(context, AdminType, statusCode, GetTitle(statusCode), detail);
+
+    public static IResult CreateAdminProblem(HttpContext context, int statusCode, string title, string detail)
+        => CreateProblem(context, AdminType, statusCode, title, detail);
+
+    public static IResult CreateAdminProblem(int statusCode, string title, string detail, string? instance = null)
+        => CreateProblem(AdminType, statusCode, title, detail, instance);
+
+    public static IResult CreateProblem(HttpContext context, string type, int statusCode, string title, string detail)
+        => CreateProblem(type, statusCode, title, detail, BuildInstance(context));
+
+    public static IResult CreateProblem(string type, int statusCode, string title, string detail, string? instance = null)
+    {
+        var problemDetails = new ProblemDetailsResponse
+        {
+            Type = type,
+            Title = title,
+            Status = statusCode,
+            Detail = detail,
+            Instance = instance
+        };
+
+        return Results.Json(
+            problemDetails,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            statusCode: statusCode,
+            contentType: ContentType);
+    }
+
+    private static string? BuildInstance(HttpContext context)
+    {
+        if (!context.Request.Path.HasValue)
+        {
+            return null;
+        }
+
+        var instance = context.Request.Path.Value ?? string.Empty;
+        if (context.Request.QueryString.HasValue)
+        {
+            instance += context.Request.QueryString.Value;
+        }
+
+        return instance;
+    }
+
+    internal static string GetTitle(int statusCode) => statusCode switch
+    {
+        StatusCodes.Status400BadRequest => "Bad Request",
+        StatusCodes.Status401Unauthorized => "Unauthorized",
+        StatusCodes.Status403Forbidden => "Forbidden",
+        StatusCodes.Status404NotFound => "Not Found",
+        StatusCodes.Status405MethodNotAllowed => "Method Not Allowed",
+        StatusCodes.Status408RequestTimeout => "Request Timeout",
+        StatusCodes.Status409Conflict => "Conflict",
+        StatusCodes.Status413PayloadTooLarge => "Payload Too Large",
+        StatusCodes.Status415UnsupportedMediaType => "Unsupported Media Type",
+        StatusCodes.Status429TooManyRequests => "Too Many Requests",
+        StatusCodes.Status500InternalServerError => "Internal Server Error",
+        StatusCodes.Status503ServiceUnavailable => "Service Unavailable",
+        _ => "Error"
+    };
+}

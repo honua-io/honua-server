@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Models;
 using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
 
@@ -58,6 +59,8 @@ internal sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Gl
         {
             ArgumentNullException => (400, "Bad Request", "Missing required parameter."),
             ArgumentException => (400, "Bad Request", "Invalid request parameters."),
+            ResourceNotFoundException => (404, "Not Found", "The requested resource was not found."),
+            ResourceConflictException => (409, "Conflict", "The request could not be completed due to a conflict."),
             InvalidOperationException => (400, "Bad Request", "Invalid operation."),
             UnauthorizedAccessException => (401, "Unauthorized", "Access denied."),
             NotSupportedException => (405, "Method Not Allowed", "Operation not supported."),

@@ -73,7 +73,7 @@ internal static class CollectionsEndpoints
             var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
             if (validationError is not null)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(validationError.Value ?? "Invalid query parameters.");
+                return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
             if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
@@ -112,12 +112,12 @@ internal static class CollectionsEndpoints
         {
             // Note: Using static reference to logging from main endpoints class
             CollectionsEndpointLogging.LogInvalidCollectionsRequest(logger, ex);
-            return GeoServicesErrorHelpers.CreateBadRequestError("Invalid request parameters.");
+            return OgcErrorHelpers.CreateBadRequest(context, "Invalid request parameters.");
         }
         catch (InvalidOperationException ex)
         {
             CollectionsEndpointLogging.LogInvalidCollectionsOperation(logger, ex);
-            return GeoServicesErrorHelpers.CreateBadRequestError("Invalid operation.");
+            return OgcErrorHelpers.CreateBadRequest(context, "Invalid operation.");
         }
         catch (Exception ex)
         {
@@ -146,7 +146,7 @@ internal static class CollectionsEndpoints
             var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
             if (validationError is not null)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(validationError.Value ?? "Invalid query parameters.");
+                return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
             if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
@@ -156,14 +156,14 @@ internal static class CollectionsEndpoints
 
             if (!int.TryParse(collectionId, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var collection = CreateCollection(layer, baseUrl);
@@ -187,12 +187,12 @@ internal static class CollectionsEndpoints
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
             CollectionsEndpointLogging.LogInvalidCollectionId(logger, collectionId, ex);
-            return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+            return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (InvalidOperationException)
         {
             // Layer not found is a legitimate 404 case
-            return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+            return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (Exception ex)
         {
@@ -218,7 +218,7 @@ internal static class CollectionsEndpoints
             var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
             if (validationError is not null)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(validationError.Value ?? "Invalid query parameters.");
+                return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
             if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
@@ -228,7 +228,7 @@ internal static class CollectionsEndpoints
 
             if (!int.TryParse(collectionId, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             // Verify collection/layer exists
@@ -236,7 +236,7 @@ internal static class CollectionsEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             // Build queryables schema from layer fields
@@ -247,11 +247,11 @@ internal static class CollectionsEndpoints
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
             CollectionsEndpointLogging.LogInvalidCollectionId(logger, collectionId, ex);
-            return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+            return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (InvalidOperationException)
         {
-            return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+            return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (Exception ex)
         {
@@ -421,7 +421,7 @@ internal static class CollectionsEndpoints
     {
         if (formatError is BadRequest<string> badRequest)
         {
-            return GeoServicesErrorHelpers.CreateBadRequestError(badRequest.Value ?? "Invalid format.");
+            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
         }
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
@@ -433,7 +433,7 @@ internal static class CollectionsEndpoints
                 "Requested format is not acceptable.");
         }
 
-        return GeoServicesErrorHelpers.CreateBadRequestError("Invalid format.");
+        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
     /// <summary>

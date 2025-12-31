@@ -3,7 +3,9 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcFeatures.Models;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -63,12 +65,12 @@ internal static class CoreEndpoints
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return validationError;
+            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
         if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
-            return formatError!;
+            return CreateFormatError(context, formatError);
         }
 
         var request = context.Request;
@@ -117,12 +119,12 @@ internal static class CoreEndpoints
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return validationError;
+            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
         if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
-            return formatError!;
+            return CreateFormatError(context, formatError);
         }
 
         var conformance = new ConformanceDeclaration
@@ -176,12 +178,12 @@ internal static class CoreEndpoints
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcFeaturesUtilities.AllowedQueryParameters.OpenApi);
         if (validationError is not null)
         {
-            return validationError;
+            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
         if (!string.IsNullOrWhiteSpace(f) && !string.Equals(f, "json", StringComparison.OrdinalIgnoreCase))
         {
-            return TypedResults.BadRequest($"Unsupported format '{f}'");
+            return OgcErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'");
         }
 
         var acceptHeader = request.Headers.Accept.ToString();
@@ -191,7 +193,11 @@ internal static class CoreEndpoints
             !acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase) &&
             !acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase))
         {
-            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+            return ProtocolErrorWriter.CreateErrorResult(
+                context,
+                StatusCodes.Status406NotAcceptable,
+                "Not Acceptable",
+                "Requested format is not acceptable.");
         }
 
         // Serve pre-generated OpenAPI spec for AOT compatibility
@@ -224,6 +230,25 @@ internal static class CoreEndpoints
         }
         """;
         return Results.Content(fallbackSpec, MediaTypes.OpenApi);
+    }
+
+    private static IResult CreateFormatError(HttpContext context, IResult? formatError)
+    {
+        if (formatError is BadRequest<string> badRequest)
+        {
+            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+        }
+
+        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
+        {
+            return ProtocolErrorWriter.CreateErrorResult(
+                context,
+                statusCodeResult.StatusCode.Value,
+                "Not Acceptable",
+                "Requested format is not acceptable.");
+        }
+
+        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
     private static Task<string?> GetOpenApiContentAsync(string contentRootPath)

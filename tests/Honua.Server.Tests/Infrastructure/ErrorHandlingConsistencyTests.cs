@@ -58,37 +58,35 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         var ogcResponse = await _fixture.Client.GetAsync(ogcEndpoint);
         var mvtResponse = await _fixture.Client.GetAsync(mvtEndpoint);
 
-        // Assert - All should use GeoServices error format
+        // Assert - GeoServices/MVT use GeoServices format, OGC uses RFC 7807
         var geoContent = await geoResponse.Content.ReadAsStringAsync();
         var ogcContent = await ogcResponse.Content.ReadAsStringAsync();
         var mvtContent = await mvtResponse.Content.ReadAsStringAsync();
 
         var geoError = JsonSerializer.Deserialize<ApiErrorResponse>(geoContent);
-        var ogcError = JsonSerializer.Deserialize<ApiErrorResponse>(ogcContent);
         var mvtError = JsonSerializer.Deserialize<ApiErrorResponse>(mvtContent);
+        var ogcProblem = JsonSerializer.Deserialize<JsonElement>(ogcContent);
 
-        // All should have the same error structure
         geoError.Should().NotBeNull();
-        ogcError.Should().NotBeNull();
         mvtError.Should().NotBeNull();
 
-        // Error structure should be identical
         geoError!.Error.Code.Should().Be(404);
-        ogcError!.Error.Code.Should().Be(404);
         mvtError!.Error.Code.Should().Be(404);
 
-        // Should all contain the "error" property with "code", "message" structure
+        // GeoServices-style responses should contain the "error" property with "code", "message" structure
         geoContent.Should().Contain("\"error\":");
         geoContent.Should().Contain("\"code\":");
         geoContent.Should().Contain("\"message\":");
 
-        ogcContent.Should().Contain("\"error\":");
-        ogcContent.Should().Contain("\"code\":");
-        ogcContent.Should().Contain("\"message\":");
-
         mvtContent.Should().Contain("\"error\":");
         mvtContent.Should().Contain("\"code\":");
         mvtContent.Should().Contain("\"message\":");
+
+        // OGC should use RFC 7807 Problem Details format
+        ogcProblem.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+        ogcProblem.GetProperty("title").GetString().Should().Be("Not Found");
+        ogcProblem.GetProperty("status").GetInt32().Should().Be(404);
+        ogcProblem.GetProperty("detail").GetString().Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -213,7 +211,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         var testCases = new Dictionary<string, string>
         {
             ["/rest/services/non-existent/FeatureServer"] = "application/json",
-            ["/ogc/features/collections/non-existent"] = "application/json",
+            ["/ogc/features/collections/non-existent"] = "application/problem+json",
             ["/tiles/99999/1/0/0.mvt"] = "application/json",
             ["/odata/Features(99999)"] = "application/json", // OData errors are also JSON
         };
@@ -230,13 +228,12 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ErrorResponseFormats_DoNotContainRfc7807ProblemDetails_InGeospatialProtocols()
+    public async Task ErrorResponseFormats_DoNotContainRfc7807ProblemDetails_InGeoServicesAndMvt()
     {
-        // Arrange - Geospatial protocols should use domain-specific error formats, not RFC 7807
+        // Arrange - GeoServices and MVT should use domain-specific error formats, not RFC 7807
         var geospatialEndpoints = new[]
         {
             "/rest/services/non-existent/FeatureServer",
-            "/ogc/features/collections/non-existent",
             "/tiles/99999/1/0/0.mvt",
         };
 

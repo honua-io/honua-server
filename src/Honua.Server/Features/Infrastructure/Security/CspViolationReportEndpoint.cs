@@ -11,12 +11,6 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public static class CspViolationReportEndpoint
 {
-    private static readonly JsonSerializerOptions _cspReportSerializerOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.KebabCaseLower
-    };
-
     /// <summary>
     /// Registers the CSP violation report endpoint.
     /// </summary>
@@ -57,7 +51,9 @@ public static class CspViolationReportEndpoint
             }
 
             // Parse the CSP violation report
-            var violationReport = JsonSerializer.Deserialize<CspViolationReport>(jsonContent, _cspReportSerializerOptions);
+            var violationReport = JsonSerializer.Deserialize<CspViolationReport>(
+                jsonContent,
+                CspViolationJsonContext.Default.CspViolationReport);
 
             if (violationReport?.CspReport != null)
             {

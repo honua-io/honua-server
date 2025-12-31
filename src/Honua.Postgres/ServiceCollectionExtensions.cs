@@ -10,6 +10,7 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Attachments;
@@ -18,9 +19,11 @@ using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
 using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
@@ -93,6 +96,9 @@ internal static class ServiceCollectionExtensions
 
         // Register feature store implementation
         services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+
+        // Register database performance metrics provider
+        services.AddSingleton<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
 
         // Register attachment store implementation (metadata tables live in the honua schema)
         services.AddScoped<IAttachmentStore>(serviceProvider =>
@@ -184,7 +190,14 @@ internal static class ServiceCollectionExtensions
             }
 
             var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
-            return new StreamingFileImportService(connectionString, limits, serviceProvider.GetService<ISchemaContext>());
+            var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
+            var logger = serviceProvider.GetRequiredService<ILogger<StreamingFileImportService>>();
+            return new StreamingFileImportService(
+                connectionString,
+                performanceMonitor,
+                logger,
+                limits,
+                serviceProvider.GetService<ISchemaContext>());
         });
 
         // Register background import job service
@@ -192,7 +205,9 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IImportJobService>(serviceProvider =>
         {
             var importService = serviceProvider.GetRequiredService<IFileImportService>();
-            return new InMemoryImportJobService(importService);
+            var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
+            var logger = serviceProvider.GetRequiredService<ILogger<InMemoryImportJobService>>();
+            return new InMemoryImportJobService(importService, performanceMonitor, logger);
         });
 
         return services;

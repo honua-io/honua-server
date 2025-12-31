@@ -179,9 +179,48 @@ internal sealed class PerformanceMonitoringMiddleware
     private static string GetNormalizedEndpoint(PathString path)
     {
         var pathValue = path.Value ?? "/";
+        if (pathValue == "/")
+        {
+            return pathValue;
+        }
+
+        var segments = pathValue.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+
+            if (segment.Equals("services", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
+            {
+                segments[i + 1] = "{serviceId}";
+            }
+
+            if (segment.Equals("collections", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
+            {
+                segments[i + 1] = "{collectionId}";
+            }
+
+            if (segment.Equals("items", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
+            {
+                segments[i + 1] = "{featureId}";
+            }
+
+            if (segment.Equals("connections", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
+            {
+                segments[i + 1] = "{connectionId}";
+            }
+
+            if (segment.Equals("jobs", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
+            {
+                segments[i + 1] = "{jobId}";
+            }
+        }
+
+        pathValue = "/" + string.Join('/', segments);
 
         // Normalize common patterns to reduce metric cardinality
-        // Replace IDs and GUIDs with placeholders
+        // Replace IDs, GUIDs, and OData key segments with placeholders
+        pathValue = System.Text.RegularExpressions.Regex.Replace(pathValue, @"\([^/]+\)", "({id})");
         pathValue = System.Text.RegularExpressions.Regex.Replace(pathValue, @"\b\d+\b", "{id}");
         pathValue = System.Text.RegularExpressions.Regex.Replace(pathValue,
             @"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
