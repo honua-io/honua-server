@@ -303,7 +303,15 @@ internal static partial class FeaturesEndpoints
 
             var result = await featureStore.QueryAsync(layerId, query, cancellationToken);
             var features = result.Items
-                .Select(feature => ToOgcFeature(feature, crsDefinition.AxisOrder))
+                .Select(feature =>
+                {
+                    var links = BuildFeatureLinks(
+                        request,
+                        collectionId,
+                        feature.Id.ToString(CultureInfo.InvariantCulture),
+                        outputFormat);
+                    return ToOgcFeature(feature, crsDefinition.AxisOrder, links);
+                })
                 .ToArray();
 
             var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -320,10 +328,7 @@ internal static partial class FeaturesEndpoints
                 TimeStamp = DateTimeOffset.UtcNow
             };
 
-            if (!string.IsNullOrWhiteSpace(crs))
-            {
-                context.Response.Headers["Content-Crs"] = crs;
-            }
+            context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -387,12 +392,10 @@ internal static partial class FeaturesEndpoints
                 return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            var ogcFeature = ToOgcFeature(feature.Value, crsDefinition.AxisOrder);
+            var featureLinks = BuildFeatureLinks(request, collectionId, featureId, outputFormat);
+            var ogcFeature = ToOgcFeature(feature.Value, crsDefinition.AxisOrder, featureLinks);
 
-            if (!string.IsNullOrWhiteSpace(crs))
-            {
-                context.Response.Headers["Content-Crs"] = crs;
-            }
+            context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -459,7 +462,12 @@ internal static partial class FeaturesEndpoints
             var feature = Feature.Create(0, geometryWkb, attributes.ToImmutableDictionary());
 
             var created = await featureStore.CreateAsync(layerId, feature, cancellationToken);
-            var response = ToOgcFeature(created, OgcFeaturesUtilities.AxisOrder.EastNorth);
+            var createLinks = BuildFeatureLinks(
+                context.Request,
+                collectionId,
+                created.Id.ToString(CultureInfo.InvariantCulture),
+                MediaTypes.GeoJson);
+            var response = ToOgcFeature(created, OgcFeaturesUtilities.AxisOrder.EastNorth, createLinks);
 
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
         }
@@ -547,7 +555,12 @@ internal static partial class FeaturesEndpoints
                 return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            var response = ToOgcFeature(updated, OgcFeaturesUtilities.AxisOrder.EastNorth);
+            var updateLinks = BuildFeatureLinks(
+                context.Request,
+                collectionId,
+                updated.Id.ToString(CultureInfo.InvariantCulture),
+                MediaTypes.GeoJson);
+            var response = ToOgcFeature(updated, OgcFeaturesUtilities.AxisOrder.EastNorth, updateLinks);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
         }
         catch (Exception ex)
@@ -969,12 +982,6 @@ internal static partial class FeaturesEndpoints
             return false;
         }
 
-        if (minX > maxX)
-        {
-            error = "Bounding box minimum longitude must be less than or equal to maximum longitude.";
-            return false;
-        }
-
         if (minX < -180 || maxX > 180 || minY < -90 || maxY > 90)
         {
             error = "Bounding box coordinates are out of valid range.";
@@ -988,11 +995,25 @@ internal static partial class FeaturesEndpoints
     private static SpatialFilter CreateBboxSpatialFilter(BoundingBox bbox, int srid)
     {
         var factory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
-        var envelope = new Envelope(bbox.MinX, bbox.MaxX, bbox.MinY, bbox.MaxY);
-        var polygon = factory.ToGeometry(envelope);
-        var (hasZ, hasM) = GetHasZandM(polygon);
+        Geometry geometry;
+        if (bbox.MinX <= bbox.MaxX)
+        {
+            var envelope = new Envelope(bbox.MinX, bbox.MaxX, bbox.MinY, bbox.MaxY);
+            geometry = factory.ToGeometry(envelope);
+        }
+        else
+        {
+            // Handle anti-meridian crossing by splitting into two envelopes.
+            var leftEnvelope = new Envelope(bbox.MinX, 180, bbox.MinY, bbox.MaxY);
+            var rightEnvelope = new Envelope(-180, bbox.MaxX, bbox.MinY, bbox.MaxY);
+            var leftPolygon = (Polygon)factory.ToGeometry(leftEnvelope);
+            var rightPolygon = (Polygon)factory.ToGeometry(rightEnvelope);
+            geometry = factory.CreateMultiPolygon(new[] { leftPolygon, rightPolygon });
+        }
+
+        var (hasZ, hasM) = GetHasZandM(geometry);
         var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: srid > 0, emitZ: hasZ, emitM: hasM);
-        var wkb = writer.Write(polygon);
+        var wkb = writer.Write(geometry);
 
         return new SpatialFilter
         {
@@ -1085,10 +1106,13 @@ internal static partial class FeaturesEndpoints
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out parsed);
 
-    private static GeoJsonFeature ToOgcFeature(Feature feature, OgcFeaturesUtilities.AxisOrder axisOrder)
+    private static GeoJsonFeature ToOgcFeature(
+        Feature feature,
+        OgcFeaturesUtilities.AxisOrder axisOrder,
+        ImmutableArray<Link>? links = null)
     {
         var geometry = ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry);
+        return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
     }
 
     private static SimpleGeoJsonGeometry? ConvertWkbToSimpleGeometry(byte[]? wkb, OgcFeaturesUtilities.AxisOrder axisOrder)
@@ -1270,6 +1294,47 @@ internal static partial class FeaturesEndpoints
         return links.ToImmutable();
     }
 
+    private static ImmutableArray<Link> BuildFeatureLinks(
+        HttpRequest request,
+        string collectionId,
+        string featureId,
+        string outputFormat)
+    {
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
+
+        var links = new List<Link>
+        {
+            Link.Create(
+                href: basePath,
+                rel: RelationTypes.Self,
+                type: outputFormat,
+                title: "Feature")
+        };
+
+        foreach (var format in OgcFeaturesUtilities.FeatureFormats)
+        {
+            if (string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            links.Add(Link.Create(
+                href: $"{basePath}?f={Uri.EscapeDataString(format.QueryValue)}",
+                rel: RelationTypes.Alternate,
+                type: format.MediaType,
+                title: format.Title));
+        }
+
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
+            rel: RelationTypes.Collection,
+            type: MediaTypes.Json,
+            title: "Collection"));
+
+        return links.ToImmutableArray();
+    }
+
     private static string BuildPagedUrl(
         HttpRequest request,
         string basePath,
@@ -1335,6 +1400,9 @@ internal static partial class FeaturesEndpoints
 
         return Results.Json(payload, typeInfo, contentType: contentType);
     }
+
+    private static string FormatContentCrs(string crsUri)
+        => $"<{crsUri}>";
 
     private static string BuildHtmlDocument(string title, string json)
     {

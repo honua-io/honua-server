@@ -103,6 +103,7 @@ internal static class ProtocolErrorWriter
 
     private static bool IsOgc(PathString path) =>
         path.StartsWithSegments("/ogc/features") ||
+        path.StartsWithSegments("/ogc/tiles") ||
         path.StartsWithSegments("/collections");
 
     private static bool IsAdmin(PathString path) =>

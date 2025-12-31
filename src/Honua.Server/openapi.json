@@ -8,8 +8,13 @@
       "name": "Honua Server"
     }
   },
+  "servers": [
+    {
+      "url": "/ogc/features"
+    }
+  ],
   "paths": {
-    "/ogc/features": {
+    "/": {
       "get": {
         "summary": "Get OGC API Features landing page",
         "description": "The landing page provides links to the API definition and other resources",
@@ -50,7 +55,7 @@
         }
       }
     },
-    "/ogc/features/conformance": {
+    "/conformance": {
       "get": {
         "summary": "Get OGC API Features conformance declaration",
         "description": "Conformance classes that this API conforms to",
@@ -91,7 +96,7 @@
         }
       }
     },
-    "/ogc/features/collections": {
+    "/collections": {
       "get": {
         "summary": "Get OGC API Features collections",
         "description": "Lists all available feature collections",
@@ -132,7 +137,7 @@
         }
       }
     },
-    "/ogc/features/collections/{collectionId}/items": {
+    "/collections/{collectionId}/items": {
       "get": {
         "summary": "Get features from a collection",
         "description": "Get features from a collection with optional filtering",
@@ -170,6 +175,8 @@
             "in": "query",
             "required": false,
             "description": "Maximum number of features to return",
+            "style": "form",
+            "explode": false,
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -192,8 +199,15 @@
             "in": "query",
             "required": false,
             "description": "Bounding box filter (minx,miny,maxx,maxy or minx,miny,minz,maxx,maxy,maxz)",
+            "style": "form",
+            "explode": false,
             "schema": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 6
             }
           },
           {
@@ -227,6 +241,8 @@
             "in": "query",
             "required": false,
             "description": "Temporal filter (RFC 3339 instant or interval)",
+            "style": "form",
+            "explode": false,
             "schema": {
               "type": "string"
             }
@@ -352,7 +368,7 @@
         }
       }
     },
-    "/ogc/features/collections/{collectionId}": {
+    "/collections/{collectionId}": {
       "get": {
         "summary": "Get OGC API Features collection metadata",
         "description": "Get detailed metadata for a specific collection",
@@ -405,7 +421,7 @@
         }
       }
     },
-    "/ogc/features/collections/{collectionId}/queryables": {
+    "/collections/{collectionId}/queryables": {
       "get": {
         "summary": "Get queryable properties for a collection",
         "description": "Get JSON Schema describing queryable properties for filtering",
@@ -458,7 +474,7 @@
         }
       }
     },
-    "/ogc/features/collections/{collectionId}/items/{featureId}": {
+    "/collections/{collectionId}/items/{featureId}": {
       "get": {
         "summary": "Get a specific feature from a collection",
         "description": "Get a specific feature by its ID from a collection",

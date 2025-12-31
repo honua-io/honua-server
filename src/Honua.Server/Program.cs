@@ -23,6 +23,7 @@ using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
+using Honua.Server.Features.OgcTiles;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Distributed;
@@ -176,7 +177,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Server.Features.OData.Models.ODataJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
-        Honua.Server.Features.OgcFeatures.OgcJsonContext.Default);
+        Honua.Server.Features.OgcFeatures.OgcJsonContext.Default,
+        Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default);
 });
 
 var app = builder.Build();
@@ -262,6 +264,9 @@ app.MapAttachmentEndpoints();
 
 // Configure OGC API Features endpoints
 app.MapOgcFeaturesEndpoints();
+
+// Configure OGC API Tiles endpoints
+app.MapOgcTilesEndpoints();
 
 // Configure OData v4 endpoints
 app.MapODataEndpoints();
@@ -515,6 +520,128 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.SetVaryByQuery("f");
             policy.SetVaryByHeader("Accept");
             policy.Tag("ogc-metadata", "metadata");
+        });
+
+        // OGC API Tiles landing page caching policy
+        options.AddPolicy("OgcTilesLandingPage", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(30));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles conformance caching policy
+        options.AddPolicy("OgcTilesConformance", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles OpenAPI caching policy
+        options.AddPolicy("OgcTilesOpenApi", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles collections list caching policy
+        options.AddPolicy("OgcTilesCollections", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles single collection caching policy
+        options.AddPolicy("OgcTilesCollection", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByRouteValue("collectionId");
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles tile matrix sets list caching policy
+        options.AddPolicy("OgcTilesTileMatrixSets", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(12));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles tile matrix set caching policy
+        options.AddPolicy("OgcTilesTileMatrixSet", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(12));
+            policy.SetVaryByRouteValue("tileMatrixSetId");
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles tilesets list caching policy
+        options.AddPolicy("OgcTilesTilesets", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles dataset tileset metadata caching policy
+        options.AddPolicy("OgcTilesDatasetTileset", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByRouteValue("tileMatrixSetId");
+            policy.SetVaryByQuery("f", "collections");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles collection tilesets list caching policy
+        options.AddPolicy("OgcTilesCollectionTilesets", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByRouteValue("collectionId");
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles collection tileset metadata caching policy
+        options.AddPolicy("OgcTilesCollectionTileset", policy =>
+        {
+            policy.Expire(TimeSpan.FromMinutes(10));
+            policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId");
+            policy.SetVaryByQuery("f");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("ogc-tiles", "metadata");
+        });
+
+        // OGC API Tiles dataset tile caching policy
+        options.AddPolicy("OgcTilesDatasetTile", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
+            policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
+            policy.Tag("ogc-tiles", "tiles");
+        });
+
+        // OGC API Tiles tile caching policy
+        options.AddPolicy("OgcTilesTile", policy =>
+        {
+            policy.Expire(TimeSpan.FromHours(1));
+            policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
+            policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
+            policy.Tag("ogc-tiles", "tiles");
         });
 
         // MVT tile caching policy

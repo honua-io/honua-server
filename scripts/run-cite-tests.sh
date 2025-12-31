@@ -15,8 +15,14 @@ NC='\033[0m' # No Color
 # Configuration
 CITE_COMPOSE_FILE="docker/cite-compose.yml"
 CITE_RESULTS_DIR="cite-results"
+CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HONUA_HEALTHCHECK_TIMEOUT=300  # 5 minutes
+PASSED_TESTS=0
+FAILED_TESTS=0
+SKIPPED_TESTS=0
+CANTTELL_TESTS=0
+TOTAL_TESTS=0
 
 echo -e "${BLUE}🧪 OGC API Features CITE Conformance Tests${NC}"
 echo "============================================="
@@ -25,7 +31,7 @@ echo "============================================="
 CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
-PROFILE="default"
+PROFILE="full"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -52,7 +58,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-cleanup      Don't cleanup containers after tests"
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
-            echo "  --profile PROF    Use specific CITE profile (default: default)"
+            echo "  --profile PROF    Use specific CITE profile (default: full)"
             echo "  --help, -h        Show this help"
             echo ""
             echo "Examples:"
@@ -139,23 +145,34 @@ done
 
 echo -e "${GREEN}✅ Honua Server is healthy${NC}"
 
-# Verify API endpoints are responding
+echo -e "${YELLOW}Seeding CITE database...${NC}"
+POSTGRES_CONTAINER=$($COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps -q postgres)
+if [[ -z "$POSTGRES_CONTAINER" ]]; then
+    echo -e "${RED}❌ Postgres container not found${NC}"
+    exit 1
+fi
+
+docker cp docker/cite-seed.sql "$POSTGRES_CONTAINER":/tmp/cite-seed.sql
+docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite -f /tmp/cite-seed.sql >/dev/null
+echo -e "${GREEN}✅ CITE database seeded${NC}"
+
+# Verify API endpoints are responding (after seeding to avoid cached empty data)
 echo -e "${YELLOW}Verifying OGC API Features endpoints...${NC}"
 
 # Test landing page
-if ! curl -s -f http://localhost:8080/ > /dev/null; then
+if ! curl -s -f http://localhost:8080/ogc/features > /dev/null; then
     echo -e "${RED}❌ Landing page not accessible${NC}"
     exit 1
 fi
 
 # Test conformance endpoint
-if ! curl -s -f http://localhost:8080/conformance > /dev/null; then
+if ! curl -s -f http://localhost:8080/ogc/features/conformance > /dev/null; then
     echo -e "${RED}❌ Conformance endpoint not accessible${NC}"
     exit 1
 fi
 
 # Test collections endpoint
-if ! curl -s -f http://localhost:8080/collections > /dev/null; then
+if ! curl -s -f http://localhost:8080/ogc/features/collections > /dev/null; then
     echo -e "${RED}❌ Collections endpoint not accessible${NC}"
     exit 1
 fi
@@ -178,6 +195,7 @@ fi
 
 # Create results directory
 mkdir -p "$CITE_RESULTS_DIR"
+rm -rf "$CITE_RESULTS_DIR"/*
 
 # Update test parameters with current profile
 if [[ "$PROFILE" != "default" ]]; then
@@ -191,7 +209,8 @@ echo -e "${YELLOW}Running OGC API Features CITE conformance tests...${NC}"
 echo "This may take several minutes..."
 
 # Start the CITE runner with test profile
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up cite-runner
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s cite-runner >/dev/null 2>&1 || true
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
 
 # Wait for tests to complete
 echo -e "${YELLOW}Waiting for CITE tests to complete...${NC}"
@@ -220,7 +239,10 @@ done
 
 # Copy results from Docker volume
 echo -e "${YELLOW}Extracting CITE test results...${NC}"
-docker cp $($COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps -q cite-runner 2>/dev/null || echo ""):/cite-results/. "$CITE_RESULTS_DIR/" 2>/dev/null || true
+CITE_RUNNER_CONTAINER=$($COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps -aq cite-runner 2>/dev/null | tail -n 1 || echo "")
+if [[ -n "$CITE_RUNNER_CONTAINER" ]]; then
+    docker cp "$CITE_RUNNER_CONTAINER":"$CITE_RESULTS_CONTAINER_DIR"/. "$CITE_RESULTS_DIR/" 2>/dev/null || true
+fi
 
 # Analyze results
 echo -e "\n${BLUE}📊 CITE Test Results Analysis${NC}"
@@ -232,29 +254,43 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
     echo "Results saved to: $CITE_RESULTS_DIR/"
 
     # Look for test result files
-    if find "$CITE_RESULTS_DIR" -name "*.xml" -o -name "*.html" | grep -q .; then
+    RESULTS_XML=$(find "$CITE_RESULTS_DIR" -type f -name "testng-results.xml" | sort | tail -n 1)
+    if [[ -n "$RESULTS_XML" && -f "$RESULTS_XML" ]]; then
         echo -e "${GREEN}✅ Test result files found${NC}"
-
-        # Count test results from CITE output files
+        TOTAL_TESTS=$(sed -n 's/.*total="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
+        PASSED_TESTS=$(sed -n 's/.*passed="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
+        FAILED_TESTS=$(sed -n 's/.*failed="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
+        SKIPPED_TESTS=$(sed -n 's/.*skipped="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
+        CANTTELL_TESTS=0
+    elif find "$CITE_RESULTS_DIR" -type f \( -name "*.xml" -o -name "*.html" \) -print -quit | grep -q .; then
+        echo -e "${GREEN}✅ Test result files found${NC}"
+        # Fallback if summary files are present
         PASSED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/passed-tests.txt" 2>/dev/null || echo "0")
         FAILED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/failed-tests.txt" 2>/dev/null || echo "0")
         SKIPPED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/skipped-tests.txt" 2>/dev/null || echo "0")
         CANTTELL_TESTS=$(wc -l < "$CITE_RESULTS_DIR/canttell-tests.txt" 2>/dev/null || echo "0")
         TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS + SKIPPED_TESTS + CANTTELL_TESTS))
-
-        echo "Total tests executed: $TOTAL_TESTS"
-        echo "Tests passed: $PASSED_TESTS"
-        echo "Tests failed: $FAILED_TESTS"
-        echo "Tests skipped: $SKIPPED_TESTS"
-        echo "Tests canttell: $CANTTELL_TESTS"
-
-        if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
-            echo -e "${GREEN}🎉 All CITE conformance tests passed!${NC}"
-        elif [[ $TOTAL_TESTS -gt 0 ]]; then
-            echo -e "${YELLOW}⚠️ Some tests failed. Review results for details.${NC}"
-        fi
     else
         echo -e "${YELLOW}⚠️ No test result files found${NC}"
+    fi
+
+    TOTAL_TESTS=${TOTAL_TESTS:-0}
+    PASSED_TESTS=${PASSED_TESTS:-0}
+    FAILED_TESTS=${FAILED_TESTS:-0}
+    SKIPPED_TESTS=${SKIPPED_TESTS:-0}
+    CANTTELL_TESTS=${CANTTELL_TESTS:-0}
+    TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS + SKIPPED_TESTS + CANTTELL_TESTS))
+
+    echo "Total tests executed: $TOTAL_TESTS"
+    echo "Tests passed: $PASSED_TESTS"
+    echo "Tests failed: $FAILED_TESTS"
+    echo "Tests skipped: $SKIPPED_TESTS"
+    echo "Tests canttell: $CANTTELL_TESTS"
+
+    if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
+        echo -e "${GREEN}🎉 All CITE conformance tests passed!${NC}"
+    elif [[ $TOTAL_TESTS -gt 0 ]]; then
+        echo -e "${YELLOW}⚠️ Some tests failed. Review results for details.${NC}"
     fi
 else
     echo -e "${RED}❌ No test results found${NC}"
@@ -314,7 +350,11 @@ fi)
 
 ## Next Steps
 
-$(if [[ $FAILED_TESTS -gt 0 ]]; then
+$(if [[ $TOTAL_TESTS -eq 0 ]]; then
+    echo "1. Confirm the results were copied from the CITE runner"
+    echo "2. Check cite-results for testng-results.xml output"
+    echo "3. Re-run CITE tests to validate output capture"
+elif [[ $FAILED_TESTS -gt 0 ]]; then
     echo "1. Review failed test details in the XML/HTML result files"
     echo "2. Fix conformance issues in the Honua Server implementation"
     echo "3. Re-run CITE tests to validate fixes"
@@ -326,7 +366,7 @@ fi)
 
 ## Files
 
-$(find "$CITE_RESULTS_DIR" -type f -name "*.xml" -o -name "*.html" -o -name "*.log" 2>/dev/null | sort || echo "No result files found")
+$(find "$CITE_RESULTS_DIR" -type f \( -name "*.xml" -o -name "*.html" -o -name "*.log" \) 2>/dev/null | sort || echo "No result files found")
 
 ---
 Generated by: $0
