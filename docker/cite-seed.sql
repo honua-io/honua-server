@@ -57,6 +57,11 @@ SELECT layer.layer_id,
 FROM layer
 UNION ALL
 SELECT layer.layer_id,
+       ST_SetSRID(ST_MakePoint(179.0, 67.0), 4326),
+       jsonb_build_object('name', 'Arctic Dateline Station', 'category', 'reference', 'active', true)
+FROM layer
+UNION ALL
+SELECT layer.layer_id,
        ST_SetSRID(ST_MakePoint(0.0, 86.0), 4326),
        jsonb_build_object('name', 'North Polar Outpost', 'category', 'reference', 'active', true)
 FROM layer

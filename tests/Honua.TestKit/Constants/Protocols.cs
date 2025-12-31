@@ -20,6 +20,11 @@ public static class Protocols
     public const string OgcApiFeatures = "OGC-API-Features";
 
     /// <summary>
+    /// OGC API - Tiles (Part 1: Core).
+    /// </summary>
+    public const string OgcApiTiles = "OGC-API-Tiles";
+
+    /// <summary>
     /// OData v4 protocol.
     /// </summary>
     public const string ODataV4 = "OData-v4";
