@@ -43,7 +43,7 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog,
-        ILogger<OgcTilesEndpoints.OgcTilesEndpointsLog> logger)
+        ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -101,7 +101,7 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog,
-        ILogger<OgcTilesEndpoints.OgcTilesEndpointsLog> logger)
+        ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
         var baseUrl = $"{request.Scheme}://{request.Host}";
@@ -249,4 +249,11 @@ internal static partial class OgcTilesCollectionsEndpointLogging
     [LoggerMessage(EventId = 5302, Level = LogLevel.Error,
         Message = "Failed to retrieve OGC Tiles collection {CollectionId}.")]
     public static partial void LogCollectionQueryFailed(ILogger logger, string collectionId, Exception exception);
+}
+
+/// <summary>
+/// Logger category for OGC Tiles collections endpoints.
+/// </summary>
+internal sealed class OgcTilesCollectionsLog
+{
 }

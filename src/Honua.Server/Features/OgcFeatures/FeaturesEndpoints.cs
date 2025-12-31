@@ -308,7 +308,7 @@ internal static partial class FeaturesEndpoints
                     var links = BuildFeatureLinks(
                         request,
                         collectionId,
-                        feature.Id.ToString(CultureInfo.InvariantCulture),
+                        FormattableString.Invariant($"{feature.Id}"),
                         outputFormat);
                     return ToOgcFeature(feature, crsDefinition.AxisOrder, links);
                 })
@@ -465,7 +465,7 @@ internal static partial class FeaturesEndpoints
             var createLinks = BuildFeatureLinks(
                 context.Request,
                 collectionId,
-                created.Id.ToString(CultureInfo.InvariantCulture),
+                FormattableString.Invariant($"{created.Id}"),
                 MediaTypes.GeoJson);
             var response = ToOgcFeature(created, OgcFeaturesUtilities.AxisOrder.EastNorth, createLinks);
 
@@ -558,7 +558,7 @@ internal static partial class FeaturesEndpoints
             var updateLinks = BuildFeatureLinks(
                 context.Request,
                 collectionId,
-                updated.Id.ToString(CultureInfo.InvariantCulture),
+                FormattableString.Invariant($"{updated.Id}"),
                 MediaTypes.GeoJson);
             var response = ToOgcFeature(updated, OgcFeaturesUtilities.AxisOrder.EastNorth, updateLinks);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -916,7 +916,7 @@ internal static partial class FeaturesEndpoints
                     error = $"Invalid value for '{field.Name}'.";
                     return false;
                 }
-                literal = longValue.ToString(CultureInfo.InvariantCulture);
+                literal = FormattableString.Invariant($"{longValue}");
                 return true;
             case FieldType.Double:
             case FieldType.Float:
@@ -925,7 +925,7 @@ internal static partial class FeaturesEndpoints
                     error = $"Invalid value for '{field.Name}'.";
                     return false;
                 }
-                literal = doubleValue.ToString(CultureInfo.InvariantCulture);
+                literal = FormattableString.Invariant($"{doubleValue}");
                 return true;
             case FieldType.Boolean:
                 if (!bool.TryParse(value, out var boolValue))
@@ -1359,8 +1359,8 @@ internal static partial class FeaturesEndpoints
             }
         }
 
-        queryParts.Add($"limit={limit.ToString(CultureInfo.InvariantCulture)}");
-        queryParts.Add($"offset={offset.ToString(CultureInfo.InvariantCulture)}");
+        queryParts.Add(FormattableString.Invariant($"limit={limit}"));
+        queryParts.Add(FormattableString.Invariant($"offset={offset}"));
 
         var formatValue = outputFormat switch
         {

@@ -11,7 +11,6 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcTiles.Models;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -79,11 +78,10 @@ internal static class TilesEndpoints
         return endpoints;
     }
 
-    private static IResult HandleGetDatasetTilesets(
-        HttpContext context,
-        string? f)
+    private static IResult HandleGetDatasetTilesets(HttpContext context)
     {
         var request = context.Request;
+        var f = GetQueryValue(request, "f");
         var baseUrl = $"{request.Scheme}://{request.Host}";
 
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
@@ -92,9 +90,9 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out _))
         {
-            return CreateFormatError(context, formatError);
+            return CreateFormatError(context, f);
         }
 
         var tilesets = ImmutableArray.Create(BuildDatasetTileSetItem(baseUrl));
@@ -124,12 +122,11 @@ internal static class TilesEndpoints
 
     private static async Task<IResult> HandleGetDatasetTileset(
         string tileMatrixSetId,
-        HttpContext context,
-        string? f,
-        string? collections,
-        ILayerCatalog layerCatalog)
+        HttpContext context)
     {
         var request = context.Request;
+        var f = GetQueryValue(request, "f");
+        var collections = GetQueryValue(request, "collections");
         var baseUrl = $"{request.Scheme}://{request.Host}";
 
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.DatasetTilesetMetadata);
@@ -138,9 +135,9 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out _))
         {
-            return CreateFormatError(context, formatError);
+            return CreateFormatError(context, f);
         }
 
         if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
@@ -148,6 +145,7 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
         var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken);
         if (layerError is not null)
@@ -208,23 +206,13 @@ internal static class TilesEndpoints
         string tileMatrix,
         int tileRow,
         int tileCol,
-        string? f,
-        string? datetime,
-        string? subset,
-        string? crs,
-        string? subsetCrs,
-        string? collections,
-        HttpContext context,
-        ILayerCatalog layerCatalog,
-        IFeatureStore featureStore,
-        IOptions<TileOptions> tileOptions)
+        HttpContext context)
     {
-        _ = datetime;
-        _ = subset;
-        _ = crs;
-        _ = subsetCrs;
+        var request = context.Request;
+        var f = GetQueryValue(request, "f");
+        var collections = GetQueryValue(request, "collections");
 
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.DatasetTiles);
+        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.DatasetTiles);
         if (validationError is not null)
         {
             return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
@@ -235,7 +223,7 @@ internal static class TilesEndpoints
             return ProtocolErrorWriter.CreateErrorResult(context, StatusCodes.Status406NotAcceptable, "Not Acceptable", "Requested tile format is not supported.");
         }
 
-        if (!OgcTilesUtilities.AcceptsVectorTiles(context.Request))
+        if (!OgcTilesUtilities.AcceptsVectorTiles(request))
         {
             return ProtocolErrorWriter.CreateErrorResult(context, StatusCodes.Status406NotAcceptable, "Not Acceptable", "Requested tile format is not acceptable.");
         }
@@ -250,7 +238,9 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateBadRequest(context, $"Invalid tile matrix '{tileMatrix}'.");
         }
 
-        var options = tileOptions.Value;
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var featureStore = context.RequestServices.GetRequiredService<IFeatureStore>();
+        var options = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
         if (zoomLevel < options.MinZoom || zoomLevel > options.MaxZoom)
         {
             return OgcErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
@@ -274,17 +264,15 @@ internal static class TilesEndpoints
             return Results.NoContent();
         }
 
-        context.Response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
-        return Results.Bytes(tileData, MediaTypes.Mvt);
+        return CreateTileResult(tileData, options.CacheMaxAge);
     }
 
     private static async Task<IResult> HandleGetCollectionTilesets(
         string collectionId,
-        HttpContext context,
-        string? f,
-        ILayerCatalog layerCatalog)
+        HttpContext context)
     {
         var request = context.Request;
+        var f = GetQueryValue(request, "f");
         var baseUrl = $"{request.Scheme}://{request.Host}";
 
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
@@ -293,9 +281,9 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out _))
         {
-            return CreateFormatError(context, formatError);
+            return CreateFormatError(context, f);
         }
 
         if (!int.TryParse(collectionId, out var layerId))
@@ -303,6 +291,7 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
 
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
         var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
         if (layer == null)
@@ -337,11 +326,10 @@ internal static class TilesEndpoints
     private static async Task<IResult> HandleGetCollectionTileset(
         string collectionId,
         string tileMatrixSetId,
-        HttpContext context,
-        string? f,
-        ILayerCatalog layerCatalog)
+        HttpContext context)
     {
         var request = context.Request;
+        var f = GetQueryValue(request, "f");
         var baseUrl = $"{request.Scheme}://{request.Host}";
 
         var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
@@ -350,9 +338,9 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out _))
         {
-            return CreateFormatError(context, formatError);
+            return CreateFormatError(context, f);
         }
 
         if (!int.TryParse(collectionId, out var layerId))
@@ -365,6 +353,7 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
         var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
         if (layer == null)
@@ -422,22 +411,12 @@ internal static class TilesEndpoints
         string tileMatrix,
         int tileRow,
         int tileCol,
-        string? f,
-        string? datetime,
-        string? subset,
-        string? crs,
-        string? subsetCrs,
-        HttpContext context,
-        ILayerCatalog layerCatalog,
-        IFeatureStore featureStore,
-        IOptions<TileOptions> tileOptions)
+        HttpContext context)
     {
-        _ = datetime;
-        _ = subset;
-        _ = crs;
-        _ = subsetCrs;
+        var request = context.Request;
+        var f = GetQueryValue(request, "f");
 
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Tiles);
+        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Tiles);
         if (validationError is not null)
         {
             return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
@@ -448,7 +427,7 @@ internal static class TilesEndpoints
             return ProtocolErrorWriter.CreateErrorResult(context, StatusCodes.Status406NotAcceptable, "Not Acceptable", "Requested tile format is not supported.");
         }
 
-        if (!OgcTilesUtilities.AcceptsVectorTiles(context.Request))
+        if (!OgcTilesUtilities.AcceptsVectorTiles(request))
         {
             return ProtocolErrorWriter.CreateErrorResult(context, StatusCodes.Status406NotAcceptable, "Not Acceptable", "Requested tile format is not acceptable.");
         }
@@ -468,7 +447,9 @@ internal static class TilesEndpoints
             return OgcErrorHelpers.CreateBadRequest(context, $"Invalid tile matrix '{tileMatrix}'.");
         }
 
-        var options = tileOptions.Value;
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var featureStore = context.RequestServices.GetRequiredService<IFeatureStore>();
+        var options = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
         if (zoomLevel < options.MinZoom || zoomLevel > options.MaxZoom)
         {
             return OgcErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
@@ -492,8 +473,7 @@ internal static class TilesEndpoints
             return Results.NoContent();
         }
 
-        context.Response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
-        return Results.Bytes(tileData, MediaTypes.Mvt);
+        return CreateTileResult(tileData, options.CacheMaxAge);
     }
 
     private static TileSetItem BuildDatasetTileSetItem(string baseUrl)
@@ -636,22 +616,58 @@ internal static class TilesEndpoints
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
 
-    private static IResult CreateFormatError(HttpContext context, IResult? formatError)
+    private static IResult CreateFormatError(HttpContext context, string? formatParameter)
     {
-        if (formatError is BadRequest<string> badRequest)
-        {
-            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
-        }
-
-        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
+        if (string.IsNullOrWhiteSpace(formatParameter))
         {
             return ProtocolErrorWriter.CreateErrorResult(
                 context,
-                statusCodeResult.StatusCode.Value,
+                StatusCodes.Status406NotAcceptable,
                 "Not Acceptable",
                 "Requested format is not acceptable.");
         }
 
-        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
+        var normalized = formatParameter.Trim().ToLowerInvariant();
+        var detail = normalized switch
+        {
+            "geojson" => "GeoJSON format is only supported for feature content.",
+            "gml" => "GML format is only supported for feature content.",
+            "xml" => "GML format is only supported for feature content.",
+            _ => $"Unsupported format '{formatParameter}'."
+        };
+
+        return OgcErrorHelpers.CreateBadRequest(context, detail);
+    }
+
+    private static TileResult CreateTileResult(byte[] tileData, int cacheMaxAge)
+        => new TileResult(tileData, cacheMaxAge);
+
+    private sealed class TileResult : IResult
+    {
+        private readonly IResult _inner;
+        private readonly int _cacheMaxAge;
+
+        public TileResult(byte[] tileData, int cacheMaxAge)
+        {
+            _inner = Results.Bytes(tileData, MediaTypes.Mvt);
+            _cacheMaxAge = cacheMaxAge;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.Headers["Cache-Control"] = $"public, max-age={_cacheMaxAge}";
+            await _inner.ExecuteAsync(httpContext);
+        }
+    }
+
+    private static string? GetQueryValue(HttpRequest request, string key)
+    {
+        if (!request.Query.TryGetValue(key, out var values))
+        {
+            return null;
+        }
+
+        var value = values.ToString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

@@ -9,15 +9,10 @@ namespace Honua.Server.Features.OgcTiles;
 internal static partial class OgcTilesEndpoints
 {
     /// <summary>
-    /// Logging class for OGC Tiles endpoints.
-    /// </summary>
-    internal sealed class OgcTilesEndpointsLog
-    {
-    }
-
-    /// <summary>
     /// Maps all OGC API Tiles endpoints.
     /// </summary>
+    /// <param name="endpoints">Route builder to register endpoints on.</param>
+    /// <returns>The same route builder instance for chaining.</returns>
     public static IEndpointRouteBuilder MapOgcTilesEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapCoreEndpoints();
