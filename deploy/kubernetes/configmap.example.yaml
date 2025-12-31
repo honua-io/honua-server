@@ -1,0 +1,76 @@
+# Honua Server - Kubernetes ConfigMap Example
+# Apply with: kubectl apply -f configmap.yaml
+#
+# Note: Sensitive values (passwords, connection strings) should use Secrets instead
+# See secret.example.yaml for sensitive configuration
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: honua-config
+  namespace: honua
+  labels:
+    app: honua-server
+data:
+  # Feature Flags
+  HONUA_ADMIN_UI: "true"
+  HONUA_OBSERVABILITY: "true"
+  HONUA_OPENTELEMETRY: "true"
+  HONUA_SKIP_MIGRATIONS: "false"
+
+  # Cache Configuration
+  Cache__Enabled: "true"
+  Cache__DefaultTtlSeconds: "300"
+  Cache__ServiceTtlSeconds: "300"
+  Cache__LayerTtlSeconds: "300"
+  Cache__EnableFallback: "true"
+  Cache__FallbackMaxEntries: "5000"
+  Cache__KeyPrefix: "honua:k8s:"
+
+  # Rate Limiting
+  RateLimit__MaxRequestsPerWindow: "5000"
+  RateLimit__WindowSize: "00:10:00"
+  RateLimit__TrustProxyHeaders: "true"
+
+  # Security Headers
+  SecurityHeaders__EnableHsts: "true"
+  SecurityHeaders__HstsMaxAge: "31536000"
+
+  # Query Limits
+  Limits__Query__MaxRecordCount: "5000"
+  Limits__Query__DefaultRecordCount: "1000"
+  Limits__Query__MaxOffset: "100000"
+  Limits__Query__QueryTimeout: "00:01:00"
+
+  # Geometry Limits
+  Limits__Geometry__MaxVerticesPerGeometry: "100000"
+  Limits__Geometry__MaxGeometrySize: "10485760"
+
+  # Connection Limits
+  Limits__Connections__MaxConcurrentQueries: "200"
+  Limits__Connections__MaxConnectionPoolSize: "100"
+
+  # Tile Options
+  TileOptions__MaxFeaturesPerTile: "50000"
+  TileOptions__TileTimeoutSeconds: "30"
+  TileOptions__CacheMaxAge: "3600"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: honua-secrets
+  namespace: honua
+  labels:
+    app: honua-server
+type: Opaque
+stringData:
+  # Database connection (use your actual values)
+  ConnectionStrings__DefaultConnection: "Host=postgres.honua.svc;Port=5432;Database=honua;Username=honua;Password=CHANGE_ME;SSL Mode=Require"
+
+  # Admin password
+  HONUA_ADMIN_PASSWORD: "CHANGE_ME_STRONG_PASSWORD"
+
+  # CORS origins (if sensitive)
+  Cors__AllowedOrigins__0: "https://app.example.com"
+  Cors__AllowedOrigins__1: "https://admin.example.com"
