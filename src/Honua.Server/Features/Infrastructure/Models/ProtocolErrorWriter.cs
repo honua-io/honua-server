@@ -26,12 +26,22 @@ internal static class ProtocolErrorWriter
             return CreateODataError(context, statusCode, title, detail);
         }
 
+        if (IsOgc(path))
+        {
+            return ProblemDetailsHelpers.CreateOgcProblem(context, statusCode, title, detail);
+        }
+
+        if (IsAdmin(path))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, title, detail);
+        }
+
         if (IsGeoServices(path))
         {
             return CreateGeoServicesError(statusCode, title, detail);
         }
 
-        return Results.Problem(title: title, detail: detail, statusCode: statusCode);
+        return ProblemDetailsHelpers.CreateProblem(context, "about:blank", statusCode, title, detail);
     }
 
     private static IResult CreateODataError(HttpContext context, int statusCode, string title, string detail)
@@ -91,10 +101,15 @@ internal static class ProtocolErrorWriter
 
     private static bool IsOData(PathString path) => path.StartsWithSegments("/odata");
 
+    private static bool IsOgc(PathString path) =>
+        path.StartsWithSegments("/ogc/features") ||
+        path.StartsWithSegments("/collections");
+
+    private static bool IsAdmin(PathString path) =>
+        path.StartsWithSegments("/api/admin") ||
+        path.StartsWithSegments("/api/import");
+
     private static bool IsGeoServices(PathString path) =>
         path.StartsWithSegments("/rest/services") ||
-        path.StartsWithSegments("/api/import") ||
-        path.StartsWithSegments("/collections") ||
-        path.StartsWithSegments("/ogc/features") ||
         path.StartsWithSegments("/tiles");
 }

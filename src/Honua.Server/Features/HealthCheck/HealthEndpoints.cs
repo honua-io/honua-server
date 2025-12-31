@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -11,11 +11,6 @@ namespace Honua.Server.Features.HealthCheck;
 
 internal static class HealthEndpoints
 {
-    private static readonly JsonSerializerOptions _performanceMetricsJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        WriteIndented = true
-    };
     /// <summary>
     /// Configure health endpoints using AOT-compatible routing
     /// </summary>
@@ -78,51 +73,55 @@ internal static class HealthEndpoints
     /// PERFORMANCE OPTIMIZATION: Endpoint to expose performance metrics
     /// Provides insights into query performance and system health
     /// </summary>
-    private static IResult HandlePerformanceMetrics()
+    private static IResult HandlePerformanceMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider)
     {
         try
         {
-            // Get performance metrics from PostgresFeatureStore
-            var performanceMetrics = Honua.Postgres.Features.FeatureStore.PostgresFeatureStore.PerformanceMetrics.GetMetrics();
+            var performanceMetrics = databaseMetricsProvider.GetMetrics();
 
             // Basic memory and GC info
             var memoryInfo = GC.GetGCMemoryInfo();
             var totalMemory = GC.GetTotalMemory(false);
 
-            var response = new
+            var response = new HealthPerformanceMetricsResponse
             {
-                timestamp = DateTimeOffset.UtcNow,
-                status = "healthy",
-                performance_score = CalculateBasicPerformanceScore(totalMemory),
-                metrics = new
+                Timestamp = DateTimeOffset.UtcNow,
+                Status = "healthy",
+                PerformanceScore = CalculateBasicPerformanceScore(totalMemory),
+                Metrics = new HealthPerformanceMetrics
                 {
-                    query_performance = performanceMetrics,
-                    memory = new
+                    QueryPerformance = performanceMetrics,
+                    Memory = new HealthMemoryMetrics
                     {
-                        total_bytes = totalMemory,
-                        heap_size_bytes = memoryInfo.HeapSizeBytes,
-                        memory_load_bytes = memoryInfo.MemoryLoadBytes,
-                        total_available_memory_bytes = memoryInfo.TotalAvailableMemoryBytes
+                        TotalBytes = totalMemory,
+                        HeapSizeBytes = memoryInfo.HeapSizeBytes,
+                        MemoryLoadBytes = memoryInfo.MemoryLoadBytes,
+                        TotalAvailableMemoryBytes = memoryInfo.TotalAvailableMemoryBytes
                     },
-                    gc_info = new
+                    GcInfo = new HealthGcMetrics
                     {
-                        gen0_collections = GC.CollectionCount(0),
-                        gen1_collections = GC.CollectionCount(1),
-                        gen2_collections = GC.CollectionCount(2)
+                        Gen0Collections = GC.CollectionCount(0),
+                        Gen1Collections = GC.CollectionCount(1),
+                        Gen2Collections = GC.CollectionCount(2)
                     }
                 }
             };
 
-            return Results.Json(response, options: _performanceMetricsJsonOptions);
+            return Results.Json(response, HealthJsonContext.Default.HealthPerformanceMetricsResponse);
         }
         catch (Exception ex)
         {
-            return Results.Json(new
+            var response = new HealthPerformanceErrorResponse
             {
-                status = "error",
-                message = "Failed to retrieve performance metrics",
-                details = ex.Message
-            }, statusCode: 500);
+                Status = "error",
+                Message = "Failed to retrieve performance metrics",
+                Details = ex.Message
+            };
+
+            return Results.Json(
+                response,
+                HealthJsonContext.Default.HealthPerformanceErrorResponse,
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 

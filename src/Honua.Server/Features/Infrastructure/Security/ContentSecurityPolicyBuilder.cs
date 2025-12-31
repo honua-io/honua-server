@@ -8,7 +8,7 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// Provides methods to create security policies that protect against XSS and injection attacks
 /// while allowing necessary resources for geospatial data visualization and processing.
 /// </summary>
-public sealed class ContentSecurityPolicyBuilder
+internal sealed class ContentSecurityPolicyBuilder
 {
     private static readonly string[] _defaultTileServers =
     [

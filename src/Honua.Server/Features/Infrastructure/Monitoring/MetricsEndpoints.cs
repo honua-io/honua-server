@@ -123,30 +123,27 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets database-specific performance metrics.
     /// </summary>
-    private static IResult GetDatabaseMetrics()
+    private static IResult GetDatabaseMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider)
     {
         try
         {
-            // Get metrics from PostgresFeatureStore's PerformanceMetrics
-            var postgresMetrics = Honua.Postgres.Features.FeatureStore.PostgresFeatureStore.PerformanceMetrics.GetMetrics();
+            var snapshot = databaseMetricsProvider.GetMetrics();
 
             var databaseMetrics = new DatabaseMetrics
             {
                 Timestamp = DateTimeOffset.UtcNow,
-                CacheHitRate = (double)postgresMetrics.GetValueOrDefault("cache_hit_rate", 0.0),
-                CacheHits = (long)postgresMetrics.GetValueOrDefault("cache_hits", 0L),
-                CacheMisses = (long)postgresMetrics.GetValueOrDefault("cache_misses", 0L),
-                Operations = postgresMetrics
-                    .Where(kvp => kvp.Key.EndsWith("_count") && !kvp.Key.Contains("cache"))
-                    .ToDictionary(
-                        kvp => kvp.Key.Replace("_count", ""),
-                        kvp => new DatabaseOperationMetrics
-                        {
-                            Count = (long)kvp.Value,
-                            TotalTimeMs = (long)postgresMetrics.GetValueOrDefault($"{kvp.Key.Replace("_count", "")}_total_ms", 0L),
-                            MaxTimeMs = (long)postgresMetrics.GetValueOrDefault($"{kvp.Key.Replace("_count", "")}_max_ms", 0L),
-                            AvgTimeMs = (double)postgresMetrics.GetValueOrDefault($"{kvp.Key.Replace("_count", "")}_avg_ms", 0.0)
-                        })
+                CacheHitRate = snapshot.CacheHitRate,
+                CacheHits = snapshot.CacheHits,
+                CacheMisses = snapshot.CacheMisses,
+                Operations = snapshot.Operations.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new DatabaseOperationMetrics
+                    {
+                        Count = kvp.Value.Count,
+                        TotalTimeMs = kvp.Value.TotalTimeMs,
+                        MaxTimeMs = kvp.Value.MaxTimeMs,
+                        AvgTimeMs = kvp.Value.AvgTimeMs
+                    })
             };
 
             return Results.Ok(databaseMetrics);
@@ -163,17 +160,29 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets cache-specific performance metrics.
     /// </summary>
-    private static IResult GetCacheMetrics()
+    private static IResult GetCacheMetrics(ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider)
     {
         try
         {
-            // This would be enhanced with actual cache implementation metrics
+            var snapshot = cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot();
+            var totalRequests = snapshot.TotalHits + snapshot.TotalMisses;
+
             var cacheMetrics = new CacheMetrics
             {
                 Timestamp = DateTimeOffset.UtcNow,
-                TotalRequests = 0, // Would come from IPerformanceMonitor
-                HitRatio = 0.0,   // Would be calculated from hit/miss counts
-                Types = new Dictionary<string, CacheTypeMetrics>()
+                TotalRequests = totalRequests,
+                HitRatio = totalRequests > 0
+                    ? (double)snapshot.TotalHits / totalRequests
+                    : 0.0,
+                Types = snapshot.Types.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new CacheTypeMetrics
+                    {
+                        Hits = kvp.Value.Hits,
+                        Misses = kvp.Value.Misses,
+                        Evictions = kvp.Value.Evictions,
+                        AvgOperationTimeMs = 0.0
+                    })
             };
 
             return Results.Ok(cacheMetrics);
@@ -209,12 +218,12 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets metrics in Prometheus format for monitoring integrations.
     /// </summary>
-    private static IResult GetPrometheusMetrics()
+    private static IResult GetPrometheusMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider)
     {
         try
         {
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
-            var postgresMetrics = Honua.Postgres.Features.FeatureStore.PostgresFeatureStore.PerformanceMetrics.GetMetrics();
+            var databaseMetrics = databaseMetricsProvider.GetMetrics();
 
             var prometheus = new PrometheusFormatter();
 
@@ -229,19 +238,14 @@ public static class MetricsEndpoints
             prometheus.AddCounter("honua_gc_collections_total", memoryUsage.Gen2Collections, "generation", "2");
 
             // Database metrics
-            prometheus.AddGauge("honua_database_cache_hit_rate", (double)postgresMetrics.GetValueOrDefault("cache_hit_rate", 0.0), "Database cache hit rate");
-            prometheus.AddCounter("honua_database_cache_hits_total", (long)postgresMetrics.GetValueOrDefault("cache_hits", 0L), "Database cache hits");
-            prometheus.AddCounter("honua_database_cache_misses_total", (long)postgresMetrics.GetValueOrDefault("cache_misses", 0L), "Database cache misses");
+            prometheus.AddGauge("honua_database_cache_hit_rate", databaseMetrics.CacheHitRate, "Database cache hit rate");
+            prometheus.AddCounter("honua_database_cache_hits_total", databaseMetrics.CacheHits, "Database cache hits");
+            prometheus.AddCounter("honua_database_cache_misses_total", databaseMetrics.CacheMisses, "Database cache misses");
 
-            foreach (var (key, value) in postgresMetrics.Where(kvp => kvp.Key.EndsWith("_count")))
+            foreach (var (operationType, metrics) in databaseMetrics.Operations)
             {
-                var operationType = key.Replace("_count", "");
-                prometheus.AddCounter($"honua_database_operations_total", (long)value, "operation", operationType);
-
-                if (postgresMetrics.TryGetValue($"{operationType}_total_ms", out var totalMs))
-                {
-                    prometheus.AddCounter($"honua_database_operation_duration_ms_total", (long)totalMs, "operation", operationType);
-                }
+                prometheus.AddCounter("honua_database_operations_total", metrics.Count, "operation", operationType);
+                prometheus.AddCounter("honua_database_operation_duration_ms_total", metrics.TotalTimeMs, "operation", operationType);
             }
 
             return Results.Text(prometheus.ToString(), "text/plain");

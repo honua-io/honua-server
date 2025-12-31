@@ -8,6 +8,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
 
@@ -48,16 +49,20 @@ internal static class AdminEndpoints
         if (path.Equals("/tables", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("tables", StringComparison.OrdinalIgnoreCase))
         {
-            context.Response.StatusCode = 400; // Bad Request
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Connection ID is required");
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    "Connection ID is required")
+                .ExecuteAsync(context);
             return;
         }
 
         // For other paths, return 404
-        context.Response.StatusCode = 404;
-        context.Response.ContentType = "application/problem+json; charset=utf-8";
-        await context.Response.WriteAsync("""{"title":"Not Found","status":404,"detail":"The requested resource was not found."}""");
+        await ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status404NotFound,
+                "The requested resource was not found.")
+            .ExecuteAsync(context);
     }
 
     /// <summary>
@@ -69,9 +74,11 @@ internal static class AdminEndpoints
         // Ensure only GET requests
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            context.Response.StatusCode = 405; // Method Not Allowed
-            context.Response.ContentType = "application/problem+json; charset=utf-8";
-            await context.Response.WriteAsync($$"""{"title":"Method Not Allowed","status":405,"detail":"Only GET requests are allowed for this endpoint"}""");
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Only GET requests are allowed for this endpoint")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -81,9 +88,11 @@ internal static class AdminEndpoints
         // Validate input
         if (string.IsNullOrWhiteSpace(id))
         {
-            context.Response.StatusCode = 400; // Bad Request
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.WriteAsync("Connection ID is required");
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    "Connection ID is required")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -121,9 +130,12 @@ internal static class AdminEndpoints
         {
             AdminLog.TableDiscoveryFailed(logger, ex, id);
 
-            context.Response.StatusCode = 500; // Internal Server Error
-            context.Response.ContentType = "application/problem+json; charset=utf-8";
-            await context.Response.WriteAsync($$"""{"title":"Table Discovery Failed","status":500,"detail":"An error occurred while discovering tables. Please check the connection and try again."}""");
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status500InternalServerError,
+                    "Table Discovery Failed",
+                    "An error occurred while discovering tables. Please check the connection and try again.")
+                .ExecuteAsync(context);
         }
     }
 }

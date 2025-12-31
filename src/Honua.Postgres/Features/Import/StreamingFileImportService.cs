@@ -8,7 +8,9 @@ using System.Xml;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure;
+using Microsoft.Extensions.Logging;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -23,12 +25,14 @@ namespace Honua.Postgres.Features.Import;
 /// Processes features incrementally using IAsyncEnumerable and batched database insertion
 /// to maintain constant memory usage regardless of file size.
 /// </summary>
-internal sealed class StreamingFileImportService : IFileImportService
+internal sealed partial class StreamingFileImportService : IFileImportService
 {
     private readonly string _connectionString;
     private readonly ImportLimits _limits;
     private readonly StreamingGeoJsonReader _geoJsonReader;
     private readonly ISchemaContext? _schemaContext;
+    private readonly IPerformanceMonitor _performanceMonitor;
+    private readonly ILogger<StreamingFileImportService> _logger;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
@@ -49,10 +53,14 @@ internal sealed class StreamingFileImportService : IFileImportService
 
     public StreamingFileImportService(
         string connectionString,
+        IPerformanceMonitor performanceMonitor,
+        ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
         ISchemaContext? schemaContext = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _limits = limits ?? ImportLimits.Default;
         _geoJsonReader = new StreamingGeoJsonReader(_limits);
         _schemaContext = schemaContext;
@@ -84,27 +92,41 @@ internal sealed class StreamingFileImportService : IFileImportService
     {
         var stopwatch = Stopwatch.StartNew();
         var format = DetectFormat(request.FileName);
-
-        if (format == null)
-        {
-            return ImportResult.CreateFailure(
-                request.TableName,
-                SupportedFileFormat.GeoJson,
-                "Unsupported file format: " + Path.GetExtension(request.FileName),
-                stopwatch.Elapsed);
-        }
-
+        var formatName = format?.ToString() ?? "unknown";
+        var mode = progress == null ? "sync" : "background";
         var jobId = Guid.NewGuid().ToString("N")[..8];
+        long? totalBytes = request.FileStream.CanSeek ? request.FileStream.Length : null;
+        long? bytesRead = null;
+        var importedCount = 0;
+        var failedCount = 0;
+        var status = "failed";
+        string? errorMessage = null;
+        ImportResult result;
+
+        ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
         try
         {
+            if (format == null)
+            {
+                errorMessage = "Unsupported file format: " + Path.GetExtension(request.FileName);
+                result = ImportResult.CreateFailure(
+                    request.TableName,
+                    SupportedFileFormat.GeoJson,
+                    errorMessage,
+                    stopwatch.Elapsed);
+                return result;
+            }
+
             // Detect CRS using streaming (doesn't load entire file)
             var detectedSrid = await DetectCrsStreamingAsync(request.FileStream, format.Value, cancellationToken);
             var sourceSrid = request.SourceSrid ?? detectedSrid ?? 4326;
 
             // Reset stream position after CRS detection
             if (request.FileStream.CanSeek)
+            {
                 request.FileStream.Position = 0;
+            }
 
             // Report initial progress
             progress?.Report(ImportProgress.CreateInitial(
@@ -114,7 +136,7 @@ internal sealed class StreamingFileImportService : IFileImportService
                 request.FileStream.CanSeek ? request.FileStream.Length : null));
 
             // Stream features and insert in batches
-            var (featureCount, failedCount) = await ImportStreamingAsync(
+            (importedCount, failedCount) = await ImportStreamingAsync(
                 request,
                 format.Value,
                 sourceSrid,
@@ -122,41 +144,72 @@ internal sealed class StreamingFileImportService : IFileImportService
                 jobId,
                 cancellationToken);
 
-            stopwatch.Stop();
-
-            if (featureCount == 0 && failedCount == 0)
+            if (importedCount == 0 && failedCount == 0)
             {
-                return ImportResult.CreateFailure(
+                errorMessage = "No features found in file";
+                result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,
-                    "No features found in file",
+                    errorMessage,
                     stopwatch.Elapsed);
+                return result;
             }
 
-            return ImportResult.CreateSuccess(
+            status = "success";
+            result = ImportResult.CreateSuccess(
                 request.TableName,
                 format.Value,
-                featureCount,
+                importedCount,
                 detectedSrid,
                 stopwatch.Elapsed);
+            return result;
         }
         catch (OperationCanceledException)
         {
-            stopwatch.Stop();
-            return ImportResult.CreateFailure(
+            status = "cancelled";
+            errorMessage = "Import was cancelled";
+            result = ImportResult.CreateFailure(
                 request.TableName,
-                format.Value,
-                "Import was cancelled",
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
                 stopwatch.Elapsed);
+            return result;
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
-            return ImportResult.CreateFailure(
+            errorMessage = "Import failed: " + ex.Message;
+            result = ImportResult.CreateFailure(
                 request.TableName,
-                format.Value,
-                "Import failed: " + ex.Message,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
                 stopwatch.Elapsed);
+            return result;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            if (request.FileStream.CanSeek)
+            {
+                bytesRead = request.FileStream.Position;
+            }
+
+            RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
+
+            if (status == "success")
+            {
+                ImportLog.ImportCompleted(_logger, jobId, request.TableName, formatName, mode, importedCount, failedCount,
+                    stopwatch.Elapsed.TotalMilliseconds, bytesRead);
+            }
+            else if (status == "cancelled")
+            {
+                ImportLog.ImportCancelled(_logger, jobId, request.TableName, formatName, mode, importedCount, failedCount,
+                    stopwatch.Elapsed.TotalMilliseconds, bytesRead);
+            }
+            else
+            {
+                ImportLog.ImportFailed(_logger, jobId, request.TableName, formatName, mode, importedCount, failedCount,
+                    errorMessage ?? "Unknown error", stopwatch.Elapsed.TotalMilliseconds, bytesRead);
+            }
         }
     }
 
@@ -275,6 +328,37 @@ internal sealed class StreamingFileImportService : IFileImportService
         });
 
         return (totalImported, totalFailed);
+    }
+
+    private void RecordImportMetrics(
+        string format,
+        string mode,
+        string status,
+        TimeSpan duration,
+        long? bytesRead,
+        int importedCount,
+        int failedCount)
+    {
+        var tags = new Dictionary<string, string>
+        {
+            { "format", format },
+            { "mode", mode },
+            { "status", status }
+        };
+
+        _performanceMonitor.RecordHistogram("honua_import_duration_ms", duration.TotalMilliseconds, tags);
+        _performanceMonitor.RecordCounter("honua_import_total", 1, tags);
+        _performanceMonitor.RecordHistogram("honua_import_features", importedCount, tags);
+
+        if (bytesRead.HasValue)
+        {
+            _performanceMonitor.RecordHistogram("honua_import_bytes", bytesRead.Value, tags);
+        }
+
+        if (failedCount > 0)
+        {
+            _performanceMonitor.RecordCounter("honua_import_failures_total", failedCount, tags);
+        }
     }
 
     /// <summary>
@@ -504,6 +588,67 @@ internal sealed class StreamingFileImportService : IFileImportService
         }
 
         return true;
+    }
+
+    private static partial class ImportLog
+    {
+        [LoggerMessage(
+            EventId = 7400,
+            Level = LogLevel.Information,
+            Message = "Import started {JobId} table={TableName} format={Format} mode={Mode} bytes={TotalBytes}")]
+        public static partial void ImportStarted(
+            ILogger logger,
+            string jobId,
+            string tableName,
+            string format,
+            string mode,
+            long? totalBytes);
+
+        [LoggerMessage(
+            EventId = 7401,
+            Level = LogLevel.Information,
+            Message = "Import completed {JobId} table={TableName} format={Format} mode={Mode} imported={Imported} failed={Failed} durationMs={DurationMs:F2} bytes={BytesRead}")]
+        public static partial void ImportCompleted(
+            ILogger logger,
+            string jobId,
+            string tableName,
+            string format,
+            string mode,
+            int imported,
+            int failed,
+            double durationMs,
+            long? bytesRead);
+
+        [LoggerMessage(
+            EventId = 7402,
+            Level = LogLevel.Warning,
+            Message = "Import cancelled {JobId} table={TableName} format={Format} mode={Mode} imported={Imported} failed={Failed} durationMs={DurationMs:F2} bytes={BytesRead}")]
+        public static partial void ImportCancelled(
+            ILogger logger,
+            string jobId,
+            string tableName,
+            string format,
+            string mode,
+            int imported,
+            int failed,
+            double durationMs,
+            long? bytesRead);
+
+        [LoggerMessage(
+            EventId = 7403,
+            Level = LogLevel.Error,
+            Message = "Import failed {JobId} table={TableName} format={Format} mode={Mode} imported={Imported} failed={Failed} error={ErrorMessage} durationMs={DurationMs:F2} bytes={BytesRead}")]
+        public static partial void ImportFailed(
+            ILogger logger,
+            string jobId,
+            string tableName,
+            string format,
+            string mode,
+            int imported,
+            int failed,
+            string errorMessage,
+            double durationMs,
+            long? bytesRead);
     }
 
     /// <inheritdoc/>

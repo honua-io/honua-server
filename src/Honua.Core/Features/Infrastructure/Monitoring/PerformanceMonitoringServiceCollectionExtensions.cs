@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
@@ -17,7 +18,10 @@ public static class PerformanceMonitoringServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddDefaultPerformanceMonitor(this IServiceCollection services)
     {
-        services.AddSingleton<IPerformanceMonitor, DefaultPerformanceMonitor>();
+        services.AddSingleton<DefaultPerformanceMonitor>();
+        services.AddSingleton<IPerformanceMonitor>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
+        services.AddSingleton<ICacheMetricsSnapshotProvider>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
+        services.TryAddSingleton<IDatabasePerformanceMetricsProvider, NullDatabasePerformanceMetricsProvider>();
         return services;
     }
 }

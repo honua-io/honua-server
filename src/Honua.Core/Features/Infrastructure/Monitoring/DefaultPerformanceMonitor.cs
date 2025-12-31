@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -13,8 +14,10 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This implementation provides comprehensive performance monitoring using the .NET Metrics API
 /// and integrates with OpenTelemetry for telemetry export.
 /// </remarks>
-internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
+internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider
 {
+    private readonly ConcurrentDictionary<string, CacheOperationCounters> _cacheCounters = new(StringComparer.OrdinalIgnoreCase);
+
     /// <inheritdoc />
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
     {
@@ -72,6 +75,37 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
         };
 
         PerformanceMetrics.CacheOperationCount.Add(1, tags);
+
+        var normalizedType = string.IsNullOrWhiteSpace(cacheType) ? "unknown" : cacheType;
+        var normalizedOperation = string.IsNullOrWhiteSpace(operation) ? "unknown" : operation;
+        var counters = _cacheCounters.GetOrAdd(normalizedType, _ => new CacheOperationCounters());
+        counters.Record(normalizedOperation);
+    }
+
+    /// <inheritdoc />
+    public CacheMetricsSnapshot GetCacheMetricsSnapshot()
+    {
+        var types = new Dictionary<string, CacheTypeMetricsSnapshot>(StringComparer.OrdinalIgnoreCase);
+        long totalHits = 0;
+        long totalMisses = 0;
+        long totalEvictions = 0;
+
+        foreach (var (cacheType, counters) in _cacheCounters)
+        {
+            var snapshot = counters.Snapshot();
+            types[cacheType] = snapshot;
+            totalHits += snapshot.Hits;
+            totalMisses += snapshot.Misses;
+            totalEvictions += snapshot.Evictions;
+        }
+
+        return new CacheMetricsSnapshot
+        {
+            TotalHits = totalHits,
+            TotalMisses = totalMisses,
+            TotalEvictions = totalEvictions,
+            Types = types
+        };
     }
 
     /// <inheritdoc />
@@ -147,6 +181,40 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor
             // Record duration and count
             PerformanceMetrics.OperationDuration.Record(_stopwatch.Elapsed.TotalMilliseconds, tagPairs);
             PerformanceMetrics.OperationCount.Add(1, tagPairs);
+        }
+    }
+
+    private sealed class CacheOperationCounters
+    {
+        private long _hits;
+        private long _misses;
+        private long _evictions;
+
+        public void Record(string operation)
+        {
+            switch (operation.ToLowerInvariant())
+            {
+                case "hit":
+                    Interlocked.Increment(ref _hits);
+                    break;
+                case "miss":
+                    Interlocked.Increment(ref _misses);
+                    break;
+                case "eviction":
+                case "pattern_eviction":
+                    Interlocked.Increment(ref _evictions);
+                    break;
+            }
+        }
+
+        public CacheTypeMetricsSnapshot Snapshot()
+        {
+            return new CacheTypeMetricsSnapshot
+            {
+                Hits = Interlocked.Read(ref _hits),
+                Misses = Interlocked.Read(ref _misses),
+                Evictions = Interlocked.Read(ref _evictions)
+            };
         }
     }
 }

@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -136,20 +137,20 @@ internal static partial class FeaturesEndpoints
         {
             if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var validationError = OgcFeaturesUtilities.ValidateItemsQueryParameters(request, layer);
             if (validationError is not null)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(validationError.Value ?? "Invalid query parameters.");
+                return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
             if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
@@ -163,32 +164,32 @@ internal static partial class FeaturesEndpoints
 
             if (!TryResolveFilterLanguage(filterLang, out var resolvedFilterLang, out var filterLangError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(filterLangError ?? "Invalid filter language.");
+                return OgcErrorHelpers.CreateBadRequest(context, filterLangError ?? "Invalid filter language.");
             }
 
             if (!TryResolveCrs(crs, out var crsDefinition, out var crsError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(crsError ?? "Invalid CRS.");
+                return OgcErrorHelpers.CreateBadRequest(context, crsError ?? "Invalid CRS.");
             }
 
             if (!string.IsNullOrWhiteSpace(filterCrs) && string.IsNullOrWhiteSpace(filter))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError("filter-crs requires a filter parameter.");
+                return OgcErrorHelpers.CreateBadRequest(context, "filter-crs requires a filter parameter.");
             }
 
             if (!TryResolveCrs(filterCrs, out var filterCrsDefinition, out var filterCrsError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(filterCrsError ?? "Invalid filter CRS.");
+                return OgcErrorHelpers.CreateBadRequest(context, filterCrsError ?? "Invalid filter CRS.");
             }
 
             if (!TryResolveCrs(bboxCrs, out var bboxCrsDefinition, out var bboxCrsError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(bboxCrsError ?? "Invalid bbox CRS.");
+                return OgcErrorHelpers.CreateBadRequest(context, bboxCrsError ?? "Invalid bbox CRS.");
             }
 
             if (!TryResolvePagination(limit, offset, limitsOptions.Value, out var effectiveLimit, out var effectiveOffset, out var paginationError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(paginationError ?? "Invalid paging parameters.");
+                return OgcErrorHelpers.CreateBadRequest(context, paginationError ?? "Invalid paging parameters.");
             }
 
             FilterExpression? filterExpression = null;
@@ -206,13 +207,13 @@ internal static partial class FeaturesEndpoints
                     }
                     catch (ArgumentException ex)
                     {
-                        return GeoServicesErrorHelpers.CreateBadRequestError($"{InvalidCqlFilterPrefix}: {ex.Message}");
+                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
                     }
                 }
 
                 if (!TryBuildCombinedFilter(null, request, layer, out var queryableFilter, out var queryableError))
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(queryableError ?? "Invalid query parameters.");
+                    return OgcErrorHelpers.CreateBadRequest(context, queryableError ?? "Invalid query parameters.");
                 }
 
                 FilterExpression? queryableExpression = null;
@@ -226,7 +227,7 @@ internal static partial class FeaturesEndpoints
                     }
                     catch (ArgumentException ex)
                     {
-                        return GeoServicesErrorHelpers.CreateBadRequestError($"{InvalidCqlFilterPrefix}: {ex.Message}");
+                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
                     }
                 }
 
@@ -236,7 +237,7 @@ internal static partial class FeaturesEndpoints
             {
                 if (!TryBuildCombinedFilter(filter, request, layer, out combinedFilter, out var filterError))
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(filterError ?? "Invalid query parameters.");
+                    return OgcErrorHelpers.CreateBadRequest(context, filterError ?? "Invalid query parameters.");
                 }
 
                 if (!string.IsNullOrWhiteSpace(combinedFilter))
@@ -248,7 +249,7 @@ internal static partial class FeaturesEndpoints
                     }
                     catch (ArgumentException ex)
                     {
-                        return GeoServicesErrorHelpers.CreateBadRequestError($"{InvalidCqlFilterPrefix}: {ex.Message}");
+                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
                     }
                 }
             }
@@ -268,13 +269,13 @@ internal static partial class FeaturesEndpoints
                 }
                 catch (ArgumentException ex)
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError($"{InvalidCqlFilterPrefix}: {ex.Message}");
+                    return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
                 }
             }
 
             if (!TryParseBbox(bbox, bboxCrsDefinition.AxisOrder, out var parsedBbox, out var bboxError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(bboxError ?? "Invalid bbox parameter.");
+                return OgcErrorHelpers.CreateBadRequest(context, bboxError ?? "Invalid bbox parameter.");
             }
 
             SpatialFilter? spatialFilter = null;
@@ -285,7 +286,7 @@ internal static partial class FeaturesEndpoints
 
             if (!TryParseTemporalFilter(datetime, layer, out var temporalFilter, out var temporalError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(temporalError ?? "Invalid datetime parameter.");
+                return OgcErrorHelpers.CreateBadRequest(context, temporalError ?? "Invalid datetime parameter.");
             }
 
             var query = new FeatureQuery
@@ -355,19 +356,19 @@ internal static partial class FeaturesEndpoints
         {
             if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Feature '{featureId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
@@ -377,13 +378,13 @@ internal static partial class FeaturesEndpoints
 
             if (!TryResolveCrs(crs, out var crsDefinition, out var crsError))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(crsError ?? "Invalid CRS.");
+                return OgcErrorHelpers.CreateBadRequest(context, crsError ?? "Invalid CRS.");
             }
 
             var feature = await featureStore.GetAsync(layerId, objectId, cancellationToken);
             if (feature == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Feature '{featureId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
             var ogcFeature = ToOgcFeature(feature.Value, crsDefinition.AxisOrder);
@@ -419,20 +420,20 @@ internal static partial class FeaturesEndpoints
         {
             if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var requestFeature = await ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError("Invalid GeoJSON payload.");
+                return OgcErrorHelpers.CreateBadRequest(context, "Invalid GeoJSON payload.");
             }
 
             byte[]? geometryWkb = null;
@@ -440,7 +441,7 @@ internal static partial class FeaturesEndpoints
             {
                 if (!TryCreateWkbFromGeoJson(requestFeature.Geometry, 4326, out var wkb, out var error))
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(error ?? "Invalid geometry.");
+                    return OgcErrorHelpers.CreateBadRequest(context, error ?? "Invalid geometry.");
                 }
                 geometryWkb = wkb;
             }
@@ -450,8 +451,7 @@ internal static partial class FeaturesEndpoints
                 var validationResult = WkbValidation.Validate(geometryWkb);
                 if (!validationResult.IsValid)
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(
-                        $"Invalid geometry: {validationResult.ErrorMessage}");
+                    return OgcErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
                 }
             }
 
@@ -462,6 +462,10 @@ internal static partial class FeaturesEndpoints
             var response = ToOgcFeature(created, OgcFeaturesUtilities.AxisOrder.EastNorth);
 
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
+        }
+        catch (ResourceConflictException ex)
+        {
+            return OgcErrorHelpers.CreateConflict(context, ex.Message);
         }
         catch (Exception ex)
         {
@@ -482,25 +486,25 @@ internal static partial class FeaturesEndpoints
         {
             if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Feature '{featureId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var requestFeature = await ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError("Invalid GeoJSON payload.");
+                return OgcErrorHelpers.CreateBadRequest(context, "Invalid GeoJSON payload.");
             }
 
             byte[]? geometryWkb = null;
@@ -508,7 +512,7 @@ internal static partial class FeaturesEndpoints
             {
                 if (!TryCreateWkbFromGeoJson(requestFeature.Geometry, 4326, out var wkb, out var error))
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(error ?? "Invalid geometry.");
+                    return OgcErrorHelpers.CreateBadRequest(context, error ?? "Invalid geometry.");
                 }
                 geometryWkb = wkb;
             }
@@ -518,8 +522,7 @@ internal static partial class FeaturesEndpoints
                 var validationResult = WkbValidation.Validate(geometryWkb);
                 if (!validationResult.IsValid)
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(
-                        $"Invalid geometry: {validationResult.ErrorMessage}");
+                    return OgcErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
                 }
             }
 
@@ -531,9 +534,17 @@ internal static partial class FeaturesEndpoints
             {
                 updated = await featureStore.UpdateAsync(layerId, feature, cancellationToken);
             }
-            catch (Exception ex) when (ex is InvalidOperationException or Honua.Core.Exceptions.ResourceNotFoundException)
+            catch (ResourceConflictException ex)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Feature '{featureId}' not found.");
+                return OgcErrorHelpers.CreateConflict(context, ex.Message);
+            }
+            catch (ResourceNotFoundException)
+            {
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (InvalidOperationException)
+            {
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
             var response = ToOgcFeature(updated, OgcFeaturesUtilities.AxisOrder.EastNorth);
@@ -558,25 +569,25 @@ internal static partial class FeaturesEndpoints
         {
             if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Feature '{featureId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var deleted = await featureStore.DeleteAsync(layerId, objectId, cancellationToken);
             if (!deleted)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError($"Feature '{featureId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
             return Results.NoContent();
@@ -1348,7 +1359,7 @@ internal static partial class FeaturesEndpoints
     {
         if (formatError is BadRequest<string> badRequest)
         {
-            return GeoServicesErrorHelpers.CreateBadRequestError(badRequest.Value ?? "Invalid format.");
+            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
         }
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
@@ -1360,7 +1371,7 @@ internal static partial class FeaturesEndpoints
                 "Requested format is not acceptable.");
         }
 
-        return GeoServicesErrorHelpers.CreateBadRequestError("Invalid format.");
+        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
     private static string BuildGmlFeatureCollection(IEnumerable<GeoJsonFeature> features)

@@ -82,7 +82,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -120,7 +124,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -187,7 +195,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -320,7 +332,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -358,7 +374,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -397,7 +417,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -423,7 +447,11 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
             return;
         }
 
@@ -482,15 +510,7 @@ internal static partial class ImportEndpoints
 
     private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
     {
-        var error = new ApiErrorResponse
-        {
-            Error = new GeoServicesError
-            {
-                Code = GeoServicesErrorCodes.FromHttpStatusCode(statusCode),
-                Message = message
-            }
-        };
-        IResult result = Results.Json(error, ImportJsonContext.Default.ApiErrorResponse, statusCode: statusCode);
+        IResult result = ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
         return result.ExecuteAsync(context);
     }
 }
