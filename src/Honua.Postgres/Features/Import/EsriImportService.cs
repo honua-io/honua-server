@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
@@ -246,7 +248,7 @@ internal sealed partial class EsriImportService : IEsriImportService
     private static string BuildCreateTableSql(string tableName, EsriLayerInfo layerInfo, int targetSrid)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"CREATE TABLE \"{tableName}\" (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE \"{tableName}\" (");
         sb.AppendLine("    fid SERIAL PRIMARY KEY,");
 
         // Add attribute fields
@@ -257,14 +259,14 @@ internal sealed partial class EsriImportService : IEsriImportService
 
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
             var nullable = field.Nullable ? "" : " NOT NULL";
-            sb.AppendLine($"    \"{SanitizeIdentifier(field.Name)}\" {pgType}{nullable},");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    \"{SanitizeIdentifier(field.Name)}\" {pgType}{nullable},");
         }
 
         // Add geometry column if the layer has geometry
         if (!string.IsNullOrEmpty(layerInfo.GeometryType))
         {
             var pgGeomType = MapEsriGeometryType(layerInfo.GeometryType);
-            sb.AppendLine($"    geom geometry({pgGeomType}, {targetSrid})");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    geom geometry({pgGeomType}, {targetSrid})");
         }
         else
         {
@@ -431,11 +433,7 @@ internal sealed partial class EsriImportService : IEsriImportService
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
                 // Point
-                return JsonSerializer.Serialize(new
-                {
-                    type = "Point",
-                    coordinates = new[] { x.GetDouble(), y.GetDouble() }
-                });
+                return BuildPointGeoJson(x.GetDouble(), y.GetDouble());
             }
 
             if (geometry.TryGetProperty("rings", out var rings))
@@ -447,11 +445,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                         .ToArray())
                     .ToArray();
 
-                return JsonSerializer.Serialize(new
-                {
-                    type = "MultiPolygon",
-                    coordinates = new[] { coordinates }
-                });
+                return BuildMultiPolygonGeoJson(coordinates);
             }
 
             if (geometry.TryGetProperty("paths", out var paths))
@@ -463,11 +457,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                         .ToArray())
                     .ToArray();
 
-                return JsonSerializer.Serialize(new
-                {
-                    type = "MultiLineString",
-                    coordinates
-                });
+                return BuildMultiLineStringGeoJson(coordinates);
             }
 
             if (geometry.TryGetProperty("points", out var points))
@@ -477,11 +467,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                     .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
                     .ToArray();
 
-                return JsonSerializer.Serialize(new
-                {
-                    type = "MultiPoint",
-                    coordinates
-                });
+                return BuildMultiPointGeoJson(coordinates);
             }
 
             return null;
@@ -490,6 +476,94 @@ internal sealed partial class EsriImportService : IEsriImportService
         {
             return null;
         }
+    }
+
+    private static string BuildPointGeoJson(double x, double y)
+        => BuildGeoJson(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "Point");
+            writer.WritePropertyName("coordinates");
+            writer.WriteStartArray();
+            writer.WriteNumberValue(x);
+            writer.WriteNumberValue(y);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+
+    private static string BuildMultiPolygonGeoJson(double[][][] rings)
+        => BuildGeoJson(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "MultiPolygon");
+            writer.WritePropertyName("coordinates");
+            writer.WriteStartArray();
+            writer.WriteStartArray();
+            foreach (var ring in rings)
+            {
+                writer.WriteStartArray();
+                foreach (var coord in ring)
+                {
+                    writer.WriteStartArray();
+                    writer.WriteNumberValue(coord[0]);
+                    writer.WriteNumberValue(coord[1]);
+                    writer.WriteEndArray();
+                }
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+
+    private static string BuildMultiLineStringGeoJson(double[][][] lines)
+        => BuildGeoJson(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "MultiLineString");
+            writer.WritePropertyName("coordinates");
+            writer.WriteStartArray();
+            foreach (var line in lines)
+            {
+                writer.WriteStartArray();
+                foreach (var coord in line)
+                {
+                    writer.WriteStartArray();
+                    writer.WriteNumberValue(coord[0]);
+                    writer.WriteNumberValue(coord[1]);
+                    writer.WriteEndArray();
+                }
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+
+    private static string BuildMultiPointGeoJson(double[][] points)
+        => BuildGeoJson(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "MultiPoint");
+            writer.WritePropertyName("coordinates");
+            writer.WriteStartArray();
+            foreach (var point in points)
+            {
+                writer.WriteStartArray();
+                writer.WriteNumberValue(point[0]);
+                writer.WriteNumberValue(point[1]);
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+
+    private static string BuildGeoJson(Action<Utf8JsonWriter> write)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+        write(writer);
+        writer.Flush();
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
     private async Task CreateSpatialIndexAsync(string tableName, CancellationToken cancellationToken)

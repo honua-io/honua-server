@@ -4,7 +4,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Catalog.Domain;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -39,8 +39,9 @@ internal sealed partial class ArcGisRestClient
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-        var serviceResponse = await GetJsonAsync<ArcGisServiceResponse>(
+        var serviceResponse = await GetJsonAsync(
             $"{normalizedUrl}?f=json",
+            ArcGisJsonContext.Default.ArcGisServiceResponse,
             cts.Token);
 
         var layers = new List<EsriLayerInfo>();
@@ -90,14 +91,20 @@ internal sealed partial class ArcGisRestClient
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-        var layerResponse = await GetJsonAsync<ArcGisLayerResponse>(layerUrl, cts.Token);
+        var layerResponse = await GetJsonAsync(
+            layerUrl,
+            ArcGisJsonContext.Default.ArcGisLayerResponse,
+            cts.Token);
 
         // Try to get feature count
         int? featureCount = null;
         try
         {
             var countUrl = $"{normalizedUrl}/{layerId}/query?where=1=1&returnCountOnly=true&f=json";
-            var countResponse = await GetJsonAsync<ArcGisCountResponse>(countUrl, cts.Token);
+            var countResponse = await GetJsonAsync(
+                countUrl,
+                ArcGisJsonContext.Default.ArcGisCountResponse,
+                cts.Token);
             featureCount = countResponse.Count;
         }
         catch (Exception ex)
@@ -145,7 +152,10 @@ internal sealed partial class ArcGisRestClient
 
         Log.QueryingFeatures(_logger, layerId, offset, batchSize);
 
-        var response = await GetJsonAsync<ArcGisFeatureResponse>(queryUrl, cts.Token);
+        var response = await GetJsonAsync(
+            queryUrl,
+            ArcGisJsonContext.Default.ArcGisFeatureResponse,
+            cts.Token);
 
         if (response.Error != null)
         {
@@ -188,14 +198,15 @@ internal sealed partial class ArcGisRestClient
         return $"{serviceUrl}/{layerId}/query?{string.Join("&", query)}";
     }
 
-    private async Task<T> GetJsonAsync<T>(string url, CancellationToken cancellationToken)
+    private async Task<T> GetJsonAsync<T>(
+        string url,
+        JsonTypeInfo<T> jsonTypeInfo,
+        CancellationToken cancellationToken)
     {
         var response = await _httpClient.GetAsync(url, cancellationToken);
         response.EnsureSuccessStatusCode();
 
-        var result = await response.Content.ReadFromJsonAsync<T>(
-            ArcGisJsonContext.Default.Options,
-            cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync(jsonTypeInfo, cancellationToken);
 
         return result ?? throw new InvalidOperationException("Failed to deserialize response");
     }

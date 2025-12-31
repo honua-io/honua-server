@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -35,7 +36,7 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
             distributedCache, logger, "esri:import:request:", EsriImportJsonContext.Default.EsriImportRequest);
     }
 
-    public IDistributedJobQueue JobQueue => _jobQueue;
+    public IDistributedJobQueueService JobQueue => _jobQueue;
     public IDistributedLeaderElection LeaderElection => _leaderElection;
     public IDistributedProgressStore<EsriImportProgress> ProgressStore => _progressStore;
     public IDistributedProgressStore<EsriImportRequest> RequestStore => _requestStore;
@@ -50,7 +51,7 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 /// Redis-based job queue using IDistributedCache with in-memory fallback.
 /// Note: IDistributedCache doesn't support LPUSH/BRPOP, so we use a polling approach.
 /// </summary>
-internal sealed partial class RedisJobQueue : IDistributedJobQueue
+internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 {
     private readonly IDistributedCache? _cache;
     private readonly ILogger _logger;

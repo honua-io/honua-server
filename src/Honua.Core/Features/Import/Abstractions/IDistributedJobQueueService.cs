@@ -8,7 +8,7 @@ namespace Honua.Core.Features.Import.Abstractions;
 /// <summary>
 /// Distributed job queue abstraction for background processing.
 /// </summary>
-public interface IDistributedJobQueue
+public interface IDistributedJobQueueService
 {
     /// <summary>
     /// Enqueue a job for background processing.
@@ -111,7 +111,7 @@ public interface IDistributedImportJobManager
     /// <summary>
     /// Job queue for Esri imports.
     /// </summary>
-    IDistributedJobQueue JobQueue { get; }
+    IDistributedJobQueueService JobQueue { get; }
 
     /// <summary>
     /// Leader election for background processing.

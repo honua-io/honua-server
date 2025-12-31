@@ -4,7 +4,7 @@
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Import;
 
