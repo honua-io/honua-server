@@ -4,9 +4,11 @@
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 namespace Honua.ServiceDefaults;
@@ -39,8 +41,13 @@ public static partial class Extensions
 
     public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
     {
-        var useOtlp = !string.IsNullOrWhiteSpace(
-            builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+        // Bind tracing options from configuration
+        var tracingOptions = new TracingOptions();
+        builder.Configuration.GetSection(TracingOptions.SectionName).Bind(tracingOptions);
+        builder.Services.Configure<TracingOptions>(builder.Configuration.GetSection(TracingOptions.SectionName));
+
+        var useOtlp = !string.IsNullOrWhiteSpace(tracingOptions.OtlpEndpoint) ||
+                      !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
 
         builder.Logging.AddOpenTelemetry(logging =>
         {
@@ -58,14 +65,85 @@ public static partial class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter("Honua"))
-            .WithTracing(tracing => tracing
-                .AddAspNetCoreInstrumentation()
-                .AddHttpClientInstrumentation());
+                .AddMeter(HonuaTelemetry.ServiceName))
+            .WithTracing(tracing =>
+            {
+                // Configure sampling based on options
+                if (tracingOptions.SamplingRatio < 1.0)
+                {
+                    tracing.SetSampler(new TraceIdRatioBasedSampler(tracingOptions.SamplingRatio));
+                }
+
+                tracing
+                    .AddSource(HonuaTelemetry.ServiceName)
+                    .SetResourceBuilder(
+                        ResourceBuilder.CreateDefault()
+                            .AddService(
+                                serviceName: HonuaTelemetry.ServiceName,
+                                serviceVersion: HonuaTelemetry.ServiceVersion,
+                                serviceInstanceId: Environment.MachineName))
+                    .AddAspNetCoreInstrumentation(options =>
+                    {
+                        // Enrich spans with protocol-specific tags
+                        options.EnrichWithHttpRequest = (activity, request) =>
+                        {
+                            var path = request.Path.Value ?? string.Empty;
+                            var protocol = GetProtocolFromPath(path);
+                            activity.SetTag(HonuaTelemetry.Tags.Protocol, protocol);
+                        };
+
+                        options.EnrichWithHttpResponse = (activity, response) =>
+                        {
+                            if (response.StatusCode >= 400)
+                            {
+                                activity.SetTag(HonuaTelemetry.Tags.Error, true);
+                            }
+                        };
+
+                        // Filter out health check endpoints based on options
+                        options.Filter = context =>
+                        {
+                            if (tracingOptions.TraceHealthEndpoints)
+                            {
+                                return true;
+                            }
+
+                            var path = context.Request.Path.Value ?? string.Empty;
+                            return !path.StartsWith("/healthz", StringComparison.OrdinalIgnoreCase) &&
+                                   !path.StartsWith("/alive", StringComparison.OrdinalIgnoreCase);
+                        };
+
+                        // Record exception details based on options
+                        options.RecordException = tracingOptions.RecordExceptionStackTraces;
+                    })
+                    .AddHttpClientInstrumentation()
+                    .AddNpgsql();
+            });
 
         builder.AddOpenTelemetryExporters();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Determines the API protocol from the request path.
+    /// </summary>
+    private static string GetProtocolFromPath(string path)
+    {
+        if (path.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase))
+            return HonuaTelemetry.Protocols.FeatureServer;
+        if (path.Contains("/ogc/", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/collections", StringComparison.OrdinalIgnoreCase))
+            return HonuaTelemetry.Protocols.OgcFeatures;
+        if (path.Contains("/odata", StringComparison.OrdinalIgnoreCase))
+            return HonuaTelemetry.Protocols.OData;
+        if (path.Contains("/import", StringComparison.OrdinalIgnoreCase))
+            return HonuaTelemetry.Protocols.Import;
+        if (path.Contains("/admin", StringComparison.OrdinalIgnoreCase))
+            return HonuaTelemetry.Protocols.Admin;
+        if (path.Contains("/health", StringComparison.OrdinalIgnoreCase))
+            return HonuaTelemetry.Protocols.Health;
+        return "unknown";
     }
 
     private static IHostApplicationBuilder AddOpenTelemetryExporters(this IHostApplicationBuilder builder)
