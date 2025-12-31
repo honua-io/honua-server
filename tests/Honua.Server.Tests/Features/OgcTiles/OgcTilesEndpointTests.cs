@@ -1,0 +1,233 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Net;
+using System.Net.Http.Json;
+using FluentAssertions;
+using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.OgcTiles.Models;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
+
+namespace Honua.Server.Tests.Features.OgcTiles;
+
+[Protocol(Protocols.OgcApiTiles)]
+[Collection("Database")]
+public sealed class OgcTilesEndpointTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture = new();
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles")]
+    public async Task GetLandingPage_ReturnsRequiredLinks()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var landingPage = await response.Content.ReadFromJsonAsync<LandingPage>();
+        landingPage.Should().NotBeNull();
+        landingPage!.Links.Should().NotBeEmpty();
+
+        var links = landingPage.Links.ToArray();
+        links.Should().Contain(l => l.Rel == RelationTypes.Self);
+        links.Should().Contain(l => l.Rel == RelationTypes.ServiceDesc);
+        links.Should().Contain(l => l.Rel == RelationTypes.Conformance);
+        links.Should().Contain(l => l.Rel == RelationTypes.TilesetsVector);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/conformance")]
+    public async Task GetConformance_ReturnsTilesConformanceClasses()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/conformance");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var conformance = await response.Content.ReadFromJsonAsync<ConformanceDeclaration>();
+        conformance.Should().NotBeNull();
+
+        var classes = conformance!.ConformsTo.ToArray();
+        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/core");
+        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tilesets-list");
+        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tileset");
+        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/openapi.json")]
+    public async Task GetOpenApi_ReturnsJson()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/openapi.json");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().StartWith("application/vnd.oai.openapi+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections")]
+    public async Task GetCollections_ReturnsCollections()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var collections = await response.Content.ReadFromJsonAsync<Collections>();
+        collections.Should().NotBeNull();
+        collections!.CollectionList.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_ReturnsCollectionMetadata()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var collection = await response.Content.ReadFromJsonAsync<CollectionInfo>();
+        collection.Should().NotBeNull();
+        collection!.Links.Should().Contain(l => l.Rel == RelationTypes.TilesetsVector);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles")]
+    public async Task GetDatasetTilesets_ReturnsTilesetsList()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var tilesets = await response.Content.ReadFromJsonAsync<TileSetsList>();
+        tilesets.Should().NotBeNull();
+        tilesets!.Tilesets.Should().NotBeEmpty();
+        tilesets.Tilesets.First().Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
+    public async Task GetDatasetTileset_ReturnsTilesetMetadata()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
+        tileset.Should().NotBeNull();
+        tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
+        tileset.Links.Should().Contain(l => l.Rel == "item");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles")]
+    public async Task GetCollectionTilesets_ReturnsTilesetsList()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0/tiles");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var tilesets = await response.Content.ReadFromJsonAsync<TileSetsList>();
+        tilesets.Should().NotBeNull();
+        tilesets!.Tilesets.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}")]
+    public async Task GetCollectionTileset_ReturnsTilesetMetadata()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0/tiles/WebMercatorQuad");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
+        tileset.Should().NotBeNull();
+        tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
+        tileset.Links.Should().Contain(l => l.Rel == "item");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetTile_ReturnsMvtOrNoContent()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Mvt);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetDatasetTile_ReturnsMvtOrNoContent()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Mvt);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/tileMatrixSets")]
+    public async Task GetTileMatrixSets_ReturnsWebMercatorQuad()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tileMatrixSets");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var list = await response.Content.ReadFromJsonAsync<TileMatrixSetsList>();
+        list.Should().NotBeNull();
+        list!.TileMatrixSets.Should().Contain(item => item.Id == "WebMercatorQuad");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/tileMatrixSets/{tileMatrixSetId}")]
+    public async Task GetTileMatrixSet_ReturnsDefinition()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tileMatrixSets/WebMercatorQuad");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var definition = await response.Content.ReadFromJsonAsync<TileMatrixSetDefinition>();
+        definition.Should().NotBeNull();
+        definition!.TileMatrices.Should().NotBeEmpty();
+    }
+}

@@ -33,8 +33,11 @@ class TestOpenApiSpec:
         response = http_client.get("/openapi.json")
         data = response.json()
         assert "openapi" in data
+        assert "servers" in data
         assert "paths" in data
+        servers = data.get("servers", [])
+        assert any(server.get("url") == "/ogc/features" for server in servers)
         paths = data.get("paths", {})
-        assert "/ogc/features" in paths
-        assert "/ogc/features/collections" in paths
-        assert "/ogc/features/collections/{collectionId}/items" in paths
+        assert "/" in paths
+        assert "/collections" in paths
+        assert "/collections/{collectionId}/items" in paths

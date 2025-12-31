@@ -308,8 +308,20 @@ internal static class CollectionsEndpoints
                 rel: RelationTypes.Queryables,
                 type: MediaTypes.Json,
                 title: "Queryables"
+            ),
+
+            // Tilesets list link (OGC API Tiles)
+            Link.Create(
+                href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
+                rel: RelationTypes.TilesetsVector,
+                type: MediaTypes.Json,
+                title: "Vector tilesets"
             )
         );
+
+        var extentCrs = layer.SpatialReference.Srid == 4326
+            ? OgcFeaturesUtilities.Crs84Uri
+            : layer.SpatialReference.Srid.ToOgcCrs();
 
         return new CollectionInfo
         {
@@ -326,7 +338,7 @@ internal static class CollectionsEndpoints
                         layer.Extent.Value.MinY,
                         layer.Extent.Value.MaxX,
                         layer.Extent.Value.MaxY)),
-                    Crs = layer.SpatialReference.Srid.ToOgcCrs()
+                    Crs = extentCrs
                 }
             } : null,
             Crs = ImmutableArray.Create(
