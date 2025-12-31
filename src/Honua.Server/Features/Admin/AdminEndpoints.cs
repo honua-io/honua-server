@@ -7,6 +7,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 
@@ -27,6 +28,11 @@ internal static class AdminEndpoints
             .WithTags("Admin")
             .RequireAdminAuthorization();
 
+        // Configuration documentation endpoint (self-documenting)
+        _ = adminGroup.Map("/config", HandleGetConfiguration)
+            .WithDisplayName("Get Configuration Documentation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
         _ = adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")
@@ -36,6 +42,35 @@ internal static class AdminEndpoints
         _ = adminGroup.Map("/connections/{*path}", HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Catch All")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+    }
+
+    /// <summary>
+    /// Handle GET /api/admin/config - Self-documenting configuration endpoint.
+    /// Returns all available configuration options, their current values, and environment variable mappings.
+    /// </summary>
+    private static async Task HandleGetConfiguration(HttpContext context)
+    {
+        // Ensure only GET requests
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Only GET requests are allowed for this endpoint")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var configService = context.RequestServices.GetRequiredService<ConfigurationDocumentationService>();
+        var documentation = configService.BuildDocumentation();
+
+        context.Response.StatusCode = 200;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await JsonSerializer.SerializeAsync(
+            context.Response.Body,
+            documentation,
+            ConfigurationJsonContext.Default.ConfigurationDocumentation,
+            context.RequestAborted);
     }
 
     /// <summary>

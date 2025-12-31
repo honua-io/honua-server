@@ -34,6 +34,7 @@ public static class Operations
 
     // Admin Operations
     public const string TableDiscovery = "TableDiscovery";
+    public const string Configuration = "Configuration";
 
     // Health Operations
     public const string HealthCheck = "HealthCheck";
