@@ -1,0 +1,792 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Honua OGC API Tiles",
+    "description": "OGC API Tiles implementation for vector tiles",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/ogc/tiles": {
+      "get": {
+        "summary": "Landing page",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Landing page information",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LandingPage" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/tiles/conformance": {
+      "get": {
+        "summary": "Conformance declaration",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conformance declaration",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConformanceDeclaration" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/tiles/openapi.json": {
+      "get": {
+        "summary": "OpenAPI specification",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json)",
+            "schema": {
+              "type": "string",
+              "enum": ["json"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.0": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/tiles/collections": {
+      "get": {
+        "summary": "Collections list",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collections list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Collections" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/tiles/collections/{collectionId}": {
+      "get": {
+        "summary": "Collection metadata",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionInfo" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/ogc/tiles/tiles": {
+      "get": {
+        "summary": "Dataset tilesets list",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tilesets list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TileSetsList" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/tiles/tiles/{tileMatrixSetId}": {
+      "get": {
+        "summary": "Dataset tileset metadata",
+        "parameters": [
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          },
+          {
+            "name": "collections",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated collection identifiers",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tileset metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TileSet" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
+      "get": {
+        "summary": "Dataset tile",
+        "parameters": [
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tileMatrix",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tileRow",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0 }
+          },
+          {
+            "name": "tileCol",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0 }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Tile format (mvt)",
+            "schema": {
+              "type": "string",
+              "enum": ["mvt"]
+            }
+          },
+          {
+            "name": "datetime",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subset",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "crs",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subset-crs",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "collections",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated collection identifiers",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vector tile",
+            "content": {
+              "application/vnd.mapbox-vector-tile": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "204": { "description": "No content" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/ogc/tiles/collections/{collectionId}/tiles": {
+      "get": {
+        "summary": "Collection tilesets list",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tilesets list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TileSetsList" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}": {
+      "get": {
+        "summary": "Collection tileset metadata",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tileset metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TileSet" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
+      "get": {
+        "summary": "Collection tile",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tileMatrix",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tileRow",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0 }
+          },
+          {
+            "name": "tileCol",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0 }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Tile format (mvt)",
+            "schema": {
+              "type": "string",
+              "enum": ["mvt"]
+            }
+          },
+          {
+            "name": "datetime",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subset",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "crs",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subset-crs",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vector tile",
+            "content": {
+              "application/vnd.mapbox-vector-tile": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "204": { "description": "No content" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/ogc/tiles/tileMatrixSets": {
+      "get": {
+        "summary": "Tile matrix sets list",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tile matrix sets list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TileMatrixSetsList" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}": {
+      "get": {
+        "summary": "Tile matrix set definition",
+        "parameters": [
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Output format (json or html)",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "html"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tile matrix set",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TileMatrixSetDefinition" }
+              },
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "404": { "description": "Not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Link": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {
+          "href": { "type": "string" },
+          "rel": { "type": "string" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "templated": { "type": "boolean" },
+          "hreflang": { "type": "string" }
+        }
+      },
+      "LandingPage": {
+        "type": "object",
+        "required": ["title", "links"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "ConformanceDeclaration": {
+        "type": "object",
+        "required": ["conformsTo"],
+        "properties": {
+          "conformsTo": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "Collections": {
+        "type": "object",
+        "required": ["collections", "links"],
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CollectionInfo" }
+          },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "CollectionInfo": {
+        "type": "object",
+        "required": ["id", "links"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          },
+          "extent": { "$ref": "#/components/schemas/Extent" },
+          "itemType": { "type": "string" },
+          "crs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "storageCrs": { "type": "string" }
+        }
+      },
+      "Extent": {
+        "type": "object",
+        "properties": {
+          "spatial": { "$ref": "#/components/schemas/SpatialExtent" },
+          "temporal": { "$ref": "#/components/schemas/TemporalExtent" }
+        }
+      },
+      "SpatialExtent": {
+        "type": "object",
+        "required": ["bbox"],
+        "properties": {
+          "bbox": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" }
+            }
+          },
+          "crs": { "type": "string" }
+        }
+      },
+      "TemporalExtent": {
+        "type": "object",
+        "required": ["interval"],
+        "properties": {
+          "interval": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "string", "nullable": true }
+            }
+          },
+          "trs": { "type": "string" }
+        }
+      },
+      "TileSetsList": {
+        "type": "object",
+        "required": ["tilesets"],
+        "properties": {
+          "tilesets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TileSetItem" }
+          },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "TileSetItem": {
+        "type": "object",
+        "required": ["dataType", "crs", "links"],
+        "properties": {
+          "title": { "type": "string" },
+          "dataType": { "type": "string" },
+          "crs": { "type": "string" },
+          "tileMatrixSetURI": { "type": "string" },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "TileSet": {
+        "type": "object",
+        "required": ["dataType", "crs", "links"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "dataType": { "type": "string" },
+          "crs": { "type": "string" },
+          "tileMatrixSetURI": { "type": "string" },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          },
+          "mediaTypes": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "TileMatrixSetsList": {
+        "type": "object",
+        "required": ["tileMatrixSets"],
+        "properties": {
+          "tileMatrixSets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TileMatrixSetItem" }
+          },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "TileMatrixSetItem": {
+        "type": "object",
+        "required": ["links"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "uri": { "type": "string" },
+          "crs": { "type": "string" },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
+          }
+        }
+      },
+      "TileMatrixSetDefinition": {
+        "type": "object",
+        "required": ["crs", "tileMatrices"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "uri": { "type": "string" },
+          "crs": { "type": "string" },
+          "wellKnownScaleSet": { "type": "string" },
+          "tileMatrices": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TileMatrix" }
+          }
+        }
+      },
+      "TileMatrix": {
+        "type": "object",
+        "required": [
+          "id",
+          "scaleDenominator",
+          "cellSize",
+          "pointOfOrigin",
+          "tileWidth",
+          "tileHeight",
+          "matrixWidth",
+          "matrixHeight"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "scaleDenominator": { "type": "number" },
+          "cellSize": { "type": "number" },
+          "pointOfOrigin": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "number" }
+          },
+          "tileWidth": { "type": "integer" },
+          "tileHeight": { "type": "integer" },
+          "matrixWidth": { "type": "integer" },
+          "matrixHeight": { "type": "integer" },
+          "cornerOfOrigin": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -12,9 +12,9 @@ RUN addgroup -g 1001 -S builduser && \
 
 # Install native AOT build dependencies with version pinning for security
 RUN apk add --no-cache \
-    clang=18.1.8-r0 \
+    clang=20.1.8-r0 \
     build-base=0.5-r3 \
-    zlib-dev=1.3.1-r1 \
+    zlib-dev=1.3.1-r2 \
     && rm -rf /var/cache/apk/*
 
 # Copy solution and project files first for better layer caching
@@ -47,10 +47,10 @@ FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
 # Security: Update packages and remove package manager
 RUN apk upgrade --no-cache && \
     apk add --no-cache \
-    icu-libs=74.2-r0 \
-    tzdata=2024b-r0 \
-    curl=8.11.0-r0 \
-    ca-certificates=20240705-r0 && \
+    icu-libs=76.1-r1 \
+    tzdata=2025c-r0 \
+    curl=8.14.1-r2 \
+    ca-certificates=20250911-r0 && \
     rm -rf /var/cache/apk/* && \
     rm -rf /tmp/*
 
