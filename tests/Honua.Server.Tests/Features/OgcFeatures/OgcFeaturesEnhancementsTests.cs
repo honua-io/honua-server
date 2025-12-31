@@ -396,13 +396,22 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         json.RootElement.TryGetProperty("paths", out _).Should().BeTrue();
         json.RootElement.TryGetProperty("components", out _).Should().BeTrue();
 
-        // Verify key paths are documented
+        // Verify base server path is documented
+        json.RootElement.TryGetProperty("servers", out var serversElement).Should().BeTrue();
+        serversElement.EnumerateArray()
+            .Any(server =>
+                server.TryGetProperty("url", out var url) &&
+                url.GetString() == "/ogc/features")
+            .Should()
+            .BeTrue();
+
+        // Verify key paths are documented (relative to server base)
         var paths = json.RootElement.GetProperty("paths");
-        paths.TryGetProperty("/ogc/features", out _).Should().BeTrue();
-        paths.TryGetProperty("/ogc/features/conformance", out _).Should().BeTrue();
-        paths.TryGetProperty("/ogc/features/collections", out _).Should().BeTrue();
-        paths.TryGetProperty("/ogc/features/collections/{collectionId}/items", out _).Should().BeTrue();
-        paths.TryGetProperty("/ogc/features/collections/{collectionId}/items/{featureId}", out _).Should().BeTrue();
+        paths.TryGetProperty("/", out _).Should().BeTrue();
+        paths.TryGetProperty("/conformance", out _).Should().BeTrue();
+        paths.TryGetProperty("/collections", out _).Should().BeTrue();
+        paths.TryGetProperty("/collections/{collectionId}/items", out _).Should().BeTrue();
+        paths.TryGetProperty("/collections/{collectionId}/items/{featureId}", out _).Should().BeTrue();
     }
 
     #endregion
