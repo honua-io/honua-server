@@ -42,23 +42,25 @@ CITE tests run automatically:
 
 ## Test Profiles
 
-### Default Profile
-Tests core OGC API Features 1.0 conformance classes:
-- Core
-- OpenAPI 3.0
-- GeoJSON
-- HTML
-
-### Minimal Profile
-Basic conformance testing for quick validation:
-- Core only
-
-### Full Profile
+### Full Profile (default)
 Comprehensive testing including optional features:
 - All default classes
 - CRS (Coordinate Reference Systems)
 - Query parameters
 - Advanced features
+
+Use `--profile default` to run the core conformance classes only.
+
+### Minimal Profile
+Basic conformance testing for quick validation:
+- Core only
+
+### Core Profile (`--profile default`)
+Tests core OGC API Features 1.0 conformance classes:
+- Core
+- OpenAPI 3.0
+- GeoJSON
+- HTML
 
 ## Configuration
 
@@ -67,17 +69,15 @@ Comprehensive testing including optional features:
 The CITE test suite is configured via `docker/cite-config/test-params.xml`:
 
 ```xml
-<!-- Core endpoint configuration -->
-<entry key="landing-page-uri">http://honua-server:8080</entry>
-<entry key="conformance-uri">http://honua-server:8080/conformance</entry>
-<entry key="collections-uri">http://honua-server:8080/collections</entry>
-
-<!-- Collection-specific tests -->
-<entry key="collection-id">test-collection</entry>
-
-<!-- Coordinate reference system tests -->
-<entry key="bbox">-180,-90,180,90</entry>
-<entry key="crs">http://www.opengis.net/def/crs/OGC/1.3/CRS84</entry>
+<values xmlns:parsers="http://www.occamlab.com/te/parsers">
+  <parsers:session>
+    <parsers:test>ets-ogcapi-features10</parsers:test>
+    <parsers:profile>full</parsers:profile>
+  </parsers:session>
+  <value key="ogc-api-features-uri">http://honua-server:8080/ogc/features</value>
+  <value key="collectionsLimit">limited</value>
+  <value key="noOfCollections">1</value>
+</values>
 ```
 
 ### Docker Compose Services

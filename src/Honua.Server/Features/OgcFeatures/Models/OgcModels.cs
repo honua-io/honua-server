@@ -73,6 +73,12 @@ public sealed record Link
     public string? Type { get; init; }
 
     /// <summary>
+    /// Indicates the link is a URI template
+    /// </summary>
+    [JsonPropertyName("templated")]
+    public bool? Templated { get; init; }
+
+    /// <summary>
     /// Language of the linked resource
     /// </summary>
     [JsonPropertyName("hreflang")]
@@ -165,6 +171,31 @@ public static class RelationTypes
     /// Indicates the link target provides queryables schema (OGC API Features Part 3)
     /// </summary>
     public const string Queryables = "queryables";
+
+    /// <summary>
+    /// Indicates the link target provides a tilesets list for vector tiles
+    /// </summary>
+    public const string TilesetsVector = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-vector";
+
+    /// <summary>
+    /// Indicates the link target provides a tilesets list for map tiles
+    /// </summary>
+    public const string TilesetsMap = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-map";
+
+    /// <summary>
+    /// Indicates the link target provides a tilesets list for coverage tiles
+    /// </summary>
+    public const string TilesetsCoverage = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-coverage";
+
+    /// <summary>
+    /// Indicates the link target provides the tiling scheme definition
+    /// </summary>
+    public const string TilingScheme = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme";
+
+    /// <summary>
+    /// Indicates the link target provides the geospatial data resource
+    /// </summary>
+    public const string Geodata = "http://www.opengis.net/def/rel/ogc/1.0/geodata";
 }
 
 /// <summary>
@@ -575,4 +606,9 @@ public static class MediaTypes
     /// GML 3.2 media type
     /// </summary>
     public const string Gml = "application/gml+xml;version=3.2";
+
+    /// <summary>
+    /// Mapbox Vector Tile media type
+    /// </summary>
+    public const string Mvt = "application/vnd.mapbox-vector-tile";
 }

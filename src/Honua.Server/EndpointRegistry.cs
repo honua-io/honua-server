@@ -59,6 +59,20 @@ public static class EndpointRegistry
         new("POST", "/ogc/features/collections/{collectionId}/items"),
         new("PUT", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("DELETE", "/ogc/features/collections/{collectionId}/items/{featureId}"),
+
+        new("GET", "/ogc/tiles"),
+        new("GET", "/ogc/tiles/conformance"),
+        new("GET", "/ogc/tiles/openapi.json"),
+        new("GET", "/ogc/tiles/collections"),
+        new("GET", "/ogc/tiles/collections/{collectionId}"),
+        new("GET", "/ogc/tiles/collections/{collectionId}/tiles"),
+        new("GET", "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}"),
+        new("GET", "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}"),
+        new("GET", "/ogc/tiles/tiles"),
+        new("GET", "/ogc/tiles/tiles/{tileMatrixSetId}"),
+        new("GET", "/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}"),
+        new("GET", "/ogc/tiles/tileMatrixSets"),
+        new("GET", "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}"),
     ];
 }
 
