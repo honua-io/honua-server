@@ -251,6 +251,9 @@ app.MapHealthEndpoints();
 // Configure admin endpoints
 app.MapAdminEndpoints();
 
+// Configure admin metadata endpoints (v1)
+app.MapMetadataEndpoints();
+
 // Configure security endpoints (CSP violation reporting)
 app.MapCspViolationReportEndpoint();
 

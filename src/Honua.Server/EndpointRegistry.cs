@@ -20,9 +20,43 @@ public static class EndpointRegistry
         new("GET", "/api/admin/connections/{id}/tables"),
         new("GET", "/api/admin/connections/{*path}"),
 
+        // v1 admin metadata endpoints
+        new("GET", "/api/v1/admin/metadata/services"),
+        new("GET", "/api/v1/admin/metadata/services/{name}"),
+        new("POST", "/api/v1/admin/metadata/services"),
+        new("PUT", "/api/v1/admin/metadata/services/{name}"),
+        new("DELETE", "/api/v1/admin/metadata/services/{name}"),
+        new("POST", "/api/v1/admin/metadata/services/{name}/layers"),
+        new("DELETE", "/api/v1/admin/metadata/services/{name}/layers/{layerId}"),
+        new("GET", "/api/v1/admin/metadata/layers"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}"),
+        new("POST", "/api/v1/admin/metadata/layers"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}"),
+        new("DELETE", "/api/v1/admin/metadata/layers/{layerId}"),
+        new("POST", "/api/v1/admin/metadata/layers/{layerId}/refresh"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
+        new("POST", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
+        new("DELETE", "/api/v1/admin/metadata/layers/{layerId}/relationships/{relationshipId}"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
+
+        // v1 admin import endpoints (primary)
+        new("GET", "/api/v1/admin/import/formats"),
+        new("POST", "/api/v1/admin/import/preview"),
+        new("POST", "/api/v1/admin/import/upload"),
+        new("GET", "/api/v1/admin/import/jobs/{jobId}"),
+        new("POST", "/api/v1/admin/import/jobs/{jobId}/cancel"),
+        new("GET", "/api/v1/admin/import/jobs"),
+        new("GET", "/api/v1/admin/import/limits"),
+
+        // Legacy import endpoints (backward compatibility aliases)
         new("GET", "/api/import/formats"),
         new("POST", "/api/import/preview"),
         new("POST", "/api/import/upload"),
+        new("GET", "/api/import/jobs/{jobId}"),
+        new("POST", "/api/import/jobs/{jobId}/cancel"),
+        new("GET", "/api/import/jobs"),
+        new("GET", "/api/import/limits"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),

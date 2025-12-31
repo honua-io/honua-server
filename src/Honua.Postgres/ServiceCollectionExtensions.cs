@@ -112,6 +112,9 @@ internal static class ServiceCollectionExtensions
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
 
+        // Register admin catalog for metadata CRUD operations
+        services.AddScoped<IAdminCatalog, PostgresAdminCatalog>();
+
         // Register table discovery implementation
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
