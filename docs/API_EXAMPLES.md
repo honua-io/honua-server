@@ -402,25 +402,209 @@ Admin endpoints require API key authentication using the `HONUA_ADMIN_PASSWORD` 
 export HONUA_ADMIN_PASSWORD="your-secure-password"
 
 # Use password as API key for admin endpoints
-curl "http://localhost:8080/api/admin/connections/test/tables" \
+curl "http://localhost:8080/api/v1/admin/metadata/services" \
   -H "X-API-Key: your-secure-password"
 ```
 
-### Admin Endpoints
+### Admin Endpoints (v1)
+
+All admin endpoints are now versioned under `/api/v1/admin/*` for stability and headless client support.
+
+#### Table Discovery
 
 ```bash
-# Test database connection
-curl "http://localhost:8080/api/admin/connections/test" \
-  -H "X-API-Key: your-secure-password"
-
 # List available tables
 curl "http://localhost:8080/api/admin/connections/test/tables" \
   -H "X-API-Key: your-secure-password"
+```
 
-# Get table schema
-curl "http://localhost:8080/api/admin/connections/test/tables/your_table/schema" \
+#### Admin Metadata API v1 - Services
+
+```bash
+# List all services
+curl "http://localhost:8080/api/v1/admin/metadata/services" \
+  -H "X-API-Key: your-secure-password"
+
+# Get service details
+curl "http://localhost:8080/api/v1/admin/metadata/services/my-service" \
+  -H "X-API-Key: your-secure-password"
+
+# Create a new service
+curl -X POST "http://localhost:8080/api/v1/admin/metadata/services" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "parcels",
+    "description": "Land parcel data service",
+    "spatialReferenceSrid": 4326,
+    "maxRecordCount": 1000
+  }'
+
+# Update a service
+curl -X PUT "http://localhost:8080/api/v1/admin/metadata/services/parcels" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated parcel description",
+    "maxRecordCount": 2000
+  }'
+
+# Delete a service
+curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/services/parcels" \
+  -H "X-API-Key: your-secure-password"
+
+# Bind a layer to a service
+curl -X POST "http://localhost:8080/api/v1/admin/metadata/services/parcels/layers" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{"layerId": 1}'
+
+# Unbind a layer from a service
+curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/services/parcels/layers/1" \
   -H "X-API-Key: your-secure-password"
 ```
+
+#### Admin Metadata API v1 - Layers
+
+```bash
+# List all layers
+curl "http://localhost:8080/api/v1/admin/metadata/layers" \
+  -H "X-API-Key: your-secure-password"
+
+# Get layer details
+curl "http://localhost:8080/api/v1/admin/metadata/layers/1" \
+  -H "X-API-Key: your-secure-password"
+
+# Create a layer from database table
+curl -X POST "http://localhost:8080/api/v1/admin/metadata/layers" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tableName": "parcels",
+    "schemaName": "public",
+    "displayName": "Land Parcels",
+    "description": "Property boundaries"
+  }'
+
+# Update a layer
+curl -X PUT "http://localhost:8080/api/v1/admin/metadata/layers/1" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "displayName": "Updated Layer Name",
+    "minScale": 0,
+    "maxScale": 100000,
+    "defaultVisibility": true
+  }'
+
+# Refresh layer metadata from database
+curl -X POST "http://localhost:8080/api/v1/admin/metadata/layers/1/refresh" \
+  -H "X-API-Key: your-secure-password"
+
+# Delete a layer
+curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/layers/1" \
+  -H "X-API-Key: your-secure-password"
+```
+
+#### Admin Metadata API v1 - Relationships
+
+```bash
+# List relationships for a layer
+curl "http://localhost:8080/api/v1/admin/metadata/layers/1/relationships" \
+  -H "X-API-Key: your-secure-password"
+
+# Create a relationship
+curl -X POST "http://localhost:8080/api/v1/admin/metadata/layers/1/relationships" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "relatedLayerId": 2,
+    "name": "parcel_owners",
+    "relationshipType": "OneToMany",
+    "originForeignKeyField": "parcel_id",
+    "destinationForeignKeyField": "id"
+  }'
+
+# Delete a relationship
+curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/layers/1/relationships/1" \
+  -H "X-API-Key: your-secure-password"
+```
+
+#### Admin Metadata API v1 - Styles
+
+```bash
+# Get layer style
+curl "http://localhost:8080/api/v1/admin/metadata/layers/1/style" \
+  -H "X-API-Key: your-secure-password"
+
+# Update layer style
+curl -X PUT "http://localhost:8080/api/v1/admin/metadata/layers/1/style" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mapLibreStyle": {
+      "layers": [{"id": "fill", "type": "fill", "paint": {"fill-color": "#088"}}]
+    },
+    "drawingInfo": {
+      "renderer": {"type": "simple", "symbol": {"type": "esriSFS"}}
+    }
+  }'
+```
+
+#### Admin Import API v1
+
+```bash
+# Get supported file formats
+curl "http://localhost:8080/api/v1/admin/import/formats" \
+  -H "X-API-Key: your-secure-password"
+
+# Preview a file before import
+curl -X POST "http://localhost:8080/api/v1/admin/import/preview" \
+  -H "X-API-Key: your-secure-password" \
+  -F "file=@parcels.geojson"
+
+# Import a file
+curl -X POST "http://localhost:8080/api/v1/admin/import/upload" \
+  -H "X-API-Key: your-secure-password" \
+  -F "File=@parcels.geojson" \
+  -F "TableName=imported_parcels" \
+  -F "TargetSrid=4326" \
+  -F "OverwriteExisting=true"
+
+# Get import limits
+curl "http://localhost:8080/api/v1/admin/import/limits" \
+  -H "X-API-Key: your-secure-password"
+
+# Get active import jobs
+curl "http://localhost:8080/api/v1/admin/import/jobs" \
+  -H "X-API-Key: your-secure-password"
+
+# Get job status
+curl "http://localhost:8080/api/v1/admin/import/jobs/{jobId}" \
+  -H "X-API-Key: your-secure-password"
+
+# Cancel an import job
+curl -X POST "http://localhost:8080/api/v1/admin/import/jobs/{jobId}/cancel" \
+  -H "X-API-Key: your-secure-password"
+```
+
+### Legacy Admin Endpoints (Backward Compatibility)
+
+The `/api/import/*` endpoints remain available as aliases for backward compatibility:
+
+```bash
+# Legacy import endpoints (forwarded to v1)
+curl "http://localhost:8080/api/import/formats" \
+  -H "X-API-Key: your-secure-password"
+```
+
+### Cache Invalidation
+
+Metadata updates automatically invalidate:
+- Redis/in-memory cache for layer and service metadata
+- Output cache with `metadata` tag (service/layer responses)
+
+This ensures clients always receive fresh data after administrative changes.
 
 ## Error Handling
 
