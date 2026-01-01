@@ -213,6 +213,17 @@ internal static class ServiceCollectionExtensions
             return new InMemoryImportJobService(importService, performanceMonitor, logger);
         });
 
+        // Register ArcGIS REST client for Esri service imports
+        services.AddHttpClient<ArcGisRestClient>()
+            .ConfigureHttpClient(client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(5);
+            });
+
+        // Register Esri import service
+        services.AddScoped<IEsriImportService, EsriImportService>();
+
         return services;
     }
 }
