@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Benchmarks", "benchma
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Tests", "tests\Honua.Postgres.Tests\Honua.Postgres.Tests.csproj", "{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LoadTests", "tests\Honua.LoadTests\Honua.LoadTests.csproj", "{F3CAF898-A725-47A0-876C-11E83330E6EE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -173,6 +175,18 @@ Global
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}.Release|x64.Build.0 = Release|Any CPU
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}.Release|x86.ActiveCfg = Release|Any CPU
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}.Release|x86.Build.0 = Release|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Debug|x64.Build.0 = Debug|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Debug|x86.Build.0 = Debug|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Release|x64.ActiveCfg = Release|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Release|x64.Build.0 = Release|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Release|x86.ActiveCfg = Release|Any CPU
+		{F3CAF898-A725-47A0-876C-11E83330E6EE}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -182,5 +196,6 @@ Global
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{F9F24087-26D9-481F-83B3-402D67B926EE} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{F3CAF898-A725-47A0-876C-11E83330E6EE} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

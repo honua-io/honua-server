@@ -83,6 +83,7 @@ coverage*.cobertura.xml
 TestResults/
 benchmark-results/
 performance-reports/
+load-test-reports/
 codecov
 
 # SQL Server

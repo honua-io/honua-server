@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Net;
 using NBomber.Contracts;
 using NBomber.Contracts.Stats;
 using NBomber.CSharp;
@@ -17,9 +19,9 @@ public static class LoadTestScenarios
     private static readonly string[] _cqlFilters =
     {
         "name LIKE '%test%'",
-        "status = 'active' AND created_at > '2023-01-01'",
-        "ST_INTERSECTS(geometry, POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))",
-        "(category IN ('A', 'B', 'C')) AND (value > 100)"
+        "category = 'test' AND timestamp > TIMESTAMP('2023-01-01T00:00:00Z')",
+        "S_INTERSECTS(shape, POLYGON((-123 37, -123 38, -122 38, -122 37, -123 37)))",
+        "(category IN ('test', 'sample')) AND (objectid > 1)"
     };
 
     private static readonly string[] _connectionPoolEndpoints =
@@ -30,11 +32,30 @@ public static class LoadTestScenarios
         "/healthz/ready"
     };
 
+    private static readonly string[] _odataQueryTemplates =
+    {
+        "/odata/Features({0})?$top=10",
+        "/odata/Features({0})?$top=5&$orderby=ObjectId desc",
+        "/odata/Features({0})?$filter=population gt 1000000&$top=5",
+        "/odata/Features({0})?$select=ObjectId,LayerId&$top=10",
+        "/odata/Layers?$top=5"
+    };
+
+    private static LoadSimulation[] CreateLoadSimulations(int copies, LoadTestProfile profile)
+    {
+        return new[]
+        {
+            Simulation.RampingConstant(copies, profile.RampUp),
+            Simulation.KeepConstant(copies, profile.Duration),
+            Simulation.RampingConstant(0, profile.RampDown)
+        };
+    }
+
     /// <summary>
     /// Basic query performance test for FeatureServer endpoints.
     /// Tests response times under normal load conditions.
     /// </summary>
-    public static ScenarioProps CreateFeatureQueryScenario(string baseUrl, string layerId = "0")
+    public static ScenarioProps CreateFeatureQueryScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
         var httpClient = Http.CreateDefaultClient();
 
@@ -45,14 +66,7 @@ public static class LoadTestScenarios
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
-            .WithLoadSimulations(
-                // Ramp up to 50 concurrent users over 1 minute
-                Simulation.RampingConstant(copies: 50, during: TimeSpan.FromMinutes(1)),
-                // Maintain 50 concurrent users for 2 minutes
-                Simulation.KeepConstant(copies: 50, during: TimeSpan.FromMinutes(2)),
-                // Ramp down over 30 seconds
-                Simulation.RampingConstant(copies: 0, during: TimeSpan.FromSeconds(30))
-            )
+            .WithLoadSimulations(CreateLoadSimulations(profile.FeatureQueryUsers, profile))
             .WithClean(_ =>
             {
                 httpClient.Dispose();
@@ -64,7 +78,7 @@ public static class LoadTestScenarios
     /// Spatial query performance test with bounding box filters.
     /// Tests performance of spatial indexing and filtering.
     /// </summary>
-    public static ScenarioProps CreateSpatialQueryScenario(string baseUrl, string layerId = "0")
+    public static ScenarioProps CreateSpatialQueryScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
         var httpClient = Http.CreateDefaultClient();
 
@@ -83,9 +97,7 @@ public static class LoadTestScenarios
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
-            .WithLoadSimulations(
-                Simulation.Inject(rate: 5, interval: TimeSpan.FromSeconds(1), during: TimeSpan.FromMinutes(2))
-            )
+            .WithLoadSimulations(CreateLoadSimulations(profile.SpatialQueryUsers, profile))
             .WithClean(_ =>
             {
                 httpClient.Dispose();
@@ -97,7 +109,7 @@ public static class LoadTestScenarios
     /// OGC API Features performance test.
     /// Tests OGC endpoint performance compared to FeatureServer.
     /// </summary>
-    public static ScenarioProps CreateOgcQueryScenario(string baseUrl, string collectionId = "0")
+    public static ScenarioProps CreateOgcQueryScenario(string baseUrl, LoadTestProfile profile, string collectionId = "0")
     {
         var httpClient = Http.CreateDefaultClient();
 
@@ -108,9 +120,7 @@ public static class LoadTestScenarios
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
-            .WithLoadSimulations(
-                Simulation.Inject(rate: 10, interval: TimeSpan.FromSeconds(1), during: TimeSpan.FromMinutes(1))
-            )
+            .WithLoadSimulations(CreateLoadSimulations(profile.OgcFeaturesUsers, profile))
             .WithClean(_ =>
             {
                 httpClient.Dispose();
@@ -122,7 +132,7 @@ public static class LoadTestScenarios
     /// Complex CQL2 filter performance test.
     /// Tests performance of filter parsing and SQL translation.
     /// </summary>
-    public static ScenarioProps CreateCqlFilterScenario(string baseUrl, string collectionId = "0")
+    public static ScenarioProps CreateCqlFilterScenario(string baseUrl, LoadTestProfile profile, string collectionId = "0")
     {
         var httpClient = Http.CreateDefaultClient();
 
@@ -134,9 +144,32 @@ public static class LoadTestScenarios
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
-            .WithLoadSimulations(
-                Simulation.Inject(rate: 5, interval: TimeSpan.FromSeconds(1), during: TimeSpan.FromMinutes(2))
-            )
+            .WithLoadSimulations(CreateLoadSimulations(profile.CqlUsers, profile))
+            .WithClean(_ =>
+            {
+                httpClient.Dispose();
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>
+    /// OData query performance test.
+    /// Tests OData query processing under sustained load.
+    /// </summary>
+    public static ScenarioProps CreateODataQueryScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
+    {
+        var httpClient = Http.CreateDefaultClient();
+
+        return Scenario.Create("odata_query_load", async context =>
+            {
+                var templateIndex = (int)(context.InvocationNumber % _odataQueryTemplates.Length);
+                var template = _odataQueryTemplates[templateIndex];
+                var endpoint = string.Format(CultureInfo.InvariantCulture, template, layerId);
+                var response = await httpClient.GetAsync($"{baseUrl}{endpoint}");
+
+                return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
+            })
+            .WithLoadSimulations(CreateLoadSimulations(profile.ODataUsers, profile))
             .WithClean(_ =>
             {
                 httpClient.Dispose();
@@ -148,7 +181,7 @@ public static class LoadTestScenarios
     /// Database connection pool stress test.
     /// Tests system behavior under high connection load.
     /// </summary>
-    public static ScenarioProps CreateConnectionPoolScenario(string baseUrl)
+    public static ScenarioProps CreateConnectionPoolScenario(string baseUrl, LoadTestProfile profile)
     {
         var httpClient = Http.CreateDefaultClient();
 
@@ -161,11 +194,7 @@ public static class LoadTestScenarios
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
-            .WithLoadSimulations(
-                // Burst load to test connection pool limits
-                Simulation.RampingConstant(copies: 200, during: TimeSpan.FromSeconds(30)),
-                Simulation.KeepConstant(copies: 200, during: TimeSpan.FromMinutes(1))
-            )
+            .WithLoadSimulations(CreateLoadSimulations(profile.ConnectionPoolUsers, profile))
             .WithClean(_ =>
             {
                 httpClient.Dispose();
@@ -177,7 +206,7 @@ public static class LoadTestScenarios
     /// Memory stress test with large result sets.
     /// Tests memory management under high data volume.
     /// </summary>
-    public static ScenarioProps CreateMemoryStressScenario(string baseUrl, string layerId = "0")
+    public static ScenarioProps CreateMemoryStressScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
         var httpClient = Http.CreateDefaultClient();
 
@@ -189,9 +218,42 @@ public static class LoadTestScenarios
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
-            .WithLoadSimulations(
-                Simulation.Inject(rate: 2, interval: TimeSpan.FromSeconds(1), during: TimeSpan.FromMinutes(3))
-            )
+            .WithLoadSimulations(CreateLoadSimulations(profile.MemoryStressUsers, profile))
+            .WithClean(_ =>
+            {
+                httpClient.Dispose();
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>
+    /// OGC API Tiles performance test.
+    /// Tests tile rendering and MVT encoding under sustained load.
+    /// </summary>
+    public static ScenarioProps CreateTilesScenario(
+        string baseUrl,
+        LoadTestProfile profile,
+        string collectionId = "0",
+        string tileMatrixSetId = "WebMercatorQuad")
+    {
+        var httpClient = Http.CreateDefaultClient();
+
+        return Scenario.Create("tiles_load", async context =>
+            {
+                var random = new Random(context.InvocationNumber.GetHashCode());
+                var zoom = random.Next(0, 3);
+                var maxIndex = 1 << zoom;
+                var row = random.Next(0, maxIndex);
+                var col = random.Next(0, maxIndex);
+
+                var response = await httpClient.GetAsync(
+                    $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{zoom}/{row}/{col}");
+
+                return response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.NoContent
+                    ? Response.Ok()
+                    : Response.Fail();
+            })
+            .WithLoadSimulations(CreateLoadSimulations(profile.TilesUsers, profile))
             .WithClean(_ =>
             {
                 httpClient.Dispose();
@@ -202,18 +264,69 @@ public static class LoadTestScenarios
     /// <summary>
     /// Creates a comprehensive load test suite combining multiple scenarios.
     /// </summary>
-    public static NBomberContext CreateLoadTestSuite(string baseUrl)
+    public static NBomberContext CreateLoadTestSuite(
+        string baseUrl,
+        LoadTestProfile profile,
+        string layerId = "0",
+        string collectionId = "0",
+        string tileMatrixSetId = "WebMercatorQuad",
+        string? reportFolder = null,
+        ReportFormat[]? reportFormats = null)
     {
+        baseUrl = NormalizeBaseUrl(baseUrl);
+        reportFolder ??= "load-test-reports";
+        reportFormats ??= new[] { ReportFormat.Html, ReportFormat.Csv };
+
+        var scenarios = new List<ScenarioProps>();
+
+        if (profile.FeatureQueryUsers > 0)
+        {
+            scenarios.Add(CreateFeatureQueryScenario(baseUrl, profile, layerId));
+        }
+
+        if (profile.SpatialQueryUsers > 0)
+        {
+            scenarios.Add(CreateSpatialQueryScenario(baseUrl, profile, layerId));
+        }
+
+        if (profile.OgcFeaturesUsers > 0)
+        {
+            scenarios.Add(CreateOgcQueryScenario(baseUrl, profile, collectionId));
+        }
+
+        if (profile.CqlUsers > 0)
+        {
+            scenarios.Add(CreateCqlFilterScenario(baseUrl, profile, collectionId));
+        }
+
+        if (profile.ODataUsers > 0)
+        {
+            scenarios.Add(CreateODataQueryScenario(baseUrl, profile, layerId));
+        }
+
+        if (profile.ConnectionPoolUsers > 0)
+        {
+            scenarios.Add(CreateConnectionPoolScenario(baseUrl, profile));
+        }
+
+        if (profile.MemoryStressUsers > 0)
+        {
+            scenarios.Add(CreateMemoryStressScenario(baseUrl, profile, layerId));
+        }
+
+        if (profile.TilesUsers > 0)
+        {
+            scenarios.Add(CreateTilesScenario(baseUrl, profile, collectionId, tileMatrixSetId));
+        }
+
         return NBomberRunner
-            .RegisterScenarios(
-                CreateFeatureQueryScenario(baseUrl),
-                CreateSpatialQueryScenario(baseUrl),
-                CreateOgcQueryScenario(baseUrl),
-                CreateCqlFilterScenario(baseUrl),
-                CreateConnectionPoolScenario(baseUrl),
-                CreateMemoryStressScenario(baseUrl)
-            )
-            .WithReportFolder("performance-reports")
-            .WithReportFormats(ReportFormat.Html, ReportFormat.Csv);
+            .RegisterScenarios(scenarios.ToArray())
+            .WithReportFolder(reportFolder)
+            .WithReportFormats(reportFormats);
+    }
+
+    private static string NormalizeBaseUrl(string baseUrl)
+    {
+        return baseUrl.TrimEnd('/');
     }
 }
