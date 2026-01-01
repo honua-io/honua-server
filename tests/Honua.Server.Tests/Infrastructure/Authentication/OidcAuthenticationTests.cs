@@ -137,7 +137,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
 
     #region OIDC Configuration Tests
 
-    [IntegrationTest]
+    [UnitTest]
     public void OidcOptions_DefaultConfiguration_HasExpectedDefaults()
     {
         // Arrange
@@ -151,7 +151,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.Contains("administrator", options.AdminRoles);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public void AzureAdOptions_ValidConfiguration_IsValidReturnsTrue()
     {
         // Arrange
@@ -167,7 +167,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.True(options.IsValid);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public void AzureAdOptions_MissingTenantId_IsValidReturnsFalse()
     {
         // Arrange
@@ -182,7 +182,37 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.False(options.IsValid);
     }
 
-    [IntegrationTest]
+    [UnitTest]
+    public void AzureAdOptions_MissingClientId_IsValidReturnsFalse()
+    {
+        // Arrange
+        var options = new AzureAdProviderOptions
+        {
+            Enabled = true,
+            TenantId = "test-tenant-id",
+            ClientId = null
+        };
+
+        // Assert
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
+    public void AzureAdOptions_Disabled_IsValidReturnsFalse()
+    {
+        // Arrange
+        var options = new AzureAdProviderOptions
+        {
+            Enabled = false,
+            TenantId = "test-tenant-id",
+            ClientId = "test-client-id"
+        };
+
+        // Assert
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
     public void GoogleOptions_ValidConfiguration_IsValidReturnsTrue()
     {
         // Arrange
@@ -197,7 +227,22 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.True(options.IsValid);
     }
 
-    [IntegrationTest]
+    [UnitTest]
+    public void GoogleOptions_MissingClientSecret_IsValidReturnsFalse()
+    {
+        // Arrange
+        var options = new GoogleProviderOptions
+        {
+            Enabled = true,
+            ClientId = "test-client-id",
+            ClientSecret = null
+        };
+
+        // Assert
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
     public void GenericOidcOptions_ValidConfiguration_IsValidReturnsTrue()
     {
         // Arrange
@@ -210,6 +255,36 @@ public class OidcAuthenticationTests : IAsyncLifetime
 
         // Assert
         Assert.True(options.IsValid);
+    }
+
+    [UnitTest]
+    public void GenericOidcOptions_MissingAuthority_IsValidReturnsFalse()
+    {
+        // Arrange
+        var options = new GenericOidcProviderOptions
+        {
+            Enabled = true,
+            Authority = null,
+            ClientId = "test-client-id"
+        };
+
+        // Assert
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
+    public void GenericOidcOptions_EmptyAuthority_IsValidReturnsFalse()
+    {
+        // Arrange
+        var options = new GenericOidcProviderOptions
+        {
+            Enabled = true,
+            Authority = "",
+            ClientId = "test-client-id"
+        };
+
+        // Assert
+        Assert.False(options.IsValid);
     }
 
     #endregion
@@ -281,7 +356,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
 
     #region Claims Transformation Tests
 
-    [IntegrationTest]
+    [UnitTest]
     public void ClaimsMapping_DefaultConfiguration_HasExpectedDefaults()
     {
         // Arrange
@@ -295,7 +370,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.Empty(options.CustomMappings);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ClaimsTransformation_WithValidClaims_TransformsCorrectly()
     {
         // Arrange
@@ -327,7 +402,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.Equal("user-123", result.FindFirst(ClaimTypes.NameIdentifier)?.Value);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ClaimsTransformation_WithoutRoles_AddsDefaultRole()
     {
         // Arrange
@@ -356,7 +431,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.False(result.IsInRole("admin"));
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ClaimsTransformation_WithAdminRole_GrantsAdminAccess()
     {
         // Arrange
@@ -386,7 +461,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.True(result.IsInRole("platform-admin"));
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ClaimsTransformation_ApiKeyAuth_SkipsTransformation()
     {
         // Arrange
@@ -415,11 +490,160 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.True(result.IsInRole("admin"));
     }
 
+    [UnitTest]
+    public async Task ClaimsTransformation_WithCustomMappings_AppliesCustomClaims()
+    {
+        // Arrange
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                CustomMappings = new Dictionary<string, string>
+                {
+                    ["department"] = "user_department",
+                    ["employee_id"] = "user_employee_id"
+                }
+            }
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var claims = new List<Claim>
+        {
+            new("sub", "user-custom"),
+            new("department", "Engineering"),
+            new("employee_id", "EMP-12345")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert
+        Assert.Equal("Engineering", result.FindFirst("user_department")?.Value);
+        Assert.Equal("EMP-12345", result.FindFirst("user_employee_id")?.Value);
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_WithMultipleRoles_PreservesAllRoles()
+    {
+        // Arrange
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["admin"]
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var claims = new List<Claim>
+        {
+            new("sub", "user-multi"),
+            new("roles", "reader"),
+            new("roles", "writer"),
+            new("roles", "reviewer")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert
+        Assert.True(result.IsInRole("reader"));
+        Assert.True(result.IsInRole("writer"));
+        Assert.True(result.IsInRole("reviewer"));
+        Assert.False(result.IsInRole("admin"));
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_UnauthenticatedPrincipal_ReturnsUnchanged()
+    {
+        // Arrange
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user"
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var identity = new ClaimsIdentity(); // Not authenticated (no auth type)
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert - should return unchanged
+        Assert.False(result.Identity?.IsAuthenticated);
+        Assert.False(result.IsInRole("user"));
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_NormalizesEmailFromUpn()
+    {
+        // Arrange
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user"
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        // Azure AD often provides email in UPN claim
+        var claims = new List<Claim>
+        {
+            new("sub", "user-upn"),
+            new("upn", "user@contoso.com")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert - email should be extracted from UPN
+        Assert.Equal("user@contoso.com", result.FindFirst(ClaimTypes.Email)?.Value);
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_NormalizesNameFromPreferredUsername()
+    {
+        // Arrange
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user"
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        // Some providers use preferred_username instead of name
+        var claims = new List<Claim>
+        {
+            new("sub", "user-preferred"),
+            new("preferred_username", "jdoe")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert - name should be extracted from preferred_username
+        Assert.Equal("jdoe", result.FindFirst(ClaimTypes.Name)?.Value);
+    }
+
     #endregion
 
     #region Token Validation Options Tests
 
-    [IntegrationTest]
+    [UnitTest]
     public void TokenValidationOptions_DefaultConfiguration_IsSecure()
     {
         // Arrange
