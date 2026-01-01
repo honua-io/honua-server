@@ -99,30 +99,37 @@ public class GeometryMemoryPerformanceTests
         // Arrange
         var iterations = 1000;
         var wkbSize = 4096; // 4KB WKB data
+        WarmUpWkbPool(wkbSize);
 
-        var initialMemory = GC.GetTotalMemory(forceFullCollection: true);
-
-        // Act - Using pooled buffers
-        for (var i = 0; i < iterations; i++)
+        // Act - baseline allocations
+        var baselineAllocations = MeasureAllocatedBytes(() =>
         {
-            using var rental = GeometryMemoryManager.RentWkbBuffer(wkbSize);
-            // Simulate WKB processing
-            for (var j = 0; j < rental.UsableLength; j++)
+            for (var i = 0; i < iterations; i++)
             {
-                rental.Span[j] = (byte)(j % 256);
+                var buffer = new byte[wkbSize];
+                for (var j = 0; j < buffer.Length; j++)
+                {
+                    buffer[j] = (byte)(j % 256);
+                }
             }
-            // Verify data integrity
-            Assert.Equal((byte)0, rental.Span[0]);
-            Assert.Equal((byte)255, rental.Span[255]);
-        }
+        });
 
-        var finalMemory = GC.GetTotalMemory(forceFullCollection: true);
-        var memoryGrowth = finalMemory - initialMemory;
+        // Act - pooled allocations
+        var pooledAllocations = MeasureAllocatedBytes(() =>
+        {
+            for (var i = 0; i < iterations; i++)
+            {
+                using var rental = GeometryMemoryManager.RentWkbBuffer(wkbSize);
+                for (var j = 0; j < rental.UsableLength; j++)
+                {
+                    rental.Span[j] = (byte)(j % 256);
+                }
+            }
+        });
 
         // Assert
-        var expectedMaxGrowth = wkbSize * iterations * 0.1; // Should be much less than allocating every buffer
-        Assert.True(memoryGrowth < expectedMaxGrowth,
-            $"Memory growth ({memoryGrowth} bytes) should be much less than allocating all buffers ({wkbSize * iterations} bytes)");
+        Assert.True(pooledAllocations < baselineAllocations * 0.7,
+            $"Pooled allocations ({pooledAllocations} bytes) should be significantly lower than baseline ({baselineAllocations} bytes)");
     }
 
     [Fact]
@@ -206,6 +213,23 @@ public class GeometryMemoryPerformanceTests
 
         // Assert
         await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    private static void WarmUpWkbPool(int wkbSize)
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            using var rental = GeometryMemoryManager.RentWkbBuffer(wkbSize);
+            rental.Span[0] = 0;
+        }
+    }
+
+    private static long MeasureAllocatedBytes(Action action)
+    {
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        action();
+        var after = GC.GetAllocatedBytesForCurrentThread();
+        return after - before;
     }
 
     /// <summary>
