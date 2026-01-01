@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
@@ -89,6 +90,105 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     {
         // Act
         var response = await _fixture.Client.PostAsync("/api/admin/connections/test/tables", null);
+
+        // Assert
+        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/admin/config")]
+    public async Task GetConfiguration_ReturnsConfigurationDocumentation()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/api/admin/config");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrEmpty();
+
+        // Deserialize and validate response structure
+        var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+            content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
+        configDoc.Should().NotBeNull();
+        configDoc!.Sections.Should().NotBeNull();
+        configDoc.Sections.Should().NotBeEmpty();
+        configDoc.EnvironmentVariables.Should().NotBeNull();
+        configDoc.EnvironmentVariables.Should().NotBeEmpty();
+        configDoc.Version.Should().NotBeNullOrEmpty();
+        configDoc.Environment.Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/admin/config")]
+    public async Task GetConfiguration_ContainsRequiredSections()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var content = await response.Content.ReadAsStringAsync();
+        var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+            content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+        // Assert - verify required sections exist
+        var sectionNames = configDoc!.Sections.Select(s => s.Name).ToList();
+        sectionNames.Should().Contain("Features");
+        sectionNames.Should().Contain("Database");
+        sectionNames.Should().Contain("Cache");
+        sectionNames.Should().Contain("Limits.Query");
+        sectionNames.Should().Contain("RateLimit");
+        sectionNames.Should().Contain("Security");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/admin/config")]
+    public async Task GetConfiguration_SensitiveValuesMasked()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var content = await response.Content.ReadAsStringAsync();
+        var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+            content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+        // Assert - verify sensitive properties are marked correctly
+        var databaseSection = configDoc!.Sections.FirstOrDefault(s => s.Name == "Database");
+        databaseSection.Should().NotBeNull();
+
+        var connectionStringProp = databaseSection!.Properties
+            .FirstOrDefault(p => p.Name == "DefaultConnection");
+        connectionStringProp.Should().NotBeNull();
+        connectionStringProp!.IsSensitive.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/admin/config")]
+    public async Task GetConfiguration_ContainsEnvironmentVariableReference()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var content = await response.Content.ReadAsStringAsync();
+        var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+            content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+        // Assert - verify environment variable quick reference is populated
+        var envVars = configDoc!.EnvironmentVariables;
+        envVars.Should().Contain(e => e.Name == "ConnectionStrings__DefaultConnection");
+        envVars.Should().Contain(e => e.Name == "HONUA_ADMIN_UI");
+        envVars.Should().Contain(e => e.Name == "Cache__Enabled");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/admin/config")]
+    public async Task GetConfiguration_WithWrongHttpMethod_Returns405()
+    {
+        // Act
+        var response = await _fixture.Client.PostAsync("/api/admin/config", null);
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);

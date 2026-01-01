@@ -225,6 +225,14 @@ docs/temp/
 appsettings.Development.json
 !appsettings.Development.json.template
 
+# Environment files (keep examples, ignore actual configs)
+.env
+.env.local
+.env.production
+.env.docker
+!.env.example
+!.env.*.example
+
 # AI assistant workspace files
 .serena/
 .claude/plans/

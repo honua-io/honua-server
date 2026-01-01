@@ -127,6 +127,9 @@ ConfigureCaching(builder.Services, builder.Configuration);
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 
+// Register configuration documentation service for self-documenting admin endpoint
+builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
+
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
