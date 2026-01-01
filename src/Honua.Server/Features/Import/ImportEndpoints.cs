@@ -23,54 +23,69 @@ internal static partial class ImportEndpoints
     /// </summary>
     public static void MapImportEndpoints(this WebApplication app)
     {
-        RouteGroupBuilder group = app.MapGroup("/api/import")
+        // Primary v1 routes at /api/v1/admin/import
+        RouteGroupBuilder v1Group = app.MapGroup("/api/v1/admin/import")
             .WithTags("Import")
             .RequireAdminAuthorization();
 
+        MapImportRoutes(v1Group, isV1: true);
+
+        // Legacy routes at /api/import as backward compatibility aliases
+        RouteGroupBuilder legacyGroup = app.MapGroup("/api/import")
+            .WithTags("Import (Legacy)")
+            .RequireAdminAuthorization();
+
+        MapImportRoutes(legacyGroup, isV1: false);
+    }
+
+    /// <summary>
+    /// Map import routes to a route group
+    /// </summary>
+    private static void MapImportRoutes(RouteGroupBuilder group, bool isV1)
+    {
+        var nameSuffix = isV1 ? "V1" : "";
+
         // Get supported file formats
         _ = group.Map("/formats", HandleGetSupportedFormats)
-            .WithName("GetSupportedFileFormats")
+            .WithName($"GetSupportedFileFormats{nameSuffix}")
             .WithSummary("Get supported geospatial file formats")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
-        // .Produces<FileFormatsResponse>();
 
         // Preview file before import
         _ = group.Map("/preview", HandlePreviewFile)
-            .WithName("PreviewFile")
+            .WithName($"PreviewFile{nameSuffix}")
             .WithSummary("Preview geospatial file contents")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            // .Produces<FilePreview>()
             .DisableAntiforgery(); // For file uploads
 
         // Import geospatial file
         _ = group.Map("/upload", HandleImportFile)
-            .WithName("ImportFile")
+            .WithName($"ImportFile{nameSuffix}")
             .WithSummary("Import geospatial file to PostgreSQL using memory-efficient streaming")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            // .Produces<ImportResult>()
             .DisableAntiforgery(); // For file uploads
 
         // Get import job status
         _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
-            .WithName("GetImportJobStatus")
+            .WithName($"GetImportJobStatus{nameSuffix}")
             .WithSummary("Get the status of a background import job")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Cancel import job
         _ = group.Map("/jobs/{jobId}/cancel", HandleCancelJob)
-            .WithName("CancelImportJob")
+            .WithName($"CancelImportJob{nameSuffix}")
             .WithSummary("Cancel a running background import job")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         // Get all active import jobs
         _ = group.Map("/jobs", HandleGetActiveJobs)
-            .WithName("GetActiveImportJobs")
+            .WithName($"GetActiveImportJobs{nameSuffix}")
             .WithSummary("Get all active background import jobs")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Get import limits configuration
         _ = group.Map("/limits", HandleGetLimits)
-            .WithName("GetImportLimits")
+            .WithName($"GetImportLimits{nameSuffix}")
             .WithSummary("Get current import configuration limits")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
@@ -291,8 +306,8 @@ internal static partial class ImportEndpoints
                 {
                     JobId = jobId,
                     Message = "File queued for background processing",
-                    StatusUrl = $"/api/import/jobs/{jobId}",
-                    CancelUrl = $"/api/import/jobs/{jobId}/cancel"
+                    StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
+                    CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel"
                 };
 
                 IResult result = Results.Json(response, ImportJsonContext.Default.BackgroundImportResponse, statusCode: StatusCodes.Status202Accepted);
