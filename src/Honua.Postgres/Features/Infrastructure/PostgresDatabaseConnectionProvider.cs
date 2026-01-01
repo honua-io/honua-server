@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
@@ -18,12 +19,16 @@ namespace Honua.Postgres.Features.Infrastructure;
 /// - Exponential backoff strategy
 /// - Structured logging for retry attempts
 /// - Proper error handling and resource management
+/// - OpenTelemetry tracing for connection acquisition
 /// </remarks>
 internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
     ILogger<PostgresDatabaseConnectionProvider> logger,
     ISchemaContext? schemaContext = null) : IDatabaseConnectionProvider
 {
+    // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
+    private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
+
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ISchemaContext? _schemaContext = schemaContext;
@@ -35,17 +40,54 @@ internal sealed class PostgresDatabaseConnectionProvider(
     /// <returns>An open PostgreSQL connection</returns>
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
+        using var activity = _activitySource.StartActivity("honua.db.connection", ActivityKind.Client);
+        activity?.SetTag("db.system", "postgresql");
+
+        int retryCount = 0;
+
         // Use the resilience extension method with logging callback
         NpgsqlConnection connection = await _dataSource.OpenConnectionWithRetryAsync(
             onRetry: (ex, delay, attempt) =>
             {
-#pragma warning disable CA1848 // Use LoggerMessage delegates for performance
-                _logger.LogWarning("Database connection retry attempt {Attempt}: {ErrorMessage}", attempt, ex.Message);
-#pragma warning restore CA1848
+                retryCount = attempt;
+                activity?.AddEvent(new ActivityEvent("retry", tags: new ActivityTagsCollection
+                {
+                    { "attempt", attempt },
+                    { "delay_ms", delay.TotalMilliseconds },
+                    { "error.message", ex.Message }
+                }));
+
+                PostgresLog.ConnectionRetry(_logger, attempt, ex.Message);
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        // Apply schema context if specified
+        if (_schemaContext?.CurrentSchema != null)
+        {
+            activity?.SetTag("db.schema", _schemaContext.CurrentSchema);
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Record connection success with retry count
+        activity?.SetTag("db.connection.retry_count", retryCount);
+        activity?.SetStatus(ActivityStatusCode.Ok);
+
         return connection;
     }
+}
+
+/// <summary>
+/// Source-generated logging methods for PostgreSQL operations.
+/// </summary>
+internal static partial class PostgresLog
+{
+    [LoggerMessage(
+        EventId = 6001,
+        Level = LogLevel.Warning,
+        Message = "Database connection retry attempt {Attempt}: {ErrorMessage}")]
+    public static partial void ConnectionRetry(ILogger logger, int attempt, string errorMessage);
 }
