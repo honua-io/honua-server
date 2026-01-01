@@ -470,20 +470,7 @@ public static class FileUploadSecurity
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            if (_remaining <= 0)
-            {
-                return Task.FromResult(0);
-            }
-
-            var toRead = (int)Math.Min(count, _remaining);
-            return ReadAsyncInternal(buffer, offset, toRead, cancellationToken);
-        }
-
-        private async Task<int> ReadAsyncInternal(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            var read = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
-            _remaining -= read;
-            return read;
+            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
         }
 
         public override void Flush()
