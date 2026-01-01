@@ -1,0 +1,169 @@
+name: Load/Soak Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Load profile to run'
+        required: false
+        default: 'nightly'
+        type: choice
+        options:
+          - quick
+          - nightly
+          - soak
+      duration:
+        description: 'Override steady-state duration (e.g., 30m, 00:30:00)'
+        required: false
+        default: ''
+        type: string
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  BASE_URL: 'http://localhost:5000'
+  DB_NAME: honua_load
+  DB_USER: honua
+  DB_PASSWORD: honua_password
+
+jobs:
+  load-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: honua_load
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U honua -d honua_load"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install seed dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml psycopg[binary]
+
+      - name: Seed database
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: ${{ env.DB_NAME }}
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          import time
+          from pathlib import Path
+          import psycopg
+
+          sys.path.append(str(Path.cwd() / "tests" / "python"))
+          from shared.seed import SeedRunner
+
+          host = os.environ["DB_HOST"]
+          port = os.environ["DB_PORT"]
+          dbname = os.environ["DB_NAME"]
+          user = os.environ["DB_USER"]
+          password = os.environ["DB_PASSWORD"]
+
+          dsn = f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+          conn = None
+          for _ in range(30):
+              try:
+                  conn = psycopg.connect(dsn)
+                  break
+              except Exception:
+                  time.sleep(2)
+          if conn is None:
+              raise SystemExit("Postgres did not become ready")
+
+          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis;")
+          conn.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
+          conn.commit()
+
+          runner = SeedRunner("tests/seed/server.yaml")
+          runner.apply(conn)
+          conn.close()
+          PY
+
+      - name: Build server
+        run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
+
+      - name: Start server
+        env:
+          ASPNETCORE_URLS: ${{ env.BASE_URL }}
+          ASPNETCORE_ENVIRONMENT: Production
+          HONUA_DEV_AUTH: "true"
+          ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }}
+        run: |
+          dotnet run --project src/Honua.Server -c Release --no-build > server.log 2>&1 &
+          echo $! > server.pid
+
+      - name: Wait for readiness
+        run: |
+          for i in {1..30}; do
+            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become ready in time."
+          cat server.log
+          exit 1
+
+      - name: Run load/soak tests
+        run: |
+          PROFILE="${{ github.event.inputs.profile || 'nightly' }}"
+          DURATION="${{ github.event.inputs.duration || '' }}"
+          export HONUA_PROCESS_PID=$(cat server.pid)
+          ARGS=(--base-url "$BASE_URL" --profile "$PROFILE" --report-dir load-test-reports)
+          if [[ -n "$DURATION" ]]; then
+            ARGS+=(--duration "$DURATION")
+          fi
+          ./scripts/run-load-soak-tests.sh "${ARGS[@]}"
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [[ -f server.pid ]]; then
+            kill "$(cat server.pid)" >/dev/null 2>&1 || true
+          fi
+
+      - name: Upload load test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-soak-reports-${{ github.run_number }}
+          path: load-test-reports/
+          retention-days: 14
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-soak-logs-${{ github.run_number }}
+          path: server.log
+          retention-days: 14
