@@ -271,6 +271,59 @@ internal static partial class Log
 
     #endregion
 
+    #region Tracing Operations (6000-6999)
+
+    [LoggerMessage(
+        EventId = 6001,
+        Level = LogLevel.Debug,
+        Message = "Trace started: {OperationName} [TraceId: {TraceId}, SpanId: {SpanId}]")]
+    public static partial void TraceStarted(
+        ILogger logger, string operationName, string traceId, string spanId);
+
+    [LoggerMessage(
+        EventId = 6002,
+        Level = LogLevel.Debug,
+        Message = "Trace completed: {OperationName} in {ElapsedMs:F2}ms [TraceId: {TraceId}]")]
+    public static partial void TraceCompleted(
+        ILogger logger, string operationName, double elapsedMs, string traceId);
+
+    [LoggerMessage(
+        EventId = 6003,
+        Level = LogLevel.Warning,
+        Message = "Trace error: {OperationName} failed with {ErrorType} [TraceId: {TraceId}]")]
+    public static partial void TraceError(
+        ILogger logger, string operationName, string errorType, string traceId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 6010,
+        Level = LogLevel.Debug,
+        Message = "Protocol detected: {Protocol} for path {RequestPath}")]
+    public static partial void ProtocolDetected(
+        ILogger logger, string protocol, string requestPath);
+
+    [LoggerMessage(
+        EventId = 6020,
+        Level = LogLevel.Debug,
+        Message = "Feature operation: {Operation} on layer {LayerId}, {FeatureCount} features [Protocol: {Protocol}]")]
+    public static partial void FeatureOperation(
+        ILogger logger, string operation, string layerId, int featureCount, string protocol);
+
+    [LoggerMessage(
+        EventId = 6030,
+        Level = LogLevel.Debug,
+        Message = "Tile generated: z/{Z}/x/{X}/y/{Y} for layer {LayerId} in {ElapsedMs:F2}ms")]
+    public static partial void TileGenerated(
+        ILogger logger, int z, int x, int y, string layerId, double elapsedMs);
+
+    [LoggerMessage(
+        EventId = 6040,
+        Level = LogLevel.Information,
+        Message = "OpenTelemetry configured: OTLP export {OtlpEnabled}, sampling rate {SamplingRate}")]
+    public static partial void OpenTelemetryConfigured(
+        ILogger logger, bool otlpEnabled, double samplingRate);
+
+    #endregion
+
     #region Errors (5000-5999)
 
     [LoggerMessage(
