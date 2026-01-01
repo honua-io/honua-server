@@ -413,7 +413,7 @@ public sealed class FileUploadSecurityTests
 
     #endregion
 
-    private static IFormFile CreateFormFile(Stream stream, string fileName, string contentType)
+    private static FormFile CreateFormFile(Stream stream, string fileName, string contentType)
     {
         var file = new FormFile(stream, 0, stream.Length, "file", fileName)
         {
