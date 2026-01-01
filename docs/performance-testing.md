@@ -7,7 +7,7 @@ This document describes the performance testing infrastructure for Honua Server,
 The performance testing suite consists of:
 
 - **BenchmarkDotNet** - Microbenchmarks for latency and allocation measurements
-- **NBomber (manual)** - Load testing scenarios run outside CI
+- **NBomber** - Load/soak testing scenarios run via `scripts/run-load-soak-tests.sh`
 - **CI Integration** - Automated regression checks for BenchmarkDotNet results
 
 ## Quick Start
@@ -44,6 +44,21 @@ dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *Query*
 dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *SqlGeneration*
 ```
 
+### Running Load/Soak Tests
+
+```bash
+# Quick local load test (minutes)
+./scripts/run-load-soak-tests.sh --base-url http://localhost:5000 --profile quick
+
+# Nightly-length profile (10+ minutes)
+./scripts/run-load-soak-tests.sh --profile nightly
+
+# Override steady-state duration
+./scripts/run-load-soak-tests.sh --profile soak --duration 90m
+```
+
+Detailed guidance and thresholds live in `docs/load-soak-testing.md`.
+
 ## Performance Targets
 
 ### Latency Targets (BenchmarkDotNet)
@@ -56,7 +71,7 @@ dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *SqlGene
 
 ### Load/Soak Targets (Manual)
 
-NBomber scenarios and long-running memory soak checks are run manually and reported separately from CI.
+NBomber scenarios and long-running memory soak checks are run via the load/soak script and reported separately from BenchmarkDotNet baselines.
 
 ## Benchmark Classes
 
