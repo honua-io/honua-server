@@ -92,12 +92,22 @@ public static class FileUploadSecurity
     /// Validates a file upload for security threats.
     /// </summary>
     public static Task<FileValidationResult> ValidateFileAsync(IFormFile file, CancellationToken cancellationToken = default)
-        => ValidateFileAsync(file, null, cancellationToken);
+        => ValidateFileAsync(file, null, null, cancellationToken);
 
     /// <summary>
     /// Validates a file upload for security threats with a custom size limit.
     /// </summary>
     public static async Task<FileValidationResult> ValidateFileAsync(IFormFile file, long? maxFileSizeBytes, CancellationToken cancellationToken = default)
+        => await ValidateFileAsync(file, maxFileSizeBytes, null, cancellationToken);
+
+    /// <summary>
+    /// Validates a file upload for security threats with custom size and scan limits.
+    /// </summary>
+    public static async Task<FileValidationResult> ValidateFileAsync(
+        IFormFile file,
+        long? maxFileSizeBytes,
+        long? maxScanSizeBytes,
+        CancellationToken cancellationToken = default)
     {
         if (file == null || file.Length == 0)
         {
@@ -133,7 +143,7 @@ public static class FileUploadSecurity
         }
 
         // 5. Check file content (magic number validation)
-        var contentResult = await ValidateFileContentAsync(file, cancellationToken);
+        var contentResult = await ValidateFileContentAsync(file, maxScanSizeBytes, cancellationToken);
         if (!contentResult.IsValid)
         {
             return contentResult;
@@ -241,14 +251,30 @@ public static class FileUploadSecurity
     /// Validates file content by checking magic numbers and scanning for malicious patterns.
     /// </summary>
     public static async Task<FileValidationResult> ValidateFileContentAsync(IFormFile file, CancellationToken cancellationToken = default)
+        => await ValidateFileContentAsync(file, null, cancellationToken);
+
+    /// <summary>
+    /// Validates file content with a maximum scan size.
+    /// </summary>
+    public static async Task<FileValidationResult> ValidateFileContentAsync(
+        IFormFile file,
+        long? maxScanSizeBytes,
+        CancellationToken cancellationToken = default)
     {
         try
         {
+            var scanLimit = ResolveScanLimit(file.Length, maxScanSizeBytes);
+            if (scanLimit <= 0)
+            {
+                return FileValidationResult.Valid();
+            }
+
             using var stream = file.OpenReadStream();
 
             // Read first few KB for magic number detection
-            var buffer = new byte[Math.Min(8192, (int)file.Length)];
-            var bytesRead = await stream.ReadAsync(buffer, cancellationToken);
+            var signatureLength = (int)Math.Min(8192, scanLimit);
+            var buffer = new byte[signatureLength];
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, signatureLength), cancellationToken);
 
             if (bytesRead == 0)
             {
@@ -268,7 +294,8 @@ public static class FileUploadSecurity
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
             if (IsTextFile(extension))
             {
-                var textValidationResult = await ValidateTextFileContentAsync(stream, cancellationToken);
+                await using var limitedStream = new LimitedReadStream(file.OpenReadStream(), scanLimit);
+                var textValidationResult = await ValidateTextFileContentAsync(limitedStream, cancellationToken);
                 if (!textValidationResult.IsValid)
                 {
                     return textValidationResult;
@@ -290,11 +317,6 @@ public static class FileUploadSecurity
     {
         try
         {
-            if (stream.CanSeek)
-            {
-                stream.Position = 0;
-            }
-
             using var reader = new StreamReader(stream, leaveOpen: true);
 
             // Check for script patterns
@@ -366,6 +388,122 @@ public static class FileUploadSecurity
         {
             // If we can't read as text, that's fine - it might be binary
             return FileValidationResult.Valid();
+        }
+    }
+
+    private static long ResolveScanLimit(long fileLength, long? maxScanSizeBytes)
+    {
+        var limit = maxScanSizeBytes.GetValueOrDefault(MaxSecurityScanSize);
+        if (limit <= 0)
+        {
+            limit = MaxSecurityScanSize;
+        }
+
+        if (fileLength <= 0)
+        {
+            return limit;
+        }
+
+        return Math.Min(fileLength, limit);
+    }
+
+    private sealed class LimitedReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private long _remaining;
+
+        public LimitedReadStream(Stream inner, long maxBytes)
+        {
+            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+            _remaining = maxBytes;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _remaining;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_remaining <= 0)
+            {
+                return 0;
+            }
+
+            var toRead = (int)Math.Min(count, _remaining);
+            var read = _inner.Read(buffer, offset, toRead);
+            _remaining -= read;
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (_remaining <= 0)
+            {
+                return 0;
+            }
+
+            var toRead = (int)Math.Min(buffer.Length, _remaining);
+            var read = _inner.Read(buffer[..toRead]);
+            _remaining -= read;
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_remaining <= 0)
+            {
+                return 0;
+            }
+
+            var toRead = (int)Math.Min(buffer.Length, _remaining);
+            var read = await _inner.ReadAsync(buffer[..toRead], cancellationToken);
+            _remaining -= read;
+            return read;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            if (_remaining <= 0)
+            {
+                return Task.FromResult(0);
+            }
+
+            var toRead = (int)Math.Min(count, _remaining);
+            return ReadAsyncInternal(buffer, offset, toRead, cancellationToken);
+        }
+
+        private async Task<int> ReadAsyncInternal(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var read = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
+            _remaining -= read;
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await _inner.DisposeAsync();
+            await base.DisposeAsync();
         }
     }
 

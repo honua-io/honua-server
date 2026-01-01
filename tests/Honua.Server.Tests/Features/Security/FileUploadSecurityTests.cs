@@ -5,6 +5,8 @@ using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -304,6 +306,71 @@ public sealed class FileUploadSecurityTests
 
     #endregion
 
+    #region Content Validation
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/addAttachment")]
+    public async Task ValidateFileContentAsync_WithScanLimit_IgnoresContentBeyondLimit()
+    {
+        // Arrange
+        var content = new string('a', 2000) + "<script>alert('x')</script>";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+        var file = CreateFormFile(stream, "data.txt", "text/plain");
+
+        // Act
+        var result = await FileUploadSecurity.ValidateFileContentAsync(file, maxScanSizeBytes: 1024);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/addAttachment")]
+    public async Task ValidateFileContentAsync_WithLargerScanLimit_DetectsContent()
+    {
+        // Arrange
+        var content = new string('a', 2000) + "<script>alert('x')</script>";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+        var file = CreateFormFile(stream, "data.txt", "text/plain");
+
+        // Act
+        var result = await FileUploadSecurity.ValidateFileContentAsync(file, maxScanSizeBytes: 4096);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/addAttachment")]
+    public void FileUploadSecurityOptions_BindsFromEnvironmentVariables()
+    {
+        const string envKey = "FileUploadSecurity__MaxSecurityScanSizeBytes";
+        var previousValue = Environment.GetEnvironmentVariable(envKey);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(envKey, "12345");
+
+            var configuration = new ConfigurationBuilder()
+                .AddEnvironmentVariables()
+                .Build();
+
+            var options = new FileUploadSecurityOptions();
+            configuration.GetSection(FileUploadSecurityOptions.SectionName).Bind(options);
+
+            options.MaxSecurityScanSizeBytes.Should().Be(12345);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envKey, previousValue);
+        }
+    }
+
+    #endregion
+
     #region Extension Validation
 
     [IntegrationTest]
@@ -345,4 +412,15 @@ public sealed class FileUploadSecurityTests
     }
 
     #endregion
+
+    private static IFormFile CreateFormFile(Stream stream, string fileName, string contentType)
+    {
+        var file = new FormFile(stream, 0, stream.Length, "file", fileName)
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = contentType
+        };
+
+        return file;
+    }
 }

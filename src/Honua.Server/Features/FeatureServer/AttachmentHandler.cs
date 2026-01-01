@@ -66,6 +66,7 @@ internal static partial class AttachmentHandler
         string? keywords,
         IAttachmentStore attachmentStore,
         AttachmentLimits limits,
+        FileUploadSecurityOptions securityOptions,
         ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
@@ -99,7 +100,10 @@ internal static partial class AttachmentHandler
             }
 
             // Security Layer 4: Validate file content for malicious signatures
-            var contentValidation = await FileUploadSecurity.ValidateFileContentAsync(file, cancellationToken);
+            var contentValidation = await FileUploadSecurity.ValidateFileContentAsync(
+                file,
+                securityOptions.MaxSecurityScanSizeBytes,
+                cancellationToken);
             if (!contentValidation.IsValid)
             {
                 LogSecurityValidationFailed(logger, layerId, featureId, "content", contentValidation.ErrorMessage);

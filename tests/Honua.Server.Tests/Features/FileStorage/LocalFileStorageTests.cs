@@ -76,6 +76,52 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     }
 
     [IntegrationTest]
+    public async Task UploadAsync_WithTraversalFolder_ShouldFail()
+    {
+        // Arrange
+        var content = "Traversal test content"u8.ToArray();
+        using var stream = new MemoryStream(content);
+        var request = new FileUploadRequest
+        {
+            Content = stream,
+            FileName = "test.txt",
+            ContentType = "text/plain",
+            SizeBytes = content.Length,
+            Folder = "../escape"
+        };
+
+        // Act
+        var result = await _storage.UploadAsync(request);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Folder");
+    }
+
+    [IntegrationTest]
+    public async Task UploadAsync_WithAbsoluteFolder_ShouldFail()
+    {
+        // Arrange
+        var content = "Absolute folder test content"u8.ToArray();
+        using var stream = new MemoryStream(content);
+        var request = new FileUploadRequest
+        {
+            Content = stream,
+            FileName = "test.txt",
+            ContentType = "text/plain",
+            SizeBytes = content.Length,
+            Folder = Path.Combine(Path.GetTempPath(), "honua-absolute")
+        };
+
+        // Act
+        var result = await _storage.UploadAsync(request);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Folder");
+    }
+
+    [IntegrationTest]
     public async Task UploadAsync_WithByteArray_ShouldCreateFile()
     {
         // Arrange
