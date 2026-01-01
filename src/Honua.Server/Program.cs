@@ -144,6 +144,13 @@ builder.Services.AddScoped<Honua.Core.Features.Geometry.Abstractions.IGeometryVa
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.FeatureServerServices>();
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
 
+// Register Esri import job manager and background service
+builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistributedImportJobManager>(sp =>
+    new Honua.Server.Features.Import.RedisImportJobManager(
+        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>()));
+builder.Services.AddHostedService<Honua.Server.Features.Import.EsriImportBackgroundService>();
+
 // OData services use existing FeatureServer services
 
 // Configure authentication options
@@ -273,6 +280,9 @@ app.MapODataEndpoints();
 
 // Configure file import endpoints
 app.MapImportEndpoints();
+
+// Configure Esri service import endpoints
+app.MapEsriImportEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)
