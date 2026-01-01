@@ -3,8 +3,6 @@
 
 using Honua.Core.Features.FileStorage.Abstractions;
 using Honua.Core.Features.FileStorage.Domain;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FileStorage;
@@ -39,13 +37,11 @@ internal sealed class FileStorageCleanupService : BackgroundService
     {
         if (!_options.EnableAutomaticCleanup)
         {
-            _logger.LogInformation("Automatic file cleanup is disabled");
+            FileStorageLog.CleanupDisabled(_logger);
             return;
         }
 
-        _logger.LogInformation(
-            "File storage cleanup service started with interval of {Interval}",
-            _options.CleanupInterval);
+        FileStorageLog.CleanupServiceStarted(_logger, _options.CleanupInterval);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -61,11 +57,11 @@ internal sealed class FileStorageCleanupService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during file storage cleanup");
+                FileStorageLog.CleanupError(_logger, ex);
             }
         }
 
-        _logger.LogInformation("File storage cleanup service stopped");
+        FileStorageLog.CleanupServiceStopped(_logger);
     }
 
     private async Task RunCleanupAsync(CancellationToken cancellationToken)
@@ -77,7 +73,7 @@ internal sealed class FileStorageCleanupService : BackgroundService
 
         if (cleanedCount > 0)
         {
-            _logger.LogInformation("Cleanup completed: removed {Count} expired files", cleanedCount);
+            FileStorageLog.CleanupCompleted(_logger, cleanedCount);
         }
     }
 }

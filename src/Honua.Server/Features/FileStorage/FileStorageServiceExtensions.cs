@@ -3,8 +3,6 @@
 
 using Honua.Core.Features.FileStorage.Abstractions;
 using Honua.Core.Features.FileStorage.Domain;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.FileStorage;
 

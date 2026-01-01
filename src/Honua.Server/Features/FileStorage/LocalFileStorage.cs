@@ -2,13 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.FileStorage.Abstractions;
 using Honua.Core.Features.FileStorage.Domain;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FileStorage;
@@ -24,7 +22,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
     private readonly ConcurrentDictionary<string, HashSet<string>> _batchIndex;
     private readonly string _basePath;
     private readonly string _metadataPath;
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -77,7 +75,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             long sizeBytes;
             await using (var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
             {
-                using var hashAlgorithm = MD5.Create();
+                using var hashAlgorithm = SHA256.Create();
                 await using var cryptoStream = new CryptoStream(fileStream, hashAlgorithm, CryptoStreamMode.Write, leaveOpen: true);
 
                 await request.Content.CopyToAsync(cryptoStream, cancellationToken);
@@ -110,16 +108,19 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             await SaveMetadataAsync(cloudFile, cancellationToken);
 
             stopwatch.Stop();
-            _logger.LogInformation(
-                "Uploaded file {FileName} ({SizeBytes} bytes) as {FileId} in {Duration}ms",
-                request.FileName, sizeBytes, fileId, stopwatch.ElapsedMilliseconds);
+            FileStorageLog.FileUploaded(
+                _logger,
+                request.FileName,
+                sizeBytes,
+                fileId,
+                stopwatch.ElapsedMilliseconds);
 
             return UploadResult.CreateSuccess(cloudFile, stopwatch.Elapsed);
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            _logger.LogError(ex, "Failed to upload file {FileName}", request.FileName);
+            FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
             return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
         }
     }
@@ -156,7 +157,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         var fullPath = Path.Combine(_basePath, cloudFile.StoragePath);
         if (!File.Exists(fullPath))
         {
-            _logger.LogWarning("File metadata exists but file not found on disk: {FileId}", fileId);
+            FileStorageLog.FileMissingOnDisk(_logger, fileId);
             return null;
         }
 
@@ -208,12 +209,12 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 batch.Value.Remove(fileId);
             }
 
-            _logger.LogInformation("Deleted file {FileId}", fileId);
+            FileStorageLog.FileDeleted(_logger, fileId);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete file {FileId}", fileId);
+            FileStorageLog.FileDeleteFailed(_logger, ex, fileId);
             // Re-add to index since deletion failed
             _fileIndex[fileId] = cloudFile;
             return false;
@@ -300,7 +301,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             }
         }
 
-        _logger.LogInformation("Deleted batch {BatchId} with {DeletedCount} files", batchId, deletedCount);
+        FileStorageLog.BatchDeleted(_logger, batchId, deletedCount);
         return deletedCount;
     }
 
@@ -403,7 +404,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
 
         if (cleanedCount > 0)
         {
-            _logger.LogInformation("Cleaned up {Count} expired files", cleanedCount);
+            FileStorageLog.ExpiredFilesCleaned(_logger, cleanedCount);
         }
 
         return cleanedCount;
@@ -414,7 +415,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         if (_options.CreateDirectoryIfNotExists && !Directory.Exists(_basePath))
         {
             Directory.CreateDirectory(_basePath);
-            _logger.LogInformation("Created storage directory: {BasePath}", _basePath);
+            FileStorageLog.StorageDirectoryCreated(_logger, _basePath);
         }
 
         if (!Directory.Exists(_metadataPath))
@@ -439,7 +440,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             try
             {
                 var json = File.ReadAllText(file);
-                var cloudFile = JsonSerializer.Deserialize<CloudFile>(json, JsonOptions);
+                var cloudFile = JsonSerializer.Deserialize<CloudFile>(json, _jsonOptions);
                 if (cloudFile is not null)
                 {
                     _fileIndex[cloudFile.FileId] = cloudFile;
@@ -447,27 +448,24 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                     // Rebuild batch index
                     if (cloudFile.Metadata.TryGetValue("BatchId", out var batchId))
                     {
-                        if (!_batchIndex.ContainsKey(batchId))
-                        {
-                            _batchIndex[batchId] = new HashSet<string>();
-                        }
-                        _batchIndex[batchId].Add(cloudFile.FileId);
+                        var batchFiles = _batchIndex.GetOrAdd(batchId, _ => new HashSet<string>());
+                        batchFiles.Add(cloudFile.FileId);
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to load metadata from {File}", file);
+                FileStorageLog.MetadataLoadFailed(_logger, ex, file);
             }
         }
 
-        _logger.LogInformation("Loaded {Count} files from existing metadata", _fileIndex.Count);
+        FileStorageLog.MetadataLoaded(_logger, _fileIndex.Count);
     }
 
     private async Task SaveMetadataAsync(CloudFile cloudFile, CancellationToken cancellationToken)
     {
         var metadataFile = GetMetadataFilePath(cloudFile.FileId);
-        var json = JsonSerializer.Serialize(cloudFile, JsonOptions);
+        var json = JsonSerializer.Serialize(cloudFile, _jsonOptions);
         await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
     }
 

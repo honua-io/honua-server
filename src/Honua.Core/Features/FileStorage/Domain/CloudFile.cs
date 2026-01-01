@@ -46,7 +46,7 @@ public sealed record CloudFile
     public DateTimeOffset? ExpiresAt { get; init; }
 
     /// <summary>
-    /// MD5 hash of the file content for integrity verification
+    /// SHA-256 hash of the file content for integrity verification
     /// </summary>
     public string? ContentHash { get; init; }
 

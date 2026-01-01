@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Text;
 using FluentAssertions;
-using Honua.Core.Features.FileStorage.Abstractions;
 using Honua.Core.Features.FileStorage.Domain;
 using Honua.Server.Features.FileStorage;
 using Honua.TestKit.Attributes;
@@ -20,7 +19,7 @@ namespace Honua.Server.Tests.Features.FileStorage;
 public class LocalFileStorageTests : IAsyncLifetime, IDisposable
 {
     private readonly string _testBasePath;
-    private readonly ICloudFileStorage _storage;
+    private readonly LocalFileStorage _storage;
     private bool _disposed;
 
     public LocalFileStorageTests()
@@ -422,7 +421,10 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
 
         try
         {

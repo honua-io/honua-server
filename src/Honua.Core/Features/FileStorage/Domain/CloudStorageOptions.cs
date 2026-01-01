@@ -62,7 +62,7 @@ public sealed record LocalStorageOptions
     /// <summary>
     /// Base directory path for storing files
     /// </summary>
-    public required string BasePath { get; init; }
+    public string BasePath { get; init; } = string.Empty;
 
     /// <summary>
     /// Whether to create the base directory if it doesn't exist
@@ -78,12 +78,12 @@ public sealed record AwsS3Options
     /// <summary>
     /// S3 bucket name
     /// </summary>
-    public required string BucketName { get; init; }
+    public string BucketName { get; init; } = string.Empty;
 
     /// <summary>
     /// AWS region (e.g., "us-east-1")
     /// </summary>
-    public required string Region { get; init; }
+    public string Region { get; init; } = string.Empty;
 
     /// <summary>
     /// Optional key prefix for all stored files
@@ -114,12 +114,12 @@ public sealed record AzureBlobOptions
     /// <summary>
     /// Azure Storage connection string
     /// </summary>
-    public required string ConnectionString { get; init; }
+    public string ConnectionString { get; init; } = string.Empty;
 
     /// <summary>
     /// Container name for storing files
     /// </summary>
-    public required string ContainerName { get; init; }
+    public string ContainerName { get; init; } = string.Empty;
 
     /// <summary>
     /// Optional blob prefix for all stored files
@@ -135,12 +135,12 @@ public sealed record GoogleCloudStorageOptions
     /// <summary>
     /// GCS bucket name
     /// </summary>
-    public required string BucketName { get; init; }
+    public string BucketName { get; init; } = string.Empty;
 
     /// <summary>
     /// GCP project ID
     /// </summary>
-    public required string ProjectId { get; init; }
+    public string ProjectId { get; init; } = string.Empty;
 
     /// <summary>
     /// Optional object prefix for all stored files
