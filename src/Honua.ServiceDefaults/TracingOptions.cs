@@ -35,7 +35,7 @@ public class TracingOptions
     /// Gets or sets whether to trace health check endpoints.
     /// Disable to reduce noise from frequent health checks.
     /// </summary>
-    public bool TraceHealthEndpoints { get; set; } = false;
+    public bool TraceHealthEndpoints { get; set; }
 
     /// <summary>
     /// Gets or sets whether to record exception stack traces in spans.

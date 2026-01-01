@@ -64,7 +64,10 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
     private static void EnrichCurrentActivity(HttpContext context, string correlationId)
     {
         var activity = Activity.Current;
-        if (activity == null) return;
+        if (activity == null)
+        {
+            return;
+        }
 
         // Set correlation ID as a tag for trace correlation
         activity.SetTag(HonuaTelemetry.Tags.CorrelationId, correlationId);

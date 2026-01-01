@@ -27,7 +27,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     ISchemaContext? schemaContext = null) : IDatabaseConnectionProvider
 {
     // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
-    private static readonly ActivitySource ActivitySource = new("Honua", "1.0.0");
+    private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
 
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -40,7 +40,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     /// <returns>An open PostgreSQL connection</returns>
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
-        using var activity = ActivitySource.StartActivity("honua.db.connection", ActivityKind.Client);
+        using var activity = _activitySource.StartActivity("honua.db.connection", ActivityKind.Client);
         activity?.SetTag("db.system", "postgresql");
 
         int retryCount = 0;

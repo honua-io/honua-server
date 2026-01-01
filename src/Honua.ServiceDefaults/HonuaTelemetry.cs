@@ -188,7 +188,10 @@ public static class HonuaTelemetry
     /// <param name="exception">The exception that occurred.</param>
     public static void RecordException(Activity? activity, Exception exception)
     {
-        if (activity == null) return;
+        if (activity == null)
+        {
+            return;
+        }
 
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity.SetTag(Tags.Error, true);
@@ -208,7 +211,10 @@ public static class HonuaTelemetry
     /// <param name="featureCount">The number of features processed.</param>
     public static void SetSuccess(Activity? activity, int featureCount = 0)
     {
-        if (activity == null) return;
+        if (activity == null)
+        {
+            return;
+        }
 
         activity.SetStatus(ActivityStatusCode.Ok);
         if (featureCount > 0)
