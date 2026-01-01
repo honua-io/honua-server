@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -327,10 +326,12 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
     public async Task UpdateStyle_WhenLayerNotFound_Returns404()
     {
         // Arrange
+        using var styleDoc = JsonDocument.Parse("{}");
+        var emptyJson = styleDoc.RootElement.Clone();
         var request = new UpdateStyleRequest
         {
-            MapLibreStyle = new { },
-            DrawingInfo = new { }
+            MapLibreStyle = emptyJson,
+            DrawingInfo = emptyJson
         };
 
         var content = new StringContent(

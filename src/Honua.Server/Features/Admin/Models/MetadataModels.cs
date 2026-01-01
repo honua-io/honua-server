@@ -1,8 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json.Serialization;
-using Honua.Core.Features.Catalog.Domain;
+using System.Text.Json;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -377,12 +376,12 @@ public sealed record UpdateStyleRequest
     /// <summary>
     /// Style in MapLibre GL JSON format (optional)
     /// </summary>
-    public object? MapLibreStyle { get; init; }
+    public JsonElement? MapLibreStyle { get; init; }
 
     /// <summary>
     /// GeoServices drawingInfo format (optional)
     /// </summary>
-    public object? DrawingInfo { get; init; }
+    public JsonElement? DrawingInfo { get; init; }
 }
 
 /// <summary>
@@ -398,12 +397,12 @@ public sealed record StyleResponse
     /// <summary>
     /// Style in MapLibre GL JSON format
     /// </summary>
-    public object? MapLibreStyle { get; init; }
+    public JsonElement? MapLibreStyle { get; init; }
 
     /// <summary>
     /// GeoServices drawingInfo format
     /// </summary>
-    public object? DrawingInfo { get; init; }
+    public JsonElement? DrawingInfo { get; init; }
 }
 
 // ============================================================================

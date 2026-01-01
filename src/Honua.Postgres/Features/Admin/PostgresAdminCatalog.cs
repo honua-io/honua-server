@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 
@@ -14,6 +13,8 @@ namespace Honua.Postgres.Features.Admin;
 /// </summary>
 internal sealed class PostgresAdminCatalog : IAdminCatalog
 {
+    private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
+    private static readonly string[] _supportedCapabilities = ["Query", "Extract"];
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _layersTable;
     private readonly string _fieldsTable;
@@ -48,7 +49,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string sql = $"""
             INSERT INTO {_servicesTable} (service_name, description, srid, max_record_count, supported_formats, capabilities)
             VALUES (@name, @description, @srid, @maxRecordCount, @supportedFormats, @capabilities)
-            ON CONFLICT (LOWER(service_name)) DO UPDATE SET service_name = EXCLUDED.service_name
+            ON CONFLICT (service_name) DO UPDATE SET service_name = EXCLUDED.service_name
             RETURNING service_name
             """;
 
@@ -58,8 +59,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         _ = command.Parameters.AddWithValue("@description", description);
         _ = command.Parameters.AddWithValue("@srid", spatialReference.Srid);
         _ = command.Parameters.AddWithValue("@maxRecordCount", maxRecordCount);
-        _ = command.Parameters.AddWithValue("@supportedFormats", new[] { "JSON", "GeoJSON" });
-        _ = command.Parameters.AddWithValue("@capabilities", new[] { "Query", "Extract" });
+        _ = command.Parameters.AddWithValue("@supportedFormats", _supportedFormats);
+        _ = command.Parameters.AddWithValue("@capabilities", _supportedCapabilities);
 
         _ = await command.ExecuteScalarAsync(cancellationToken);
 
@@ -205,11 +206,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         CancellationToken cancellationToken = default)
     {
         // Discover table metadata from PostGIS
-        var tableInfo = await DiscoverTableAsync(schemaName, tableName, cancellationToken);
-        if (tableInfo == null)
-        {
-            throw new InvalidOperationException($"Table '{schemaName}.{tableName}' not found or is not a valid geospatial table");
-        }
+        var tableInfo = await DiscoverTableAsync(schemaName, tableName, cancellationToken)
+            ?? throw new InvalidOperationException($"Table '{schemaName}.{tableName}' not found or is not a valid geospatial table");
 
         // Get next layer ID
         string idSql = $"SELECT COALESCE(MAX(layer_id), 0) + 1 FROM {_layersTable}";
