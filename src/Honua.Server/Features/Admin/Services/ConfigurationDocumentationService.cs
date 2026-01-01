@@ -1,12 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
+using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Features.Admin.Services;
 
@@ -415,11 +415,19 @@ internal sealed class ConfigurationDocumentationService
         };
     }
 
-    private object? GetCurrentValue(string path, bool isSensitive)
+    private string? GetCurrentValue(string path, bool isSensitive)
     {
         var value = _configuration[path];
-        if (value == null) return null;
-        if (isSensitive) return "***";
+        if (value == null)
+        {
+            return null;
+        }
+
+        if (isSensitive)
+        {
+            return "***";
+        }
+
         return value;
     }
 
@@ -441,7 +449,7 @@ internal sealed class ConfigurationDocumentationService
         return "Default";
     }
 
-    private IReadOnlyList<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
+    private List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
     {
         return new List<EnvironmentVariableInfo>
         {

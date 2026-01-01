@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Configuration;
+using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -13,6 +14,13 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ConfigurationSection))]
 [JsonSerializable(typeof(ConfigurationProperty))]
 [JsonSerializable(typeof(EnvironmentVariableInfo))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(TimeSpan))]
+[JsonSerializable(typeof(object))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

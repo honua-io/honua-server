@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Configuration;
@@ -31,7 +32,10 @@ public static class ConfigurationExtensions
     public static bool IsFeatureEnabled(this IConfiguration configuration, string featureName)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(featureName);
+        if (string.IsNullOrWhiteSpace(featureName))
+        {
+            throw new ArgumentException("Feature name is required.", nameof(featureName));
+        }
 
         var envVarName = $"HONUA_{featureName.ToUpperInvariant()}";
         var value = configuration[envVarName];
@@ -63,7 +67,10 @@ public static class ConfigurationExtensions
     public static string GetRequiredValue(this IConfiguration configuration, string key)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            throw new ArgumentException("Configuration key is required.", nameof(key));
+        }
 
         var value = configuration[key];
 
@@ -89,10 +96,86 @@ public static class ConfigurationExtensions
     public static T GetValueOrDefault<T>(this IConfiguration configuration, string key, T defaultValue)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            throw new ArgumentException("Configuration key is required.", nameof(key));
+        }
 
-        var value = configuration.GetValue<T>(key);
-        return value ?? defaultValue;
+        var rawValue = configuration[key];
+        if (string.IsNullOrEmpty(rawValue))
+        {
+            return defaultValue;
+        }
+
+        var targetType = typeof(T);
+
+        if (targetType == typeof(string))
+        {
+            return (T)(object)rawValue;
+        }
+
+        if (targetType == typeof(int) &&
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        {
+            return (T)(object)intValue;
+        }
+
+        if (targetType == typeof(long) &&
+            long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+        {
+            return (T)(object)longValue;
+        }
+
+        if (targetType == typeof(double) &&
+            double.TryParse(rawValue, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue))
+        {
+            return (T)(object)doubleValue;
+        }
+
+        if (targetType == typeof(bool) && TryParseBoolean(rawValue, out var boolValue))
+        {
+            return (T)(object)boolValue;
+        }
+
+        if (targetType == typeof(TimeSpan) &&
+            TimeSpan.TryParse(rawValue, CultureInfo.InvariantCulture, out var timeSpanValue))
+        {
+            return (T)(object)timeSpanValue;
+        }
+
+        if (targetType.IsEnum && Enum.TryParse(targetType, rawValue, true, out var enumValue))
+        {
+            return (T)enumValue;
+        }
+
+        return defaultValue;
+    }
+
+    private static bool TryParseBoolean(string value, out bool result)
+    {
+        if (bool.TryParse(value, out result))
+        {
+            return true;
+        }
+
+        if (value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("on", StringComparison.OrdinalIgnoreCase))
+        {
+            result = true;
+            return true;
+        }
+
+        if (value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("off", StringComparison.OrdinalIgnoreCase))
+        {
+            result = false;
+            return true;
+        }
+
+        result = false;
+        return false;
     }
 
     /// <summary>
