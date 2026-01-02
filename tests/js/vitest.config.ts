@@ -17,11 +17,7 @@ export default defineConfig({
     },
     // Sequential by default for database-backed tests
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
+    fileParallelism: false,
     // Environment variables for test configuration
     env: {
       HONUA_BASE_URL: process.env.HONUA_BASE_URL || 'http://localhost:5555',
