@@ -123,6 +123,10 @@ ConfigureRateLimiting(builder.Services, builder.Configuration);
 // Configure caching options and register cache services
 ConfigureCaching(builder.Services, builder.Configuration);
 
+// Configure file upload security limits
+builder.Services.Configure<FileUploadSecurityOptions>(
+    builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+
 // Register health check services
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();

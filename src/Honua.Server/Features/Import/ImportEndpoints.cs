@@ -6,6 +6,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Import;
 
@@ -158,9 +159,11 @@ internal static partial class ImportEndpoints
         }
 
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var previewValidation = await FileUploadSecurity.ValidateFileAsync(
             file,
             importService.Limits.MaxPreviewSizeBytes,
+            securityOptions.Value.MaxSecurityScanSizeBytes,
             cancellationToken);
         if (!previewValidation.IsValid)
         {
@@ -244,10 +247,12 @@ internal static partial class ImportEndpoints
         }
 
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
         var uploadValidation = await FileUploadSecurity.ValidateFileAsync(
             file,
             maxFileSizeBytes,
+            securityOptions.Value.MaxSecurityScanSizeBytes,
             cancellationToken);
         if (!uploadValidation.IsValid)
         {

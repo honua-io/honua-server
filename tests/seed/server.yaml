@@ -236,14 +236,17 @@ sql:
           (0, 'description', 'String', 2, 500, true, 'Description'),
           (0, 'category', 'String', 3, 255, true, 'Category'),
           (0, 'timestamp', 'DateTime', 4, null, true, 'Timestamp'),
+          (0, 'shape', 'Geometry', 5, null, true, 'Geometry'),
           (1, 'objectid', 'Integer', 0, null, false, 'Object ID'),
           (1, 'name', 'String', 1, 255, true, 'Name field'),
           (1, 'related_id', 'Integer', 2, null, true, 'Foreign key to origin layer'),
           (1, 'description', 'String', 3, 500, true, 'Description'),
+          (1, 'shape', 'Geometry', 4, null, true, 'Geometry'),
           (2, 'objectid', 'Integer', 0, null, false, 'Object ID'),
           (2, 'name', 'String', 1, 255, true, 'Name field'),
           (2, 'secondary_id', 'Integer', 2, null, true, 'Foreign key to origin layer'),
-          (2, 'type', 'String', 3, 100, true, 'Type field')
+          (2, 'type', 'String', 3, 100, true, 'Type field'),
+          (2, 'shape', 'Geometry', 4, null, true, 'Geometry')
       ON CONFLICT (layer_id, field_name) DO UPDATE SET
           field_type = EXCLUDED.field_type,
           field_order = EXCLUDED.field_order,

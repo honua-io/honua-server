@@ -1,26 +1,26 @@
 {
   "Version": "1.0",
-  "Created": "2025-12-26",
-  "Description": "BenchmarkDotNet baseline for query benchmarks",
+  "Created": "2026-01-01",
+  "Description": "BenchmarkDotNet baseline for query benchmarks (CI)",
   "Environment": {
-    "Runtime": ".NET 10.0.0 (10.0.25.52411)",
-    "OS": "Ubuntu 24.04.2 LTS (Noble Numbat) WSL",
-    "Hardware": "Intel Core Ultra 7 165H (11C/22T)"
+    "Runtime": ".NET 10.0.1 (10.0.1, 10.0.125.57005)",
+    "OS": "Linux Ubuntu 24.04.3 LTS (Noble Numbat)",
+    "Hardware": "AMD EPYC 7763 (2C/4T)"
   },
   "Benchmarks": [
     {
       "Method": "SimpleWhereQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 2451507.949928977,
-        "StandardError": 12361.64283795927,
-        "Percentile95": 2520686.5894531254,
-        "Percentile99": 2610065.638828125
+        "Mean": 3191296.8619791665,
+        "StandardError": 21174.674651592075,
+        "Percentile95": 3218664.146875,
+        "Percentile99": 3220016.698125
       },
       "Memory": {
-        "AllocatedBytes": 227015,
-        "Gen0Collections": 4,
-        "Gen1Collections": 1,
+        "AllocatedBytes": 226970,
+        "Gen0Collections": 1,
+        "Gen1Collections": 0,
         "Gen2Collections": 0
       }
     },
@@ -28,15 +28,15 @@
       "Method": "SpatialBboxQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 2109807.689453125,
-        "StandardError": 8122.470443045103,
-        "Percentile95": 2146433.35078125,
-        "Percentile99": 2162938.49203125
+        "Mean": 2784677.2096354165,
+        "StandardError": 6310.911539108208,
+        "Percentile95": 2794728.488671875,
+        "Percentile99": 2795679.453984375
       },
       "Memory": {
-        "AllocatedBytes": 226719,
-        "Gen0Collections": 4,
-        "Gen1Collections": 1,
+        "AllocatedBytes": 226940,
+        "Gen0Collections": 3,
+        "Gen1Collections": 0,
         "Gen2Collections": 0
       }
     },
@@ -44,15 +44,15 @@
       "Method": "CombinedWhereAndSpatialQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 1869518.3294270833,
-        "StandardError": 6332.919171379726,
-        "Percentile95": 1907898.630859375,
-        "Percentile99": 1912052.726171875
+        "Mean": 2315844.5924479165,
+        "StandardError": 4639.19658062007,
+        "Percentile95": 2323430.3921875,
+        "Percentile99": 2324209.4784375
       },
       "Memory": {
-        "AllocatedBytes": 228550,
-        "Gen0Collections": 4,
-        "Gen1Collections": 1,
+        "AllocatedBytes": 228528,
+        "Gen0Collections": 3,
+        "Gen1Collections": 0,
         "Gen2Collections": 0
       }
     },
@@ -60,15 +60,15 @@
       "Method": "PaginatedQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 2519894.5989583335,
-        "StandardError": 6696.480260784667,
-        "Percentile95": 2558832.526953125,
-        "Percentile99": 2559035.446015625
+        "Mean": 3373129.3098958335,
+        "StandardError": 14825.3683731482,
+        "Percentile95": 3398455.5226562503,
+        "Percentile99": 3401844.15453125
       },
       "Memory": {
-        "AllocatedBytes": 228065,
-        "Gen0Collections": 4,
-        "Gen1Collections": 1,
+        "AllocatedBytes": 228075,
+        "Gen0Collections": 1,
+        "Gen1Collections": 0,
         "Gen2Collections": 0
       }
     },
@@ -76,15 +76,15 @@
       "Method": "LargeResultSet",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 5205133.046875,
-        "StandardError": 27199.876960164493,
-        "Percentile95": 5498790.29375,
-        "Percentile99": 5822959.804999999
+        "Mean": 7290796.145833333,
+        "StandardError": 33916.49077731198,
+        "Percentile95": 7348684.1546875,
+        "Percentile99": 7356564.2059375
       },
       "Memory": {
-        "AllocatedBytes": 2213556,
-        "Gen0Collections": 11,
-        "Gen1Collections": 10,
+        "AllocatedBytes": 2213492,
+        "Gen0Collections": 8,
+        "Gen1Collections": 7,
         "Gen2Collections": 0
       }
     }

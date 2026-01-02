@@ -5,6 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -135,6 +136,7 @@ internal static class AttachmentEndpoints
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await AddAttachmentAsync(
@@ -144,6 +146,7 @@ internal static class AttachmentEndpoints
             keywords,
             attachmentStore,
             limitsOptions.Value.Attachments,
+            securityOptions.Value,
             logger,
             context.RequestAborted);
 
@@ -320,8 +323,17 @@ internal static class AttachmentEndpoints
     private static Task<IResult> QueryAttachmentsAsync(int layerId, long featureId, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.QueryAttachmentsAsync(layerId, featureId, attachmentStore, logger, cancellationToken);
 
-    private static Task<IResult> AddAttachmentAsync(int layerId, long featureId, IFormFile file, string? keywords, IAttachmentStore attachmentStore, AttachmentLimits limits, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
-        => AttachmentHandler.AddAttachmentAsync(layerId, featureId, file, keywords, attachmentStore, limits, logger, cancellationToken);
+    private static Task<IResult> AddAttachmentAsync(
+        int layerId,
+        long featureId,
+        IFormFile file,
+        string? keywords,
+        IAttachmentStore attachmentStore,
+        AttachmentLimits limits,
+        FileUploadSecurityOptions securityOptions,
+        ILogger<AttachmentOperations> logger,
+        CancellationToken cancellationToken)
+        => AttachmentHandler.AddAttachmentAsync(layerId, featureId, file, keywords, attachmentStore, limits, securityOptions, logger, cancellationToken);
 
     private static Task<IResult> UpdateAttachmentAsync(int layerId, long featureId, long attachmentId, string? keywords, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
         => AttachmentHandler.UpdateAttachmentAsync(layerId, featureId, attachmentId, keywords, attachmentStore, logger, cancellationToken);
