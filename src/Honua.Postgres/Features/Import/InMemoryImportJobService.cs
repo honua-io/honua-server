@@ -40,21 +40,29 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         long fileSize,
         CancellationToken cancellationToken = default)
     {
-        var jobId = Guid.NewGuid().ToString("N")[..8];
         var format = _importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
         var formatName = format.ToString();
 
-        var progress = ImportProgress.CreateInitial(jobId, request.TableName, format, fileSize);
-        var state = new ImportJobState
+        ImportJobState state;
+        string jobId;
+        while (true)
         {
-            Progress = progress,
-            Request = request,
-            StartedAt = DateTimeOffset.UtcNow,
-            FileSize = fileSize,
-            Format = formatName
-        };
+            jobId = Guid.NewGuid().ToString("N")[..8];
+            var progress = ImportProgress.CreateInitial(jobId, request.TableName, format, fileSize);
+            state = new ImportJobState
+            {
+                Progress = progress,
+                Request = request,
+                StartedAt = DateTimeOffset.UtcNow,
+                FileSize = fileSize,
+                Format = formatName
+            };
 
-        _jobs[jobId] = state;
+            if (_jobs.TryAdd(jobId, state))
+            {
+                break;
+            }
+        }
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancellationTokens[jobId] = cts;
