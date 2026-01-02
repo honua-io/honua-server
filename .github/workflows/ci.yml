@@ -228,7 +228,7 @@ jobs:
           sleep 10
           curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:5000/health || exit 1
         env:
-          ConnectionStrings__Default: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
+          ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
           ASPNETCORE_URLS: "http://localhost:5000"
 
       - name: Install JavaScript test dependencies
