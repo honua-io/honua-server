@@ -1,0 +1,236 @@
+name: OGC API Tiles CITE Conformance Tests
+
+on:
+  schedule:
+    # Run weekly to catch conformance regressions
+    - cron: '0 6 * * 2'  # Tuesday at 6am UTC (different from Features on Monday)
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'CITE test profile'
+        required: false
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - minimal
+          - full
+
+permissions:
+  contents: read
+  pull-requests: write  # For PR comments
+
+jobs:
+  cite-tiles-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v5
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-cite-tiles-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-cite-tiles-
+            ${{ runner.os }}-buildx-cite-
+            ${{ runner.os }}-buildx-
+
+      - name: Build Honua Server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: honua-server:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
+      - name: Run OGC API Tiles CITE conformance tests
+        env:
+          CITE_PROFILE: ${{ github.event.inputs.profile || 'default' }}
+        run: |
+          # Run CITE tests with appropriate timeout
+          timeout 2400 ./scripts/run-cite-tiles-tests.sh --profile "$CITE_PROFILE" --verbose || cite_exit_code=$?
+
+          # Check if timeout occurred (exit code 124)
+          if [[ ${cite_exit_code:-0} -eq 124 ]]; then
+            echo "CITE tests timed out after 40 minutes"
+            exit 1
+          elif [[ ${cite_exit_code:-0} -ne 0 ]]; then
+            echo "CITE tests failed with exit code: ${cite_exit_code:-0}"
+            exit 1
+          fi
+
+      - name: Parse CITE results
+        id: parse-results
+        run: |
+          if [ -f cite-tiles-results/cite-tiles-summary.md ]; then
+            # Extract key metrics from summary
+            TOTAL_TESTS=$(grep "Total Tests" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' || echo "0")
+            PASSED_TESTS=$(grep "Passed" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' | head -1 || echo "0")
+            FAILED_TESTS=$(grep "Failed" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' | head -1 || echo "0")
+            SUCCESS_RATE=$(grep "Success Rate" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' || echo "0")
+
+            echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+            echo "passed_tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
+            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
+            echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
+            echo "results_available=true" >> $GITHUB_OUTPUT
+
+            # Check for specific conformance classes
+            CORE_PASSED="false"
+            TILESET_PASSED="false"
+            MVT_PASSED="false"
+            OPENAPI_PASSED="false"
+
+            if grep -q "Core.*PASSED\|core.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
+              CORE_PASSED="true"
+            fi
+
+            if grep -q "Tileset.*PASSED\|tileset.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
+              TILESET_PASSED="true"
+            fi
+
+            if grep -q "MVT.*PASSED\|mvt.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
+              MVT_PASSED="true"
+            fi
+
+            if grep -q "OpenAPI.*PASSED\|openapi.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
+              OPENAPI_PASSED="true"
+            fi
+
+            echo "core_passed=$CORE_PASSED" >> $GITHUB_OUTPUT
+            echo "tileset_passed=$TILESET_PASSED" >> $GITHUB_OUTPUT
+            echo "mvt_passed=$MVT_PASSED" >> $GITHUB_OUTPUT
+            echo "openapi_passed=$OPENAPI_PASSED" >> $GITHUB_OUTPUT
+          else
+            echo "results_available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload CITE test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cite-tiles-conformance-results-${{ github.run_number }}
+          path: |
+            cite-tiles-results/
+            docker/cite-tiles-config/
+          retention-days: 30
+
+      - name: Comment on PR (Success)
+        if: github.event_name == 'pull_request' && steps.parse-results.outputs.results_available == 'true' && steps.parse-results.outputs.failed_tests == '0'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const totalTests = '${{ steps.parse-results.outputs.total_tests }}';
+            const passedTests = '${{ steps.parse-results.outputs.passed_tests }}';
+            const successRate = '${{ steps.parse-results.outputs.success_rate }}';
+            const corePass = '${{ steps.parse-results.outputs.core_passed }}' === 'true' ? 'Y' : 'N';
+            const tilesetPass = '${{ steps.parse-results.outputs.tileset_passed }}' === 'true' ? 'Y' : 'N';
+            const mvtPass = '${{ steps.parse-results.outputs.mvt_passed }}' === 'true' ? 'Y' : 'N';
+            const openapiPass = '${{ steps.parse-results.outputs.openapi_passed }}' === 'true' ? 'Y' : 'N';
+
+            const body = `## OGC API Tiles CITE Conformance Tests - PASSED
+
+            ### Test Summary
+            - **Total Tests**: ${totalTests}
+            - **Passed**: ${passedTests}
+            - **Success Rate**: ${successRate}%
+
+            ### Conformance Classes
+            - **Core**: ${corePass}
+            - **Tileset**: ${tilesetPass}
+            - **MVT**: ${mvtPass}
+            - **OpenAPI 3.0**: ${openapiPass}
+
+            ### Test Environment
+            - **Profile**: ${{ github.event.inputs.profile || 'default' }}
+            - **Commit**: ${context.sha.substring(0, 8)}
+
+            **All OGC API Tiles conformance tests passed successfully!**
+
+            <details>
+            <summary>View test artifacts</summary>
+
+            Download detailed results from the [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+            </details>`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Comment on PR (Failure)
+        if: github.event_name == 'pull_request' && (steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0')
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const totalTests = '${{ steps.parse-results.outputs.total_tests }}' || '0';
+            const passedTests = '${{ steps.parse-results.outputs.passed_tests }}' || '0';
+            const failedTests = '${{ steps.parse-results.outputs.failed_tests }}' || 'unknown';
+            const successRate = '${{ steps.parse-results.outputs.success_rate }}' || '0';
+
+            const body = `## OGC API Tiles CITE Conformance Tests - FAILED
+
+            ### Test Summary
+            - **Total Tests**: ${totalTests}
+            - **Passed**: ${passedTests}
+            - **Failed**: ${failedTests}
+            - **Success Rate**: ${successRate}%
+
+            ### Next Steps
+            1. Review the [detailed test results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            2. Fix conformance issues in the implementation
+            3. Re-run tests to validate fixes
+
+            **OGC API Tiles conformance validation failed. Please review and fix the issues before merging.**
+
+            <details>
+            <summary>Troubleshooting</summary>
+
+            Common conformance issues:
+            - Missing or incorrect OpenAPI specification
+            - Invalid tile responses
+            - Missing conformance class declarations
+            - Incorrect HTTP status codes
+            - Missing required headers
+            - Invalid TileMatrixSet definitions
+
+            Check the workflow logs and artifacts for detailed error information.
+
+            </details>`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail on conformance issues
+        if: steps.parse-results.outputs.failed_tests != '0' && steps.parse-results.outputs.failed_tests != ''
+        run: |
+          echo "OGC API Tiles CITE conformance tests failed"
+          echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
+          echo "Review the test results and fix conformance issues"
+          exit 1
