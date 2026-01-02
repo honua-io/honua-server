@@ -140,7 +140,8 @@ internal sealed partial class ODataBatchHandler
             {
                 Log.BatchRequestParseFailed(_logger, request.Id, ex);
                 rollback = true;
-                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", ex.Message));
+                // Use safe error message to avoid leaking internal details
+                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", "Failed to parse request."));
             }
         }
 
@@ -179,7 +180,8 @@ internal sealed partial class ODataBatchHandler
             catch (Exception ex)
             {
                 Log.BatchReadFailed(_logger, requestId, ex);
-                responses.Add(CreateErrorResponse(requestId, 500, "InternalError", ex.Message));
+                // Use safe error message to avoid leaking internal details
+                responses.Add(CreateErrorResponse(requestId, 500, "InternalError", "An error occurred while reading the feature."));
             }
         }
 
@@ -360,7 +362,8 @@ internal sealed partial class ODataBatchHandler
         catch (Exception ex)
         {
             Log.BatchSingleRequestFailed(_logger, request.Id, ex);
-            return CreateErrorResponse(request.Id, 500, "InternalError", ex.Message);
+            // Use safe error message to avoid leaking internal details
+            return CreateErrorResponse(request.Id, 500, "InternalError", "An error occurred while processing the request.");
         }
     }
 

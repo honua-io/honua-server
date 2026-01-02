@@ -463,7 +463,9 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         response.Be400BadRequest();
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("dangerous pattern");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
     }
 
     [IntegrationTest]
@@ -480,7 +482,9 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         response.Be400BadRequest();
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("WHERE clause format not supported");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
     }
 
     #endregion
