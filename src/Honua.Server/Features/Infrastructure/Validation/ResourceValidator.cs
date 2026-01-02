@@ -37,10 +37,10 @@ internal sealed class ResourceValidator : IResourceValidator
 
         if (layer == null)
         {
-            return ResourceValidationResult<LayerDefinition>.NotFound($"Layer {layerId} not found.");
+            return ResourceValidationResult.NotFound<LayerDefinition>($"Layer {layerId} not found.");
         }
 
-        return ResourceValidationResult<LayerDefinition>.Success(layer);
+        return ResourceValidationResult.Success(layer);
     }
 
     /// <inheritdoc />
@@ -50,22 +50,22 @@ internal sealed class ResourceValidator : IResourceValidator
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {
-            return ResourceValidationResult<LayerDefinition>.InvalidIdentifier("Collection ID is required.");
+            return ResourceValidationResult.InvalidIdentifier<LayerDefinition>("Collection ID is required.");
         }
 
         if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
-            return ResourceValidationResult<LayerDefinition>.NotFound($"Collection '{collectionId}' not found.");
+            return ResourceValidationResult.NotFound<LayerDefinition>($"Collection '{collectionId}' not found.");
         }
 
         var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
 
         if (layer == null)
         {
-            return ResourceValidationResult<LayerDefinition>.NotFound($"Collection '{collectionId}' not found.");
+            return ResourceValidationResult.NotFound<LayerDefinition>($"Collection '{collectionId}' not found.");
         }
 
-        return ResourceValidationResult<LayerDefinition>.Success(layer);
+        return ResourceValidationResult.Success(layer);
     }
 
     /// <inheritdoc />
@@ -75,17 +75,17 @@ internal sealed class ResourceValidator : IResourceValidator
     {
         if (string.IsNullOrWhiteSpace(serviceId))
         {
-            return ResourceValidationResult<ServiceDefinition>.InvalidIdentifier("Service ID is required.");
+            return ResourceValidationResult.InvalidIdentifier<ServiceDefinition>("Service ID is required.");
         }
 
         var service = await _layerCatalog.GetServiceAsync(serviceId, cancellationToken);
 
         if (service == null)
         {
-            return ResourceValidationResult<ServiceDefinition>.NotFound($"Service '{serviceId}' not found.");
+            return ResourceValidationResult.NotFound<ServiceDefinition>($"Service '{serviceId}' not found.");
         }
 
-        return ResourceValidationResult<ServiceDefinition>.Success(service);
+        return ResourceValidationResult.Success(service);
     }
 
     /// <inheritdoc />
@@ -98,7 +98,7 @@ internal sealed class ResourceValidator : IResourceValidator
         var serviceResult = await ValidateServiceAsync(serviceId, cancellationToken);
         if (!serviceResult.IsValid)
         {
-            return ResourceValidationResult<(ServiceDefinition, LayerDefinition)>.NotFound(
+            return ResourceValidationResult.NotFound<(ServiceDefinition, LayerDefinition)>(
                 serviceResult.ErrorMessage ?? $"Service '{serviceId}' not found.");
         }
 
@@ -108,10 +108,10 @@ internal sealed class ResourceValidator : IResourceValidator
         var layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
         if (layer == null)
         {
-            return ResourceValidationResult<(ServiceDefinition, LayerDefinition)>.NotFound(
+            return ResourceValidationResult.NotFound<(ServiceDefinition, LayerDefinition)>(
                 $"Layer {layerId} not found in service '{serviceId}'.");
         }
 
-        return ResourceValidationResult<(ServiceDefinition, LayerDefinition)>.Success((service, layer));
+        return ResourceValidationResult.Success((service, layer));
     }
 }

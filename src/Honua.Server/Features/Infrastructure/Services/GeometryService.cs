@@ -28,10 +28,10 @@ namespace Honua.Server.Features.Infrastructure.Services;
 /// </remarks>
 internal sealed class GeometryService : IGeometryService
 {
-    private static readonly WKBReader s_wkbReader = new();
-    private static readonly WKTReader s_wktReader = new();
-    private static readonly GeoJsonReader s_geoJsonReader = new();
-    private static readonly GeoJsonWriter s_geoJsonWriter = new();
+    private static readonly WKBReader _wkbReader = new();
+    private static readonly WKTReader _wktReader = new();
+    private static readonly GeoJsonReader _geoJsonReader = new();
+    private static readonly GeoJsonWriter _geoJsonWriter = new();
 
     /// <inheritdoc />
     public (bool HasZ, bool HasM) DetectZM(byte[]? wkb)
@@ -43,7 +43,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = s_wkbReader.Read(wkb);
+            var geometry = _wkbReader.Read(wkb);
             return DetectZMFromGeometry(geometry);
         }
         catch
@@ -73,13 +73,13 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = s_wkbReader.Read(wkb);
+            var geometry = _wkbReader.Read(wkb);
             if (geometry == null)
             {
                 return null;
             }
 
-            return s_geoJsonWriter.Write(geometry);
+            return _geoJsonWriter.Write(geometry);
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
@@ -108,7 +108,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = s_geoJsonReader.Read<Geometry>(geoJson);
+            var geometry = _geoJsonReader.Read<Geometry>(geoJson);
             if (geometry == null)
             {
                 return null;
@@ -144,7 +144,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = s_wktReader.Read(wkt);
+            var geometry = _wktReader.Read(wkt);
             if (geometry == null)
             {
                 return null;
@@ -180,7 +180,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = s_wkbReader.Read(wkb);
+            var geometry = _wkbReader.Read(wkb);
             if (geometry == null)
             {
                 return null;

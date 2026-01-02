@@ -97,29 +97,35 @@ public sealed class ResourceValidationResult<T>
     /// </summary>
     public string? ErrorMessage { get; }
 
-    private ResourceValidationResult(bool isValid, T? resource, ResourceValidationError? errorCode, string? errorMessage)
+    internal ResourceValidationResult(bool isValid, T? resource, ResourceValidationError? errorCode, string? errorMessage)
     {
         IsValid = isValid;
         Resource = resource;
         ErrorCode = errorCode;
         ErrorMessage = errorMessage;
     }
+}
 
+/// <summary>
+/// Factory helpers for resource validation results.
+/// </summary>
+public static class ResourceValidationResult
+{
     /// <summary>
     /// Creates a successful validation result.
     /// </summary>
-    public static ResourceValidationResult<T> Success(T resource) => new(true, resource, null, null);
+    public static ResourceValidationResult<T> Success<T>(T resource) => new(true, resource, null, null);
 
     /// <summary>
     /// Creates a validation failure for resource not found.
     /// </summary>
-    public static ResourceValidationResult<T> NotFound(string message) =>
+    public static ResourceValidationResult<T> NotFound<T>(string message) =>
         new(false, default, ResourceValidationError.NotFound, message);
 
     /// <summary>
     /// Creates a validation failure for invalid identifier format.
     /// </summary>
-    public static ResourceValidationResult<T> InvalidIdentifier(string message) =>
+    public static ResourceValidationResult<T> InvalidIdentifier<T>(string message) =>
         new(false, default, ResourceValidationError.InvalidIdentifier, message);
 }
 
