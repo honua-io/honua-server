@@ -399,16 +399,14 @@ describe('Pagination', () => {
       }
     });
 
-    it('should handle large offset gracefully', async () => {
+    it('should reject large offset beyond limits', async () => {
       const response = await client.query({
         where: '1=1',
         resultRecordCount: 10,
         resultOffset: 1000000,
       });
 
-      expect(response.status).toBe(200);
-      const data = assertEsriFeatureSet(response);
-      expect(data.features.length).toBe(0);
+      expect(response.status).toBe(400);
     });
   });
 
@@ -595,12 +593,12 @@ describe('Edge Cases', () => {
     expect([200, 400]).toContain(response.status);
   });
 
-  it('should handle very large resultRecordCount', async () => {
+  it('should reject very large resultRecordCount', async () => {
     const response = await client.query({
       where: '1=1',
       resultRecordCount: 1000000,
     });
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
   });
 
   it('should handle negative resultOffset', async () => {
