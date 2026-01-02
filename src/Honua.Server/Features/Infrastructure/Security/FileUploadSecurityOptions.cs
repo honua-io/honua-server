@@ -6,7 +6,7 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// <summary>
 /// Configuration options for file upload security scanning.
 /// </summary>
-public sealed class FileUploadSecurityOptions
+internal sealed class FileUploadSecurityOptions
 {
     /// <summary>
     /// Configuration section name for binding.

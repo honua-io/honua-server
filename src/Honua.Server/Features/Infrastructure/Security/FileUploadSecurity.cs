@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// Security utilities for file upload validation and sanitization.
 /// Provides multi-layer defense against malicious file uploads.
 /// </summary>
-public static class FileUploadSecurity
+internal static class FileUploadSecurity
 {
     /// <summary>
     /// Default maximum file size allowed for validation (100MB).
@@ -582,7 +582,7 @@ public static class FileUploadSecurity
 /// <summary>
 /// Result of file validation operations.
 /// </summary>
-public sealed class FileValidationResult
+internal sealed class FileValidationResult
 {
     public bool IsValid { get; private set; }
     public string? ErrorMessage { get; private set; }

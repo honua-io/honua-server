@@ -16,6 +16,8 @@ internal sealed class ETagService : IETagService
 {
     private const int HashSize = 32; // SHA256 hash size in bytes
     private const int Base64HashSize = 44; // Base64-encoded SHA256 size (rounded up to nearest 4-byte boundary)
+    // Base64-encoded SHA256 hash of empty content with padding trimmed to match ComputeETag formatting.
+    private const string EmptyContentHash = "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU";
 
     /// <summary>
     /// Computes an ETag for a given object by serializing it and hashing the content.
@@ -44,8 +46,8 @@ internal sealed class ETagService : IETagService
     {
         if (data.IsEmpty)
         {
-            // Return a consistent ETag for empty content
-            return "\"47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU\"";
+            // Return a consistent ETag for empty content (SHA256 hash of empty payload).
+            return $"\"{EmptyContentHash}\"";
         }
 
         // Compute SHA256 hash

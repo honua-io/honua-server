@@ -39,7 +39,9 @@ internal sealed class LocalFileStorage : ICloudFileStorage
     {
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _basePath = Path.GetFullPath(_options.BasePath);
+        _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
+            ? Directory.GetCurrentDirectory()
+            : Path.TrimEndingDirectorySeparator(_options.BasePath);
         _metadataPath = Path.Combine(_basePath, ".metadata");
         _fileIndex = new ConcurrentDictionary<string, CloudFile>();
         _batchIndex = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
@@ -487,18 +489,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
 
         ValidateFolderPath(folder);
 
-        var combinedPath = Path.Combine(_basePath, folder, storageName);
-        var fullPath = Path.GetFullPath(combinedPath);
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        if (!fullPath.StartsWith(_basePath, comparison))
-        {
-            throw new ArgumentException("Folder must not escape the configured base path.", nameof(folder));
-        }
-
-        return Path.GetRelativePath(_basePath, fullPath);
+        return Path.Combine(folder, storageName);
     }
 
     private static void ValidateFolderPath(string folder)
