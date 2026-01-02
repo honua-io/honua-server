@@ -35,6 +35,7 @@ public static class Operations
     // Admin Operations
     public const string TableDiscovery = "TableDiscovery";
     public const string Configuration = "Configuration";
+    public const string Cache = "Cache";
 
     // Health Operations
     public const string HealthCheck = "HealthCheck";

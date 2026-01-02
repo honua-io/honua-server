@@ -169,21 +169,18 @@ monitor_canary_metrics() {
     while [[ $(date +%s) -lt $end_time ]]; do
         echo "🔍 Checking canary health and metrics..."
 
-        # Check error rates (replace with actual metrics query)
-        local canary_error_rate=$(kubectl exec -n $NAMESPACE deployment/$APP_NAME-canary -- \
-            curl -s localhost:8080/metrics | grep error_rate || echo "0")
+        # Check metrics health endpoint (replace with actual metrics query)
+        local canary_metrics_status=$(kubectl exec -n $NAMESPACE deployment/$APP_NAME-canary -- \
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/metrics/health || echo "000")
 
-        local stable_error_rate=$(kubectl exec -n $NAMESPACE deployment/$APP_NAME-stable -- \
-            curl -s localhost:8080/metrics | grep error_rate || echo "0")
+        local stable_metrics_status=$(kubectl exec -n $NAMESPACE deployment/$APP_NAME-stable -- \
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/metrics/health || echo "000")
 
-        echo "📈 Canary error rate: $canary_error_rate"
-        echo "📈 Stable error rate: $stable_error_rate"
+        echo "📈 Canary metrics status: $canary_metrics_status"
+        echo "📈 Stable metrics status: $stable_metrics_status"
 
-        # Check if canary error rate is significantly higher
-        # This is a simplified check - in production, use proper metrics
-        if [[ "$canary_error_rate" != "0" ]] && [[ "$stable_error_rate" != "0" ]]; then
-            # Add actual comparison logic based on your metrics
-            echo "⚠️  Monitoring canary metrics..."
+        if [[ "$canary_metrics_status" != "200" ]]; then
+            echo "⚠️  Canary metrics endpoint unhealthy"
         fi
 
         sleep $check_interval

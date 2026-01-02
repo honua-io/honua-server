@@ -524,6 +524,7 @@ public sealed class QueryResponse
     /// <summary>
     /// Extent returned by the query (when returnExtentOnly=true)
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public ExtentInfo? Extent { get; init; }
 
     /// <summary>

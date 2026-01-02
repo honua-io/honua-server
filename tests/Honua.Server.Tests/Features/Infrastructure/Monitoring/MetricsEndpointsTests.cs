@@ -155,46 +155,6 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         }
     }
 
-    [IntegrationTest]
-    [Operation(Operations.GetPrometheusMetrics)]
-    [Endpoint("GET /api/metrics/prometheus")]
-    public async Task GetPrometheusMetrics_ShouldReturnTextFormat()
-    {
-        // Act
-        var response = await _fixture.Client.GetAsync("/api/metrics/prometheus");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
-
-        var content = await response.Content.ReadAsStringAsync();
-        Assert.NotEmpty(content);
-
-        // Verify Prometheus format characteristics
-        Assert.Contains("# HELP", content);
-        Assert.Contains("# TYPE", content);
-        Assert.Contains("honua_", content); // Our metrics should have honua prefix
-
-        // Should contain memory metrics
-        Assert.Contains("honua_memory_allocated_bytes", content);
-        Assert.Contains("honua_memory_pressure_percent", content);
-
-        // Should contain GC metrics
-        Assert.Contains("honua_gc_collections_total", content);
-
-        // Lines should not be empty (after splitting)
-        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.True(lines.Length > 0, "Should have metric lines");
-
-        // Each metric line should have a value and timestamp
-        var metricLines = lines.Where(line => !line.StartsWith('#')).ToList();
-        foreach (var line in metricLines)
-        {
-            var parts = line.Split(' ');
-            Assert.True(parts.Length >= 2, $"Metric line should have at least name and value: {line}");
-        }
-    }
-
     [Fact]
     public void HealthMetrics_ShouldHaveRequiredProperties()
     {
@@ -284,6 +244,5 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         public const string GetDatabaseMetrics = "GetDatabaseMetrics";
         public const string GetCacheMetrics = "GetCacheMetrics";
         public const string GetMemoryMetrics = "GetMemoryMetrics";
-        public const string GetPrometheusMetrics = "GetPrometheusMetrics";
     }
 }

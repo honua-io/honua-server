@@ -75,7 +75,7 @@ Invoke the script from a workflow job after the server is running. Use `--profil
 ## Metrics Captured
 
 - **NBomber reports** (p95/p99 latency, error rate): `load-test-reports/run_*/nbomber`
-- **API metrics** (memory/DB/cache/health/prometheus): `load-test-reports/run_*/metrics`
+- **API metrics** (memory/DB/cache/health): `load-test-reports/run_*/metrics`
 - **CPU/memory samples** (docker or process): `load-test-reports/run_*/metrics/resources.csv`
 
 Private metrics endpoints (`/api/metrics/database`, `/api/metrics/memory`, etc.) require `HONUA_DEV_AUTH=true` or `X-API-Key`.

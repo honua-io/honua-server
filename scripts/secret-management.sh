@@ -108,26 +108,6 @@ create_api_secrets() {
 EOF
 }
 
-# Function to create monitoring secrets
-create_monitoring_secrets() {
-    local env=$1
-
-    echo "🔑 Creating monitoring secrets for $env..."
-
-    local grafana_password=$(generate_password 16)
-    local prometheus_token=$(generate_password 32)
-
-    cat > "/tmp/monitoring-secrets-$env.json" << EOF
-{
-  "monitoring": {
-    "grafana_admin_password": "$grafana_password",
-    "prometheus_remote_write_token": "$prometheus_token",
-    "alert_webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-  }
-}
-EOF
-}
-
 # Function to store secrets in HashiCorp Vault
 store_vault_secrets() {
     local env=$1
@@ -153,10 +133,6 @@ store_vault_secrets() {
     vault kv put "secret/honua/$env/api" \
         @"/tmp/api-secrets-$env.json"
 
-    # Store monitoring secrets
-    vault kv put "secret/honua/$env/monitoring" \
-        @"/tmp/monitoring-secrets-$env.json"
-
     echo "✅ Secrets stored in Vault"
 }
 
@@ -180,12 +156,6 @@ store_k8s_secrets() {
     kubectl create secret generic honua-api \
         --namespace="$namespace" \
         --from-file=config="/tmp/api-secrets-$env.json" \
-        --dry-run=client -o yaml | kubectl apply -f -
-
-    # Create monitoring secret
-    kubectl create secret generic honua-monitoring \
-        --namespace="$namespace" \
-        --from-file=config="/tmp/monitoring-secrets-$env.json" \
         --dry-run=client -o yaml | kubectl apply -f -
 
     echo "✅ Secrets stored in Kubernetes"
@@ -285,10 +255,6 @@ ENCRYPTION_KEY=$(jq -r '.api.encryption_key' "/tmp/api-secrets-$env.json")
 ADMIN_API_KEY=$(jq -r '.api.admin_api_key' "/tmp/api-secrets-$env.json")
 ALLOWED_ORIGINS=$(jq -r '.api.allowed_origins[0]' "/tmp/api-secrets-$env.json")
 
-# Monitoring Configuration
-GRAFANA_ADMIN_PASSWORD=$(jq -r '.monitoring.grafana_admin_password' "/tmp/monitoring-secrets-$env.json")
-PROMETHEUS_REMOTE_WRITE_TOKEN=$(jq -r '.monitoring.prometheus_remote_write_token' "/tmp/monitoring-secrets-$env.json")
-
 # Application Configuration
 ASPNETCORE_ENVIRONMENT=$env
 ASPNETCORE_URLS=http://+:8080
@@ -317,8 +283,6 @@ rotate_secrets() {
     # Generate new secrets
     create_database_secrets "$env"
     create_api_secrets "$env"
-    create_monitoring_secrets "$env"
-
     # Store new secrets
     case "$SECRET_BACKEND" in
         "vault")
@@ -355,8 +319,6 @@ main() {
             echo "🚀 Generating secrets for $environment..."
             create_database_secrets "$environment"
             create_api_secrets "$environment"
-            create_monitoring_secrets "$environment"
-
             case "$SECRET_BACKEND" in
                 "vault")
                     store_vault_secrets "$environment"
