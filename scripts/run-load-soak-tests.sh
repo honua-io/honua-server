@@ -146,7 +146,6 @@ sample_metrics() {
     stamp=$(date -u +"%Y%m%dT%H%M%SZ")
 
     curl -sf "$METRICS_BASE/health" -o "$METRICS_DIR/health_${stamp}.json" || true
-    curl -sf "$METRICS_BASE/prometheus" -o "$METRICS_DIR/prometheus_${stamp}.txt" || true
 
     if [[ "$PRIVATE_METRICS_AVAILABLE" == "true" ]]; then
         curl -sf "${AUTH_HEADER[@]}" "$METRICS_BASE/memory" -o "$METRICS_DIR/memory_${stamp}.json" || true

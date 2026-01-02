@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -19,6 +20,12 @@ namespace Honua.Server.Features.Admin;
 internal static partial class MetadataEndpoints
 {
     internal sealed class MetadataEndpointsLog { }
+
+    private const string LayerCacheKeyPrefix = "layer:";
+    private const string LayerListCacheKey = "layers:all";
+    private const string ServiceCacheKeyPrefix = "service:";
+    private const string ServiceListCacheKey = "services:all";
+    private const string RelationshipCacheKeyPrefix = "relationship:";
 
     /// <summary>
     /// Map admin metadata endpoints to the web application
@@ -981,6 +988,13 @@ internal static partial class MetadataEndpoints
             await cachingCatalog.InvalidateServiceAsync(serviceName, context.RequestAborted);
         }
 
+        var cacheService = context.RequestServices.GetService<ICacheService>();
+        if (cacheService != null)
+        {
+            await cacheService.RemoveAsync($"{ServiceCacheKeyPrefix}{serviceName.ToLowerInvariant()}", context.RequestAborted);
+            await cacheService.RemoveAsync(ServiceListCacheKey, context.RequestAborted);
+        }
+
         var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
         if (outputCache != null)
         {
@@ -995,6 +1009,14 @@ internal static partial class MetadataEndpoints
         if (cachingCatalog != null)
         {
             await cachingCatalog.InvalidateLayerAsync(layerId, context.RequestAborted);
+        }
+
+        var cacheService = context.RequestServices.GetService<ICacheService>();
+        if (cacheService != null)
+        {
+            await cacheService.RemoveAsync($"{LayerCacheKeyPrefix}{layerId}", context.RequestAborted);
+            await cacheService.RemoveAsync(LayerListCacheKey, context.RequestAborted);
+            await cacheService.RemoveByPatternAsync($"{RelationshipCacheKeyPrefix}{layerId}:*", context.RequestAborted);
         }
 
         var outputCache = context.RequestServices.GetService<IOutputCacheStore>();

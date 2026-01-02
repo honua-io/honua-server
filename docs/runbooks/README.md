@@ -75,15 +75,11 @@ This directory contains operational runbooks for maintaining and troubleshooting
 ## Tools and Resources
 
 ### Monitoring and Alerting
-- **Grafana**: http://monitoring.honua.example.com:3000
-- **Prometheus**: http://monitoring.honua.example.com:9090
-- **AlertManager**: http://monitoring.honua.example.com:9093
+- **Aspire Dashboard (OTel)**: http://monitoring.honua.example.com:18888
 - **PagerDuty**: https://honua.pagerduty.com
 
 ### Logs and Tracing
-- **Loki**: http://monitoring.honua.example.com:3100
-- **Jaeger**: http://monitoring.honua.example.com:16686
-- **Tempo**: http://monitoring.honua.example.com:3200
+- **Aspire Dashboard (logs/traces)**: http://monitoring.honua.example.com:18888
 
 ### Infrastructure
 - **AWS Console**: https://console.aws.amazon.com
@@ -144,7 +140,7 @@ curl -f https://api.honua.example.com/healthz/live
 curl -f https://api.honua.example.com/healthz/ready
 
 # Metrics
-curl https://api.honua.example.com/metrics
+curl https://api.honua.example.com/api/metrics/health
 
 # API test
 curl https://api.honua.example.com/rest/services
