@@ -235,16 +235,14 @@ internal sealed class FeatureServerHandler(
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return GeoServicesErrorHelpers.CreateBadRequestError(
-                "Invalid query parameters",
-                [ex.Message]);
+            // Return safe error message without leaking exception details
+            return GeoServicesErrorHelpers.CreateBadRequestError("Invalid query parameters");
         }
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return GeoServicesErrorHelpers.CreateInternalServerError(
-                "Query execution failed");
+            return GeoServicesErrorHelpers.CreateInternalServerError("Query execution failed");
         }
     }
 
@@ -351,16 +349,14 @@ internal sealed class FeatureServerHandler(
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return GeoServicesErrorHelpers.CreateBadRequestError(
-                "Invalid query parameters",
-                [ex.Message]);
+            // Return safe error message without leaking exception details
+            return GeoServicesErrorHelpers.CreateBadRequestError("Invalid query parameters");
         }
         catch (Exception ex)
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            return GeoServicesErrorHelpers.CreateInternalServerError(
-                "Related records query execution failed");
+            return GeoServicesErrorHelpers.CreateInternalServerError("Related records query execution failed");
         }
     }
 

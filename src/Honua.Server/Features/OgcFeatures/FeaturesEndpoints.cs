@@ -207,7 +207,7 @@ internal static partial class FeaturesEndpoints
                     }
                     catch (ArgumentException ex)
                     {
-                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
+                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(ex.Message)}");
                     }
                 }
 
@@ -227,7 +227,7 @@ internal static partial class FeaturesEndpoints
                     }
                     catch (ArgumentException ex)
                     {
-                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
+                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(ex.Message)}");
                     }
                 }
 
@@ -249,7 +249,7 @@ internal static partial class FeaturesEndpoints
                     }
                     catch (ArgumentException ex)
                     {
-                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
+                        return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(ex.Message)}");
                     }
                 }
             }
@@ -269,7 +269,7 @@ internal static partial class FeaturesEndpoints
                 }
                 catch (ArgumentException ex)
                 {
-                    return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {ex.Message}");
+                    return OgcErrorHelpers.CreateBadRequest(context, $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(ex.Message)}");
                 }
             }
 
@@ -1492,6 +1492,35 @@ internal static partial class FeaturesEndpoints
         }
 
         return context.RequestAborted;
+    }
+
+    /// <summary>
+    /// Sanitizes CQL filter error messages to prevent leaking internal implementation details.
+    /// </summary>
+    /// <param name="exceptionMessage">The raw exception message.</param>
+    /// <returns>A sanitized error message safe to expose to clients.</returns>
+    private static string SanitizeCqlErrorMessage(string exceptionMessage)
+    {
+        // Limit message length to prevent overly detailed exposure
+        const int maxLength = 200;
+
+        // Remove any potential internal details after common delimiters
+        var message = exceptionMessage;
+
+        // Remove stack trace info if accidentally included
+        var stackTraceIndex = message.IndexOf("   at ", StringComparison.Ordinal);
+        if (stackTraceIndex > 0)
+        {
+            message = message[..stackTraceIndex].Trim();
+        }
+
+        // Truncate if too long
+        if (message.Length > maxLength)
+        {
+            message = string.Concat(message.AsSpan(0, maxLength), "...");
+        }
+
+        return message;
     }
 
     private static partial class Log
