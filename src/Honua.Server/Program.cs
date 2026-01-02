@@ -168,8 +168,16 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
 });
 
+// Configure OIDC authentication options
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions.SectionName));
+
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
+
+// Add OIDC authentication if enabled
+builder.Services.AddOidcAuthentication(builder.Configuration);
+builder.Services.AddOidcAuthorization(builder.Configuration);
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure CORS policies
