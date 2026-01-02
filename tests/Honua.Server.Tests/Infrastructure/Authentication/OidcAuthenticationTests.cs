@@ -11,8 +11,6 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -723,7 +721,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
     /// <summary>
     /// Test logger implementation for unit testing.
     /// </summary>
-    private class TestLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    private sealed class TestLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;

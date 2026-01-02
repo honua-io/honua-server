@@ -86,7 +86,7 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Add default role if no roles found
-        if (!roles.Any() && !identity.HasClaim(c => c.Type == ClaimTypes.Role))
+        if (roles.Count == 0 && !identity.HasClaim(c => c.Type == ClaimTypes.Role))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, _options.DefaultRole));
         }
