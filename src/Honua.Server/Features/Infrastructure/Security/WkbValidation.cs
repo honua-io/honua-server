@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -9,25 +10,23 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// <summary>
 /// Provides WKB (Well-Known Binary) geometry validation for input security.
 /// Used to validate geometry data from OGC API Features and OData endpoints.
+/// Validation limits are configured via <see cref="GeometryValidationOptions"/>.
 /// </summary>
 public static class WkbValidation
 {
-    /// <summary>
-    /// Default maximum WKB size in bytes (1MB).
-    /// </summary>
-    public const long DefaultMaxWkbSize = 1024 * 1024;
-
-    /// <summary>
-    /// Default maximum number of vertices per geometry.
-    /// </summary>
-    public const int DefaultMaxVertices = 10000;
-
-    /// <summary>
-    /// Default maximum number of rings per polygon.
-    /// </summary>
-    public const int DefaultMaxRings = 100;
-
     private static readonly WKBReader _wkbReader = new();
+
+    /// <summary>
+    /// Validates WKB geometry data using limits from configuration.
+    /// </summary>
+    /// <param name="wkb">The WKB bytes to validate.</param>
+    /// <param name="options">Validation limits configuration. Uses defaults if null.</param>
+    /// <returns>Validation result with error message if invalid.</returns>
+    public static WkbValidationResult Validate(byte[]? wkb, GeometryValidationOptions? options = null)
+    {
+        var validationOptions = options ?? new GeometryValidationOptions();
+        return Validate(wkb, validationOptions.MaxWkbSize, validationOptions.MaxVertices, validationOptions.MaxRings);
+    }
 
     /// <summary>
     /// Validates WKB geometry data for security and size limits.
@@ -39,9 +38,9 @@ public static class WkbValidation
     /// <returns>Validation result with error message if invalid.</returns>
     public static WkbValidationResult Validate(
         byte[]? wkb,
-        long maxWkbSize = DefaultMaxWkbSize,
-        int maxVertices = DefaultMaxVertices,
-        int maxRings = DefaultMaxRings)
+        long maxWkbSize,
+        int maxVertices,
+        int maxRings)
     {
         // Null geometry is valid (feature without geometry)
         if (wkb == null || wkb.Length == 0)
