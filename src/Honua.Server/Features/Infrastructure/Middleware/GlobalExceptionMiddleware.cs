@@ -16,10 +16,14 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// and prevents sensitive error details from being exposed to clients.
 /// It also logs all unhandled exceptions with correlation IDs for tracking.
 /// </remarks>
-internal sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
+internal sealed class GlobalExceptionMiddleware(
+    RequestDelegate next,
+    ILogger<GlobalExceptionMiddleware> logger,
+    IHostEnvironment environment)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly ILogger<GlobalExceptionMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly bool _includeDebugDetails = environment?.IsDevelopment() ?? false;
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -44,30 +48,29 @@ internal sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Gl
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        // Determine appropriate status code based on exception type
-        var (statusCode, title, detail) = MapExceptionToResponse(exception);
+        // Use centralized ExceptionMapper for consistent mapping and sanitization
+        var result = ExceptionMapper.Map(exception, _includeDebugDetails);
+
+        // Build detail message, optionally including debug info
+        var detail = result.Detail;
+        if (!string.IsNullOrEmpty(result.DebugInfo))
+        {
+            detail = $"{detail} (Debug: {result.DebugInfo})";
+        }
+
+        // Add correlation ID header for traceability
+        context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
+
+        // Handle ServiceUnavailable with Retry-After header
+        if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
+        {
+            context.Response.Headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString();
+        }
 
         // Use ProtocolErrorWriter to format response appropriately for the protocol
-        await ProtocolErrorWriter.WriteErrorAsync(context, statusCode, title, detail);
-    }
-
-    private static (int StatusCode, string Title, string Detail) MapExceptionToResponse(Exception exception)
-    {
-        return exception switch
-        {
-            ArgumentNullException => (400, "Bad Request", "Missing required parameter."),
-            ArgumentException => (400, "Bad Request", "Invalid request parameters."),
-            ResourceNotFoundException => (404, "Not Found", "The requested resource was not found."),
-            ResourceConflictException => (409, "Conflict", "The request could not be completed due to a conflict."),
-            InvalidOperationException => (400, "Bad Request", "Invalid operation."),
-            UnauthorizedAccessException => (401, "Unauthorized", "Access denied."),
-            NotSupportedException => (405, "Method Not Allowed", "Operation not supported."),
-            OperationCanceledException => (408, "Request Timeout", "The request was cancelled."),
-            TimeoutException => (408, "Request Timeout", "The request timed out."),
-            _ => (500, "Internal Server Error", "An unexpected error occurred.")
-        };
+        await ProtocolErrorWriter.WriteErrorAsync(context, result.StatusCode, result.Title, detail);
     }
 }
 

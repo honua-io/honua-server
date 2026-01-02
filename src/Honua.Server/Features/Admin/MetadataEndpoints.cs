@@ -240,9 +240,10 @@ internal static partial class MetadataEndpoints
             context.Response.StatusCode = StatusCodes.Status201Created;
             await WriteJsonAsync(context, response, MetadataJsonContext.Default.ServiceResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            await WriteError(context, StatusCodes.Status409Conflict, ex.Message);
+            // Use safe error message to avoid leaking internal details
+            await WriteError(context, StatusCodes.Status409Conflict, "A service with this name already exists.");
         }
     }
 
@@ -559,9 +560,10 @@ internal static partial class MetadataEndpoints
             context.Response.StatusCode = StatusCodes.Status201Created;
             await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            await WriteError(context, StatusCodes.Status400BadRequest, ex.Message);
+            // Use safe error message to avoid leaking internal details
+            await WriteError(context, StatusCodes.Status400BadRequest, "Failed to create layer. The layer may already exist or the request is invalid.");
         }
     }
 
@@ -793,9 +795,10 @@ internal static partial class MetadataEndpoints
             context.Response.StatusCode = StatusCodes.Status201Created;
             await WriteJsonAsync(context, response, MetadataJsonContext.Default.RelationshipResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            await WriteError(context, StatusCodes.Status400BadRequest, ex.Message);
+            // Use safe error message to avoid leaking internal details
+            await WriteError(context, StatusCodes.Status400BadRequest, "Failed to create relationship. The relationship may already exist or the request is invalid.");
         }
     }
 

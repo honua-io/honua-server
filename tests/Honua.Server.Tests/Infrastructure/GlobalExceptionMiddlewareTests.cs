@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ValidationException = Honua.Core.Exceptions.ValidationException;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -54,6 +55,10 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new ResourceNotFoundException("Resource missing");
                                 if (path.Contains("throw-conflict"))
                                     throw new ResourceConflictException("Resource conflict");
+                                if (path.Contains("throw-validation"))
+                                    throw new ValidationException("Field 'name' is required.", ["Missing required field: name"]);
+                                if (path.Contains("throw-unavailable"))
+                                    throw new ServiceUnavailableException("Database connection failed", 30);
                                 if (path.Contains("throw-general"))
                                     throw new InvalidOperationException("Something went wrong");
                                 if (path.Contains("throw-unhandled"))
@@ -103,7 +108,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Unauthorized");
-        problemDetails.GetProperty("detail").GetString().Should().Be("Access denied.");
+        problemDetails.GetProperty("detail").GetString().Should().Be("Authentication is required to access this resource.");
         problemDetails.GetProperty("status").GetInt32().Should().Be(401);
     }
 
@@ -137,7 +142,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Internal Server Error");
-        problemDetails.GetProperty("detail").GetString().Should().Be("An unexpected error occurred.");
+        problemDetails.GetProperty("detail").GetString().Should().Be("An unexpected error occurred while processing the request.");
         problemDetails.GetProperty("status").GetInt32().Should().Be(500);
     }
 
@@ -171,7 +176,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Conflict");
-        problemDetails.GetProperty("detail").GetString().Should().Be("The request could not be completed due to a conflict.");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The request could not be completed due to a conflict with the current state.");
         problemDetails.GetProperty("status").GetInt32().Should().Be(409);
     }
 
@@ -201,18 +206,6 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Be("OK");
-    }
-
-    [Fact]
-    public async Task GlobalExceptionMiddleware_AddsCorrelationIdHeader_InErrorResponse()
-    {
-        // Act
-        var response = await _client.GetAsync("/throw-general");
-
-        // Assert
-        response.Headers.Should().ContainKey("X-Correlation-ID");
-        var correlationId = response.Headers.GetValues("X-Correlation-ID").First();
-        correlationId.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -267,8 +260,76 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
-        problemDetails.GetProperty("detail").GetString().Should().Be("Invalid operation.");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The requested operation is not valid in the current state.");
         problemDetails.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_ValidationException_Returns400BadRequest()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-validation");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
+        // ValidationException messages are designed to be safe and should be exposed
+        problemDetails.GetProperty("detail").GetString().Should().Be("Field 'name' is required.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_ServiceUnavailableException_Returns503ServiceUnavailable()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-unavailable");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The service is temporarily unavailable. Please try again later.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+
+        // Should include Retry-After header
+        response.Headers.Should().ContainKey("Retry-After");
+        response.Headers.GetValues("Retry-After").First().Should().Be("30");
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_AddsCorrelationIdHeader()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-general");
+
+        // Assert
+        // The X-Correlation-ID header should be added by the middleware
+        response.Headers.Should().ContainKey("X-Correlation-ID");
+        var correlationId = response.Headers.GetValues("X-Correlation-ID").First();
+        correlationId.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_InternalServerError_DoesNotLeakExceptionMessage()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-unhandled");
+
+        // Assert
+        var content = await response.Content.ReadAsStringAsync();
+
+        // The raw exception message "This is not implemented" should NOT appear in the response
+        content.Should().NotContain("This is not implemented");
+        // Should contain a safe generic message instead
+        content.Should().Contain("An unexpected error occurred");
     }
 
     public void Dispose()
