@@ -75,6 +75,7 @@ export const ALL_GEOMETRY_METHODS = [
   'multipolygonSimple',
   'multipolygonWithHoles',
   'geometryCollection',
+  'nullGeometry',
 ] as const;
 
 // =============================================================================

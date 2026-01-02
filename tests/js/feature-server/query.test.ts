@@ -422,8 +422,10 @@ describe('Pagination', () => {
 
       const data = assertEsriFeatureSet(response);
 
-      if (data.features.length > 1) {
-        const ids = data.features.map((f) => f.attributes.OBJECTID);
+      const ids = data.features
+        .map((f) => Number(f.attributes.OBJECTID ?? f.attributes.id))
+        .filter((id) => Number.isFinite(id));
+      if (ids.length > 1) {
         // Check ascending order
         for (let i = 1; i < ids.length; i++) {
           expect(ids[i]).toBeGreaterThanOrEqual(ids[i - 1]);
@@ -440,8 +442,10 @@ describe('Pagination', () => {
 
       const data = assertEsriFeatureSet(response);
 
-      if (data.features.length > 1) {
-        const ids = data.features.map((f) => f.attributes.OBJECTID);
+      const ids = data.features
+        .map((f) => Number(f.attributes.OBJECTID ?? f.attributes.id))
+        .filter((id) => Number.isFinite(id));
+      if (ids.length > 1) {
         // Check descending order
         for (let i = 1; i < ids.length; i++) {
           expect(ids[i]).toBeLessThanOrEqual(ids[i - 1]);

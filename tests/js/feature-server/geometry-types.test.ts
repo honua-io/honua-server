@@ -93,7 +93,9 @@ async function verifyGeometryRoundtrip(
     // Validate basic geometry structure
     const retrievedGeom = data.features[0].geometry;
     expect(retrievedGeom.type).toBeDefined();
-    expect(retrievedGeom.coordinates || retrievedGeom.geometries).toBeDefined();
+    const hasCoordinates = 'coordinates' in retrievedGeom;
+    const hasGeometries = 'geometries' in retrievedGeom;
+    expect(hasCoordinates || hasGeometries).toBe(true);
   }
 }
 
@@ -384,18 +386,23 @@ describe('Geometry Validity', () => {
         // Basic validity checks
         expect(feature.geometry.type).toBeDefined();
 
-        const geomType = feature.geometry.type;
-        if (geomType === 'Point') {
-          expect(feature.geometry.coordinates).toBeInstanceOf(Array);
-          expect(feature.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
-        } else if (geomType === 'LineString') {
-          expect(feature.geometry.coordinates).toBeInstanceOf(Array);
-          expect(feature.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
-        } else if (geomType === 'Polygon') {
-          expect(feature.geometry.coordinates).toBeInstanceOf(Array);
-          expect(feature.geometry.coordinates.length).toBeGreaterThanOrEqual(1);
-          // Exterior ring should have at least 4 points (closed)
-          expect(feature.geometry.coordinates[0].length).toBeGreaterThanOrEqual(4);
+        switch (feature.geometry.type) {
+          case 'Point':
+            expect(feature.geometry.coordinates).toBeInstanceOf(Array);
+            expect(feature.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+            break;
+          case 'LineString':
+            expect(feature.geometry.coordinates).toBeInstanceOf(Array);
+            expect(feature.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+            break;
+          case 'Polygon':
+            expect(feature.geometry.coordinates).toBeInstanceOf(Array);
+            expect(feature.geometry.coordinates.length).toBeGreaterThanOrEqual(1);
+            // Exterior ring should have at least 4 points (closed)
+            expect(feature.geometry.coordinates[0].length).toBeGreaterThanOrEqual(4);
+            break;
+          default:
+            break;
         }
       }
     }

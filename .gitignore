@@ -121,6 +121,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# Node.js
+node_modules/
+
 # Cake
 tools/**
 !tools/packages.config

@@ -65,6 +65,13 @@ internal sealed class FeatureServerHandler(
                 return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
+            if (!string.IsNullOrEmpty(queryParams.Where) && queryParams.Where.Contains('\0'))
+            {
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Invalid query parameters",
+                    ["WHERE clause contains invalid control characters"]);
+            }
+
             if (queryParams.ResultRecordCount is < 1)
             {
                 return GeoServicesErrorHelpers.CreateBadRequestError(

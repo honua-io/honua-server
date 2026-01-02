@@ -451,22 +451,12 @@ public class CacheHealthCheck : IHealthCheck
 4. **Eviction Rates** - Track how often entries are evicted
 5. **Error Rates** - Monitor cache operation failures
 
-#### Prometheus Metrics Example
+#### OpenTelemetry Metrics Example
 ```csharp
-public class PrometheusMetricsService
-{
-    private static readonly Counter CacheHits = Metrics
-        .CreateCounter("honua_cache_hits_total", "Total cache hits", new[] { "cache_type" });
-
-    private static readonly Counter CacheMisses = Metrics
-        .CreateCounter("honua_cache_misses_total", "Total cache misses", new[] { "cache_type" });
-
-    private static readonly Gauge CacheSize = Metrics
-        .CreateGauge("honua_cache_size", "Current cache size", new[] { "cache_type" });
-
-    private static readonly Histogram CacheOperationDuration = Metrics
-        .CreateHistogram("honua_cache_operation_duration_seconds", "Cache operation duration");
-}
+// Record cache metrics via IPerformanceMonitor
+_performanceMonitor.RecordCacheMetrics(cacheType, "hit");
+_performanceMonitor.RecordCacheMetrics(cacheType, "miss");
+_performanceMonitor.RecordCacheMetrics(cacheType, "eviction");
 ```
 
 ## Memory Usage Considerations

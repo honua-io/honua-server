@@ -5,7 +5,7 @@
  * Mirrors the Python GeometryGenerator for test consistency.
  */
 
-import type { Feature, Geometry, Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon, GeometryCollection, Position } from '@turf/helpers';
+import type { Geometry, Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon, GeometryCollection, Position } from 'geojson';
 
 // =============================================================================
 // Types

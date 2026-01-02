@@ -9,7 +9,7 @@ This roadmap assumes the MVP described in `docs/MVP_PLAN.md` (full FeatureServer
 - **OData v4 enhancements:** `$expand` navigation, `$apply` aggregation.
 - **OGC API Styles:** REST API for style management (list, get, create, update, delete styles).
 - **Auth enhancements:** Token revocation with Redis; expand Redis usage for caching/locking.
-- **Observability basics:** Prometheus metrics endpoint (`/metrics`), exception counters, request latency histograms, basic alert rules; OpenTelemetry hooks for traces/logs.
+- **Observability basics:** OpenTelemetry metrics/traces/logs via Aspire dashboard, exception counters, request latency histograms, basic alert rules.
 - **Admin UX:** User management, advanced import options, layer-level permissions UI.
 - **Extra DBs:** SQL Server (first), MySQL (second).
 - **Packaging:** Additional Terraform examples (EKS, AKS, GKE managed K8s clusters).

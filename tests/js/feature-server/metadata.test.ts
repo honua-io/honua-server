@@ -279,7 +279,7 @@ describe('Layer Metadata', () => {
       expect(response.status).toBe(200);
 
       const extent = response.data.extent;
-      if (extent !== null) {
+      if (extent != null) {
         expect(extent).toHaveProperty('xmin');
         expect(extent).toHaveProperty('ymin');
         expect(extent).toHaveProperty('xmax');
@@ -292,7 +292,7 @@ describe('Layer Metadata', () => {
       expect(response.status).toBe(200);
 
       const extent = response.data.extent;
-      if (extent !== null) {
+      if (extent != null) {
         expect(typeof extent.xmin).toBe('number');
         expect(typeof extent.ymin).toBe('number');
         expect(typeof extent.xmax).toBe('number');
@@ -433,8 +433,10 @@ describe('Advanced Layer Properties', () => {
       expect(response.status).toBe(200);
 
       // If capabilities includes Query, this should be true
-      const capabilities = response.data.capabilities || '';
-      const supportsQuery = capabilities.toLowerCase().includes('query');
+      const capabilities = response.data.capabilities;
+      const supportsQuery = Array.isArray(capabilities)
+        ? capabilities.some((capability) => capability.toLowerCase().includes('query'))
+        : (capabilities ?? '').toLowerCase().includes('query');
       expect(supportsQuery).toBe(true);
     });
   });

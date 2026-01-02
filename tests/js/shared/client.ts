@@ -4,6 +4,8 @@
  * Provides typed request/response handling for FeatureServer endpoints.
  */
 
+import type { FeatureCollection, Geometry } from 'geojson';
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -47,15 +49,7 @@ export interface EsriFeatureSet {
 }
 
 /** GeoJSON FeatureCollection response */
-export interface GeoJsonFeatureCollection {
-  type: 'FeatureCollection';
-  features: Array<{
-    type: 'Feature';
-    id?: string | number;
-    geometry: Record<string, unknown> | null;
-    properties: Record<string, unknown>;
-  }>;
-}
+export type GeoJsonFeatureCollection = FeatureCollection<Geometry | null, Record<string, unknown>>;
 
 /** ApplyEdits result for a single operation */
 export interface EditResult {
@@ -92,8 +86,8 @@ export interface LayerMetadata {
     xmax: number;
     ymax: number;
     spatialReference?: { wkid: number };
-  };
-  capabilities?: string;
+  } | null;
+  capabilities?: string | string[];
   spatialReference?: { wkid: number };
 }
 
