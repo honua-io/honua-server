@@ -254,23 +254,16 @@ monitoring_checks() {
     local failed_checks=0
 
     # Check if metrics endpoint is available
-    if http_check "$BASE_URL/metrics" 200 "Metrics endpoint"; then
-        echo "✅ Prometheus metrics endpoint available"
+    if http_check "$BASE_URL/api/metrics/health" 200 "Metrics health endpoint"; then
+        echo "✅ Metrics health endpoint available"
     else
         echo "⚠️  Metrics endpoint not available"
         ((failed_checks++))
     fi
 
     # Basic metrics validation
-    if command -v curl >/dev/null 2>&1; then
-        local metrics=$(curl -s --max-time $TIMEOUT "$BASE_URL/metrics" || echo "")
-
-        if echo "$metrics" | grep -q "http_requests_total"; then
-            echo "✅ HTTP request metrics present"
-        else
-            echo "⚠️  Expected HTTP metrics not found"
-            ((failed_checks++))
-        fi
+    if ! json_check "$BASE_URL/api/metrics/health" ".status" "healthy" "Metrics health status"; then
+        ((failed_checks++))
     fi
 
     return $failed_checks

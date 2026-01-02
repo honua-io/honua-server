@@ -100,29 +100,10 @@ The Honua Server has been enhanced with production-ready CI/CD pipeline, deploym
 
 ### Complete Observability Stack
 
-#### Metrics (Prometheus)
-- **Application metrics**: HTTP requests, response times, errors
-- **Infrastructure metrics**: CPU, memory, network, disk
-- **Database metrics**: Connections, query performance
-- **Custom metrics**: Business logic, geospatial operations
-
-#### Logging (Loki)
-- **Structured logging**: JSON format with correlation IDs
-- **Log aggregation**: Centralized collection
-- **Log retention**: Configurable retention policies
-- **Query capabilities**: Full-text search and filtering
-
-#### Tracing (Tempo/Jaeger)
-- **Distributed tracing**: End-to-end request tracking
-- **Performance analysis**: Bottleneck identification
-- **Dependency mapping**: Service interaction visualization
-- **Error correlation**: Exception tracking across services
-
-#### Dashboards (Grafana)
-- **Real-time visualization**: Live metrics and alerts
-- **Custom dashboards**: Application-specific views
-- **Multi-datasource**: Unified metrics, logs, traces
-- **Alert integration**: Visual alert management
+#### OpenTelemetry + Aspire Dashboard
+- **Unified telemetry**: Metrics, logs, and traces via OTLP
+- **Correlated views**: Trace/span IDs and correlation IDs across signals
+- **Low overhead**: Minimal external infrastructure for development
 
 ### Comprehensive Alerting
 
@@ -138,18 +119,9 @@ The Honua Server has been enhanced with production-ready CI/CD pipeline, deploym
 - **Performance Degradation**: Throughput reduction
 - **Health Check Failures**: Intermittent issues
 
-### Alert Rules (170+ monitoring rules)
-```yaml
-# Example critical alert
-- alert: HonuaServerDown
-  expr: up{job="honua-server"} == 0
-  for: 30s
-  labels:
-    severity: critical
-  annotations:
-    summary: "Honua Server is down"
-    runbook_url: "https://docs.honua.example.com/runbooks/server-down"
-```
+### Alert Rules
+
+Alert rules live in the telemetry backend and should map directly to runbooks and SLOs.
 
 ## Secret Management Excellence
 
@@ -270,10 +242,7 @@ Services included:
 - Honua Server (with hot reload)
 - PostgreSQL with PostGIS
 - Redis (caching)
-- Prometheus (metrics)
-- Grafana (dashboards)
-- Loki (logs)
-- Jaeger (tracing)
+- Aspire dashboard (OTLP, optional)
 - MailHog (email testing)
 ```
 
