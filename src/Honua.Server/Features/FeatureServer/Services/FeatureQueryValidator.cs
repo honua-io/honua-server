@@ -26,9 +26,15 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
         var requestedRecordCount = queryParams.ResultRecordCount ?? _limitsOptions.Query.DefaultRecordCount;
         var requestedOffset = queryParams.ResultOffset ?? 0;
 
-        // Apply limit constraints per MVP Plan (clamp to maximum allowed)
-        var recordCount = Math.Min(requestedRecordCount, _limitsOptions.Query.MaxRecordCount);
-        var offset = Math.Min(requestedOffset, _limitsOptions.Query.MaxOffset);
+        if (requestedRecordCount > _limitsOptions.Query.MaxRecordCount)
+        {
+            return QueryValidationResult.Failure($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
+        }
+
+        if (requestedOffset > _limitsOptions.Query.MaxOffset)
+        {
+            return QueryValidationResult.Failure($"Maximum offset: {_limitsOptions.Query.MaxOffset}");
+        }
 
         // Create new validated parameters object
         var validatedParams = new QueryParameters
@@ -41,8 +47,8 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ReturnCountOnly = queryParams.ReturnCountOnly,
             ReturnExtentOnly = queryParams.ReturnExtentOnly,
             F = queryParams.F,
-            ResultOffset = offset,
-            ResultRecordCount = recordCount,
+            ResultOffset = requestedOffset,
+            ResultRecordCount = requestedRecordCount,
             Geometry = queryParams.Geometry,
             InSr = queryParams.InSr,
             OutSr = queryParams.OutSr,
