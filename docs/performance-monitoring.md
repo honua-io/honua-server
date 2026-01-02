@@ -25,8 +25,8 @@ The performance monitoring system includes:
 
 ### Integration Points
 
-- **OpenTelemetry** - Automatic integration with OTel metrics
-- **Prometheus** - Native Prometheus exposition format
+- **OpenTelemetry** - Automatic export of metrics, traces, and logs
+- **Aspire Dashboard** - Built-in UI when OTLP is configured
 - **ASP.NET Core** - Middleware pipeline integration
 - **Dependency Injection** - Seamless service registration
 
@@ -161,38 +161,14 @@ Returns database performance statistics:
 }
 ```
 
-### Prometheus Metrics
-
-**Endpoint:** `GET /api/metrics/prometheus`
-
-Returns metrics in Prometheus exposition format:
-
-```
-# HELP honua_http_request_duration_ms Duration of HTTP requests in milliseconds
-# TYPE honua_http_request_duration_ms histogram
-honua_http_request_duration_ms{method="GET",endpoint="/api/test",status_code="200"} 85.5 1703675400000
-
-# HELP honua_memory_allocated_bytes Currently allocated memory in bytes
-# TYPE honua_memory_allocated_bytes gauge
-honua_memory_allocated_bytes 131657728 1703675400000
-```
-
 ## Monitoring Integration
 
-### Prometheus Setup
+### Aspire Dashboard
 
-Add the following to your `prometheus.yml`:
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to your Aspire dashboard receiver (for example, `http://aspire-dashboard:18889`).
+When OTLP is configured, traces, metrics, and logs appear in the Aspire dashboard UI.
 
-```yaml
-scrape_configs:
-  - job_name: 'honua-server'
-    static_configs:
-      - targets: ['localhost:8080']
-    metrics_path: '/api/metrics/prometheus'
-    scrape_interval: 15s
-```
-
-### Grafana Dashboards
+### Dashboards
 
 Key metrics to monitor:
 
@@ -211,38 +187,9 @@ Key metrics to monitor:
 - Cache operation latencies
 - Eviction rates
 
-### Alerting Rules
+### Alerting
 
-Example Prometheus alerting rules:
-
-```yaml
-groups:
-  - name: honua-server
-    rules:
-      - alert: HighMemoryPressure
-        expr: honua_memory_pressure_percent > 80
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High memory pressure detected"
-
-      - alert: SlowDatabaseQueries
-        expr: rate(honua_database_query_duration_ms_sum[5m]) / rate(honua_database_query_duration_ms_count[5m]) > 1000
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Database queries are running slowly"
-
-      - alert: LowCacheHitRate
-        expr: honua_database_cache_hit_rate < 0.7
-        for: 10m
-        labels:
-          severity: info
-        annotations:
-          summary: "Database cache hit rate is below 70%"
-```
+Configure alerting in your telemetry backend to match your SLOs and operational thresholds.
 
 ## Performance Thresholds
 
@@ -296,7 +243,7 @@ groups:
 
 ### For Operations Teams
 
-1. **Set up automated monitoring** using Prometheus/Grafana
+1. **Set up automated monitoring** using Aspire dashboard or your OTEL backend
 2. **Configure meaningful alerts** for SLO violations
 3. **Monitor trends** not just point-in-time values
 4. **Use correlation** between metrics to diagnose issues

@@ -49,12 +49,6 @@ public static class MetricsEndpoints
             .WithSummary("Get memory usage metrics")
             .Produces<MemoryUsage>();
 
-        // Prometheus-compatible endpoint
-        group.MapGet("/prometheus", GetPrometheusMetrics)
-            .WithName("GetPrometheusMetrics")
-            .WithSummary("Get metrics in Prometheus format")
-            .Produces<string>(200, "text/plain");
-
         return app;
     }
 
@@ -212,50 +206,6 @@ public static class MetricsEndpoints
                 detail: ex.Message,
                 statusCode: 500,
                 title: "Failed to retrieve memory metrics");
-        }
-    }
-
-    /// <summary>
-    /// Gets metrics in Prometheus format for monitoring integrations.
-    /// </summary>
-    private static IResult GetPrometheusMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider)
-    {
-        try
-        {
-            var memoryUsage = MemoryMonitor.GetMemoryUsage();
-            var databaseMetrics = databaseMetricsProvider.GetMetrics();
-
-            var prometheus = new PrometheusFormatter();
-
-            // Memory metrics
-            prometheus.AddGauge("honua_memory_allocated_bytes", memoryUsage.AllocatedBytes, "Currently allocated memory in bytes");
-            prometheus.AddGauge("honua_memory_heap_size_bytes", memoryUsage.HeapSizeBytes, "Heap size in bytes");
-            prometheus.AddGauge("honua_memory_pressure_percent", memoryUsage.MemoryPressurePercentage, "Memory pressure percentage");
-
-            // GC metrics
-            prometheus.AddCounter("honua_gc_collections_total", memoryUsage.Gen0Collections, "generation", "0");
-            prometheus.AddCounter("honua_gc_collections_total", memoryUsage.Gen1Collections, "generation", "1");
-            prometheus.AddCounter("honua_gc_collections_total", memoryUsage.Gen2Collections, "generation", "2");
-
-            // Database metrics
-            prometheus.AddGauge("honua_database_cache_hit_rate", databaseMetrics.CacheHitRate, "Database cache hit rate");
-            prometheus.AddCounter("honua_database_cache_hits_total", databaseMetrics.CacheHits, "Database cache hits");
-            prometheus.AddCounter("honua_database_cache_misses_total", databaseMetrics.CacheMisses, "Database cache misses");
-
-            foreach (var (operationType, metrics) in databaseMetrics.Operations)
-            {
-                prometheus.AddCounter("honua_database_operations_total", metrics.Count, "operation", operationType);
-                prometheus.AddCounter("honua_database_operation_duration_ms_total", metrics.TotalTimeMs, "operation", operationType);
-            }
-
-            return Results.Text(prometheus.ToString(), "text/plain");
-        }
-        catch (Exception ex)
-        {
-            return Results.Problem(
-                detail: ex.Message,
-                statusCode: 500,
-                title: "Failed to generate Prometheus metrics");
         }
     }
 }
