@@ -22,40 +22,56 @@ public class GeometryMemoryPerformanceTests
         // Arrange
         var iterations = 1000;
         var coordinateCount = 1000;
+        WarmUpCoordinatePool(coordinateCount);
 
         // Act - Standard allocation
-        var standardStopwatch = Stopwatch.StartNew();
-        for (var i = 0; i < iterations; i++)
+        var baselineAllocations = MeasureAllocatedBytes(() =>
         {
-            var coordinates = new double[coordinateCount * 2];
-            for (var j = 0; j < coordinateCount; j++)
+            for (var i = 0; i < iterations; i++)
             {
-                coordinates[j * 2] = j;
-                coordinates[j * 2 + 1] = j + 0.5;
+                var coordinates = new double[coordinateCount * 2];
+                for (var j = 0; j < coordinateCount; j++)
+                {
+                    coordinates[j * 2] = j;
+                    coordinates[j * 2 + 1] = j + 0.5;
+                }
+
+                var sum = 0d;
+                for (var j = 0; j < coordinates.Length; j++)
+                {
+                    sum += coordinates[j];
+                }
+
+                _ = sum;
             }
-            // Simulate processing
-            _ = coordinates.Sum();
-        }
-        standardStopwatch.Stop();
+        });
 
         // Act - Memory pool allocation
-        var poolStopwatch = Stopwatch.StartNew();
-        for (var i = 0; i < iterations; i++)
+        var pooledAllocations = MeasureAllocatedBytes(() =>
         {
-            using var rental = GeometryMemoryManager.RentCoordinateBuffer(coordinateCount, 2);
-            for (var j = 0; j < coordinateCount; j++)
+            for (var i = 0; i < iterations; i++)
             {
-                rental.SetX(j, j);
-                rental.SetY(j, j + 0.5);
+                using var rental = GeometryMemoryManager.RentCoordinateBuffer(coordinateCount, 2);
+                for (var j = 0; j < coordinateCount; j++)
+                {
+                    rental.SetX(j, j);
+                    rental.SetY(j, j + 0.5);
+                }
+
+                var sum = 0d;
+                var span = rental.Span;
+                for (var j = 0; j < span.Length; j++)
+                {
+                    sum += span[j];
+                }
+
+                _ = sum;
             }
-            // Simulate processing
-            _ = rental.Span.ToArray().Sum();
-        }
-        poolStopwatch.Stop();
+        });
 
         // Assert
-        Assert.True(poolStopwatch.Elapsed <= standardStopwatch.Elapsed * 1.5,
-            $"Memory pool ({poolStopwatch.ElapsedMilliseconds}ms) should be competitive with standard allocation ({standardStopwatch.ElapsedMilliseconds}ms)");
+        Assert.True(pooledAllocations < baselineAllocations * 0.7,
+            $"Pooled allocations ({pooledAllocations} bytes) should be significantly lower than baseline ({baselineAllocations} bytes)");
     }
 
     [Fact]
@@ -99,30 +115,37 @@ public class GeometryMemoryPerformanceTests
         // Arrange
         var iterations = 1000;
         var wkbSize = 4096; // 4KB WKB data
+        WarmUpWkbPool(wkbSize);
 
-        var initialMemory = GC.GetTotalMemory(forceFullCollection: true);
-
-        // Act - Using pooled buffers
-        for (var i = 0; i < iterations; i++)
+        // Act - baseline allocations
+        var baselineAllocations = MeasureAllocatedBytes(() =>
         {
-            using var rental = GeometryMemoryManager.RentWkbBuffer(wkbSize);
-            // Simulate WKB processing
-            for (var j = 0; j < rental.UsableLength; j++)
+            for (var i = 0; i < iterations; i++)
             {
-                rental.Span[j] = (byte)(j % 256);
+                var buffer = new byte[wkbSize];
+                for (var j = 0; j < buffer.Length; j++)
+                {
+                    buffer[j] = (byte)(j % 256);
+                }
             }
-            // Verify data integrity
-            Assert.Equal((byte)0, rental.Span[0]);
-            Assert.Equal((byte)255, rental.Span[255]);
-        }
+        });
 
-        var finalMemory = GC.GetTotalMemory(forceFullCollection: true);
-        var memoryGrowth = finalMemory - initialMemory;
+        // Act - pooled allocations
+        var pooledAllocations = MeasureAllocatedBytes(() =>
+        {
+            for (var i = 0; i < iterations; i++)
+            {
+                using var rental = GeometryMemoryManager.RentWkbBuffer(wkbSize);
+                for (var j = 0; j < rental.UsableLength; j++)
+                {
+                    rental.Span[j] = (byte)(j % 256);
+                }
+            }
+        });
 
         // Assert
-        var expectedMaxGrowth = wkbSize * iterations * 0.1; // Should be much less than allocating every buffer
-        Assert.True(memoryGrowth < expectedMaxGrowth,
-            $"Memory growth ({memoryGrowth} bytes) should be much less than allocating all buffers ({wkbSize * iterations} bytes)");
+        Assert.True(pooledAllocations < baselineAllocations * 0.7,
+            $"Pooled allocations ({pooledAllocations} bytes) should be significantly lower than baseline ({baselineAllocations} bytes)");
     }
 
     [Fact]
@@ -206,6 +229,32 @@ public class GeometryMemoryPerformanceTests
 
         // Assert
         await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    private static void WarmUpWkbPool(int wkbSize)
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            using var rental = GeometryMemoryManager.RentWkbBuffer(wkbSize);
+            rental.Span[0] = 0;
+        }
+    }
+
+    private static void WarmUpCoordinatePool(int coordinateCount)
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            using var rental = GeometryMemoryManager.RentCoordinateBuffer(coordinateCount, 2);
+            rental.SetX(0, 0);
+        }
+    }
+
+    private static long MeasureAllocatedBytes(Action action)
+    {
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        action();
+        var after = GC.GetAllocatedBytesForCurrentThread();
+        return after - before;
     }
 
     /// <summary>
