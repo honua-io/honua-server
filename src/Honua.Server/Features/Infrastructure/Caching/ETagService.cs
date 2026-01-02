@@ -16,6 +16,8 @@ internal sealed class ETagService : IETagService
 {
     private const int HashSize = 32; // SHA256 hash size in bytes
     private const int Base64HashSize = 44; // Base64-encoded SHA256 size (rounded up to nearest 4-byte boundary)
+    // Base64-encoded SHA256 hash of empty content with padding trimmed to match ComputeETag formatting.
+    private const string EmptyContentHash = "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU";
 
     /// <summary>
     /// Computes an ETag for a given object by serializing it and hashing the content.
@@ -44,8 +46,8 @@ internal sealed class ETagService : IETagService
     {
         if (data.IsEmpty)
         {
-            // Return a consistent ETag for empty content
-            return "\"d41d8cd98f00b204e9800998ecf8427e\"";
+            // Return a consistent ETag for empty content (SHA256 hash of empty payload).
+            return $"\"{EmptyContentHash}\"";
         }
 
         // Compute SHA256 hash
@@ -122,13 +124,12 @@ internal sealed class ETagService : IETagService
         // Parse multiple ETags (comma-separated)
         var etags = ifNoneMatch.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        var current = ParseETag(currentETag);
         foreach (var etag in etags)
         {
-            // Normalize ETags for comparison (remove quotes if present)
-            var normalizedIfNoneMatch = NormalizeETag(etag);
-            var normalizedCurrent = NormalizeETag(currentETag);
-
-            if (string.Equals(normalizedIfNoneMatch, normalizedCurrent, StringComparison.Ordinal))
+            // If-None-Match uses weak comparison for GET/HEAD.
+            var candidate = ParseETag(etag);
+            if (string.Equals(candidate.Value, current.Value, StringComparison.Ordinal))
             {
                 return false; // ETag matches, resource not modified
             }
@@ -161,13 +162,17 @@ internal sealed class ETagService : IETagService
         // Parse multiple ETags (comma-separated)
         var etags = ifMatch.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        var current = ParseETag(currentETag);
         foreach (var etag in etags)
         {
-            // Normalize ETags for comparison (remove quotes if present)
-            var normalizedIfMatch = NormalizeETag(etag);
-            var normalizedCurrent = NormalizeETag(currentETag);
+            // If-Match requires strong comparison; weak tags never match.
+            var candidate = ParseETag(etag);
+            if (candidate.IsWeak || current.IsWeak)
+            {
+                continue;
+            }
 
-            if (string.Equals(normalizedIfMatch, normalizedCurrent, StringComparison.Ordinal))
+            if (string.Equals(candidate.Value, current.Value, StringComparison.Ordinal))
             {
                 return true; // ETag matches, precondition passes
             }
@@ -203,26 +208,27 @@ internal sealed class ETagService : IETagService
         }
     }
 
-    /// <summary>
-    /// Normalizes an ETag by removing surrounding quotes and whitespace.
-    /// </summary>
-    /// <param name="etag">The ETag to normalize</param>
-    /// <returns>The normalized ETag without quotes</returns>
-    private static string NormalizeETag(string etag)
+    private static (string Value, bool IsWeak) ParseETag(string etag)
     {
-        if (string.IsNullOrEmpty(etag))
+        if (string.IsNullOrWhiteSpace(etag))
         {
-            return string.Empty;
+            return (string.Empty, false);
         }
 
         var trimmed = etag.Trim();
+        var isWeak = false;
 
-        // Remove quotes if present
-        if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
+        if (trimmed.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
         {
-            return trimmed[1..^1];
+            isWeak = true;
+            trimmed = trimmed[2..].TrimStart();
         }
 
-        return trimmed;
+        if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
+        {
+            trimmed = trimmed[1..^1];
+        }
+
+        return (trimmed, isWeak);
     }
 }

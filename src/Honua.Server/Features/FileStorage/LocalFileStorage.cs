@@ -19,7 +19,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
     private readonly LocalStorageOptions _options;
     private readonly ILogger<LocalFileStorage> _logger;
     private readonly ConcurrentDictionary<string, CloudFile> _fileIndex;
-    private readonly ConcurrentDictionary<string, HashSet<string>> _batchIndex;
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _batchIndex;
     private readonly string _basePath;
     private readonly string _metadataPath;
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -39,10 +39,12 @@ internal sealed class LocalFileStorage : ICloudFileStorage
     {
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _basePath = _options.BasePath;
+        _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
+            ? Directory.GetCurrentDirectory()
+            : Path.TrimEndingDirectorySeparator(_options.BasePath);
         _metadataPath = Path.Combine(_basePath, ".metadata");
         _fileIndex = new ConcurrentDictionary<string, CloudFile>();
-        _batchIndex = new ConcurrentDictionary<string, HashSet<string>>();
+        _batchIndex = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
 
         InitializeStorage();
     }
@@ -206,7 +208,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             // Remove from batch index if present
             foreach (var batch in _batchIndex)
             {
-                batch.Value.Remove(fileId);
+                _ = batch.Value.TryRemove(fileId, out _);
             }
 
             FileStorageLog.FileDeleted(_logger, fileId);
@@ -231,7 +233,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         var uploadedFiles = new List<CloudFile>();
         var failedFiles = new Dictionary<string, string>();
 
-        _batchIndex[batchId] = new HashSet<string>();
+        _batchIndex[batchId] = new ConcurrentDictionary<string, byte>();
 
         foreach (var file in request.Files)
         {
@@ -252,7 +254,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             if (result.Success && result.File is not null)
             {
                 uploadedFiles.Add(result.File);
-                _batchIndex[batchId].Add(result.File.FileId);
+                _ = _batchIndex[batchId].TryAdd(result.File.FileId, 0);
             }
             else
             {
@@ -293,7 +295,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         }
 
         var deletedCount = 0;
-        foreach (var fileId in fileIds)
+        foreach (var fileId in fileIds.Keys)
         {
             if (await DeleteAsync(fileId, cancellationToken))
             {
@@ -448,8 +450,8 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                     // Rebuild batch index
                     if (cloudFile.Metadata.TryGetValue("BatchId", out var batchId))
                     {
-                        var batchFiles = _batchIndex.GetOrAdd(batchId, _ => new HashSet<string>());
-                        batchFiles.Add(cloudFile.FileId);
+                        var batchFiles = _batchIndex.GetOrAdd(batchId, _ => new ConcurrentDictionary<string, byte>());
+                        _ = batchFiles.TryAdd(cloudFile.FileId, 0);
                     }
                 }
             }
@@ -475,13 +477,38 @@ internal sealed class LocalFileStorage : ICloudFileStorage
     private static string GenerateFileId() =>
         Guid.NewGuid().ToString("N");
 
-    private static string BuildStoragePath(string fileId, string fileName, string? folder)
+    private string BuildStoragePath(string fileId, string fileName, string? folder)
     {
         var extension = Path.GetExtension(fileName);
         var storageName = $"{fileId}{extension}";
 
-        return string.IsNullOrEmpty(folder)
-            ? storageName
-            : Path.Combine(folder, storageName);
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return storageName;
+        }
+
+        ValidateFolderPath(folder);
+
+        return Path.Combine(folder, storageName);
+    }
+
+    private static void ValidateFolderPath(string folder)
+    {
+        if (Path.IsPathRooted(folder))
+        {
+            throw new ArgumentException("Folder must be a relative path.", nameof(folder));
+        }
+
+        if (folder.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        {
+            throw new ArgumentException("Folder contains invalid path characters.", nameof(folder));
+        }
+
+        var separators = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        var segments = folder.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(segment => segment == ".."))
+        {
+            throw new ArgumentException("Folder must not contain relative traversal segments.", nameof(folder));
+        }
     }
 }
