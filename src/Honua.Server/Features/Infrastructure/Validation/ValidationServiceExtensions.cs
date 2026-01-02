@@ -1,6 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Services;
+
 namespace Honua.Server.Features.Infrastructure.Validation;
 
 /// <summary>
@@ -20,6 +24,12 @@ public static class ValidationServiceExtensions
         // Register core validation services
         services.AddSingleton<ICommonQueryValidator, CommonQueryValidator>();
         services.AddSingleton<IRouteParameterValidator, RouteParameterValidator>();
+
+        // Register unified resource validator for consistent service/layer/collection checks
+        services.AddScoped<IResourceValidator, ResourceValidator>();
+
+        // Register unified geometry service for consistent format conversion and Z/M detection
+        services.AddSingleton<IGeometryService, GeometryService>();
 
         return services;
     }

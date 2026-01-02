@@ -61,6 +61,20 @@ public interface ICommonQueryValidator
     /// <param name="whereClause">WHERE clause string</param>
     /// <returns>Validation result indicating security compliance</returns>
     ValidationResult ValidateWhereClause(string? whereClause);
+
+    /// <summary>
+    /// Validates and normalizes pagination parameters, returning effective values with defaults.
+    /// This is the primary pagination validation method for all protocols.
+    /// </summary>
+    /// <param name="offset">Offset/skip parameter (null uses 0)</param>
+    /// <param name="limit">Limit/take/count parameter (null uses default from configuration)</param>
+    /// <returns>Validation result with normalized offset and limit values</returns>
+    ValidationResult<PaginationValues> ValidateAndNormalizePagination(int? offset, int? limit);
+
+    /// <summary>
+    /// Gets the configured query limits for use by protocols that need to expose limits.
+    /// </summary>
+    QueryLimits QueryLimits { get; }
 }
 
 /// <summary>
@@ -74,6 +88,9 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
     {
         _limitsOptions = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
     }
+
+    /// <inheritdoc/>
+    public QueryLimits QueryLimits => _limitsOptions.Query;
 
     /// <inheritdoc/>
     public ValidationResult ValidatePagination(int? offset, int? limit)
@@ -251,7 +268,46 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
 
         return ValidationResult.Success();
     }
+
+    /// <inheritdoc/>
+    public ValidationResult<PaginationValues> ValidateAndNormalizePagination(int? offset, int? limit)
+    {
+        // Validate offset
+        if (offset.HasValue && offset.Value < 0)
+        {
+            return ValidationResult<PaginationValues>.Failure("Offset cannot be negative.");
+        }
+
+        // Calculate effective offset (clamped to max)
+        var effectiveOffset = offset.HasValue
+            ? Math.Min(offset.Value, _limitsOptions.Query.MaxOffset)
+            : 0;
+
+        // Validate limit
+        if (limit.HasValue && limit.Value < 0)
+        {
+            return ValidationResult<PaginationValues>.Failure("Limit cannot be negative.");
+        }
+
+        if (limit.HasValue && limit.Value > _limitsOptions.Query.MaxRecordCount)
+        {
+            return ValidationResult<PaginationValues>.Failure(
+                $"Limit cannot exceed {_limitsOptions.Query.MaxRecordCount}.");
+        }
+
+        // Calculate effective limit (use default if not specified)
+        var effectiveLimit = limit ?? _limitsOptions.Query.DefaultRecordCount;
+
+        return ValidationResult<PaginationValues>.Success(new PaginationValues(effectiveOffset, effectiveLimit));
+    }
 }
+
+/// <summary>
+/// Normalized pagination values with applied defaults and limits.
+/// </summary>
+/// <param name="Offset">The effective offset value (0 if not specified).</param>
+/// <param name="Limit">The effective limit value (default from configuration if not specified).</param>
+public sealed record PaginationValues(int Offset, int Limit);
 
 /// <summary>
 /// Generic validation result that can carry a typed value.

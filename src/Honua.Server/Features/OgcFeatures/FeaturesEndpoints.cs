@@ -13,6 +13,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.Infrastructure.Models;
@@ -129,23 +130,24 @@ internal static partial class FeaturesEndpoints
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         IOptions<LimitsOptions> limitsOptions,
+        IResourceValidator resourceValidator,
+        ICommonQueryValidator queryValidator,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
 
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+
+            // Use centralized resource validation
+            var collectionResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
+            var layer = collectionResult.Resource!;
+            var layerId = layer.Id;
 
             var validationError = OgcFeaturesUtilities.ValidateItemsQueryParameters(request, layer);
             if (validationError is not null)
@@ -187,10 +189,14 @@ internal static partial class FeaturesEndpoints
                 return OgcErrorHelpers.CreateBadRequest(context, bboxCrsError ?? "Invalid bbox CRS.");
             }
 
-            if (!TryResolvePagination(limit, offset, limitsOptions.Value, out var effectiveLimit, out var effectiveOffset, out var paginationError))
+            // Use centralized pagination validation
+            var paginationResult = queryValidator.ValidateAndNormalizePagination(offset, limit);
+            if (!paginationResult.IsValid)
             {
-                return OgcErrorHelpers.CreateBadRequest(context, paginationError ?? "Invalid paging parameters.");
+                return OgcErrorHelpers.CreateBadRequest(context, paginationResult.ErrorMessage ?? "Invalid paging parameters.");
             }
+            var effectiveLimit = paginationResult.Value!.Limit;
+            var effectiveOffset = paginationResult.Value.Offset;
 
             FilterExpression? filterExpression = null;
             string? combinedFilter = null;
@@ -353,27 +359,27 @@ internal static partial class FeaturesEndpoints
         string? crs,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        IResourceValidator resourceValidator,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
 
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+            // Use centralized resource validation
+            var collectionResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
+            var layer = collectionResult.Resource!;
+            var layerId = layer.Id;
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
-
-            var cancellationToken = GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
-            {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
@@ -417,21 +423,22 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        IResourceValidator resourceValidator,
+        IOptions<LimitsOptions> limitsOptions,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+
+            // Use centralized resource validation
+            var collectionResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
+            var layer = collectionResult.Resource!;
+            var layerId = layer.Id;
 
             var requestFeature = await ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
@@ -451,7 +458,8 @@ internal static partial class FeaturesEndpoints
 
             if (geometryWkb != null)
             {
-                var validationResult = WkbValidation.Validate(geometryWkb);
+                // Use centralized geometry validation limits
+                var validationResult = WkbValidation.Validate(geometryWkb, limitsOptions.Value.Validation);
                 if (!validationResult.IsValid)
                 {
                     return OgcErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
@@ -488,25 +496,26 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        IResourceValidator resourceValidator,
+        IOptions<LimitsOptions> limitsOptions,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+            // Use centralized resource validation
+            var collectionResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
+            var layer = collectionResult.Resource!;
+            var layerId = layer.Id;
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
-
-            var cancellationToken = GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
-            {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var requestFeature = await ReadGeoJsonFeatureAsync(context, cancellationToken);
@@ -527,7 +536,8 @@ internal static partial class FeaturesEndpoints
 
             if (geometryWkb != null)
             {
-                var validationResult = WkbValidation.Validate(geometryWkb);
+                // Use centralized geometry validation limits
+                var validationResult = WkbValidation.Validate(geometryWkb, limitsOptions.Value.Validation);
                 if (!validationResult.IsValid)
                 {
                     return OgcErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
@@ -576,25 +586,25 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        IResourceValidator resourceValidator,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+            // Use centralized resource validation
+            var collectionResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return OgcErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
+            var layer = collectionResult.Resource!;
+            var layerId = layer.Id;
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
-
-            var cancellationToken = GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
-            {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var deleted = await featureStore.DeleteAsync(layerId, objectId, cancellationToken);
@@ -684,44 +694,6 @@ internal static partial class FeaturesEndpoints
 
         error = $"Unsupported filter language '{filterLang}'.";
         return false;
-    }
-
-    private static bool TryResolvePagination(
-        int? limit,
-        int? offset,
-        LimitsOptions limits,
-        out int effectiveLimit,
-        out int? effectiveOffset,
-        out string? error)
-    {
-        error = null;
-        effectiveOffset = 0;
-
-        if (offset.HasValue && offset.Value < 0)
-        {
-            effectiveLimit = limits.Query.DefaultRecordCount;
-            error = "Offset cannot be negative.";
-            return false;
-        }
-
-        effectiveOffset = offset.HasValue
-            ? Math.Min(offset.Value, limits.Query.MaxOffset)
-            : 0;
-
-        effectiveLimit = limit ?? limits.Query.DefaultRecordCount;
-        if (effectiveLimit < 0)
-        {
-            error = "Limit cannot be negative.";
-            return false;
-        }
-
-        if (effectiveLimit > limits.Query.MaxRecordCount)
-        {
-            error = $"Limit cannot exceed {limits.Query.MaxRecordCount}.";
-            return false;
-        }
-
-        return true;
     }
 
     private static bool TryBuildCombinedFilter(
