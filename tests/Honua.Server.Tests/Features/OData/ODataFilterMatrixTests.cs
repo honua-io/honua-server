@@ -159,7 +159,8 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().HaveCount(10); // 15 - 5 California cities
+        // Null state values are excluded from "ne" comparisons.
+        features.Should().HaveCount(9); // 15 - 5 California cities - 1 null state
         foreach (var feature in features)
         {
             var attrs = ParseAttributes(feature);
@@ -281,8 +282,8 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        // SF (4.8), Denver (4.6), Las Vegas (4.7)
-        features.Should().HaveCount(3);
+        // SF (4.8), San Diego (4.5), Denver (4.6), Las Vegas (4.7)
+        features.Should().HaveCount(4);
     }
 
     #endregion

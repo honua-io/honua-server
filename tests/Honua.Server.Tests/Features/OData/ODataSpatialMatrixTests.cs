@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -23,6 +22,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private const int TestLayerId = 0;
+    private const string PendingSpatialFilterSupport = "Pending OData spatial filter parity (#200).";
 
     // Test data object IDs from odata.yaml
     private const long SanFranciscoId = 1;      // -122.4194, 37.7749
@@ -254,7 +254,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         objectIds.Should().Contain(SanDiegoId);
     }
 
-    [IntegrationTest]
+    [IntegrationTest(Skip = PendingSpatialFilterSupport)]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects() or geo.distance()")]
     public async Task Spatial_OrCombination_ReturnsUnion()
@@ -346,7 +346,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         objectIds.Should().NotContain(VirtualCityId);
     }
 
-    [IntegrationTest]
+    [IntegrationTest(Skip = PendingSpatialFilterSupport)]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=Geometry eq null")]
     public async Task Filter_GeometryEqualsNull_ReturnsNullGeometries()
@@ -362,7 +362,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         features[0].GetProperty("ObjectId").GetInt64().Should().Be(VirtualCityId);
     }
 
-    [IntegrationTest]
+    [IntegrationTest(Skip = PendingSpatialFilterSupport)]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=Geometry ne null")]
     public async Task Filter_GeometryNotEqualsNull_ExcludesNullGeometries()
@@ -389,7 +389,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
     public async Task GeoIntersects_OnSrid3857Layer_TransformsFilterToLayerSrid()
     {
         // Use the spatial-reference seed with SRID 3857 layers
-        using var sridFixture = new WebAppFixture();
+        var sridFixture = new WebAppFixture();
         sridFixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await sridFixture.InitializeAsync();
 

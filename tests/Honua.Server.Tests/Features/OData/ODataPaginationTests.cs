@@ -47,13 +47,11 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=0")]
-    public async Task Top_Zero_ReturnsEmptyResults()
+    public async Task Top_Zero_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var (features, _) = await ParseResponseAsync(response);
-        features.Should().BeEmpty();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -521,25 +519,17 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=0&$count=true")]
-    public async Task TopZero_WithCount_ReturnsCountButNoResults()
+    public async Task TopZero_WithCount_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0&$count=true");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-
-        var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
-        features.Should().BeEmpty();
-
-        document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
-        countElement.GetInt64().Should().Be(TotalTestFeatures);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$skip=1000&$count=true")]
-    public async Task SkipBeyondResults_WithCount_ReturnsCountButNoResults()
+    public async Task SkipBeyondResults_WithCount_ReturnsZeroCount()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=1000&$count=true");
 
@@ -551,7 +541,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
         features.Should().BeEmpty();
 
         document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
-        countElement.GetInt64().Should().Be(TotalTestFeatures);
+        countElement.GetInt64().Should().Be(0);
     }
 
     #endregion

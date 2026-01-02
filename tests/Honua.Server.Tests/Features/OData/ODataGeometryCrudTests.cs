@@ -359,7 +359,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
     public async Task CreateFeature_OnSrid3857Layer_TransformsGeometry()
     {
         // Use the spatial-reference seed with SRID 3857 layers
-        using var sridFixture = new WebAppFixture();
+        var sridFixture = new WebAppFixture();
         sridFixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await sridFixture.InitializeAsync();
 
@@ -482,7 +482,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         // Create batch with update and then delete
         var batchRequest = new
         {
-            requests = new[]
+            requests = new object[]
             {
                 new
                 {
