@@ -397,6 +397,10 @@ curl "http://localhost:8080/rest/services/1/FeatureServer/0/tiles/metadata" \
 
 Admin endpoints require API key authentication using the `HONUA_ADMIN_PASSWORD` environment variable.
 
+### API Key Authentication
+
+All admin endpoints (`/api/admin/*`, `/api/v1/admin/*`, `/api/import/*`) require authentication. Unauthenticated requests return `401 Unauthorized`.
+
 ```bash
 # Set admin password
 export HONUA_ADMIN_PASSWORD="your-secure-password"
@@ -404,6 +408,44 @@ export HONUA_ADMIN_PASSWORD="your-secure-password"
 # Use password as API key for admin endpoints
 curl "http://localhost:8080/api/v1/admin/metadata/services" \
   -H "X-API-Key: your-secure-password"
+```
+
+Without the `X-API-Key` header (or with an invalid key), you'll receive:
+
+```json
+{
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "API key required. Provide a valid API key in the X-API-Key header."
+}
+```
+
+### Development Bypass Mode
+
+For local development, you can bypass authentication by setting `HONUA_DEV_AUTH=true`:
+
+```bash
+# Enable development bypass (allows admin access without API key)
+export HONUA_DEV_AUTH=true
+
+# Admin endpoints now accessible without X-API-Key header
+curl "http://localhost:8080/api/v1/admin/metadata/services"
+```
+
+**Warning:** Never use `HONUA_DEV_AUTH=true` in production environments.
+
+### Authentication in Docker
+
+```bash
+# Production: Require API key
+docker run -p 8080:8080 \
+  -e HONUA_ADMIN_PASSWORD="your-secure-password" \
+  ghcr.io/honuaio/honua-server:latest
+
+# Development: Bypass authentication
+docker run -p 8080:8080 \
+  -e HONUA_DEV_AUTH=true \
+  ghcr.io/honuaio/honua-server:latest
 ```
 
 ### Admin Endpoints (v1)
