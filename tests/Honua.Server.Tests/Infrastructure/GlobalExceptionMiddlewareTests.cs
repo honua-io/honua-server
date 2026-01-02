@@ -142,7 +142,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Internal Server Error");
-        problemDetails.GetProperty("detail").GetString().Should().Be("An unexpected error occurred.");
+        problemDetails.GetProperty("detail").GetString().Should().Be("An unexpected error occurred while processing the request.");
         problemDetails.GetProperty("status").GetInt32().Should().Be(500);
     }
 
@@ -311,9 +311,9 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/throw-general");
 
         // Assert
-        // The X-Correlation-Id header should be added by the middleware
-        response.Headers.Should().ContainKey("X-Correlation-Id");
-        var correlationId = response.Headers.GetValues("X-Correlation-Id").First();
+        // The X-Correlation-ID header should be added by the middleware
+        response.Headers.Should().ContainKey("X-Correlation-ID");
+        var correlationId = response.Headers.GetValues("X-Correlation-ID").First();
         correlationId.Should().NotBeNullOrEmpty();
     }
 

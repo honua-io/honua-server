@@ -61,7 +61,7 @@ internal sealed class GlobalExceptionMiddleware(
         }
 
         // Add correlation ID header for traceability
-        context.Response.Headers["X-Correlation-Id"] = context.TraceIdentifier;
+        context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
 
         // Handle ServiceUnavailable with Retry-After header
         if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
