@@ -227,7 +227,7 @@ internal static partial class MetadataEndpoints
                 request.MaxRecordCount,
                 context.RequestAborted);
 
-            await InvalidateMetadataCache(context);
+            await InvalidateServiceCache(context, request.Name);
 
             var response = MapToServiceResponse(service);
             context.Response.StatusCode = StatusCodes.Status201Created;
@@ -293,7 +293,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateServiceCache(context, name);
 
         var response = MapToServiceResponse(service);
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.ServiceResponse);
@@ -329,7 +329,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateServiceCache(context, name);
 
         var response = new SuccessResponse { Success = true, Message = $"Service '{name}' deleted" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.SuccessResponse);
@@ -389,7 +389,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateServiceAndLayerCache(context, name, request.LayerId);
 
         var response = new BindingResponse { Success = true, Message = $"Layer {request.LayerId} bound to service '{name}'" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.BindingResponse);
@@ -433,7 +433,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateServiceAndLayerCache(context, name, layerId);
 
         var response = new BindingResponse { Success = true, Message = $"Layer {layerId} unbound from service '{name}'" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.BindingResponse);
@@ -546,7 +546,7 @@ internal static partial class MetadataEndpoints
                 request.Description,
                 context.RequestAborted);
 
-            await InvalidateMetadataCache(context);
+            await InvalidateLayerCache(context, layer.Id);
 
             var response = MapToLayerResponse(layer);
             context.Response.StatusCode = StatusCodes.Status201Created;
@@ -615,7 +615,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateLayerCache(context, layerId);
 
         var response = MapToLayerResponse(layer);
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerResponse);
@@ -651,7 +651,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateLayerCache(context, layerId);
 
         var response = new SuccessResponse { Success = true, Message = $"Layer {layerId} deleted" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.SuccessResponse);
@@ -687,7 +687,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateLayerCache(context, layerId);
 
         var response = MapToLayerResponse(layer);
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerResponse);
@@ -778,7 +778,9 @@ internal static partial class MetadataEndpoints
                 request.Description,
                 context.RequestAborted);
 
-            await InvalidateMetadataCache(context);
+            // Invalidate both origin and related layer caches
+            await InvalidateLayerCache(context, layerId);
+            await InvalidateLayerCache(context, request.RelatedLayerId);
 
             var response = MapToRelationshipResponse(relationship);
             context.Response.StatusCode = StatusCodes.Status201Created;
@@ -828,7 +830,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateMetadataCache(context);
+        await InvalidateLayerCache(context, layerId);
 
         var response = new SuccessResponse { Success = true, Message = $"Relationship {relationshipId} deleted from layer {layerId}" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.SuccessResponse);
@@ -918,7 +920,7 @@ internal static partial class MetadataEndpoints
         }
 
         // Style storage is a placeholder - just returning the submitted style
-        await InvalidateMetadataCache(context);
+        await InvalidateLayerCache(context, layerId);
 
         var response = new StyleResponse
         {
@@ -971,21 +973,42 @@ internal static partial class MetadataEndpoints
         Description = relationship.Description
     };
 
-    private static async Task InvalidateMetadataCache(HttpContext context)
+    private static async Task InvalidateServiceCache(HttpContext context, string serviceName)
     {
-        // Invalidate Redis/memory cache
         var cachingCatalog = context.RequestServices.GetService<CachingLayerCatalog>();
         if (cachingCatalog != null)
         {
-            await cachingCatalog.InvalidateAllAsync(context.RequestAborted);
+            await cachingCatalog.InvalidateServiceAsync(serviceName, context.RequestAborted);
         }
 
-        // Invalidate output cache
         var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
         if (outputCache != null)
         {
-            await outputCache.EvictByTagAsync("metadata", context.RequestAborted);
+            await outputCache.EvictByTagAsync($"service-{serviceName}", context.RequestAborted);
+            await outputCache.EvictByTagAsync("services", context.RequestAborted);
         }
+    }
+
+    private static async Task InvalidateLayerCache(HttpContext context, int layerId)
+    {
+        var cachingCatalog = context.RequestServices.GetService<CachingLayerCatalog>();
+        if (cachingCatalog != null)
+        {
+            await cachingCatalog.InvalidateLayerAsync(layerId, context.RequestAborted);
+        }
+
+        var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
+        if (outputCache != null)
+        {
+            await outputCache.EvictByTagAsync($"layer-{layerId}", context.RequestAborted);
+            await outputCache.EvictByTagAsync("layers", context.RequestAborted);
+        }
+    }
+
+    private static async Task InvalidateServiceAndLayerCache(HttpContext context, string serviceName, int layerId)
+    {
+        await InvalidateServiceCache(context, serviceName);
+        await InvalidateLayerCache(context, layerId);
     }
 
     private static async Task WriteJsonAsync<T>(HttpContext context, T response, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
