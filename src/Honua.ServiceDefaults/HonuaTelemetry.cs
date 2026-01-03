@@ -10,6 +10,10 @@ namespace Honua.ServiceDefaults;
 /// Provides centralized telemetry instrumentation for Honua Server.
 /// Contains ActivitySource for distributed tracing and Meter for custom metrics.
 /// </summary>
+/// <summary>
+/// Provides centralized telemetry instrumentation for Honua Server.
+/// Contains ActivitySource for distributed tracing and Meter for custom metrics.
+/// </summary>
 public static class HonuaTelemetry
 {
     /// <summary>
@@ -59,6 +63,24 @@ public static class HonuaTelemetry
 
         /// <summary>File import processing activity.</summary>
         public const string FileImport = "honua.import.file";
+
+        /// <summary>Authentication and authorization activity.</summary>
+        public const string Authentication = "honua.auth.validate";
+
+        /// <summary>Cache operation activity.</summary>
+        public const string CacheOperation = "honua.cache.operation";
+
+        /// <summary>Business intelligence calculation activity.</summary>
+        public const string BusinessIntelligence = "honua.bi.calculation";
+
+        /// <summary>Security monitoring activity.</summary>
+        public const string SecurityMonitoring = "honua.security.check";
+
+        /// <summary>Performance analysis activity.</summary>
+        public const string PerformanceAnalysis = "honua.performance.analysis";
+
+        /// <summary>Anomaly detection activity.</summary>
+        public const string AnomalyDetection = "honua.ml.anomaly_detection";
     }
 
     /// <summary>
@@ -101,6 +123,36 @@ public static class HonuaTelemetry
 
         /// <summary>The tile Y coordinate.</summary>
         public const string TileY = "honua.tile.y";
+
+        /// <summary>User identifier for business intelligence.</summary>
+        public const string UserId = "honua.user.id";
+
+        /// <summary>Client identifier for analytics.</summary>
+        public const string ClientId = "honua.client.id";
+
+        /// <summary>Geographic region for geo-analytics.</summary>
+        public const string GeoRegion = "honua.geo.region";
+
+        /// <summary>Request latency category (fast, medium, slow, timeout).</summary>
+        public const string LatencyCategory = "honua.latency.category";
+
+        /// <summary>Security risk level (low, medium, high, critical).</summary>
+        public const string SecurityRisk = "honua.security.risk_level";
+
+        /// <summary>Business metric type for analytics.</summary>
+        public const string BusinessMetric = "honua.business.metric_type";
+
+        /// <summary>Performance baseline comparison.</summary>
+        public const string PerformanceBaseline = "honua.performance.baseline_pct";
+
+        /// <summary>Cache tier (L1, L2, L3) for multilevel caching.</summary>
+        public const string CacheTier = "honua.cache.tier";
+
+        /// <summary>SQL query complexity score.</summary>
+        public const string QueryComplexity = "honua.query.complexity_score";
+
+        /// <summary>Memory allocation size category.</summary>
+        public const string MemoryCategory = "honua.memory.allocation_category";
     }
 
     /// <summary>
@@ -125,6 +177,12 @@ public static class HonuaTelemetry
 
         /// <summary>Health check endpoints.</summary>
         public const string Health = "Health";
+
+        /// <summary>Monitoring and metrics endpoints.</summary>
+        public const string Monitoring = "Monitoring";
+
+        /// <summary>Business intelligence endpoints.</summary>
+        public const string BusinessIntelligence = "BI";
     }
 
     /// <summary>
@@ -143,8 +201,9 @@ public static class HonuaTelemetry
     /// </summary>
     /// <param name="queryType">The type of database query.</param>
     /// <param name="layerId">The layer identifier (optional).</param>
+    /// <param name="complexityScore">Query complexity score (optional).</param>
     /// <returns>The started activity, or null if not sampled.</returns>
-    public static Activity? StartDatabaseActivity(string queryType, string? layerId = null)
+    public static Activity? StartDatabaseActivity(string queryType, string? layerId = null, int? complexityScore = null)
     {
         var activity = ActivitySource.StartActivity(Activities.DatabaseQuery, ActivityKind.Client);
         activity?.SetTag(Tags.DbQueryType, queryType);
@@ -152,6 +211,11 @@ public static class HonuaTelemetry
         if (layerId != null)
         {
             activity?.SetTag(Tags.LayerId, layerId);
+        }
+
+        if (complexityScore.HasValue)
+        {
+            activity?.SetTag(Tags.QueryComplexity, complexityScore.Value);
         }
 
         return activity;
@@ -163,8 +227,9 @@ public static class HonuaTelemetry
     /// <param name="operation">The operation type (query, edit, etc.).</param>
     /// <param name="protocol">The API protocol being used.</param>
     /// <param name="layerId">The layer identifier.</param>
+    /// <param name="correlationId">The request correlation ID (optional).</param>
     /// <returns>The started activity, or null if not sampled.</returns>
-    public static Activity? StartFeatureActivity(string operation, string protocol, string layerId)
+    public static Activity? StartFeatureActivity(string operation, string protocol, string layerId, string? correlationId = null)
     {
         var activityName = operation switch
         {
@@ -177,6 +242,51 @@ public static class HonuaTelemetry
         activity?.SetTag(Tags.Operation, operation);
         activity?.SetTag(Tags.Protocol, protocol);
         activity?.SetTag(Tags.LayerId, layerId);
+
+        if (correlationId != null)
+        {
+            activity?.SetTag(Tags.CorrelationId, correlationId);
+        }
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new business intelligence activity for analytics tracking.
+    /// </summary>
+    /// <param name="metricType">The type of business metric being calculated.</param>
+    /// <param name="userId">User identifier (optional).</param>
+    /// <param name="clientId">Client identifier (optional).</param>
+    /// <returns>The started activity, or null if not sampled.</returns>
+    public static Activity? StartBusinessIntelligenceActivity(string metricType, string? userId = null, string? clientId = null)
+    {
+        var activity = ActivitySource.StartActivity(Activities.BusinessIntelligence, ActivityKind.Internal);
+        activity?.SetTag(Tags.BusinessMetric, metricType);
+
+        if (userId != null)
+        {
+            activity?.SetTag(Tags.UserId, userId);
+        }
+
+        if (clientId != null)
+        {
+            activity?.SetTag(Tags.ClientId, clientId);
+        }
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Starts a new security monitoring activity.
+    /// </summary>
+    /// <param name="checkType">The type of security check being performed.</param>
+    /// <param name="riskLevel">The assessed risk level.</param>
+    /// <returns>The started activity, or null if not sampled.</returns>
+    public static Activity? StartSecurityActivity(string checkType, string riskLevel = "low")
+    {
+        var activity = ActivitySource.StartActivity(Activities.SecurityMonitoring, ActivityKind.Internal);
+        activity?.SetTag(Tags.Operation, checkType);
+        activity?.SetTag(Tags.SecurityRisk, riskLevel);
 
         return activity;
     }
@@ -209,7 +319,8 @@ public static class HonuaTelemetry
     /// </summary>
     /// <param name="activity">The activity to update.</param>
     /// <param name="featureCount">The number of features processed.</param>
-    public static void SetSuccess(Activity? activity, int featureCount = 0)
+    /// <param name="performanceBaseline">Performance compared to baseline (percentage).</param>
+    public static void SetSuccess(Activity? activity, int featureCount = 0, int? performanceBaseline = null)
     {
         if (activity == null)
         {
@@ -221,5 +332,56 @@ public static class HonuaTelemetry
         {
             activity.SetTag(Tags.FeatureCount, featureCount);
         }
+
+        if (performanceBaseline.HasValue)
+        {
+            activity.SetTag(Tags.PerformanceBaseline, performanceBaseline.Value);
+        }
+    }
+
+    /// <summary>
+    /// Adds latency categorization to an activity based on duration.
+    /// </summary>
+    /// <param name="activity">The activity to categorize.</param>
+    /// <param name="durationMs">The duration in milliseconds.</param>
+    public static void CategorizeLatency(Activity? activity, double durationMs)
+    {
+        if (activity == null)
+        {
+            return;
+        }
+
+        var category = durationMs switch
+        {
+            < 100 => "fast",
+            < 1000 => "medium",
+            < 5000 => "slow",
+            _ => "timeout"
+        };
+
+        activity.SetTag(Tags.LatencyCategory, category);
+    }
+
+    /// <summary>
+    /// Adds memory allocation categorization to an activity.
+    /// </summary>
+    /// <param name="activity">The activity to categorize.</param>
+    /// <param name="allocationBytes">The memory allocation in bytes.</param>
+    public static void CategorizeMemoryAllocation(Activity? activity, long allocationBytes)
+    {
+        if (activity == null)
+        {
+            return;
+        }
+
+        var category = allocationBytes switch
+        {
+            < 1024 => "small",           // < 1KB
+            < 1024 * 1024 => "medium",  // < 1MB
+            < 10 * 1024 * 1024 => "large", // < 10MB
+            _ => "xlarge"                // >= 10MB
+        };
+
+        activity.SetTag(Tags.MemoryCategory, category);
     }
 }

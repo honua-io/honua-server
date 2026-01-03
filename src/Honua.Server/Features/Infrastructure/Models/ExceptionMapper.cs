@@ -3,6 +3,7 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Shared.Models;
+using Polly.CircuitBreaker;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
@@ -95,6 +96,13 @@ internal static class ExceptionMapper
                 serviceEx.RetryAfterSeconds.HasValue
                     ? [$"Retry-After: {serviceEx.RetryAfterSeconds}s"]
                     : null
+            ),
+
+            BrokenCircuitException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Service Unavailable",
+                "The service is temporarily unavailable. Please try again later.",
+                null
             ),
 
             // Standard exceptions with generic safe messages

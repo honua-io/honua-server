@@ -123,7 +123,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         {
             stopwatch.Stop();
             FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
-            return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
+            return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
         }
     }
 

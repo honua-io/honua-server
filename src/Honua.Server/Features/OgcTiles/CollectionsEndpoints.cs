@@ -87,6 +87,11 @@ internal static class CollectionsEndpoints
 
             return OgcFeaturesUtilities.FormatMetadataResponse(response, OgcTilesJsonContext.Default.Collections, outputFormat, "Collections");
         }
+        catch (OperationCanceledException)
+            when (OgcTilesUtilities.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             OgcTilesCollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
@@ -148,6 +153,11 @@ internal static class CollectionsEndpoints
                 OgcTilesJsonContext.Default.CollectionInfo,
                 outputFormat,
                 collection.Title ?? collection.Id);
+        }
+        catch (OperationCanceledException)
+            when (OgcTilesUtilities.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

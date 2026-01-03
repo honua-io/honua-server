@@ -61,9 +61,9 @@ public static class WkbValidation
         {
             geometry = _wkbReader.Read(wkb);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return WkbValidationResult.Invalid($"Invalid WKB format: {ex.Message}");
+            return WkbValidationResult.Invalid("Invalid WKB format.");
         }
 
         if (geometry == null)

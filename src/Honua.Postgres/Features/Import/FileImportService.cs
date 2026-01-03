@@ -111,13 +111,13 @@ internal sealed class FileImportService : IFileImportService
                 detectedSrid,
                 stopwatch.Elapsed);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             stopwatch.Stop();
             return ImportResult.CreateFailure(
                 request.TableName,
                 format.Value,
-                "Import failed: " + ex.Message,
+                "Import failed.",
                 stopwatch.Elapsed);
         }
     }
@@ -125,24 +125,160 @@ internal sealed class FileImportService : IFileImportService
     /// <inheritdoc />
     public async Task<ImportResult> ImportFileAsync(ImportRequest request, IProgress<ImportProgress>? progress, CancellationToken cancellationToken = default)
     {
-        // For now, implement without progress reporting by calling the base method
-        // TODO: Add actual progress reporting in future implementation
-        var result = await ImportFileAsync(request, cancellationToken);
+        var jobId = Guid.NewGuid().ToString();
+        var startTime = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
 
-        // Report completion
+        // Report start
         progress?.Report(new ImportProgress
         {
-            JobId = Guid.NewGuid().ToString(),
-            Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
-            TableName = result.TableName,
-            Format = result.Format,
-            FeaturesProcessed = result.FeatureCount,
-            StartedAt = DateTimeOffset.UtcNow.AddSeconds(-1), // Approximate start time
-            CompletedAt = DateTimeOffset.UtcNow,
-            ErrorMessage = result.ErrorMessage
+            JobId = jobId,
+            Status = ImportStatus.Processing,
+            TableName = request.TableName,
+            Format = SupportedFileFormat.GeoJson, // Will be updated once detected
+            FeaturesProcessed = 0,
+            StartedAt = startTime
         });
 
-        return result;
+        var format = DetectFormat(request.FileName);
+        if (format == null)
+        {
+            var errorMessage = "Unsupported file format: " + Path.GetExtension(request.FileName);
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Failed,
+                TableName = request.TableName,
+                Format = SupportedFileFormat.GeoJson,
+                FeaturesProcessed = 0,
+                StartedAt = startTime,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = errorMessage
+            });
+
+            return ImportResult.CreateFailure(
+                request.TableName,
+                SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed);
+        }
+
+        // Update progress with detected format
+        progress?.Report(new ImportProgress
+        {
+            JobId = jobId,
+            Status = ImportStatus.Processing,
+            TableName = request.TableName,
+            Format = format.Value,
+            FeaturesProcessed = 0,
+            StartedAt = startTime
+        });
+
+        try
+        {
+            var features = await ReadFeaturesAsync(request.FileStream, format.Value, cancellationToken);
+            var featureList = features.ToList(); // Materialize for count and reuse
+
+            if (featureList.Count == 0)
+            {
+                var errorMessage = "No features found in file";
+                progress?.Report(new ImportProgress
+                {
+                    JobId = jobId,
+                    Status = ImportStatus.Failed,
+                    TableName = request.TableName,
+                    Format = format.Value,
+                    FeaturesProcessed = 0,
+                    StartedAt = startTime,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = errorMessage
+                });
+
+                return ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed);
+            }
+
+            // Report CRS detection phase
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Processing,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = 0,
+                EstimatedTotalFeatures = featureList.Count,
+                StartedAt = startTime
+            });
+
+            // Detect CRS if not provided in request
+            var detectedSrid = request.SourceSrid ?? await DetectCrsFromFileAsync(request.FileName, request.FileStream, format.Value, cancellationToken);
+            var sourceSrid = detectedSrid ?? 4326;
+
+            // Report import phase
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Processing,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = 0,
+                EstimatedTotalFeatures = featureList.Count,
+                StartedAt = startTime
+            });
+
+            var featureCount = await ImportFeaturesToPostGisAsync(
+                featureList,
+                request.TableName,
+                sourceSrid,
+                request.TargetSrid,
+                request.OverwriteExisting,
+                cancellationToken);
+
+            stopwatch.Stop();
+
+            // Report completion
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Completed,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = featureCount,
+                EstimatedTotalFeatures = featureCount,
+                StartedAt = startTime,
+                CompletedAt = DateTimeOffset.UtcNow
+            });
+
+            return ImportResult.CreateSuccess(
+                request.TableName,
+                format.Value,
+                featureCount,
+                detectedSrid,
+                stopwatch.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Failed,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = 0,
+                StartedAt = startTime,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = ex.Message
+            });
+
+            return ImportResult.CreateFailure(
+                request.TableName,
+                format.Value,
+                ex.Message,
+                stopwatch.Elapsed);
+        }
     }
 
     /// <summary>

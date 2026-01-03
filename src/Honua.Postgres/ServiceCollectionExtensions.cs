@@ -95,7 +95,14 @@ internal static class ServiceCollectionExtensions
         });
 
         // Register feature store implementation
-        services.AddScoped<IFeatureStore, PostgresFeatureStore>();
+        services.AddScoped<PostgresFeatureStore>();
+        services.AddScoped<IFeatureStore>(serviceProvider =>
+        {
+            var innerStore = serviceProvider.GetRequiredService<PostgresFeatureStore>();
+            var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
+            var logger = serviceProvider.GetRequiredService<ILogger<MonitoredFeatureStoreDecorator>>();
+            return new MonitoredFeatureStoreDecorator(innerStore, performanceMonitor, logger);
+        });
 
         // Register database performance metrics provider
         services.AddSingleton<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();

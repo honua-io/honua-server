@@ -16,6 +16,8 @@ internal static class HealthEndpoints
     /// </summary>
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        var environment = endpoints.ServiceProvider.GetRequiredService<IHostEnvironment>();
+
         // Use Map with explicit HTTP method to avoid MapGet reflection
         _ = endpoints.Map("/healthz/live", HandleLivenessProbe)
             .WithDisplayName("Liveness Probe")
@@ -26,9 +28,14 @@ internal static class HealthEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
-        _ = endpoints.Map("/healthz/metrics", HandlePerformanceMetrics)
+        var metricsEndpoint = endpoints.Map("/healthz/metrics", HandlePerformanceMetrics)
             .WithDisplayName("Performance Metrics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+        {
+            metricsEndpoint.RequireAuthorization();
+        }
     }
 
     /// <summary>
@@ -109,13 +116,13 @@ internal static class HealthEndpoints
 
             return Results.Json(response, HealthJsonContext.Default.HealthPerformanceMetricsResponse);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             var response = new HealthPerformanceErrorResponse
             {
                 Status = "error",
                 Message = "Failed to retrieve performance metrics",
-                Details = ex.Message
+                Details = "See server logs for details."
             };
 
             return Results.Json(

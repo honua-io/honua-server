@@ -165,7 +165,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.InvalidWkbStructure,
-                $"Invalid WKB structure: {ex.Message}");
+                "Invalid WKB structure.");
         }
     }
 
@@ -218,7 +218,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
             LogTopologyValidationFailed(_logger, ex);
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.InvalidTopology,
-                $"Topology validation error: {ex.Message}");
+                "Topology validation error.");
         }
     }
 
@@ -312,7 +312,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         catch (Exception ex)
         {
             LogGeometryRepairFailed(_logger, ex);
-            return GeometryRepairResult.Failed($"Repair error: {ex.Message}");
+            return GeometryRepairResult.Failed("Repair error.");
         }
     }
 

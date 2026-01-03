@@ -1,11 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 using OpenTelemetry;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -46,8 +48,9 @@ public static partial class Extensions
         builder.Configuration.GetSection(TracingOptions.SectionName).Bind(tracingOptions);
         builder.Services.Configure<TracingOptions>(builder.Configuration.GetSection(TracingOptions.SectionName));
 
-        var useOtlp = !string.IsNullOrWhiteSpace(tracingOptions.OtlpEndpoint) ||
-                      !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+        var otlpEndpoint = ResolveOtlpEndpoint(builder.Configuration, tracingOptions);
+        var otlpHeaders = ResolveOtlpHeaders(builder.Configuration, tracingOptions);
+        var useOtlp = !string.IsNullOrWhiteSpace(otlpEndpoint);
 
         builder.Logging.AddOpenTelemetry(logging =>
         {
@@ -56,17 +59,29 @@ public static partial class Extensions
 
             if (useOtlp)
             {
-                logging.AddOtlpExporter();
+                logging.AddOtlpExporter(options => ConfigureOtlpExporter(options, otlpEndpoint, otlpHeaders));
             }
         });
 
-        builder.Services.AddOpenTelemetry()
-            .WithMetrics(metrics => metrics
+        var otelBuilder = builder.Services.AddOpenTelemetry();
+
+        otelBuilder.WithMetrics(metrics =>
+        {
+            metrics
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter(HonuaTelemetry.ServiceName))
-            .WithTracing(tracing =>
+                .AddMeter(HonuaTelemetry.ServiceName);
+
+            if (useOtlp)
+            {
+                metrics.AddOtlpExporter(options => ConfigureOtlpExporter(options, otlpEndpoint, otlpHeaders));
+            }
+        });
+
+        if (tracingOptions.Enabled)
+        {
+            otelBuilder.WithTracing(tracing =>
             {
                 // Configure sampling based on options
                 if (tracingOptions.SamplingRatio < 1.0)
@@ -118,9 +133,18 @@ public static partial class Extensions
                     })
                     .AddHttpClientInstrumentation()
                     .AddNpgsql();
-            });
 
-        builder.AddOpenTelemetryExporters();
+                if (ShouldAddSpanSanitizer(tracingOptions))
+                {
+                    tracing.AddProcessor(new SpanSanitizingProcessor(tracingOptions));
+                }
+
+                if (useOtlp)
+                {
+                    tracing.AddOtlpExporter(options => ConfigureOtlpExporter(options, otlpEndpoint, otlpHeaders));
+                }
+            });
+        }
 
         return builder;
     }
@@ -146,17 +170,105 @@ public static partial class Extensions
         return "unknown";
     }
 
-    private static IHostApplicationBuilder AddOpenTelemetryExporters(this IHostApplicationBuilder builder)
+    private static string? ResolveOtlpEndpoint(IConfiguration configuration, TracingOptions tracingOptions)
     {
-        var useOtlp = !string.IsNullOrWhiteSpace(
-            builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
-
-        if (useOtlp)
+        if (!string.IsNullOrWhiteSpace(tracingOptions.OtlpEndpoint))
         {
-            builder.Services.AddOpenTelemetry().UseOtlpExporter();
+            return tracingOptions.OtlpEndpoint;
         }
 
-        return builder;
+        return configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+    }
+
+    private static string? ResolveOtlpHeaders(IConfiguration configuration, TracingOptions tracingOptions)
+    {
+        if (!string.IsNullOrWhiteSpace(tracingOptions.OtlpHeaders))
+        {
+            return tracingOptions.OtlpHeaders;
+        }
+
+        return configuration["OTEL_EXPORTER_OTLP_HEADERS"];
+    }
+
+    private static void ConfigureOtlpExporter(OtlpExporterOptions options, string? endpoint, string? headers)
+    {
+        if (!string.IsNullOrWhiteSpace(endpoint) &&
+            Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+        {
+            options.Endpoint = uri;
+        }
+
+        if (!string.IsNullOrWhiteSpace(headers))
+        {
+            options.Headers = headers;
+        }
+    }
+
+    private static bool ShouldAddSpanSanitizer(TracingOptions tracingOptions)
+    {
+        return !tracingOptions.IncludeDbStatementText ||
+               tracingOptions.MaxAttributesPerSpan > 0 ||
+               tracingOptions.MaxEventsPerSpan > 0;
+    }
+
+    private sealed class SpanSanitizingProcessor : BaseProcessor<Activity>
+    {
+        private static readonly string[] _dbStatementTags =
+        [
+            "db.statement",
+            "db.query.text",
+            "db.statement.text"
+        ];
+
+        private readonly bool _includeDbStatementText;
+        private readonly int _maxAttributes;
+        private readonly int _maxEvents;
+
+        public SpanSanitizingProcessor(TracingOptions tracingOptions)
+        {
+            _includeDbStatementText = tracingOptions.IncludeDbStatementText;
+            _maxAttributes = tracingOptions.MaxAttributesPerSpan;
+            _maxEvents = tracingOptions.MaxEventsPerSpan;
+        }
+
+        public override void OnEnd(Activity activity)
+        {
+            if (!_includeDbStatementText)
+            {
+                foreach (var tag in _dbStatementTags)
+                {
+                    activity.SetTag(tag, null);
+                }
+            }
+
+            if (_maxAttributes > 0)
+            {
+                TrimTags(activity, _maxAttributes);
+            }
+
+            if (_maxEvents > 0)
+            {
+                var eventCount = activity.Events.Count();
+                if (eventCount > _maxEvents)
+                {
+                    activity.SetTag("otel.events.truncated", eventCount - _maxEvents);
+                }
+            }
+        }
+
+        private static void TrimTags(Activity activity, int maxAttributes)
+        {
+            var tags = activity.TagObjects.ToList();
+            if (tags.Count <= maxAttributes)
+            {
+                return;
+            }
+
+            for (var i = maxAttributes; i < tags.Count; i++)
+            {
+                activity.SetTag(tags[i].Key, null);
+            }
+        }
     }
 
     /// <summary>

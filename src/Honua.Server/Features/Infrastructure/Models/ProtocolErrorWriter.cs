@@ -96,6 +96,7 @@ internal static class ProtocolErrorWriter
         StatusCodes.Status413PayloadTooLarge => "PayloadTooLarge",
         StatusCodes.Status429TooManyRequests => "TooManyRequests",
         StatusCodes.Status500InternalServerError => "InternalServerError",
+        StatusCodes.Status503ServiceUnavailable => "ServiceUnavailable",
         _ => "Error"
     };
 
@@ -107,6 +108,7 @@ internal static class ProtocolErrorWriter
         path.StartsWithSegments("/collections");
 
     private static bool IsAdmin(PathString path) =>
+        path.StartsWithSegments("/api/v1/admin") ||
         path.StartsWithSegments("/api/admin") ||
         path.StartsWithSegments("/api/import");
 

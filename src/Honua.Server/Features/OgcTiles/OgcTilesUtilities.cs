@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Tiles;
@@ -13,40 +14,39 @@ internal static class OgcTilesUtilities
 {
     public static class AllowedQueryParameters
     {
-        public static readonly ISet<string> Metadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f"
-        };
+        public static readonly FrozenSet<string> Metadata =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> DatasetTilesetMetadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "collections"
-        };
+        public static readonly FrozenSet<string> DatasetTilesetMetadata = new[]
+            {
+                "f",
+                "collections"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> OpenApi = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f"
-        };
+        public static readonly FrozenSet<string> OpenApi =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> Tiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "datetime",
-            "subset",
-            "crs",
-            "subset-crs"
-        };
+        public static readonly FrozenSet<string> Tiles = new[]
+            {
+                "f",
+                "datetime",
+                "subset",
+                "crs",
+                "subset-crs"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> DatasetTiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "datetime",
-            "subset",
-            "crs",
-            "subset-crs",
-            "collections"
-        };
+        public static readonly FrozenSet<string> DatasetTiles = new[]
+            {
+                "f",
+                "datetime",
+                "subset",
+                "crs",
+                "subset-crs",
+                "collections"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     public const string WebMercatorQuadId = "WebMercatorQuad";

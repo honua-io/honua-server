@@ -14,6 +14,7 @@ using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -141,11 +142,11 @@ internal sealed class FeatureServerHandler(
                     var filterExpression = parser.Parse(validatedParams.Where);
                     sqlFilter = _services.SqlFilterTranslator.Translate(filterExpression, layer);
                 }
-                catch (ArgumentException ex)
+                catch (ArgumentException)
                 {
                     return GeoServicesErrorHelpers.CreateBadRequestError(
                         "Invalid query parameters",
-                        [ex.Message]);
+                        ["Invalid filter syntax."]);
                 }
             }
 
@@ -403,7 +404,7 @@ internal sealed class FeatureServerHandler(
             }
 
             // Process edit operations
-            var editContext = ProcessEditOperations(request, layer.SpatialReference.Srid);
+            var editContext = ProcessEditOperations(request, layer);
 
             // Handle validation errors with rollback if needed
             if (editContext.HasValidationErrors && request.RollbackOnFailure)
@@ -482,7 +483,7 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Processes add, update, and delete operations from the request
     /// </summary>
-    private EditOperationContext ProcessEditOperations(ApplyEditsRequest request, int? layerSrid)
+    private EditOperationContext ProcessEditOperations(ApplyEditsRequest request, LayerDefinition layer)
     {
         var context = new EditOperationContext
         {
@@ -491,8 +492,8 @@ internal sealed class FeatureServerHandler(
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
         };
 
-        ProcessAddOperations(request, context, layerSrid);
-        ProcessUpdateOperations(request, context, layerSrid);
+        ProcessAddOperations(request, context, layer);
+        ProcessUpdateOperations(request, context, layer);
         ProcessDeleteOperations(request, context);
 
         return context;
@@ -501,7 +502,7 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Processes add operations and tracks features to create
     /// </summary>
-    private void ProcessAddOperations(ApplyEditsRequest request, EditOperationContext context, int? layerSrid)
+    private void ProcessAddOperations(ApplyEditsRequest request, EditOperationContext context, LayerDefinition layer)
     {
         if (request.Adds == null)
             return;
@@ -510,9 +511,16 @@ internal sealed class FeatureServerHandler(
         {
             try
             {
-                var newFeature = BuildFeatureFromGeoServices(request.Adds[i], 0, layerSrid);
+                var newFeature = BuildFeatureFromGeoServices(request.Adds[i], 0, layer);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
+            }
+            catch (ArgumentException ex)
+            {
+                context.HasValidationErrors = true;
+                context.AddResults![i] = CreateFailureResult(
+                    code: 1000,
+                    description: ex.Message);
             }
             catch (Exception)
             {
@@ -527,7 +535,7 @@ internal sealed class FeatureServerHandler(
     /// <summary>
     /// Processes update operations and tracks features to update
     /// </summary>
-    private void ProcessUpdateOperations(ApplyEditsRequest request, EditOperationContext context, int? layerSrid)
+    private void ProcessUpdateOperations(ApplyEditsRequest request, EditOperationContext context, LayerDefinition layer)
     {
         if (request.Updates == null)
             return;
@@ -546,10 +554,18 @@ internal sealed class FeatureServerHandler(
 
             try
             {
-                var updateFeature = BuildFeatureFromGeoServices(update, objectId, layerSrid);
+                var updateFeature = BuildFeatureFromGeoServices(update, objectId, layer);
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
+            }
+            catch (ArgumentException ex)
+            {
+                context.HasValidationErrors = true;
+                context.UpdateResults![i] = CreateFailureResult(
+                    code: 1002,
+                    description: ex.Message,
+                    objectId: objectId);
             }
             catch (Exception)
             {
@@ -691,7 +707,7 @@ internal sealed class FeatureServerHandler(
         public bool HasValidationErrors { get; set; }
     }
 
-    private Feature BuildFeatureFromGeoServices(GeoServicesFeature feature, long objectId, int? layerSrid)
+    private Feature BuildFeatureFromGeoServices(GeoServicesFeature feature, long objectId, LayerDefinition layer)
     {
         byte[]? geometry = null;
         if (feature.Geometry != null)
@@ -706,7 +722,7 @@ internal sealed class FeatureServerHandler(
 
             var geometrySrid = feature.Geometry.SpatialReference?.Wkid
                 ?? feature.Geometry.SpatialReference?.LatestWkid
-                ?? layerSrid;
+                ?? layer.SpatialReference.Srid;
             geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
 
             // Layer 2: Validate WKB structure and size limits
@@ -718,61 +734,15 @@ internal sealed class FeatureServerHandler(
             }
         }
 
-        // Validate attributes for edge cases
-        var validatedAttributes = ValidateAndSanitizeAttributes(feature.Attributes);
-        return Feature.Create(objectId, geometry, validatedAttributes);
-    }
-
-    private ImmutableDictionary<string, object?> ValidateAndSanitizeAttributes(Dictionary<string, object?>? attributes)
-    {
-        if (attributes == null)
+        var attributesResult = layer.ValidateAttributes(
+            feature.Attributes,
+            ValidationExtensions.AttributeValidationMode.GeoServices);
+        if (!attributesResult.IsValid)
         {
-            return ImmutableDictionary<string, object?>.Empty;
+            throw new ArgumentException(attributesResult.ErrorMessage ?? "Invalid attributes.");
         }
 
-        var builder = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var kvp in attributes)
-        {
-            var value = kvp.Value;
-
-            // Handle string values - validate length and preserve unicode
-            if (value is string stringValue)
-            {
-                // Check maximum attribute length (from configuration)
-                // Note: Unicode is fully supported, no sanitization needed
-                builder[kvp.Key] = stringValue;
-            }
-            else if (value is JsonElement jsonElement)
-            {
-                // Handle JSON element values - extract actual value
-                builder[kvp.Key] = ExtractJsonElementValue(jsonElement);
-            }
-            else
-            {
-                // Null values are allowed when configured, other types pass through
-                builder[kvp.Key] = value;
-            }
-        }
-
-        return builder.ToImmutable();
-    }
-
-    private static object? ExtractJsonElementValue(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number when element.TryGetInt64(out var longValue) => longValue,
-            JsonValueKind.Number when element.TryGetDouble(out var doubleValue) => doubleValue,
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Array => element.EnumerateArray().Select(ExtractJsonElementValue).ToArray(),
-            JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(p => p.Name, p => ExtractJsonElementValue(p.Value)),
-            _ => element.GetRawText()
-        };
+        return Feature.Create(objectId, geometry, attributesResult.Value!);
     }
 
     private static bool TryGetObjectId(Dictionary<string, object?>? attributes, out long objectId)
@@ -1330,9 +1300,9 @@ internal sealed class FeatureServerHandler(
 
                 return true;
             }
-            catch (JsonException ex)
+            catch (JsonException)
             {
-                error = $"Invalid geometry JSON: {ex.Message}";
+                error = "Invalid geometry JSON.";
                 return false;
             }
         }

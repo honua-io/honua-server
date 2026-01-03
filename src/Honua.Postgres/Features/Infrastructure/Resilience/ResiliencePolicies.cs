@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Resilience;
 using Npgsql;
 using Polly;
 
@@ -12,7 +13,7 @@ namespace Honua.Postgres.Features.Infrastructure.Resilience;
 internal static class ResiliencePolicies
 {
     /// <summary>
-    /// Retry policy for transient connection errors ONLY.
+    /// Retry + circuit breaker policy for transient connection errors ONLY.
     /// IMPORTANT: Only retry connection acquisition, not mid-transaction errors.
     /// Once a transaction starts, failures should propagate (transaction will rollback).
     /// Retrying after partial execution risks duplicate operations.
@@ -21,13 +22,14 @@ internal static class ResiliencePolicies
     /// <returns>Async retry policy for connection acquisition</returns>
     public static IAsyncPolicy GetConnectionRetryPolicy(Action<Exception, TimeSpan, int>? onRetry = null)
     {
-        return Policy
+        var builder = Policy
             .Handle<NpgsqlException>(IsConnectionError)
-            .Or<TimeoutException>()
-            .WaitAndRetryAsync(
-                retryCount: 3,
-                sleepDurationProvider: attempt => TimeSpan.FromMilliseconds(100 * Math.Pow(2, attempt)),
-                onRetry: (exception, timespan, attempt, context) => onRetry?.Invoke(exception, timespan, attempt));
+            .Or<TimeoutException>();
+
+        return ResiliencePolicyFactory.CreateStandardPolicy(
+            builder,
+            ResiliencePolicyOptions.Default,
+            onRetry: onRetry);
     }
 
     /// <summary>

@@ -18,13 +18,15 @@ namespace Honua.Server.Features.OData.Services;
 internal sealed class ODataAggregationHandler
 {
     private readonly IFeatureStore _featureStore;
+    private readonly ODataQueryService _queryService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataAggregationHandler"/> class.
     /// </summary>
-    public ODataAggregationHandler(IFeatureStore featureStore)
+    public ODataAggregationHandler(IFeatureStore featureStore, ODataQueryService queryService)
     {
         _featureStore = featureStore;
+        _queryService = queryService;
     }
 
     /// <summary>
@@ -625,14 +627,14 @@ internal sealed class ODataAggregationHandler
         return dict;
     }
 
-    private static FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression)
+    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression)
     {
         if (string.IsNullOrWhiteSpace(filterExpression))
         {
             return query;
         }
 
-        var (sqlFragment, whereClause) = ODataEndpoints.ConvertODataFilterToSqlFragment(filterExpression);
+        var (sqlFragment, whereClause) = _queryService.ConvertODataFilterToSqlFragment(filterExpression);
         return MergeFilters(query, sqlFragment, whereClause);
     }
 

@@ -30,7 +30,7 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// The caching layer only optimizes execution, not query construction.
 /// </para>
 /// </remarks>
-internal sealed class CachingDatabaseConnectionProvider : IDatabaseConnectionProvider
+internal sealed partial class CachingDatabaseConnectionProvider : IDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;
@@ -55,16 +55,13 @@ internal sealed class CachingDatabaseConnectionProvider : IDatabaseConnectionPro
     {
         // Use the resilience extension method with logging callback
         var connection = await _dataSource.OpenConnectionWithRetryAsync(
-            onRetry: (ex, delay, attempt) =>
-            {
-#pragma warning disable CA1848 // Use LoggerMessage delegates for performance
-                _logger.LogWarning("Database connection retry attempt {Attempt}: {ErrorMessage}",
-                    attempt, ex.Message);
-#pragma warning restore CA1848
-            },
+            onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
         return connection;
     }
+
+    [LoggerMessage(1, LogLevel.Warning, "Database connection retry attempt {Attempt}: {ErrorMessage}")]
+    private static partial void DatabaseConnectionRetry(ILogger logger, int attempt, string errorMessage, Exception exception);
 }

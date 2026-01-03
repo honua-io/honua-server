@@ -4,6 +4,8 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -39,6 +41,7 @@ internal sealed class PreparedStatementCache : IDisposable
     private readonly ConcurrentDictionary<string, StatementMetrics> _executionCounts = new();
     private readonly ConcurrentDictionary<(string ConnectionId, string StatementHash), CachedStatement> _cache = new();
     private readonly Timer _cleanupTimer;
+    private bool? _prepareSupported;
     private bool _disposed;
 
     /// <summary>
@@ -98,12 +101,27 @@ internal sealed class PreparedStatementCache : IDisposable
     /// <param name="sql">The SQL statement</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A prepared command if caching is beneficial, null otherwise</returns>
-    public async Task<NpgsqlCommand?> GetOrCreatePreparedCommandAsync(
+    public Task<NpgsqlCommand?> GetOrCreatePreparedCommandAsync(
         NpgsqlConnection connection,
         string sql,
         CancellationToken cancellationToken = default)
     {
+        return GetOrCreatePreparedCommandAsync(connection, sql, configureParameters: null, cancellationToken);
+    }
+
+    public async Task<NpgsqlCommand?> GetOrCreatePreparedCommandAsync(
+        NpgsqlConnection connection,
+        string sql,
+        Action<NpgsqlCommand>? configureParameters,
+        CancellationToken cancellationToken = default)
+    {
         if (!_options.EnableAutomaticCaching || string.IsNullOrEmpty(sql))
+            return null;
+
+        if (!IsPreparationSupported(connection))
+            return null;
+
+        if (configureParameters == null && sql.Contains('$', StringComparison.Ordinal))
             return null;
 
         var statementHash = GetStatementHash(sql);
@@ -112,7 +130,11 @@ internal sealed class PreparedStatementCache : IDisposable
 
         // Update execution metrics
         var metrics = _executionCounts.AddOrUpdate(statementHash,
-            _ => new StatementMetrics(),
+            _ => new StatementMetrics
+            {
+                ExecutionCount = 1,
+                LastUsed = DateTime.UtcNow
+            },
             (_, existing) =>
             {
                 existing.ExecutionCount++;
@@ -140,7 +162,7 @@ internal sealed class PreparedStatementCache : IDisposable
         {
             try
             {
-                var preparedCommand = await CreatePreparedStatementAsync(connection, sql, statementHash, cancellationToken);
+                var preparedCommand = await CreatePreparedStatementAsync(connection, sql, statementHash, configureParameters, cancellationToken);
 
                 // Add to cache if we have space
                 if (_cache.Count < _options.MaxCachedStatements)
@@ -197,13 +219,33 @@ internal sealed class PreparedStatementCache : IDisposable
     /// <param name="sql">The SQL statement</param>
     /// <param name="statementName">Unique name for the statement</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The prepared command</returns>
-    public async Task<NpgsqlCommand> PreparePriorityStatementAsync(
+    /// <returns>The prepared command, or null if preparation is disabled or unsupported</returns>
+    public Task<NpgsqlCommand?> PreparePriorityStatementAsync(
         NpgsqlConnection connection,
         string sql,
         string statementName,
         CancellationToken cancellationToken = default)
     {
+        return PreparePriorityStatementAsync(connection, sql, statementName, configureParameters: null, cancellationToken);
+    }
+
+    public async Task<NpgsqlCommand?> PreparePriorityStatementAsync(
+        NpgsqlConnection connection,
+        string sql,
+        string statementName,
+        Action<NpgsqlCommand>? configureParameters,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsPreparationSupported(connection))
+        {
+            return null;
+        }
+
+        if (configureParameters == null && sql.Contains('$', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var connectionId = GetConnectionId(connection);
         var statementHash = GetStatementHash(sql);
         var cacheKey = (connectionId, statementHash);
@@ -217,7 +259,7 @@ internal sealed class PreparedStatementCache : IDisposable
         }
 
         // Create prepared statement
-        var command = await CreatePreparedStatementAsync(connection, sql, statementName, cancellationToken);
+        var command = await CreatePreparedStatementAsync(connection, sql, statementName, configureParameters, cancellationToken);
 
         var cached = new CachedStatement
         {
@@ -277,13 +319,35 @@ internal sealed class PreparedStatementCache : IDisposable
         PreparedStatementCacheLog.ConnectionCacheCleared(_logger, keysToRemove.Count, connectionId);
     }
 
+    private bool IsPreparationSupported(NpgsqlConnection connection)
+    {
+        if (_prepareSupported.HasValue)
+        {
+            return _prepareSupported.Value;
+        }
+
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
+            _prepareSupported = !builder.Multiplexing;
+        }
+        catch
+        {
+            _prepareSupported = false;
+        }
+
+        return _prepareSupported.Value;
+    }
+
     private async Task<NpgsqlCommand> CreatePreparedStatementAsync(
         NpgsqlConnection connection,
         string sql,
         string statementName,
+        Action<NpgsqlCommand>? configureParameters,
         CancellationToken cancellationToken)
     {
         var command = new NpgsqlCommand(sql, connection);
+        configureParameters?.Invoke(command);
 
         // Prepare the statement
         await command.PrepareAsync(cancellationToken);
@@ -327,7 +391,8 @@ internal sealed class PreparedStatementCache : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static string GetStatementHash(string sql)
     {
-        return sql.GetHashCode(StringComparison.Ordinal).ToString(CultureInfo.InvariantCulture);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sql));
+        return Convert.ToHexString(hash);
     }
 
     private void EvictLeastRecentlyUsed(string connectionId)

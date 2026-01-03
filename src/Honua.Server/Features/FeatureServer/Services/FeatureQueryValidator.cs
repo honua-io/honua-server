@@ -28,12 +28,12 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
 
         if (requestedRecordCount > _limitsOptions.Query.MaxRecordCount)
         {
-            return QueryValidationResult.Failure($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
+            return QueryValidationResult.Invalid($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
         }
 
         if (requestedOffset > _limitsOptions.Query.MaxOffset)
         {
-            return QueryValidationResult.Failure($"Maximum offset: {_limitsOptions.Query.MaxOffset}");
+            return QueryValidationResult.Invalid($"Maximum offset: {_limitsOptions.Query.MaxOffset}");
         }
 
         // Create new validated parameters object
@@ -61,7 +61,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ObjectIds = queryParams.ObjectIds
         };
 
-        return QueryValidationResult.Success(validatedParams);
+        return QueryValidationResult.Valid(validatedParams);
     }
 
     /// <inheritdoc/>
@@ -73,7 +73,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
         // First validate that the original request is within allowed ranges
         if (requestedRecordCount > _limitsOptions.Query.MaxRecordCount)
         {
-            return RelatedRecordsValidationResult.Failure($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
+            return RelatedRecordsValidationResult.Invalid($"Maximum record count: {_limitsOptions.Query.MaxRecordCount}");
         }
 
         // Apply limit constraints for related records queries (clamp to maximum allowed)
@@ -91,6 +91,6 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             Where = queryParams.Where
         };
 
-        return RelatedRecordsValidationResult.Success(validatedParams);
+        return RelatedRecordsValidationResult.Valid(validatedParams);
     }
 }

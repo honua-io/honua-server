@@ -8,12 +8,13 @@ using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Microsoft.Extensions.Caching.Distributed;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Import;
 
 /// <summary>
 /// Redis-based distributed import job manager with in-memory fallback.
-/// Uses IDistributedCache for basic operations with leader election via key patterns.
+/// Uses StackExchange.Redis primitives when available, falling back to IDistributedCache.
 /// </summary>
 internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IDisposable
 {
@@ -24,12 +25,13 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 
     public RedisImportJobManager(
         IDistributedCache? distributedCache,
-        ILogger<RedisImportJobManager> logger)
+        ILogger<RedisImportJobManager> logger,
+        IConnectionMultiplexer? redis = null)
     {
         var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
 
-        _jobQueue = new RedisJobQueue(distributedCache, logger, "esri:import:queue");
-        _leaderElection = new RedisLeaderElection(distributedCache, logger, "esri:import:leader", instanceId);
+        _jobQueue = new RedisJobQueue(distributedCache, redis, logger, "esri:import:queue");
+        _leaderElection = new RedisLeaderElection(distributedCache, redis, logger, "esri:import:leader", instanceId);
         _progressStore = new RedisProgressStore<EsriImportProgress>(
             distributedCache, logger, "esri:import:progress:", EsriImportJsonContext.Default.EsriImportProgress);
         _requestStore = new RedisProgressStore<EsriImportRequest>(
@@ -48,23 +50,27 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 }
 
 /// <summary>
-/// Redis-based job queue using IDistributedCache with in-memory fallback.
+/// Redis-based job queue using StackExchange.Redis lists with IDistributedCache fallback.
 /// Note: IDistributedCache doesn't support LPUSH/BRPOP, so we use a polling approach.
 /// </summary>
 internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 {
     private readonly IDistributedCache? _cache;
+    private readonly IDatabase? _redisDb;
     private readonly ILogger _logger;
     private readonly string _queueKey;
     private readonly ConcurrentQueue<string> _fallbackQueue = new();
+    private volatile bool _useRedis;
     private volatile bool _isUsingFallback;
 
-    public RedisJobQueue(IDistributedCache? cache, ILogger logger, string queueKey)
+    public RedisJobQueue(IDistributedCache? cache, IConnectionMultiplexer? redis, ILogger logger, string queueKey)
     {
         _cache = cache;
+        _redisDb = redis?.GetDatabase();
         _logger = logger;
         _queueKey = queueKey;
-        _isUsingFallback = cache == null;
+        _useRedis = _redisDb != null;
+        _isUsingFallback = !_useRedis && cache == null;
 
         if (_isUsingFallback)
         {
@@ -74,6 +80,22 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 
     public async Task EnqueueAsync(string jobId, CancellationToken cancellationToken = default)
     {
+        if (_useRedis && _redisDb != null)
+        {
+            try
+            {
+                await _redisDb.ListRightPushAsync(_queueKey, jobId).ConfigureAwait(false);
+                Log.JobEnqueued(_logger, jobId, "redis");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.RedisFailed(_logger, "enqueue", ex);
+                _useRedis = false;
+                _isUsingFallback = _cache == null;
+            }
+        }
+
         if (_isUsingFallback || _cache == null)
         {
             _fallbackQueue.Enqueue(jobId);
@@ -122,50 +144,73 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 
         while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
         {
-            if (_isUsingFallback || _cache == null)
-            {
-                if (_fallbackQueue.TryDequeue(out var fallbackJob))
-                {
-                    Log.JobDequeued(_logger, fallbackJob, "fallback");
-                    return fallbackJob;
-                }
-            }
-            else
+            if (_useRedis && _redisDb != null)
             {
                 try
                 {
-                    var pendingKey = $"{_queueKey}:pending";
-                    var pending = await _cache.GetStringAsync(pendingKey, cancellationToken);
-
-                    if (!string.IsNullOrEmpty(pending))
+                    var jobValue = await _redisDb.ListLeftPopAsync(_queueKey).ConfigureAwait(false);
+                    if (jobValue.HasValue)
                     {
-                        var items = pending.Split(',', StringSplitOptions.RemoveEmptyEntries);
-                        if (items.Length > 0)
-                        {
-                            var itemKey = items[0];
-                            var jobId = await _cache.GetStringAsync(itemKey, cancellationToken);
-
-                            if (jobId != null)
-                            {
-                                // Remove from pending list
-                                var newPending = string.Join(",", items.Skip(1));
-                                await _cache.SetStringAsync(pendingKey, newPending,
-                                    new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(24) },
-                                    cancellationToken);
-
-                                // Remove the item
-                                await _cache.RemoveAsync(itemKey, cancellationToken);
-
-                                Log.JobDequeued(_logger, jobId, "redis");
-                                return jobId;
-                            }
-                        }
+                        var jobId = jobValue.ToString();
+                        Log.JobDequeued(_logger, jobId, "redis");
+                        return jobId;
                     }
                 }
                 catch (Exception ex)
                 {
                     Log.RedisFailed(_logger, "dequeue", ex);
-                    _isUsingFallback = true;
+                    _useRedis = false;
+                    _isUsingFallback = _cache == null;
+                }
+            }
+
+            if (!_useRedis)
+            {
+                if (_isUsingFallback || _cache == null)
+                {
+                    if (_fallbackQueue.TryDequeue(out var fallbackJob))
+                    {
+                        Log.JobDequeued(_logger, fallbackJob, "fallback");
+                        return fallbackJob;
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        var pendingKey = $"{_queueKey}:pending";
+                        var pending = await _cache.GetStringAsync(pendingKey, cancellationToken);
+
+                        if (!string.IsNullOrEmpty(pending))
+                        {
+                            var items = pending.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                            if (items.Length > 0)
+                            {
+                                var itemKey = items[0];
+                                var jobId = await _cache.GetStringAsync(itemKey, cancellationToken);
+
+                                if (jobId != null)
+                                {
+                                    // Remove from pending list
+                                    var newPending = string.Join(",", items.Skip(1));
+                                    await _cache.SetStringAsync(pendingKey, newPending,
+                                        new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(24) },
+                                        cancellationToken);
+
+                                    // Remove the item
+                                    await _cache.RemoveAsync(itemKey, cancellationToken);
+
+                                    Log.JobDequeued(_logger, jobId, "redis");
+                                    return jobId;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.RedisFailed(_logger, "dequeue", ex);
+                        _isUsingFallback = true;
+                    }
                 }
             }
 
@@ -178,6 +223,20 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 
     public async Task<long> GetQueueLengthAsync(CancellationToken cancellationToken = default)
     {
+        if (_useRedis && _redisDb != null)
+        {
+            try
+            {
+                return (long)await _redisDb.ListLengthAsync(_queueKey).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.RedisFailed(_logger, "length", ex);
+                _useRedis = false;
+                _isUsingFallback = _cache == null;
+            }
+        }
+
         if (_isUsingFallback || _cache == null)
         {
             return _fallbackQueue.Count;
@@ -212,27 +271,36 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 }
 
 /// <summary>
-/// Redis-based leader election using IDistributedCache.
+/// Redis-based leader election using StackExchange.Redis locks with IDistributedCache fallback.
 /// </summary>
 internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, IDisposable
 {
     private readonly IDistributedCache? _cache;
+    private readonly IDatabase? _redisDb;
     private readonly ILogger _logger;
     private readonly string _lockKey;
     private readonly string _instanceId;
     private readonly TimeSpan _leaseDuration = TimeSpan.FromSeconds(30);
     private readonly Timer? _heartbeatTimer;
+    private volatile bool _useRedis;
     private volatile bool _isLeader;
     private volatile bool _disposed;
 
-    public RedisLeaderElection(IDistributedCache? cache, ILogger logger, string lockKey, string instanceId)
+    public RedisLeaderElection(
+        IDistributedCache? cache,
+        IConnectionMultiplexer? redis,
+        ILogger logger,
+        string lockKey,
+        string instanceId)
     {
         _cache = cache;
+        _redisDb = redis?.GetDatabase();
+        _useRedis = _redisDb != null;
         _logger = logger;
         _lockKey = lockKey;
         _instanceId = instanceId;
 
-        if (_cache == null)
+        if (!_useRedis && _cache == null)
         {
             // In fallback mode, this instance is always the leader
             _isLeader = true;
@@ -250,6 +318,29 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
     public async Task<bool> TryAcquireLeadershipAsync(CancellationToken cancellationToken = default)
     {
+        if (_useRedis && _redisDb != null)
+        {
+            try
+            {
+                var acquired = await _redisDb.LockTakeAsync(_lockKey, _instanceId, _leaseDuration).ConfigureAwait(false);
+                if (acquired)
+                {
+                    _isLeader = true;
+                    _heartbeatTimer?.Change(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+                    Log.LeadershipAcquired(_logger, _instanceId);
+                    return true;
+                }
+
+                _isLeader = false;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.LeadershipError(_logger, "acquire", ex);
+                _useRedis = false;
+            }
+        }
+
         if (_cache == null)
         {
             _isLeader = true;
@@ -306,6 +397,32 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
     public async Task<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
     {
+        if (_useRedis && _redisDb != null)
+        {
+            if (!_isLeader)
+            {
+                return _isLeader;
+            }
+
+            try
+            {
+                var extended = await _redisDb.LockExtendAsync(_lockKey, _instanceId, _leaseDuration).ConfigureAwait(false);
+                if (!extended)
+                {
+                    _isLeader = false;
+                    _heartbeatTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                    Log.LeadershipLost(_logger, _instanceId);
+                }
+
+                return _isLeader;
+            }
+            catch (Exception ex)
+            {
+                Log.LeadershipError(_logger, "heartbeat", ex);
+                return _isLeader; // Keep current state on error
+            }
+        }
+
         if (_cache == null || !_isLeader)
         {
             return _isLeader;
@@ -334,6 +451,23 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
     public async Task ReleaseLeadershipAsync(CancellationToken cancellationToken = default)
     {
+        if (_useRedis && _redisDb != null)
+        {
+            try
+            {
+                _heartbeatTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                await _redisDb.LockReleaseAsync(_lockKey, _instanceId).ConfigureAwait(false);
+                Log.LeadershipReleased(_logger, _instanceId);
+                _isLeader = false;
+            }
+            catch (Exception ex)
+            {
+                Log.LeadershipError(_logger, "release", ex);
+            }
+
+            return;
+        }
+
         if (_cache == null)
         {
             return;
@@ -412,6 +546,9 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     private readonly JsonTypeInfo<T> _jsonTypeInfo;
     private readonly ConcurrentDictionary<string, T> _fallbackStore = new();
     private readonly ConcurrentDictionary<string, DateTime> _fallbackExpiry = new();
+    private const int MaxFallbackEntries = 5000;
+    private static readonly TimeSpan _fallbackCleanupInterval = TimeSpan.FromMinutes(5);
+    private long _lastCleanupTick = Environment.TickCount64;
     private volatile bool _isUsingFallback;
 
     public RedisProgressStore(
@@ -436,6 +573,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         {
             _fallbackStore[key] = progress;
             _fallbackExpiry[key] = DateTime.UtcNow.Add(effectiveTtl);
+            CleanupFallbackIfNeeded(enforceMax: true);
             return;
         }
 
@@ -452,6 +590,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             _isUsingFallback = true;
             _fallbackStore[key] = progress;
             _fallbackExpiry[key] = DateTime.UtcNow.Add(effectiveTtl);
+            CleanupFallbackIfNeeded(enforceMax: true);
         }
     }
 
@@ -461,6 +600,8 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         if (_isUsingFallback || _cache == null)
         {
+            CleanupFallbackIfNeeded(enforceMax: false);
+
             if (_fallbackStore.TryGetValue(key, out var fallbackProgress))
             {
                 if (_fallbackExpiry.TryGetValue(key, out var expiry) && expiry > DateTime.UtcNow)
@@ -513,6 +654,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     public Task<IReadOnlyList<string>> GetActiveJobIdsAsync(CancellationToken cancellationToken = default)
     {
         // For fallback, return in-memory keys
+        CleanupFallbackIfNeeded(enforceMax: false);
         var now = DateTime.UtcNow;
         var activeIds = _fallbackStore.Keys
             .Where(k => k.StartsWith(_keyPrefix, StringComparison.Ordinal))
@@ -524,6 +666,61 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         // Note: For Redis, we'd need SCAN which IDistributedCache doesn't support.
         // In production with direct StackExchange.Redis, use SCAN to find all keys.
+    }
+
+    private void CleanupFallbackIfNeeded(bool enforceMax)
+    {
+        var nowTick = Environment.TickCount64;
+        var intervalMs = (long)_fallbackCleanupInterval.TotalMilliseconds;
+        var currentCount = _fallbackStore.Count;
+
+        if (!enforceMax || currentCount <= MaxFallbackEntries)
+        {
+            var last = Interlocked.Read(ref _lastCleanupTick);
+            if (nowTick - last < intervalMs)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _lastCleanupTick, nowTick, last) != last)
+            {
+                return;
+            }
+        }
+        else
+        {
+            Interlocked.Exchange(ref _lastCleanupTick, nowTick);
+        }
+
+        var now = DateTime.UtcNow;
+        var expiredKeys = _fallbackExpiry
+            .Where(kvp => kvp.Value <= now)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in expiredKeys)
+        {
+            _fallbackExpiry.TryRemove(key, out _);
+            _fallbackStore.TryRemove(key, out _);
+        }
+
+        var overflow = _fallbackStore.Count - MaxFallbackEntries;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        var oldestKeys = _fallbackExpiry
+            .OrderBy(kvp => kvp.Value)
+            .Take(overflow)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in oldestKeys)
+        {
+            _fallbackExpiry.TryRemove(key, out _);
+            _fallbackStore.TryRemove(key, out _);
+        }
     }
 
     private static partial class Log

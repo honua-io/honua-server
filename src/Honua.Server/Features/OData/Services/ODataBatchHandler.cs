@@ -3,9 +3,13 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.OData.Services;
@@ -22,6 +26,7 @@ internal sealed partial class ODataBatchHandler
 {
     private readonly ILayerCatalog _layerCatalog;
     private readonly IFeatureStore _featureStore;
+    private readonly EditLimits _editLimits;
     private readonly ILogger _logger;
 
     /// <summary>
@@ -30,10 +35,12 @@ internal sealed partial class ODataBatchHandler
     public ODataBatchHandler(
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
+        EditLimits editLimits,
         ILogger logger)
     {
         _layerCatalog = layerCatalog;
         _featureStore = featureStore;
+        _editLimits = editLimits;
         _logger = logger;
     }
 
@@ -94,28 +101,58 @@ internal sealed partial class ODataBatchHandler
         var rollback = false;
 
         // Collect all operations for atomic execution
-        var creates = new List<(string requestId, int layerId, Feature feature)>();
-        var updates = new List<(string requestId, int layerId, long objectId, Feature feature)>();
-        var deletes = new List<(string requestId, int layerId, long objectId)>();
+        var createRequests = new Dictionary<int, List<(string requestId, Feature feature)>>();
+        var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature)>>();
+        var deleteRequests = new Dictionary<int, List<(string requestId, long objectId)>>();
         var reads = new List<(string requestId, int layerId, long? objectId)>();
+        var writeLayerIds = new HashSet<int>();
+        var layerCache = new Dictionary<int, LayerDefinition>();
 
         foreach (var request in requests)
         {
             try
             {
                 var (layerId, objectId) = ParseUrl(request.Url);
+                if (!layerCache.TryGetValue(layerId, out var layer))
+                {
+                    layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
+                    if (layer == null)
+                    {
+                        responses.Add(CreateErrorResponse(
+                            request.Id,
+                            404,
+                            "ResourceNotFound",
+                            $"Layer {layerId} not found."));
+                        rollback = true;
+                        continue;
+                    }
+
+                    layerCache[layerId] = layer;
+                }
 
                 switch (request.Method.ToUpperInvariant())
                 {
                     case "GET":
-                        reads.Add((request.Id, layerId, objectId));
+                        rollback = true;
+                        responses.Add(CreateErrorResponse(
+                            request.Id,
+                            400,
+                            "InvalidRequest",
+                            "Atomicity groups do not support GET requests."));
                         break;
 
                     case "POST":
                         if (request.Body != null)
                         {
-                            var feature = CreateFeatureFromBody(request.Body);
-                            creates.Add((request.Id, layerId, feature));
+                            var feature = CreateFeatureFromBody(request.Body, layer);
+                            if (!createRequests.TryGetValue(layerId, out var createList))
+                            {
+                                createList = new List<(string requestId, Feature feature)>();
+                                createRequests[layerId] = createList;
+                            }
+
+                            createList.Add((request.Id, feature));
+                            writeLayerIds.Add(layerId);
                         }
                         break;
 
@@ -123,15 +160,29 @@ internal sealed partial class ODataBatchHandler
                     case "PUT":
                         if (objectId.HasValue && request.Body != null)
                         {
-                            var feature = CreateFeatureFromBody(request.Body, objectId.Value);
-                            updates.Add((request.Id, layerId, objectId.Value, feature));
+                            var feature = CreateFeatureFromBody(request.Body, layer, objectId.Value);
+                            if (!updateRequests.TryGetValue(layerId, out var updateList))
+                            {
+                                updateList = new List<(string requestId, long objectId, Feature feature)>();
+                                updateRequests[layerId] = updateList;
+                            }
+
+                            updateList.Add((request.Id, objectId.Value, feature));
+                            writeLayerIds.Add(layerId);
                         }
                         break;
 
                     case "DELETE":
                         if (objectId.HasValue)
                         {
-                            deletes.Add((request.Id, layerId, objectId.Value));
+                            if (!deleteRequests.TryGetValue(layerId, out var deleteList))
+                            {
+                                deleteList = new List<(string requestId, long objectId)>();
+                                deleteRequests[layerId] = deleteList;
+                            }
+
+                            deleteList.Add((request.Id, objectId.Value));
+                            writeLayerIds.Add(layerId);
                         }
                         break;
                 }
@@ -140,8 +191,8 @@ internal sealed partial class ODataBatchHandler
             {
                 Log.BatchRequestParseFailed(_logger, request.Id, ex);
                 rollback = true;
-                // Use safe error message to avoid leaking internal details
-                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", "Failed to parse request."));
+                var message = ex is ArgumentException ? ex.Message : "Failed to parse request.";
+                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", message));
             }
         }
 
@@ -156,6 +207,49 @@ internal sealed partial class ODataBatchHandler
                     "DependencyFailed",
                     "Request failed due to atomicity group failure."));
             }
+            return responses.ToImmutableArray();
+        }
+
+        if (writeLayerIds.Count > 1)
+        {
+            foreach (var request in requests.Where(r => !responses.Any(resp => resp.Id == r.Id)))
+            {
+                responses.Add(CreateErrorResponse(
+                    request.Id,
+                    400,
+                    "InvalidRequest",
+                    "Atomicity groups with write operations must target a single layer."));
+            }
+
+            return responses.ToImmutableArray();
+        }
+
+        var addCount = createRequests.Values.Sum(list => list.Count);
+        var updateCount = updateRequests.Values.Sum(list => list.Count);
+        var deleteCount = deleteRequests.Values.Sum(list => list.Count);
+        var totalCount = addCount + updateCount + deleteCount;
+
+        if (addCount > _editLimits.MaxFeaturesPerEdit ||
+            updateCount > _editLimits.MaxFeaturesPerEdit ||
+            deleteCount > _editLimits.MaxFeaturesPerEdit)
+        {
+            var message = $"Too many features in a single edit operation. Maximum per operation: {_editLimits.MaxFeaturesPerEdit}.";
+            foreach (var request in requests.Where(r => !responses.Any(resp => resp.Id == r.Id)))
+            {
+                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", message));
+            }
+
+            return responses.ToImmutableArray();
+        }
+
+        if (totalCount > _editLimits.MaxEditsPerTransaction)
+        {
+            var message = $"Too many edits in a single request. Maximum per request: {_editLimits.MaxEditsPerTransaction}.";
+            foreach (var request in requests.Where(r => !responses.Any(resp => resp.Id == r.Id)))
+            {
+                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", message));
+            }
+
             return responses.ToImmutableArray();
         }
 
@@ -188,63 +282,47 @@ internal sealed partial class ODataBatchHandler
         // Process writes in a batch with rollback on failure
         try
         {
-            // Build the batch
-            var layerBatches = new Dictionary<int, FeatureEditBatch>();
+            var layerIds = new HashSet<int>(createRequests.Keys);
+            layerIds.UnionWith(updateRequests.Keys);
+            layerIds.UnionWith(deleteRequests.Keys);
 
-            foreach (var (requestId, layerId, feature) in creates)
+            foreach (var layerId in layerIds)
             {
-                if (!layerBatches.TryGetValue(layerId, out var batch))
+                var batch = new FeatureEditBatch { RollbackOnFailure = true };
+
+                createRequests.TryGetValue(layerId, out var layerCreates);
+                updateRequests.TryGetValue(layerId, out var layerUpdates);
+                deleteRequests.TryGetValue(layerId, out var layerDeletes);
+
+                if (layerCreates is { Count: > 0 })
                 {
-                    batch = new FeatureEditBatch { RollbackOnFailure = true };
-                    layerBatches[layerId] = batch;
+                    batch = batch with { Creates = layerCreates.Select(item => item.feature).ToImmutableArray() };
                 }
-                layerBatches[layerId] = batch with
-                {
-                    Creates = batch.Creates.Add(feature)
-                };
-            }
 
-            foreach (var (requestId, layerId, objectId, feature) in updates)
-            {
-                if (!layerBatches.TryGetValue(layerId, out var batch))
+                if (layerUpdates is { Count: > 0 })
                 {
-                    batch = new FeatureEditBatch { RollbackOnFailure = true };
-                    layerBatches[layerId] = batch;
+                    batch = batch with { Updates = layerUpdates.Select(item => item.feature).ToImmutableArray() };
                 }
-                layerBatches[layerId] = batch with
-                {
-                    Updates = batch.Updates.Add(feature)
-                };
-            }
 
-            foreach (var (requestId, layerId, objectId) in deletes)
-            {
-                if (!layerBatches.TryGetValue(layerId, out var batch))
+                if (layerDeletes is { Count: > 0 })
                 {
-                    batch = new FeatureEditBatch { RollbackOnFailure = true };
-                    layerBatches[layerId] = batch;
+                    batch = batch with { Deletes = layerDeletes.Select(item => item.objectId).ToImmutableArray() };
                 }
-                layerBatches[layerId] = batch with
+
+                if (batch.IsEmpty)
                 {
-                    Deletes = batch.Deletes.Add(objectId)
-                };
-            }
+                    continue;
+                }
 
-            // Execute batches per layer
-            var createIndex = 0;
-            var updateIndex = 0;
-            var deleteIndex = 0;
-
-            foreach (var (layerId, batch) in layerBatches)
-            {
                 var result = await _featureStore.ApplyEditsAsync(layerId, batch, cancellationToken);
 
-                // Map results back to request IDs
-                foreach (var createResult in result.CreateResults)
+                if (layerCreates != null)
                 {
-                    if (createIndex < creates.Count)
+                    for (var i = 0; i < result.CreateResults.Length && i < layerCreates.Count; i++)
                     {
-                        var (requestId, _, _) = creates[createIndex++];
+                        var createResult = result.CreateResults[i];
+                        var (requestId, _) = layerCreates[i];
+
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
                             var createdFeature = await _featureStore.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);
@@ -265,11 +343,13 @@ internal sealed partial class ODataBatchHandler
                     }
                 }
 
-                foreach (var updateResult in result.UpdateResults)
+                if (layerUpdates != null)
                 {
-                    if (updateIndex < updates.Count)
+                    for (var i = 0; i < result.UpdateResults.Length && i < layerUpdates.Count; i++)
                     {
-                        var (requestId, _, objectId, _) = updates[updateIndex++];
+                        var updateResult = result.UpdateResults[i];
+                        var (requestId, objectId, _) = layerUpdates[i];
+
                         if (updateResult.IsSuccess)
                         {
                             var updatedFeature = await _featureStore.GetAsync(layerId, objectId, cancellationToken);
@@ -285,11 +365,13 @@ internal sealed partial class ODataBatchHandler
                     }
                 }
 
-                foreach (var deleteResult in result.DeleteResults)
+                if (layerDeletes != null)
                 {
-                    if (deleteIndex < deletes.Count)
+                    for (var i = 0; i < result.DeleteResults.Length && i < layerDeletes.Count; i++)
                     {
-                        var (requestId, _, _) = deletes[deleteIndex++];
+                        var deleteResult = result.DeleteResults[i];
+                        var (requestId, _) = layerDeletes[i];
+
                         if (deleteResult.IsSuccess)
                         {
                             responses.Add(CreateSuccessResponse(requestId, 204, null));
@@ -307,17 +389,28 @@ internal sealed partial class ODataBatchHandler
             Log.BatchAtomicGroupFailed(_logger, ex);
 
             // Mark all write operations as failed
-            foreach (var (requestId, _, _) in creates.Where(c => !responses.Any(r => r.Id == c.requestId)))
+            foreach (var createList in createRequests.Values)
             {
-                responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
+                foreach (var (requestId, _) in createList.Where(c => !responses.Any(r => r.Id == c.requestId)))
+                {
+                    responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
+                }
             }
-            foreach (var (requestId, _, _, _) in updates.Where(u => !responses.Any(r => r.Id == u.requestId)))
+
+            foreach (var updateList in updateRequests.Values)
             {
-                responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
+                foreach (var (requestId, _, _) in updateList.Where(u => !responses.Any(r => r.Id == u.requestId)))
+                {
+                    responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
+                }
             }
-            foreach (var (requestId, _, _) in deletes.Where(d => !responses.Any(r => r.Id == d.requestId)))
+
+            foreach (var deleteList in deleteRequests.Values)
             {
-                responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
+                foreach (var (requestId, _) in deleteList.Where(d => !responses.Any(r => r.Id == d.requestId)))
+                {
+                    responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
+                }
             }
         }
 
@@ -346,11 +439,11 @@ internal sealed partial class ODataBatchHandler
                     return await HandleGetAsync(request.Id, layerId, objectId, cancellationToken);
 
                 case "POST":
-                    return await HandlePostAsync(request.Id, layerId, request.Body, baseUrl, cancellationToken);
+                    return await HandlePostAsync(request.Id, layer, request.Body, baseUrl, cancellationToken);
 
                 case "PATCH":
                 case "PUT":
-                    return await HandlePatchAsync(request.Id, layerId, objectId, request.Body, cancellationToken);
+                    return await HandlePatchAsync(request.Id, layer, objectId, request.Body, cancellationToken);
 
                 case "DELETE":
                     return await HandleDeleteAsync(request.Id, layerId, objectId, cancellationToken);
@@ -390,7 +483,7 @@ internal sealed partial class ODataBatchHandler
 
     private async Task<ODataBatchResponseItem> HandlePostAsync(
         string requestId,
-        int layerId,
+        LayerDefinition layer,
         Dictionary<string, object?>? body,
         string baseUrl,
         CancellationToken cancellationToken)
@@ -400,23 +493,32 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", "Request body is required for POST.");
         }
 
-        var feature = CreateFeatureFromBody(body);
-        var created = await _featureStore.CreateAsync(layerId, feature, cancellationToken);
+        Feature feature;
+        try
+        {
+            feature = CreateFeatureFromBody(body, layer);
+        }
+        catch (ArgumentException ex)
+        {
+            return CreateErrorResponse(requestId, 400, "InvalidRequest", ex.Message);
+        }
+
+        var created = await _featureStore.CreateAsync(layer.Id, feature, cancellationToken);
 
         return CreateSuccessResponse(
             requestId,
             201,
-            FeatureToBody(created, layerId),
+            FeatureToBody(created, layer.Id),
             new Dictionary<string, string>
             {
-                ["Location"] = $"{baseUrl}/odata/Features({layerId},{created.Id})",
-                ["OData-EntityId"] = $"{baseUrl}/odata/Features({layerId},{created.Id})"
+                ["Location"] = $"{baseUrl}/odata/Features({layer.Id},{created.Id})",
+                ["OData-EntityId"] = $"{baseUrl}/odata/Features({layer.Id},{created.Id})"
             });
     }
 
     private async Task<ODataBatchResponseItem> HandlePatchAsync(
         string requestId,
-        int layerId,
+        LayerDefinition layer,
         long? objectId,
         Dictionary<string, object?>? body,
         CancellationToken cancellationToken)
@@ -432,17 +534,26 @@ internal sealed partial class ODataBatchHandler
         }
 
         // Get existing feature
-        var existing = await _featureStore.GetAsync(layerId, objectId.Value, cancellationToken);
+        var existing = await _featureStore.GetAsync(layer.Id, objectId.Value, cancellationToken);
         if (!existing.HasValue)
         {
-            return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}.");
+            return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layer.Id}.");
         }
 
         // Merge with updates
-        var updatedFeature = CreateFeatureFromBody(body, objectId.Value, existing.Value);
-        var result = await _featureStore.UpdateAsync(layerId, updatedFeature, cancellationToken);
+        Feature updatedFeature;
+        try
+        {
+            updatedFeature = CreateFeatureFromBody(body, layer, objectId.Value, existing.Value);
+        }
+        catch (ArgumentException ex)
+        {
+            return CreateErrorResponse(requestId, 400, "InvalidRequest", ex.Message);
+        }
 
-        return CreateSuccessResponse(requestId, 200, FeatureToBody(result, layerId));
+        var result = await _featureStore.UpdateAsync(layer.Id, updatedFeature, cancellationToken);
+
+        return CreateSuccessResponse(requestId, 200, FeatureToBody(result, layer.Id));
     }
 
     private async Task<ODataBatchResponseItem> HandleDeleteAsync(
@@ -484,69 +595,116 @@ internal sealed partial class ODataBatchHandler
         return (layerId, objectId);
     }
 
-    private static Feature CreateFeatureFromBody(Dictionary<string, object?> body, long? objectId = null, Feature? existing = null)
+    private static Feature CreateFeatureFromBody(
+        Dictionary<string, object?> body,
+        LayerDefinition layer,
+        long? objectId = null,
+        Feature? existing = null)
     {
-        byte[]? geometry = null;
-        var attributes = existing?.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-            ?? new Dictionary<string, object?>();
+        byte[]? geometry = existing.HasValue ? existing.Value.Geometry : null;
+        if (body.TryGetValue("Geometry", out var geomValue))
+        {
+            var geometryBase64 = geomValue switch
+            {
+                null => null,
+                string geomString => geomString,
+                JsonElement geomElement when geomElement.ValueKind == JsonValueKind.String => geomElement.GetString(),
+                JsonElement geomElement when geomElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined => null,
+                _ => throw new ArgumentException("Geometry must be a Base64-encoded WKB string.")
+            };
 
-        if (body.TryGetValue("Geometry", out var geomValue) && geomValue is string geomString && !string.IsNullOrEmpty(geomString))
-        {
-            geometry = Convert.FromBase64String(geomString);
+            if (!string.IsNullOrWhiteSpace(geometryBase64))
+            {
+                try
+                {
+                    geometry = Convert.FromBase64String(geometryBase64);
+                }
+                catch (FormatException)
+                {
+                    throw new ArgumentException("Geometry must be a valid Base64-encoded WKB string.");
+                }
+
+                var validationResult = WkbValidation.Validate(geometry);
+                if (!validationResult.IsValid)
+                {
+                    throw new ArgumentException($"Invalid geometry: {validationResult.ErrorMessage}");
+                }
+            }
+            else if (!existing.HasValue)
+            {
+                geometry = null;
+            }
         }
-        else if (existing.HasValue)
-        {
-            geometry = existing.Value.Geometry;
-        }
+
+        var attributes = existing.HasValue
+            ? new Dictionary<string, object?>(existing.Value.Attributes, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
         if (body.TryGetValue("Attributes", out var attrsValue))
         {
-            if (attrsValue is string attrsString && !string.IsNullOrEmpty(attrsString))
+            var parsedAttributes = attrsValue switch
             {
-                var parsed = JsonSerializer.Deserialize<Dictionary<string, object?>>(attrsString, ODataJsonContext.Default.DictionaryStringObject);
-                if (parsed != null)
-                {
-                    foreach (var kvp in parsed)
-                    {
-                        attributes[kvp.Key] = kvp.Value;
-                    }
-                }
+                null => throw new ArgumentException("Attributes must be an object."),
+                string attrsString => ParseAttributesJson(attrsString),
+                JsonElement attrsElement when attrsElement.ValueKind == JsonValueKind.String => ParseAttributesJson(attrsElement.GetString()),
+                JsonElement attrsElement when attrsElement.ValueKind == JsonValueKind.Object => ParseAttributesObject(attrsElement),
+                JsonElement attrsElement when attrsElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined =>
+                    throw new ArgumentException("Attributes must be an object."),
+                Dictionary<string, object?> dictAttrs => new Dictionary<string, object?>(dictAttrs, StringComparer.OrdinalIgnoreCase),
+                IReadOnlyDictionary<string, object?> dictAttrs => new Dictionary<string, object?>(dictAttrs, StringComparer.OrdinalIgnoreCase),
+                _ => throw new ArgumentException("Attributes must be an object or JSON string.")
+            };
+
+            var attributesResult = layer.ValidateAttributes(
+                parsedAttributes,
+                ValidationExtensions.AttributeValidationMode.Strict);
+            if (!attributesResult.IsValid)
+            {
+                throw new ArgumentException(attributesResult.ErrorMessage ?? "Invalid attributes.");
             }
-            else if (attrsValue is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Object)
+
+            foreach (var kvp in attributesResult.Value!)
             {
-                foreach (var prop in jsonElement.EnumerateObject())
-                {
-                    attributes[prop.Name] = ConvertJsonElement(prop.Value);
-                }
-            }
-            else if (attrsValue is Dictionary<string, object?> dictAttrs)
-            {
-                foreach (var kvp in dictAttrs)
-                {
-                    attributes[kvp.Key] = kvp.Value;
-                }
+                attributes[kvp.Key] = kvp.Value;
             }
         }
 
-        return Feature.Create(objectId ?? 0, geometry, attributes.ToImmutableDictionary());
-    }
+        return Feature.Create(
+            objectId ?? 0,
+            geometry,
+            attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
 
-    private static object? ConvertJsonElement(JsonElement element)
-    {
-        return element.ValueKind switch
+        static Dictionary<string, object?> ParseAttributesJson(string? attrsString)
         {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                element.TryGetDouble(out var doubleVal) ? doubleVal :
-                element.GetDecimal(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(prop => prop.Name, prop => ConvertJsonElement(prop.Value)),
-            JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToArray(),
-            _ => element.GetRawText()
-        };
+            if (string.IsNullOrWhiteSpace(attrsString))
+            {
+                throw new ArgumentException("Attributes must be a valid JSON object.");
+            }
+
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                    attrsString,
+                    ODataJsonContext.Default.DictionaryStringObject);
+
+                return parsed ?? throw new ArgumentException("Attributes must be a valid JSON object.");
+            }
+            catch (JsonException)
+            {
+                throw new ArgumentException("Attributes must be a valid JSON object.");
+            }
+        }
+
+        static Dictionary<string, object?> ParseAttributesObject(JsonElement attrsElement)
+        {
+            var parsed = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var prop in attrsElement.EnumerateObject())
+            {
+                parsed[prop.Name] = prop.Value;
+            }
+
+            return parsed;
+        }
     }
 
     private static Dictionary<string, object?> FeatureToBody(Feature feature, int layerId)

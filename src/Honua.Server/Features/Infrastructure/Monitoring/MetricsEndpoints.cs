@@ -72,10 +72,10 @@ public static class MetricsEndpoints
 
             return Results.Ok(healthMetrics);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.Problem(
-                detail: ex.Message,
+                detail: "See server logs for details.",
                 statusCode: 500,
                 title: "Failed to retrieve health metrics");
         }
@@ -105,10 +105,10 @@ public static class MetricsEndpoints
 
             return Results.Ok(response);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.Problem(
-                detail: ex.Message,
+                detail: "See server logs for details.",
                 statusCode: 500,
                 title: "Failed to retrieve performance metrics");
         }
@@ -142,10 +142,10 @@ public static class MetricsEndpoints
 
             return Results.Ok(databaseMetrics);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.Problem(
-                detail: ex.Message,
+                detail: "See server logs for details.",
                 statusCode: 500,
                 title: "Failed to retrieve database metrics");
         }
@@ -181,10 +181,10 @@ public static class MetricsEndpoints
 
             return Results.Ok(cacheMetrics);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.Problem(
-                detail: ex.Message,
+                detail: "See server logs for details.",
                 statusCode: 500,
                 title: "Failed to retrieve cache metrics");
         }
@@ -200,10 +200,10 @@ public static class MetricsEndpoints
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
             return Results.Ok(memoryUsage);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.Problem(
-                detail: ex.Message,
+                detail: "See server logs for details.",
                 statusCode: 500,
                 title: "Failed to retrieve memory metrics");
         }

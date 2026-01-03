@@ -129,7 +129,7 @@ internal static partial class EsriImportEndpoints
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
             await WriteErrorAsync(context,
-                $"Failed to connect to ArcGIS service: {ex.Message}",
+                "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
         }
         catch (Exception ex)

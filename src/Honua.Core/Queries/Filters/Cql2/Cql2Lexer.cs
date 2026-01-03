@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Text;
 
 namespace Honua.Core.Queries.Filters.Cql2;
@@ -17,70 +18,71 @@ public sealed class Cql2Lexer
     /// <summary>
     /// Keywords that are recognized as special tokens
     /// </summary>
-    private static readonly Dictionary<string, Cql2TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        { "AND", Cql2TokenType.And },
-        { "OR", Cql2TokenType.Or },
-        { "NOT", Cql2TokenType.Not },
-        { "LIKE", Cql2TokenType.Like },
-        { "BETWEEN", Cql2TokenType.Between },
-        { "IN", Cql2TokenType.In },
-        { "IS", Cql2TokenType.IsNull }, // Will be handled specially for "IS NULL"
-        { "NULL", Cql2TokenType.Null },
-        { "TRUE", Cql2TokenType.Boolean },
-        { "FALSE", Cql2TokenType.Boolean },
-        { "DIV", Cql2TokenType.Div },
-        { "CASEI", Cql2TokenType.Casei },
-        { "ACCENTI", Cql2TokenType.Accenti },
-        { "DATE", Cql2TokenType.Date },
-        { "TIMESTAMP", Cql2TokenType.Timestamp },
-        { "INTERVAL", Cql2TokenType.Interval },
+    private static readonly FrozenDictionary<string, Cql2TokenType> _keywords =
+        new Dictionary<string, Cql2TokenType>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "AND", Cql2TokenType.And },
+            { "OR", Cql2TokenType.Or },
+            { "NOT", Cql2TokenType.Not },
+            { "LIKE", Cql2TokenType.Like },
+            { "BETWEEN", Cql2TokenType.Between },
+            { "IN", Cql2TokenType.In },
+            { "IS", Cql2TokenType.IsNull }, // Will be handled specially for "IS NULL"
+            { "NULL", Cql2TokenType.Null },
+            { "TRUE", Cql2TokenType.Boolean },
+            { "FALSE", Cql2TokenType.Boolean },
+            { "DIV", Cql2TokenType.Div },
+            { "CASEI", Cql2TokenType.Casei },
+            { "ACCENTI", Cql2TokenType.Accenti },
+            { "DATE", Cql2TokenType.Date },
+            { "TIMESTAMP", Cql2TokenType.Timestamp },
+            { "INTERVAL", Cql2TokenType.Interval },
 
-        // Spatial predicates
-        { "S_INTERSECTS", Cql2TokenType.S_Intersects },
-        { "S_CONTAINS", Cql2TokenType.S_Contains },
-        { "S_WITHIN", Cql2TokenType.S_Within },
-        { "S_CROSSES", Cql2TokenType.S_Crosses },
-        { "S_TOUCHES", Cql2TokenType.S_Touches },
-        { "S_OVERLAPS", Cql2TokenType.S_Overlaps },
-        { "S_DISJOINT", Cql2TokenType.S_Disjoint },
-        { "S_EQUALS", Cql2TokenType.S_Equals },
-        { "S_DWITHIN", Cql2TokenType.S_DWithin },
-        { "S_BEYOND", Cql2TokenType.S_Beyond },
+            // Spatial predicates
+            { "S_INTERSECTS", Cql2TokenType.S_Intersects },
+            { "S_CONTAINS", Cql2TokenType.S_Contains },
+            { "S_WITHIN", Cql2TokenType.S_Within },
+            { "S_CROSSES", Cql2TokenType.S_Crosses },
+            { "S_TOUCHES", Cql2TokenType.S_Touches },
+            { "S_OVERLAPS", Cql2TokenType.S_Overlaps },
+            { "S_DISJOINT", Cql2TokenType.S_Disjoint },
+            { "S_EQUALS", Cql2TokenType.S_Equals },
+            { "S_DWITHIN", Cql2TokenType.S_DWithin },
+            { "S_BEYOND", Cql2TokenType.S_Beyond },
 
-        // Temporal predicates
-        { "T_AFTER", Cql2TokenType.T_After },
-        { "T_BEFORE", Cql2TokenType.T_Before },
-        { "T_CONTAINS", Cql2TokenType.T_Contains },
-        { "T_DISJOINT", Cql2TokenType.T_Disjoint },
-        { "T_DURING", Cql2TokenType.T_During },
-        { "T_EQUALS", Cql2TokenType.T_Equals },
-        { "T_FINISHEDBY", Cql2TokenType.T_FinishedBy },
-        { "T_FINISHES", Cql2TokenType.T_Finishes },
-        { "T_INTERSECTS", Cql2TokenType.T_Intersects },
-        { "T_MEETS", Cql2TokenType.T_Meets },
-        { "T_METBY", Cql2TokenType.T_MetBy },
-        { "T_OVERLAPPEDBY", Cql2TokenType.T_OverlappedBy },
-        { "T_OVERLAPS", Cql2TokenType.T_Overlaps },
-        { "T_STARTEDBY", Cql2TokenType.T_StartedBy },
-        { "T_STARTS", Cql2TokenType.T_Starts },
+            // Temporal predicates
+            { "T_AFTER", Cql2TokenType.T_After },
+            { "T_BEFORE", Cql2TokenType.T_Before },
+            { "T_CONTAINS", Cql2TokenType.T_Contains },
+            { "T_DISJOINT", Cql2TokenType.T_Disjoint },
+            { "T_DURING", Cql2TokenType.T_During },
+            { "T_EQUALS", Cql2TokenType.T_Equals },
+            { "T_FINISHEDBY", Cql2TokenType.T_FinishedBy },
+            { "T_FINISHES", Cql2TokenType.T_Finishes },
+            { "T_INTERSECTS", Cql2TokenType.T_Intersects },
+            { "T_MEETS", Cql2TokenType.T_Meets },
+            { "T_METBY", Cql2TokenType.T_MetBy },
+            { "T_OVERLAPPEDBY", Cql2TokenType.T_OverlappedBy },
+            { "T_OVERLAPS", Cql2TokenType.T_Overlaps },
+            { "T_STARTEDBY", Cql2TokenType.T_StartedBy },
+            { "T_STARTS", Cql2TokenType.T_Starts },
 
-        // Array predicates
-        { "A_EQUALS", Cql2TokenType.A_Equals },
-        { "A_CONTAINS", Cql2TokenType.A_Contains },
-        { "A_CONTAINEDBY", Cql2TokenType.A_ContainedBy },
-        { "A_OVERLAPS", Cql2TokenType.A_Overlaps },
+            // Array predicates
+            { "A_EQUALS", Cql2TokenType.A_Equals },
+            { "A_CONTAINS", Cql2TokenType.A_Contains },
+            { "A_CONTAINEDBY", Cql2TokenType.A_ContainedBy },
+            { "A_OVERLAPS", Cql2TokenType.A_Overlaps },
 
-        // Geometry types
-        { "POINT", Cql2TokenType.Point },
-        { "LINESTRING", Cql2TokenType.LineString },
-        { "POLYGON", Cql2TokenType.Polygon },
-        { "MULTIPOINT", Cql2TokenType.MultiPoint },
-        { "MULTILINESTRING", Cql2TokenType.MultiLineString },
-        { "MULTIPOLYGON", Cql2TokenType.MultiPolygon },
-        { "GEOMETRYCOLLECTION", Cql2TokenType.GeometryCollection },
-        { "BBOX", Cql2TokenType.Bbox }
-    };
+            // Geometry types
+            { "POINT", Cql2TokenType.Point },
+            { "LINESTRING", Cql2TokenType.LineString },
+            { "POLYGON", Cql2TokenType.Polygon },
+            { "MULTIPOINT", Cql2TokenType.MultiPoint },
+            { "MULTILINESTRING", Cql2TokenType.MultiLineString },
+            { "MULTIPOLYGON", Cql2TokenType.MultiPolygon },
+            { "GEOMETRYCOLLECTION", Cql2TokenType.GeometryCollection },
+            { "BBOX", Cql2TokenType.Bbox }
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     public Cql2Lexer(string input)
     {

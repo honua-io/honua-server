@@ -40,20 +40,17 @@ public static class CspViolationReportEndpoint
     {
         try
         {
-            // Read the raw JSON payload
-            using var reader = new StreamReader(request.Body);
-            var jsonContent = await reader.ReadToEndAsync();
-
-            if (string.IsNullOrEmpty(jsonContent))
+            if (request.ContentLength == 0)
             {
                 CspViolationReportLog.EmptyViolationReport(logger, GetClientInfo(context));
                 return Results.NoContent();
             }
 
-            // Parse the CSP violation report
-            var violationReport = JsonSerializer.Deserialize<CspViolationReport>(
-                jsonContent,
-                CspViolationJsonContext.Default.CspViolationReport);
+            // Parse the CSP violation report without buffering the body
+            var violationReport = await JsonSerializer.DeserializeAsync(
+                request.Body,
+                CspViolationJsonContext.Default.CspViolationReport,
+                context.RequestAborted);
 
             if (violationReport?.CspReport != null)
             {
@@ -87,9 +84,13 @@ public static class CspViolationReportEndpoint
                         clientInfo.UserAgent);
                 }
             }
+            else if (violationReport == null)
+            {
+                CspViolationReportLog.EmptyViolationReport(logger, GetClientInfo(context));
+            }
             else
             {
-                CspViolationReportLog.InvalidViolationReport(logger, jsonContent, GetClientInfo(context));
+                CspViolationReportLog.InvalidViolationReport(logger, "<unavailable>", GetClientInfo(context));
             }
         }
         catch (JsonException ex)

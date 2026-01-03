@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -27,7 +28,7 @@ public interface ICommonQueryValidator
     /// <param name="format">Format parameter (json, geojson, xml, html, etc.)</param>
     /// <param name="allowedFormats">Set of allowed formats for this endpoint</param>
     /// <returns>Validation result with normalized format</returns>
-    ValidationResult<string> ValidateFormat(string? format, ISet<string> allowedFormats);
+    ValidationResult<string> ValidateFormat(string? format, IReadOnlySet<string> allowedFormats);
 
     /// <summary>
     /// Validates spatial reference system identifier.
@@ -44,7 +45,7 @@ public interface ICommonQueryValidator
     /// <param name="queryParameters">Query parameters from HTTP request</param>
     /// <param name="allowedParameters">Set of allowed parameter names</param>
     /// <returns>Validation result indicating success or parameter violations</returns>
-    ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, ISet<string> allowedParameters);
+    ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, IReadOnlySet<string> allowedParameters);
 
     /// <summary>
     /// Validates bounding box parameter format and values.
@@ -127,7 +128,7 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
     }
 
     /// <inheritdoc/>
-    public ValidationResult<string> ValidateFormat(string? format, ISet<string> allowedFormats)
+    public ValidationResult<string> ValidateFormat(string? format, IReadOnlySet<string> allowedFormats)
     {
         // Default format handling
         if (string.IsNullOrWhiteSpace(format))
@@ -141,7 +142,8 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
         var normalizedFormat = format.Trim().ToLowerInvariant();
 
         // Check if format is allowed
-        if (!allowedFormats.Any(f => string.Equals(f, normalizedFormat, StringComparison.OrdinalIgnoreCase)))
+        if (!allowedFormats.Contains(normalizedFormat) &&
+            !ContainsIgnoreCase(allowedFormats, normalizedFormat))
         {
             return ValidationResult<string>.Failure(
                 $"Unsupported format '{format}'. Allowed formats: {string.Join(", ", allowedFormats)}");
@@ -174,11 +176,12 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
     }
 
     /// <inheritdoc/>
-    public ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, ISet<string> allowedParameters)
+    public ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, IReadOnlySet<string> allowedParameters)
     {
         foreach (var parameterName in queryParameters.Keys)
         {
-            if (!allowedParameters.Contains(parameterName, StringComparer.OrdinalIgnoreCase))
+            if (!allowedParameters.Contains(parameterName) &&
+                !ContainsIgnoreCase(allowedParameters, parameterName))
             {
                 return ValidationResult.Failure($"Unknown query parameter: {parameterName}");
             }
@@ -195,24 +198,40 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
             return ValidationResult<BoundingBox>.Success(null);
         }
 
-        var parts = bboxValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 4)
+        ReadOnlySpan<char> bboxSpan = bboxValue.AsSpan();
+        Span<double> coords = stackalloc double[4];
+        var count = 0;
+        foreach (var range in bboxSpan.Split(','))
+        {
+            var token = bboxSpan[range].Trim();
+            if (token.IsEmpty)
+            {
+                continue;
+            }
+
+            if (count >= coords.Length)
+            {
+                return ValidationResult<BoundingBox>.Failure(
+                    "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
+            }
+
+            if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out coords[count]))
+            {
+                return ValidationResult<BoundingBox>.Failure(
+                    "Bounding box coordinates must be valid numbers");
+            }
+
+            count++;
+        }
+
+        if (count != coords.Length)
         {
             return ValidationResult<BoundingBox>.Failure(
                 "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
         }
 
-        if (!double.TryParse(parts[0], out var minX) ||
-            !double.TryParse(parts[1], out var minY) ||
-            !double.TryParse(parts[2], out var maxX) ||
-            !double.TryParse(parts[3], out var maxY))
-        {
-            return ValidationResult<BoundingBox>.Failure(
-                "Bounding box coordinates must be valid numbers");
-        }
-
         // Validate coordinate order
-        if (minX >= maxX || minY >= maxY)
+        if (coords[0] >= coords[2] || coords[1] >= coords[3])
         {
             return ValidationResult<BoundingBox>.Failure(
                 "Bounding box minimum coordinates must be less than maximum coordinates");
@@ -221,15 +240,28 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
         // Basic coordinate validation for geographic systems (WGS84/pseudo-mercator)
         if (targetSrid == 4326)
         {
-            if (minX < -180 || maxX > 180 || minY < -90 || maxY > 90)
+            if (coords[0] < -180 || coords[2] > 180 || coords[1] < -90 || coords[3] > 90)
             {
                 return ValidationResult<BoundingBox>.Failure(
                     "Geographic coordinates must be within valid ranges (longitude: -180 to 180, latitude: -90 to 90)");
             }
         }
 
-        var bbox = new BoundingBox(minX, minY, maxX, maxY);
+        var bbox = new BoundingBox(coords[0], coords[1], coords[2], coords[3]);
         return ValidationResult<BoundingBox>.Success(bbox);
+    }
+
+    private static bool ContainsIgnoreCase(IReadOnlySet<string> values, string value)
+    {
+        foreach (var candidate in values)
+        {
+            if (string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>
@@ -278,10 +310,14 @@ internal sealed class CommonQueryValidator : ICommonQueryValidator
             return ValidationResult<PaginationValues>.Failure("Offset cannot be negative.");
         }
 
-        // Calculate effective offset (clamped to max)
-        var effectiveOffset = offset.HasValue
-            ? Math.Min(offset.Value, _limitsOptions.Query.MaxOffset)
-            : 0;
+        if (offset.HasValue && offset.Value > _limitsOptions.Query.MaxOffset)
+        {
+            return ValidationResult<PaginationValues>.Failure(
+                $"Offset cannot exceed {_limitsOptions.Query.MaxOffset}.");
+        }
+
+        // Calculate effective offset
+        var effectiveOffset = offset ?? 0;
 
         // Validate limit
         if (limit.HasValue && limit.Value < 0)

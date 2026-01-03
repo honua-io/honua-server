@@ -69,22 +69,25 @@ public static class FileStorageServiceExtensions
                 break;
 
             case CloudStorageProvider.AwsS3:
-                // TODO: Sprint 2 - Add AWS S3 implementation
+                // Planned for Phase 1 - Cloud Storage Integration
+                // See docs/MVP_PLAN.md for implementation roadmap
                 throw new NotSupportedException(
                     "AWS S3 storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development or wait for Sprint 2 implementation.");
+                    "Use 'Local' provider for development.");
 
             case CloudStorageProvider.AzureBlob:
-                // TODO: Sprint 3 - Add Azure Blob implementation
+                // Planned for Phase 1 - Cloud Storage Integration
+                // See docs/MVP_PLAN.md for implementation roadmap
                 throw new NotSupportedException(
                     "Azure Blob storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development or wait for Sprint 3 implementation.");
+                    "Use 'Local' provider for development.");
 
             case CloudStorageProvider.GoogleCloudStorage:
-                // TODO: Sprint 3 - Add GCS implementation
+                // Planned for Phase 1 - Cloud Storage Integration
+                // See docs/MVP_PLAN.md for implementation roadmap
                 throw new NotSupportedException(
                     "Google Cloud Storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development or wait for Sprint 3 implementation.");
+                    "Use 'Local' provider for development.");
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {providerName}");

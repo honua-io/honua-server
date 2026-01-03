@@ -14,15 +14,11 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Tiles;
+using Honua.Postgres.Features.FeatureStore.Internal;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
 namespace Honua.Postgres.Features.FeatureStore;
-/// <summary>
-/// Holds a parameterized SQL query with its parameters
-/// </summary>
-internal record ParameterizedQuery(string Sql, List<object> WhereParameters);
-
 /// <summary>
 /// PostgreSQL implementation of feature storage and retrieval
 /// </summary>
@@ -139,6 +135,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
         }
     }
 
+    private const int MaxLayerSridCacheEntries = 1024;
+    private static readonly TimeSpan _layerSridCacheRetention = TimeSpan.FromHours(24);
+
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
     private const string GeometryColumnName = "geometry";
@@ -162,7 +161,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
     private readonly string? _tableSchema;
     private GeometryStorageType? _geometryStorageType;
     private bool? _hasLayerCatalog;
-    private readonly ConcurrentDictionary<int, int?> _layerSridCache = new();
+    private readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
 
     public PostgresFeatureStore(IDatabaseConnectionProvider connectionProvider, ObjectPool<StringBuilder> stringBuilderPool, string? schemaName = null)
     {
@@ -223,11 +222,17 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
 
     private async Task<int?> GetLayerSridAsync(int layerId, NpgsqlConnection connection, CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
         if (_layerSridCache.TryGetValue(layerId, out var cached))
         {
-            // PERFORMANCE METRICS: Record cache hit
-            PerformanceMetrics.RecordCacheHit();
-            return cached;
+            if (!IsLayerSridCacheExpired(cached, now))
+            {
+                // PERFORMANCE METRICS: Record cache hit
+                PerformanceMetrics.RecordCacheHit();
+                return cached.Srid;
+            }
+
+            _layerSridCache.TryRemove(layerId, out _);
         }
 
         // PERFORMANCE METRICS: Record cache miss
@@ -235,7 +240,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
 
         if (!await IsLayerCatalogAvailableAsync(connection, cancellationToken).ConfigureAwait(false))
         {
-            _layerSridCache[layerId] = null;
+            _layerSridCache[layerId] = new LayerSridCacheEntry(null, now);
+            TrimLayerSridCache(now);
             return null;
         }
 
@@ -258,7 +264,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
                 srid = Convert.ToInt32(result, CultureInfo.InvariantCulture);
             }
 
-            _layerSridCache[layerId] = srid;
+            _layerSridCache[layerId] = new LayerSridCacheEntry(srid, now);
+            TrimLayerSridCache(now);
             return srid;
         }
         catch (PostgresException ex) when (
@@ -267,8 +274,44 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
         {
             stopwatch.Stop();
             PerformanceMetrics.RecordQueryExecution("srid_lookup_error", stopwatch.ElapsedMilliseconds);
-            _layerSridCache[layerId] = null;
+            _layerSridCache[layerId] = new LayerSridCacheEntry(null, now);
+            TrimLayerSridCache(now);
             return null;
+        }
+    }
+
+    private static bool IsLayerSridCacheExpired(LayerSridCacheEntry entry, DateTimeOffset now)
+    {
+        return now - entry.CreatedAt > _layerSridCacheRetention;
+    }
+
+    private void TrimLayerSridCache(DateTimeOffset now)
+    {
+        var expiredKeys = _layerSridCache
+            .Where(kvp => IsLayerSridCacheExpired(kvp.Value, now))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in expiredKeys)
+        {
+            _layerSridCache.TryRemove(key, out _);
+        }
+
+        var overflow = _layerSridCache.Count - MaxLayerSridCacheEntries;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        var oldestKeys = _layerSridCache
+            .OrderBy(kvp => kvp.Value.CreatedAt)
+            .Take(overflow)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in oldestKeys)
+        {
+            _layerSridCache.TryRemove(key, out _);
         }
     }
 
@@ -791,7 +834,9 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
         }
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = editBatch.RollbackOnFailure
+            ? await connection.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
@@ -828,54 +873,65 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
             if (hasErrors && editBatch.RollbackOnFailure)
             {
                 // GeoServices behavior: rollback entire transaction on any failure
-                await transaction.RollbackAsync(cancellationToken);
+                if (transaction != null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
-            else if (hasErrors && !editBatch.RollbackOnFailure)
+
+            if (transaction != null)
             {
-                // GeoServices default behavior: commit successful operations, ignore failures
-                // Individual operations that failed are already tracked in the results
-                // Note: This implementation processes operations sequentially within the transaction,
-                // so we commit what succeeded and the failed operations are already excluded
                 await transaction.CommitAsync(cancellationToken);
-                return FeatureEditResult.Success(
-                    System.Linq.Enumerable.Count(createResults, r => r.IsSuccess),
-                    System.Linq.Enumerable.Count(updateResults, r => r.IsSuccess),
-                    System.Linq.Enumerable.Count(deleteResults, r => r.IsSuccess),
-                    createdIds,
-                    createResults,
-                    updateResults,
-                    deleteResults,
-                    wasRolledBack: false);
             }
-            else
-            {
-                // No errors - commit all operations
-                await transaction.CommitAsync(cancellationToken);
-                return FeatureEditResult.Success(
-                    createdIds.Length,
-                    updatedCount,
-                    deletedCount,
-                    createdIds,
-                    createResults,
-                    updateResults,
-                    deleteResults,
-                    wasRolledBack: false);
-            }
+
+            return FeatureEditResult.Success(
+                createdIds.Length,
+                updatedCount,
+                deletedCount,
+                createdIds,
+                createResults,
+                updateResults,
+                deleteResults,
+                wasRolledBack: false);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        catch (Exception)
+        {
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
 
-            // Create failure results for all attempted operations
-            var createResults = System.Linq.Enumerable.Select(editBatch.Creates, (_, i) =>
-                EditOperationResult.Failure($"Transaction failed: {ex.Message}")).ToImmutableArray();
-            var updateResults = System.Linq.Enumerable.Select(editBatch.Updates, f =>
-                EditOperationResult.Failure($"Transaction failed: {ex.Message}", objectId: f.Id)).ToImmutableArray();
-            var deleteResults = System.Linq.Enumerable.Select(editBatch.Deletes, id =>
-                EditOperationResult.Failure($"Transaction failed: {ex.Message}", objectId: id)).ToImmutableArray();
+                // Create failure results for all attempted operations
+                var createResults = System.Linq.Enumerable.Select(editBatch.Creates, (_, i) =>
+                    EditOperationResult.Failure("Transaction failed.")).ToImmutableArray();
+                var updateResults = System.Linq.Enumerable.Select(editBatch.Updates, f =>
+                    EditOperationResult.Failure("Transaction failed.", objectId: f.Id)).ToImmutableArray();
+                var deleteResults = System.Linq.Enumerable.Select(editBatch.Deletes, id =>
+                    EditOperationResult.Failure("Transaction failed.", objectId: id)).ToImmutableArray();
 
-            return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
+                return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
+            }
+
+            var failedCreateResults = System.Linq.Enumerable.Select(editBatch.Creates, (_, i) =>
+                EditOperationResult.Failure("Edit batch failed.")).ToImmutableArray();
+            var failedUpdateResults = System.Linq.Enumerable.Select(editBatch.Updates, f =>
+                EditOperationResult.Failure("Edit batch failed.", objectId: f.Id)).ToImmutableArray();
+            var failedDeleteResults = System.Linq.Enumerable.Select(editBatch.Deletes, id =>
+                EditOperationResult.Failure("Edit batch failed.", objectId: id)).ToImmutableArray();
+
+            return FeatureEditResult.Success(
+                0,
+                0,
+                0,
+                ImmutableArray<long>.Empty,
+                failedCreateResults,
+                failedUpdateResults,
+                failedDeleteResults,
+                wasRolledBack: false);
         }
     }
 
@@ -1032,7 +1088,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
             }
             catch (Exception ex)
             {
-                results.Add(EditOperationResult.Failure($"Create failed: {ex.Message}"));
+                results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
             }
         }
 
@@ -1043,7 +1099,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
         int layerId,
         ImmutableArray<Feature> features,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         var updatedCount = 0;
@@ -1065,7 +1121,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
             }
             catch (Exception ex)
             {
-                results.Add(EditOperationResult.Failure($"Update failed for feature {feature.Id}: {ex.Message}", objectId: feature.Id));
+                results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             }
         }
 
@@ -1076,7 +1132,7 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
         int layerId,
         ImmutableArray<long> featureIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         var deletedCount = 0;
@@ -1103,11 +1159,23 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
             }
             catch (Exception ex)
             {
-                results.Add(EditOperationResult.Failure($"Delete failed for feature {featureId}: {ex.Message}", objectId: featureId));
+                results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: featureId));
             }
         }
 
         return (deletedCount, results.ToImmutableArray());
+    }
+
+    private static string GetSafeEditOperationError(Exception ex, string operation)
+    {
+        return ex switch
+        {
+            ResourceNotFoundException => "Feature not found.",
+            ResourceConflictException => "The operation conflicted with existing data.",
+            ValidationException => "Invalid feature data.",
+            ArgumentException or InvalidOperationException => "Invalid feature data.",
+            _ => $"{operation} failed."
+        };
     }
 
     private static async Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)

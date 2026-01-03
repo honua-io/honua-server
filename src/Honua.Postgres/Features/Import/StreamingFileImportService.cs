@@ -175,9 +175,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 stopwatch.Elapsed);
             return result;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errorMessage = "Import failed: " + ex.Message;
+            errorMessage = "Import failed.";
             result = ImportResult.CreateFailure(
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
@@ -376,11 +376,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var imported = 0;
         var failed = 0;
 
-        NpgsqlTransaction? transaction = null;
-        if (_limits.UseTransactions)
-        {
-            transaction = await connection.BeginTransactionAsync(cancellationToken);
-        }
+        // Continue-on-error can't run inside a single transaction because any statement error aborts it.
+        var useTransaction = _limits.UseTransactions && !_limits.ContinueOnError;
+        await using var transaction = useTransaction
+            ? await connection.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
@@ -390,7 +390,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 try
                 {
-                    await InsertFeatureAsync(connection, tableName, feature, sourceSrid, targetSrid, wkbWriter, cancellationToken);
+                    await InsertFeatureAsync(
+                        connection,
+                        tableName,
+                        feature,
+                        sourceSrid,
+                        targetSrid,
+                        wkbWriter,
+                        transaction,
+                        cancellationToken);
                     imported++;
                 }
                 catch (Exception)
@@ -416,13 +424,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
             throw;
         }
-        finally
-        {
-            if (transaction != null)
-            {
-                await transaction.DisposeAsync();
-            }
-        }
 
         return (imported, failed);
     }
@@ -437,6 +438,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         int sourceSrid,
         int targetSrid,
         WKBWriter wkbWriter,
+        NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         var properties = new Dictionary<string, object?>();
@@ -447,7 +449,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
         }
 
-        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection);
+        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        {
+            Transaction = transaction
+        };
         command.Parameters.AddWithValue("table_name", tableName);
 
         byte[]? wkb = null;

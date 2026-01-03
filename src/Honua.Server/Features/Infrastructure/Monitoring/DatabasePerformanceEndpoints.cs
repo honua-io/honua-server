@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -23,7 +24,8 @@ internal static class DatabasePerformanceEndpoints
     public static void MapDatabasePerformanceEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/admin/performance/database")
-            .WithTags("Database Performance");
+            .WithTags("Database Performance")
+            .RequireAdminAuthorization();
 
         group.MapGet("/query-cache/statistics", GetQueryCacheStatistics)
             .WithName("GetQueryCacheStatistics")
@@ -65,11 +67,11 @@ internal static class DatabasePerformanceEndpoints
 
             return Results.Ok(response);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.Problem(
                 title: "Query Cache Statistics Error",
-                detail: ex.Message,
+                detail: "See server logs for details.",
                 statusCode: 500);
         }
     }

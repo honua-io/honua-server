@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Server.Features.Infrastructure.Models;
-// using Honua.Server.Features.OData.Models; // Temporarily disabled for Issue 46 performance testing
 
 namespace Honua.Server.Features.FeatureServer.Models;
 
@@ -790,16 +789,25 @@ internal sealed class RawJsonStringConverter : JsonConverter<string?>
 {
     public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return reader.TokenType switch
+        switch (reader.TokenType)
         {
-            JsonTokenType.String => reader.GetString(),
-            JsonTokenType.Number => reader.TryGetInt64(out var longValue)
-                ? longValue.ToString(CultureInfo.InvariantCulture)
-                : reader.GetDouble().ToString(CultureInfo.InvariantCulture),
-            JsonTokenType.StartObject or JsonTokenType.StartArray => JsonDocument.ParseValue(ref reader).RootElement.GetRawText(),
-            JsonTokenType.Null => null,
-            _ => throw new JsonException("Unsupported JSON token for string conversion.")
-        };
+            case JsonTokenType.String:
+                return reader.GetString();
+            case JsonTokenType.Number:
+                return reader.TryGetInt64(out var longValue)
+                    ? longValue.ToString(CultureInfo.InvariantCulture)
+                    : reader.GetDouble().ToString(CultureInfo.InvariantCulture);
+            case JsonTokenType.StartObject:
+            case JsonTokenType.StartArray:
+            {
+                using var document = JsonDocument.ParseValue(ref reader);
+                return document.RootElement.GetRawText();
+            }
+            case JsonTokenType.Null:
+                return null;
+            default:
+                throw new JsonException("Unsupported JSON token for string conversion.");
+        }
     }
 
     public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
@@ -1302,15 +1310,6 @@ public class EditError
 [JsonSerializable(typeof(UpdateAttachmentResponse))]
 [JsonSerializable(typeof(DeleteAttachmentResult))]
 [JsonSerializable(typeof(DeleteAttachmentsResponse))]
-// OData v4 types (temporarily disabled for Issue 46 performance testing)
-// [JsonSerializable(typeof(ODataServiceRoot))]
-// [JsonSerializable(typeof(ODataEntitySetInfo))]
-// [JsonSerializable(typeof(ODataEntitySetResponse))]
-// [JsonSerializable(typeof(ODataSingleEntityResponse))]
-// [JsonSerializable(typeof(ODataErrorResponse))]
-// [JsonSerializable(typeof(ODataErrorDetails))]
-// [JsonSerializable(typeof(ODataFeatureEntity))]
-// [JsonSerializable(typeof(IReadOnlyList<ODataEntitySetInfo>))]
 [JsonSerializable(typeof(IReadOnlyList<object>))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]

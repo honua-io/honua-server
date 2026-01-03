@@ -245,4 +245,77 @@ public class ValidationExtensionsTests
         lowerResult.IsValid.Should().BeTrue();
         mixedResult.IsValid.Should().BeTrue();
     }
+
+    [Fact]
+    public void ValidateAttributes_UnknownField_ReturnsFailure()
+    {
+        // Arrange
+        var layer = CreateTestLayer();
+        var attributes = new Dictionary<string, object?>
+        {
+            ["unknown"] = "value"
+        };
+
+        // Act
+        var result = layer.ValidateAttributes(attributes, ValidationExtensions.AttributeValidationMode.Strict);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Unknown field");
+    }
+
+    [Fact]
+    public void ValidateAttributes_NullForNonNullableField_ReturnsFailure()
+    {
+        // Arrange
+        var layer = CreateTestLayer();
+        var attributes = new Dictionary<string, object?>
+        {
+            ["id"] = null
+        };
+
+        // Act
+        var result = layer.ValidateAttributes(attributes, ValidationExtensions.AttributeValidationMode.Strict);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("cannot be null");
+    }
+
+    [Fact]
+    public void ValidateAttributes_TypeMismatch_ReturnsFailure()
+    {
+        // Arrange
+        var layer = CreateTestLayer();
+        var attributes = new Dictionary<string, object?>
+        {
+            ["age"] = "not-an-int"
+        };
+
+        // Act
+        var result = layer.ValidateAttributes(attributes, ValidationExtensions.AttributeValidationMode.Strict);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("must be an integer");
+    }
+
+    [Fact]
+    public void ValidateAttributes_GeoServicesAllowsNumericBoolean()
+    {
+        // Arrange
+        var layer = CreateTestLayer();
+        var attributes = new Dictionary<string, object?>
+        {
+            ["is_active"] = 1
+        };
+
+        // Act
+        var strictResult = layer.ValidateAttributes(attributes, ValidationExtensions.AttributeValidationMode.Strict);
+        var geoResult = layer.ValidateAttributes(attributes, ValidationExtensions.AttributeValidationMode.GeoServices);
+
+        // Assert
+        strictResult.IsValid.Should().BeFalse();
+        geoResult.IsValid.Should().BeTrue();
+    }
 }

@@ -454,6 +454,35 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?unexpected=1")]
+    public async Task QueryFeatures_WithUnknownParameter_Returns400()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?unexpected=1");
+
+        // Assert
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        var hasUnknownParameter = false;
+        foreach (var detail in errorElement.GetProperty("details").EnumerateArray())
+        {
+            if (detail.GetString() == "Unknown query parameter: unexpected")
+            {
+                hasUnknownParameter = true;
+                break;
+            }
+        }
+
+        hasUnknownParameter.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithNonExistentService_Returns404()
     {
@@ -1339,21 +1368,21 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         feature.Properties.Should().ContainKey("objectid");
 
         // The ID should match the objectid in properties - verify both have the same numeric value
-        // TODO: Temporarily commented due to FluentAssertions type comparison issue
-        // var idValue = Convert.ToInt64(feature.Id);
-        // var objectidValue = Convert.ToInt64(feature.Properties["objectid"]);
-        // idValue.Should().Be(objectidValue);
+        // Handle potential type differences between feature.Id and objectid property
+        var idValue = feature.Id?.ToString();
+        var objectidValue = feature.Properties["objectid"]?.ToString();
 
-        // Basic verification that ID has a reasonable value
-        feature.Id.Should().NotBeNull();
+        idValue.Should().NotBeNullOrEmpty("Feature ID should have a value");
+        objectidValue.Should().NotBeNullOrEmpty("Objectid property should have a value");
+        idValue.Should().Be(objectidValue, "Feature ID should match the objectid property value");
 
-        // Handle JsonElement case for ID
-        var idValue = feature.Id switch
+        // Verify ID is a valid positive number
+        var numericId = feature.Id switch
         {
             JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.Number => jsonElement.GetInt64(),
             var other => Convert.ToInt64(other, CultureInfo.InvariantCulture)
         };
-        idValue.Should().BeGreaterThan(0);
+        numericId.Should().BeGreaterThan(0);
     }
 
     #region Geometry Type Support Tests (Issue #94)

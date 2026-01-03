@@ -209,40 +209,54 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         var tableInfo = await DiscoverTableAsync(schemaName, tableName, cancellationToken)
             ?? throw new InvalidOperationException($"Table '{schemaName}.{tableName}' not found or is not a valid geospatial table");
 
-        // Get next layer ID
-        string idSql = $"SELECT COALESCE(MAX(layer_id), 0) + 1 FROM {_layersTable}";
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var idCommand = new NpgsqlCommand(idSql, connection);
-        int newLayerId = (int?)await idCommand.ExecuteScalarAsync(cancellationToken) ?? 1;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        // Insert layer
-        string sql = $"""
-            INSERT INTO {_layersTable} (layer_id, layer_name, description, geometry_type, srid, table_schema, table_name, default_visibility)
-            VALUES (@layerId, @layerName, @description, @geometryType, @srid, @tableSchema, @tableName, true)
-            RETURNING layer_id
-            """;
+        try
+        {
+            // Get next layer ID
+            string idSql = $"SELECT COALESCE(MAX(layer_id), 0) + 1 FROM {_layersTable}";
+            await using var idCommand = new NpgsqlCommand(idSql, connection, transaction);
+            int newLayerId = (int?)await idCommand.ExecuteScalarAsync(cancellationToken) ?? 1;
 
-        await using var command = new NpgsqlCommand(sql, connection);
-        _ = command.Parameters.AddWithValue("@layerId", newLayerId);
-        _ = command.Parameters.AddWithValue("@layerName", displayName);
-        _ = command.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
-        _ = command.Parameters.AddWithValue("@geometryType", tableInfo.GeometryType.ToString());
-        _ = command.Parameters.AddWithValue("@srid", tableInfo.Srid);
-        _ = command.Parameters.AddWithValue("@tableSchema", schemaName);
-        _ = command.Parameters.AddWithValue("@tableName", tableName);
+            // Insert layer
+            string sql = $"""
+                INSERT INTO {_layersTable} (layer_id, layer_name, description, geometry_type, srid, table_schema, table_name, default_visibility)
+                VALUES (@layerId, @layerName, @description, @geometryType, @srid, @tableSchema, @tableName, true)
+                RETURNING layer_id
+                """;
 
-        _ = await command.ExecuteScalarAsync(cancellationToken);
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            _ = command.Parameters.AddWithValue("@layerId", newLayerId);
+            _ = command.Parameters.AddWithValue("@layerName", displayName);
+            _ = command.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
+            _ = command.Parameters.AddWithValue("@geometryType", tableInfo.GeometryType.ToString());
+            _ = command.Parameters.AddWithValue("@srid", tableInfo.Srid);
+            _ = command.Parameters.AddWithValue("@tableSchema", schemaName);
+            _ = command.Parameters.AddWithValue("@tableName", tableName);
 
-        // Insert field definitions
-        await InsertLayerFieldsAsync(newLayerId, tableInfo.Fields, cancellationToken);
+            _ = await command.ExecuteScalarAsync(cancellationToken);
 
-        return new LayerDefinition(
-            newLayerId,
-            displayName,
-            description,
-            tableInfo.GeometryType,
-            new SpatialReference(tableInfo.Srid),
-            tableInfo.Fields);
+            // Insert field definitions
+            await InsertLayerFieldsAsync(connection, transaction, newLayerId, tableInfo.Fields, cancellationToken);
+
+            var layerDefinition = new LayerDefinition(
+                newLayerId,
+                displayName,
+                description,
+                tableInfo.GeometryType,
+                new SpatialReference(tableInfo.Srid),
+                tableInfo.Fields);
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return layerDefinition;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -336,28 +350,39 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     public async Task<bool> DeleteLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        // Delete relationships first
-        await using var relCommand = new NpgsqlCommand($"DELETE FROM {_relationshipsTable} WHERE layer_id = @layerId", connection);
-        _ = relCommand.Parameters.AddWithValue("@layerId", layerId);
-        _ = await relCommand.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            // Delete relationships first
+            await using var relCommand = new NpgsqlCommand($"DELETE FROM {_relationshipsTable} WHERE layer_id = @layerId", connection, transaction);
+            _ = relCommand.Parameters.AddWithValue("@layerId", layerId);
+            _ = await relCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        // Delete service bindings
-        await using var bindCommand = new NpgsqlCommand($"DELETE FROM {_serviceLayersTable} WHERE layer_id = @layerId", connection);
-        _ = bindCommand.Parameters.AddWithValue("@layerId", layerId);
-        _ = await bindCommand.ExecuteNonQueryAsync(cancellationToken);
+            // Delete service bindings
+            await using var bindCommand = new NpgsqlCommand($"DELETE FROM {_serviceLayersTable} WHERE layer_id = @layerId", connection, transaction);
+            _ = bindCommand.Parameters.AddWithValue("@layerId", layerId);
+            _ = await bindCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        // Delete fields
-        await using var fieldCommand = new NpgsqlCommand($"DELETE FROM {_fieldsTable} WHERE layer_id = @layerId", connection);
-        _ = fieldCommand.Parameters.AddWithValue("@layerId", layerId);
-        _ = await fieldCommand.ExecuteNonQueryAsync(cancellationToken);
+            // Delete fields
+            await using var fieldCommand = new NpgsqlCommand($"DELETE FROM {_fieldsTable} WHERE layer_id = @layerId", connection, transaction);
+            _ = fieldCommand.Parameters.AddWithValue("@layerId", layerId);
+            _ = await fieldCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        // Delete layer
-        await using var layerCommand = new NpgsqlCommand($"DELETE FROM {_layersTable} WHERE layer_id = @layerId", connection);
-        _ = layerCommand.Parameters.AddWithValue("@layerId", layerId);
-        int rowsAffected = await layerCommand.ExecuteNonQueryAsync(cancellationToken);
+            // Delete layer
+            await using var layerCommand = new NpgsqlCommand($"DELETE FROM {_layersTable} WHERE layer_id = @layerId", connection, transaction);
+            _ = layerCommand.Parameters.AddWithValue("@layerId", layerId);
+            int rowsAffected = await layerCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        return rowsAffected > 0;
+            await transaction.CommitAsync(cancellationToken);
+
+            return rowsAffected > 0;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -387,32 +412,46 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         if (tableInfo == null)
             return null;
 
-        // Delete old fields and insert new ones
-        await using var deleteFieldsCommand = new NpgsqlCommand($"DELETE FROM {_fieldsTable} WHERE layer_id = @layerId", connection);
-        _ = deleteFieldsCommand.Parameters.AddWithValue("@layerId", layerId);
-        _ = await deleteFieldsCommand.ExecuteNonQueryAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await InsertLayerFieldsAsync(layerId, tableInfo.Fields, cancellationToken);
-
-        // Update layer metadata
-        string updateSql = $"""
-            UPDATE {_layersTable}
-            SET geometry_type = @geometryType, srid = @srid
-            WHERE layer_id = @layerId
-            """;
-
-        await using var updateCommand = new NpgsqlCommand(updateSql, connection);
-        _ = updateCommand.Parameters.AddWithValue("@layerId", layerId);
-        _ = updateCommand.Parameters.AddWithValue("@geometryType", tableInfo.GeometryType.ToString());
-        _ = updateCommand.Parameters.AddWithValue("@srid", tableInfo.Srid);
-        _ = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
-
-        return existingLayer with
+        try
         {
-            GeometryType = tableInfo.GeometryType,
-            SpatialReference = new SpatialReference(tableInfo.Srid),
-            Fields = tableInfo.Fields
-        };
+            // Delete old fields and insert new ones
+            await using var deleteFieldsCommand = new NpgsqlCommand($"DELETE FROM {_fieldsTable} WHERE layer_id = @layerId", connection, transaction);
+            _ = deleteFieldsCommand.Parameters.AddWithValue("@layerId", layerId);
+            _ = await deleteFieldsCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            await InsertLayerFieldsAsync(connection, transaction, layerId, tableInfo.Fields, cancellationToken);
+
+            // Update layer metadata
+            string updateSql = $"""
+                UPDATE {_layersTable}
+                SET geometry_type = @geometryType, srid = @srid
+                WHERE layer_id = @layerId
+                """;
+
+            await using var updateCommand = new NpgsqlCommand(updateSql, connection, transaction);
+            _ = updateCommand.Parameters.AddWithValue("@layerId", layerId);
+            _ = updateCommand.Parameters.AddWithValue("@geometryType", tableInfo.GeometryType.ToString());
+            _ = updateCommand.Parameters.AddWithValue("@srid", tableInfo.Srid);
+            _ = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            var refreshedLayer = existingLayer with
+            {
+                GeometryType = tableInfo.GeometryType,
+                SpatialReference = new SpatialReference(tableInfo.Srid),
+                Fields = tableInfo.Fields
+            };
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return refreshedLayer;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     // ========================================================================
@@ -576,12 +615,15 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         return [.. fields];
     }
 
-    private async Task InsertLayerFieldsAsync(int layerId, FieldDefinition[] fields, CancellationToken cancellationToken)
+    private async Task InsertLayerFieldsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        FieldDefinition[] fields,
+        CancellationToken cancellationToken)
     {
         if (fields.Length == 0)
             return;
-
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         for (int i = 0; i < fields.Length; i++)
         {
@@ -591,7 +633,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
                 VALUES (@layerId, @fieldName, @fieldType, @maxLength, @nullable, @defaultValue, @description, @fieldOrder)
                 """;
 
-            await using var command = new NpgsqlCommand(sql, connection);
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
             _ = command.Parameters.AddWithValue("@layerId", layerId);
             _ = command.Parameters.AddWithValue("@fieldName", field.Name);
             _ = command.Parameters.AddWithValue("@fieldType", field.Type.ToString());

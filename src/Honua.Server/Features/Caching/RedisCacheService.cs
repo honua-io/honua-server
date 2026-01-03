@@ -6,8 +6,11 @@ using System.Text.Json;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using Polly;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Caching;
 
@@ -22,11 +25,16 @@ namespace Honua.Server.Features.Caching;
 internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, IDisposable
 {
     private const string CacheType = "layer-catalog";
+    private const string HealthCheckKey = "__health_check__";
     private readonly IDistributedCache? _distributedCache;
+    private readonly IConnectionMultiplexer? _redis;
     private readonly CacheOptions _options;
     private readonly ILogger<RedisCacheService> _logger;
     private readonly IPerformanceMonitor _performanceMonitor;
+    private readonly IAsyncPolicy _redisPolicy;
+    private readonly IAsyncPolicy<byte[]?> _redisGetPolicy;
     private readonly ConcurrentDictionary<string, CacheEntry> _fallbackCache = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly Timer _cleanupTimer;
     private volatile bool _isUsingFallback;
     private volatile bool _disposed;
@@ -36,12 +44,25 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         IDistributedCache? distributedCache,
         IOptions<CacheOptions> options,
         ILogger<RedisCacheService> logger,
-        IPerformanceMonitor performanceMonitor)
+        IPerformanceMonitor performanceMonitor,
+        IConnectionMultiplexer? redis = null)
     {
         _distributedCache = distributedCache;
+        _redis = redis;
         _options = options.Value;
         _logger = logger;
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
+        var policyOptions = ResiliencePolicyOptions.Default;
+        _redisPolicy = ResiliencePolicyFactory.CreateStandardPolicy(
+            Policy.Handle<RedisConnectionException>()
+                .Or<RedisTimeoutException>()
+                .Or<RedisServerException>(),
+            policyOptions);
+        _redisGetPolicy = ResiliencePolicyFactory.CreateStandardPolicy<byte[]?>(
+            Policy<byte[]?>.Handle<RedisConnectionException>()
+                .Or<RedisTimeoutException>()
+                .Or<RedisServerException>(),
+            policyOptions);
 
         // If no distributed cache is provided, start in fallback mode
         if (_distributedCache == null)
@@ -66,23 +87,40 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         string prefixedKey = GetPrefixedKey(key);
 
         // Try Redis first if available
-        if (!_isUsingFallback && _distributedCache != null)
+        if (_distributedCache != null)
         {
-            try
+            if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
             {
-                byte[]? data = await _distributedCache.GetAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
-                if (data != null)
-                {
-                    RecordCacheHit();
-                    return JsonSerializer.Deserialize<T>(data, CacheJsonContext.Default.Options);
-                }
-
-                RecordCacheMiss();
-                return null;
+                await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+
+            if (!_isUsingFallback)
             {
-                HandleRedisFailure(ex);
+                try
+                {
+                    byte[]? data = await _redisGetPolicy.ExecuteAsync(
+                        ct => _distributedCache.GetAsync(prefixedKey, ct),
+                        cancellationToken).ConfigureAwait(false);
+                    if (data != null)
+                    {
+                        if (TryDeserialize(data, prefixedKey, out T? value))
+                        {
+                            RecordCacheHit();
+                            return value;
+                        }
+
+                        await RemoveCorruptRedisEntryAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                        RecordCacheMiss();
+                        return null;
+                    }
+
+                    RecordCacheMiss();
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    HandleRedisFailure(ex);
+                }
             }
         }
 
@@ -91,12 +129,18 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             if (entry.ExpiresAt > DateTime.UtcNow)
             {
-                RecordCacheHit();
-                return JsonSerializer.Deserialize<T>(entry.Data, CacheJsonContext.Default.Options);
-            }
+                if (TryDeserialize(entry.Data, prefixedKey, out T? value))
+                {
+                    RecordCacheHit();
+                    return value;
+                }
 
-            // Remove expired entry
-            _fallbackCache.TryRemove(prefixedKey, out _);
+                _fallbackCache.TryRemove(prefixedKey, out _);
+            }
+            else
+            {
+                _fallbackCache.TryRemove(prefixedKey, out _);
+            }
         }
 
         RecordCacheMiss();
@@ -119,21 +163,31 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         byte[] data = JsonSerializer.SerializeToUtf8Bytes(value, CacheJsonContext.Default.Options);
 
         // Try Redis first if available
-        if (!_isUsingFallback && _distributedCache != null)
+        if (_distributedCache != null)
         {
-            try
+            if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
             {
-                var options = new DistributedCacheEntryOptions
-                {
-                    AbsoluteExpirationRelativeToNow = ttl
-                };
-
-                await _distributedCache.SetAsync(prefixedKey, data, options, cancellationToken).ConfigureAwait(false);
-                return;
+                await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+
+            if (!_isUsingFallback)
             {
-                HandleRedisFailure(ex);
+                try
+                {
+                    var options = new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = ttl
+                    };
+
+                    await _redisPolicy.ExecuteAsync(
+                        ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
+                        cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    HandleRedisFailure(ex);
+                }
             }
         }
 
@@ -165,15 +219,25 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         string prefixedKey = GetPrefixedKey(key);
 
         // Remove from Redis if available
-        if (!_isUsingFallback && _distributedCache != null)
+        if (_distributedCache != null)
         {
-            try
+            if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
             {
-                await _distributedCache.RemoveAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+
+            if (!_isUsingFallback)
             {
-                HandleRedisFailure(ex);
+                try
+                {
+                    await _redisPolicy.ExecuteAsync(
+                        ct => _distributedCache.RemoveAsync(prefixedKey, ct),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    HandleRedisFailure(ex);
+                }
             }
         }
 
@@ -184,9 +248,43 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     }
 
     /// <inheritdoc />
-    public Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
+    public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
         string prefixedPattern = GetPrefixedKey(pattern);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_distributedCache != null && _isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!_isUsingFallback && _redis != null)
+        {
+            try
+            {
+                var db = _redis.GetDatabase();
+                var database = db.Database;
+                foreach (var endpoint in _redis.GetEndPoints())
+                {
+                    var server = _redis.GetServer(endpoint);
+                    if (!server.IsConnected)
+                    {
+                        continue;
+                    }
+
+                    foreach (var key in server.Keys(database, pattern: prefixedPattern))
+                    {
+                        await db.KeyDeleteAsync(key).ConfigureAwait(false);
+                        RecordCacheEviction();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleRedisFailure(ex);
+            }
+        }
 
         // For fallback cache, remove matching keys
         var keysToRemove = _fallbackCache.Keys
@@ -199,11 +297,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             RecordCacheEviction();
         }
 
-        // Note: For Redis, pattern-based deletion requires SCAN+DEL which is complex.
-        // In a production system, you'd use Redis KEYS or Lua scripting.
-        // For metadata caching with known key patterns, explicit removal is preferred.
+        // Note: Redis pattern deletion relies on server key scans when a connection is available.
+        // For large keyspaces, consider narrowing patterns or using a dedicated index.
 
-        return Task.CompletedTask;
+        return;
     }
 
     /// <inheritdoc />
@@ -222,8 +319,20 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         TimeSpan ttl,
         CancellationToken cancellationToken = default) where T : class
     {
+        if (!_options.Enabled)
+        {
+            return await factory(cancellationToken).ConfigureAwait(false);
+        }
+
         // Try to get from cache first
         T? cached = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+        if (cached != null)
+            return cached;
+
+        await using var keyLock = await AcquireKeyLockAsync(GetPrefixedKey(key), cancellationToken).ConfigureAwait(false);
+
+        // Re-check cache after acquiring the lock
+        cached = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
         if (cached != null)
             return cached;
 
@@ -251,19 +360,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             // Check if we should retry Redis
             if (DateTime.UtcNow - _lastRedisFailure > _options.RetryInterval)
             {
-                try
-                {
-                    // Try a simple operation to test connectivity
-                    await _distributedCache.GetAsync("__health_check__", cancellationToken).ConfigureAwait(false);
-                    _isUsingFallback = false;
-                    RedisCacheServiceLog.RedisConnectionRestored(_logger);
-                    return true;
-                }
-                catch
-                {
-                    _lastRedisFailure = DateTime.UtcNow;
-                    return _options.EnableFallback;
-                }
+                var restored = await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+                return restored || _options.EnableFallback;
             }
 
             return _options.EnableFallback;
@@ -271,13 +369,90 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         try
         {
-            await _distributedCache.GetAsync("__health_check__", cancellationToken).ConfigureAwait(false);
+            await _redisGetPolicy.ExecuteAsync(
+                ct => _distributedCache.GetAsync(HealthCheckKey, ct),
+                cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch
         {
             return _options.EnableFallback;
         }
+    }
+
+    private bool ShouldRetryRedis(DateTime now)
+    {
+        return _isUsingFallback && _distributedCache != null && now - _lastRedisFailure > _options.RetryInterval;
+    }
+
+    private async Task<bool> TryRestoreRedisAsync(CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _redisGetPolicy.ExecuteAsync(
+                ct => _distributedCache.GetAsync(HealthCheckKey, ct),
+                cancellationToken).ConfigureAwait(false);
+            _isUsingFallback = false;
+            RedisCacheServiceLog.RedisConnectionRestored(_logger);
+            return true;
+        }
+        catch
+        {
+            _lastRedisFailure = DateTime.UtcNow;
+            return false;
+        }
+    }
+
+    private bool TryDeserialize<T>(byte[] data, string cacheKey, out T? value) where T : class
+    {
+        try
+        {
+            value = JsonSerializer.Deserialize<T>(data, CacheJsonContext.Default.Options);
+            return value != null;
+        }
+        catch (JsonException ex)
+        {
+            value = null;
+            RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, cacheKey, ex);
+            return false;
+        }
+        catch (NotSupportedException ex)
+        {
+            value = null;
+            RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, cacheKey, ex);
+            return false;
+        }
+    }
+
+    private async Task RemoveCorruptRedisEntryAsync(string prefixedKey, CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _redisPolicy.ExecuteAsync(
+                ct => _distributedCache.RemoveAsync(prefixedKey, ct),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            HandleRedisFailure(ex);
+        }
+    }
+
+    private async ValueTask<KeyLock> AcquireKeyLockAsync(string key, CancellationToken cancellationToken)
+    {
+        var semaphore = _keyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new KeyLock(key, semaphore, _keyLocks);
     }
 
     private string GetPrefixedKey(string key)
@@ -352,6 +527,53 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         _disposed = true;
         _cleanupTimer.Dispose();
         _fallbackCache.Clear();
+        foreach (var semaphore in _keyLocks.Values)
+        {
+            semaphore.Dispose();
+        }
+        _keyLocks.Clear();
+    }
+
+    private sealed class KeyLock : IAsyncDisposable, IDisposable
+    {
+        private readonly string _key;
+        private readonly SemaphoreSlim _semaphore;
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks;
+        private bool _disposed;
+
+        public KeyLock(string key, SemaphoreSlim semaphore, ConcurrentDictionary<string, SemaphoreSlim> locks)
+        {
+            _key = key;
+            _semaphore = semaphore;
+            _locks = locks;
+        }
+
+        public void Dispose()
+        {
+            Release();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Release();
+            return ValueTask.CompletedTask;
+        }
+
+        private void Release()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _semaphore.Release();
+
+            if (_semaphore.CurrentCount == 1)
+            {
+                _locks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(_key, _semaphore));
+            }
+        }
     }
 
     private sealed record CacheEntry(byte[] Data, DateTime ExpiresAt);
@@ -369,5 +591,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1004, LogLevel.Debug, "Cleaned up {Count} expired cache entries from fallback cache")]
         public static partial void CleanupExpiredCacheEntries(ILogger logger, int count);
+
+        [LoggerMessage(1005, LogLevel.Warning, "Failed to deserialize cache entry {CacheKey}")]
+        public static partial void CacheEntryDeserializationFailed(ILogger logger, string cacheKey, Exception exception);
     }
 }

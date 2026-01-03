@@ -9,6 +9,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Caching;
@@ -27,11 +28,13 @@ using Honua.Server.Features.OgcTiles;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Serilog;
 using Serilog.Enrichers.Span;
+using StackExchange.Redis;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
 // This is the application layer that wires dependencies:
@@ -93,7 +96,7 @@ builder.Host.UseSerilog((context, services, config) =>
         // Production: Compact JSON for log aggregation
         config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
     }
-});
+}, preserveStaticLogger: false, writeToProviders: true);
 
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure
@@ -155,10 +158,15 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHand
 builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistributedImportJobManager>(sp =>
     new Honua.Server.Features.Import.RedisImportJobManager(
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>()));
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>(),
+        sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.EsriImportBackgroundService>();
 
-// OData services use existing FeatureServer services
+// Register OData services
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataMetadataService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQueryService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataCrudService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataSearchService>();
 
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
@@ -189,6 +197,26 @@ ConfigureOutputCaching(builder.Services);
 builder.Services.AddETags();
 // Configure performance monitoring services
 builder.Services.AddPerformanceMonitoring();
+
+// Configure comprehensive monitoring and observability services
+if (builder.Environment.IsProduction())
+{
+    // Production: Full enterprise monitoring with all features
+    builder.Services.AddEnterpriseMonitoring(builder.Configuration);
+}
+else if (builder.Environment.IsDevelopment())
+{
+    // Development: Basic monitoring with reduced overhead
+    builder.Services.AddDevelopmentMonitoring(builder.Configuration);
+}
+else
+{
+    // Staging/Test: Comprehensive monitoring without enterprise features
+    builder.Services.AddComprehensiveMonitoring(builder.Configuration);
+}
+
+// Add monitoring middleware for automatic tracking
+builder.Services.AddMonitoringMiddleware();
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
@@ -199,6 +227,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Server.Features.OData.Models.ODataJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Monitoring.DashboardJsonContext.Default,
         Honua.Server.Features.OgcFeatures.OgcJsonContext.Default,
         Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default);
 });
@@ -221,6 +250,11 @@ if (useTestSchemaHeaders)
 
 // Add performance monitoring middleware (tracks request duration and memory)
 app.UsePerformanceMonitoring();
+
+// Add comprehensive monitoring middleware for automatic tracking
+app.UseMiddleware<RequestTrackingMiddleware>();
+app.UseMiddleware<PerformanceTrackingMiddleware>();
+app.UseMiddleware<BusinessAnalyticsMiddleware>();
 
 // Add global exception handling middleware (after correlation ID for exception logging)
 app.UseGlobalExceptionHandling();
@@ -310,6 +344,10 @@ if (useAspire)
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
+app.MapDatabasePerformanceEndpoints();
+
+// Map comprehensive monitoring and observability endpoints
+app.MapDashboardEndpoints();
 
 app.Run();
 
@@ -461,9 +499,10 @@ async Task RunDatabaseMigrationsAsync()
             return;
         }
 
-        if (result.Scripts.Any())
+        var scriptCount = result.Scripts.Count();
+        if (scriptCount > 0)
         {
-            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, result.Scripts.Count());
+            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, scriptCount);
             // Log individual script names for debugging
             foreach (var script in result.Scripts)
             {
@@ -487,6 +526,9 @@ static void ConfigureOutputCaching(IServiceCollection services)
 {
     services.AddOutputCache(options =>
     {
+        // Add dynamic tags based on common route values for targeted invalidation.
+        options.AddBasePolicy(policy => policy.AddPolicy<RouteTagOutputCachePolicy>());
+
         // Service metadata caching policy
         options.AddPolicy("ServiceMetadata", policy =>
         {
@@ -681,15 +723,6 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.Tag("mvt-tiles", "tiles");
         });
 
-        // OData features caching policy (temporarily disabled for Issue 46 performance testing)
-        // options.AddPolicy("ODataFeatures", policy =>
-        // {
-        //     policy.Expire(TimeSpan.FromMinutes(10)); // Cache feature queries for 10 minutes
-        //     policy.SetVaryByRouteValue("layerId");
-        //     policy.SetVaryByQuery("$filter", "$select", "$top", "$skip", "$orderby", "$count");
-        //     policy.Tag("odata-features", "features");
-        // });
-
         // Note: No default base policy - endpoints must explicitly opt into caching for security
     });
 }
@@ -722,6 +755,8 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
         configuration.GetSection(CacheOptions.SectionName).Bind(options);
     });
 
+    services.AddMemoryCache();
+
     // Register RedisCacheService (handles both Redis and fallback modes)
     // IDistributedCache is optionally provided by Aspire's AddRedisDistributedCache
     services.AddSingleton<RedisCacheService>(sp =>
@@ -730,12 +765,24 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
         var options = sp.GetRequiredService<IOptions<CacheOptions>>();
         var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
         var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-        return new RedisCacheService(distributedCache, options, logger, performanceMonitor);
+        var redis = sp.GetService<IConnectionMultiplexer>();
+        return new RedisCacheService(distributedCache, options, logger, performanceMonitor, redis);
     });
 
     // Register interfaces pointing to the singleton
     services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
     services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
+
+    services.AddSingleton<IResponseCache>(sp =>
+    {
+        var innerCache = new MemoryResponseCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<ILogger<MemoryResponseCache>>());
+        return new MonitoredResponseCacheDecorator(
+            innerCache,
+            sp.GetRequiredService<IPerformanceMonitor>(),
+            sp.GetRequiredService<ILogger<MonitoredResponseCacheDecorator>>());
+    });
 
     // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Text.RegularExpressions;
 
 namespace Honua.Server.Features.Infrastructure.Security;
@@ -25,7 +26,8 @@ internal static class FileUploadSecurity
     /// <summary>
     /// Known malicious file signatures (magic numbers).
     /// </summary>
-    private static readonly Dictionary<string, byte[]> _maliciousSignatures = new()
+    private static readonly FrozenDictionary<string, byte[]> _maliciousSignatures = new Dictionary<string, byte[]>(
+        StringComparer.Ordinal)
     {
         // PE executables
         ["PE"] = new byte[] { 0x4D, 0x5A }, // MZ header
@@ -34,52 +36,54 @@ internal static class FileUploadSecurity
         ["PS1"] = System.Text.Encoding.ASCII.GetBytes("#!/"),
         ["BAT"] = System.Text.Encoding.ASCII.GetBytes("@echo"),
         ["VBS"] = System.Text.Encoding.ASCII.GetBytes("Dim "),
-    };
+    }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>
     /// Allowed MIME types for geospatial data files.
     /// </summary>
-    private static readonly HashSet<string> _allowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Geospatial formats
-        "application/octet-stream", // For shapefiles and other binary formats
-        "application/zip", // For zipped shapefiles
-        "application/x-zip-compressed",
-        "application/geopackage+sqlite3",
-        "application/x-sqlite3",
-        "application/wkt",
-        "text/csv",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/geo+json",
-        "application/json",
-        "text/plain",
-        "application/gpx+xml",
-        "text/xml",
-        "application/xml",
-        // KML/KMZ
-        "application/vnd.google-earth.kml+xml",
-        "application/vnd.google-earth.kmz",
-    };
+    private static readonly FrozenSet<string> _allowedMimeTypes = new[]
+        {
+            // Geospatial formats
+            "application/octet-stream", // For shapefiles and other binary formats
+            "application/zip", // For zipped shapefiles
+            "application/x-zip-compressed",
+            "application/geopackage+sqlite3",
+            "application/x-sqlite3",
+            "application/wkt",
+            "text/csv",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/geo+json",
+            "application/json",
+            "text/plain",
+            "application/gpx+xml",
+            "text/xml",
+            "application/xml",
+            // KML/KMZ
+            "application/vnd.google-earth.kml+xml",
+            "application/vnd.google-earth.kmz",
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Allowed file extensions for geospatial data.
     /// </summary>
-    private static readonly HashSet<string> _allowedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".shp", ".dbf", ".shx", ".prj", ".cpg", ".sbn", ".sbx", ".fbn", ".fbx", // Shapefile components
-        ".zip", // Zipped shapefiles
-        ".csv", ".tsv", ".txt",
-        ".xls", ".xlsx",
-        ".geojson", ".json",
-        ".gpkg",
-        ".wkt",
-        ".gpx",
-        ".kml", ".kmz",
-        ".gml", ".xml",
-        ".tab", ".mif", ".mid", // MapInfo formats
-        ".gdb", // File geodatabase (folder)
-    };
+    private static readonly FrozenSet<string> _allowedExtensions = new[]
+        {
+            ".shp", ".dbf", ".shx", ".prj", ".cpg", ".sbn", ".sbx", ".fbn", ".fbx", // Shapefile components
+            ".zip", // Zipped shapefiles
+            ".csv", ".tsv", ".txt",
+            ".xls", ".xlsx",
+            ".geojson", ".json",
+            ".gpkg",
+            ".wkt",
+            ".gpx",
+            ".kml", ".kmz",
+            ".gml", ".xml",
+            ".tab", ".mif", ".mid", // MapInfo formats
+            ".gdb", // File geodatabase (folder)
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Dangerous file patterns that should be rejected.
@@ -304,9 +308,9 @@ internal static class FileUploadSecurity
 
             return FileValidationResult.Valid();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return FileValidationResult.Invalid($"Error validating file content: {ex.Message}");
+            return FileValidationResult.Invalid("Error validating file content.");
         }
     }
 

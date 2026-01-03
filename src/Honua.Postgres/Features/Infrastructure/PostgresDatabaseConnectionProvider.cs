@@ -3,10 +3,13 @@
 
 using System.Data.Common;
 using System.Diagnostics;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Polly.CircuitBreaker;
 
 namespace Honua.Postgres.Features.Infrastructure;
 
@@ -46,20 +49,38 @@ internal sealed class PostgresDatabaseConnectionProvider(
         int retryCount = 0;
 
         // Use the resilience extension method with logging callback
-        NpgsqlConnection connection = await _dataSource.OpenConnectionWithRetryAsync(
-            onRetry: (ex, delay, attempt) =>
-            {
-                retryCount = attempt;
-                activity?.AddEvent(new ActivityEvent("retry", tags: new ActivityTagsCollection
+        NpgsqlConnection connection;
+        try
+        {
+            connection = await _dataSource.OpenConnectionWithRetryAsync(
+                onRetry: (ex, delay, attempt) =>
                 {
-                    { "attempt", attempt },
-                    { "delay_ms", delay.TotalMilliseconds },
-                    { "error.message", ex.Message }
-                }));
+                    retryCount = attempt;
+                    activity?.AddEvent(new ActivityEvent("retry", tags: new ActivityTagsCollection
+                    {
+                        { "attempt", attempt },
+                        { "delay_ms", delay.TotalMilliseconds },
+                        { "error.message", ex.Message }
+                    }));
 
-                PostgresLog.ConnectionRetry(_logger, attempt, ex.Message);
-            },
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+                    PostgresLog.ConnectionRetry(_logger, attempt, ex.Message);
+                },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (BrokenCircuitException)
+        {
+            throw new ServiceUnavailableException(
+                "Database connection failed.",
+                ResiliencePolicyOptions.Default.RetryAfterSeconds);
+        }
+        catch (Exception ex)
+        {
+            throw new ServiceUnavailableException("Database connection failed.", ex);
+        }
 
         // Apply schema context if specified
         if (_schemaContext?.CurrentSchema != null)

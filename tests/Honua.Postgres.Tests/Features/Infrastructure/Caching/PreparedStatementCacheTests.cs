@@ -64,20 +64,23 @@ public class PreparedStatementCacheTests : IDisposable
         await using var connection = await _dataSource.OpenConnectionAsync();
         const string sql = "SELECT $1 as test_value";
 
-        // Act - Execute below threshold
-        for (int i = 0; i < 2; i++)
+        // Define parameter configuration
+        Action<NpgsqlCommand> configureParams = cmd =>
         {
-            var result = await _cache.GetOrCreatePreparedCommandAsync(
-                (NpgsqlConnection)connection, sql);
-            result.Should().BeNull($"execution {i + 1} should not trigger caching");
-        }
+            cmd.Parameters.AddWithValue("$1", 42);
+        };
 
-        // Act - Execute at threshold (should trigger preparation)
+        // Act - First execution should not trigger caching
+        var firstResult = await _cache.GetOrCreatePreparedCommandAsync(
+            (NpgsqlConnection)connection, sql, configureParams);
+        firstResult.Should().BeNull("first execution should not trigger caching");
+
+        // Act - Second execution hits threshold and creates prepared statement
         var preparedCommand = await _cache.GetOrCreatePreparedCommandAsync(
-            (NpgsqlConnection)connection, sql);
+            (NpgsqlConnection)connection, sql, configureParams);
 
         // Assert
-        preparedCommand.Should().NotBeNull("threshold execution should create prepared statement");
+        preparedCommand.Should().NotBeNull("second execution should create prepared statement (MinExecutionsForCaching=2)");
         preparedCommand!.CommandText.Should().Be(sql);
     }
 
@@ -88,15 +91,21 @@ public class PreparedStatementCacheTests : IDisposable
         await using var connection = await _dataSource.OpenConnectionAsync();
         const string sql = "SELECT $1 as test_value";
 
+        // Define parameter configuration
+        Action<NpgsqlCommand> configureParams = cmd =>
+        {
+            cmd.Parameters.AddWithValue("$1", 42);
+        };
+
         // Prime the cache
         for (int i = 0; i < 3; i++)
         {
-            await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql);
+            await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
         }
 
         // Act
-        var first = await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql);
-        var second = await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql);
+        var first = await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
+        var second = await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
 
         // Assert
         first.Should().NotBeNull();
@@ -113,9 +122,15 @@ public class PreparedStatementCacheTests : IDisposable
         const string sql = "SELECT $1 as priority_test";
         const string statementName = "priority_test";
 
+        // Define parameter configuration
+        Action<NpgsqlCommand> configureParams = cmd =>
+        {
+            cmd.Parameters.AddWithValue("$1", "test");
+        };
+
         // Act
         var command = await _cache.PreparePriorityStatementAsync(
-            (NpgsqlConnection)connection, sql, statementName);
+            (NpgsqlConnection)connection, sql, statementName, configureParams);
 
         // Assert
         command.Should().NotBeNull();

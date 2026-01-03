@@ -344,6 +344,11 @@ internal static partial class FeaturesEndpoints
 
             return FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
         }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.ItemsQueryFailed(logger, collectionId, ex);
@@ -411,6 +416,11 @@ internal static partial class FeaturesEndpoints
 
             return FormatFeatureResponse(ogcFeature, OgcJsonContext.Default.GeoJsonFeature, outputFormat, "Feature");
         }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.ItemQueryFailed(logger, collectionId, ex);
@@ -440,10 +450,10 @@ internal static partial class FeaturesEndpoints
             var layer = collectionResult.Resource!;
             var layerId = layer.Id;
 
-            var requestFeature = await ReadGeoJsonFeatureAsync(context, cancellationToken);
+            var (requestFeature, requestError) = await ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {
-                return OgcErrorHelpers.CreateBadRequest(context, "Invalid GeoJSON payload.");
+                return OgcErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");
             }
 
             byte[]? geometryWkb = null;
@@ -466,8 +476,15 @@ internal static partial class FeaturesEndpoints
                 }
             }
 
-            var attributes = requestFeature.Properties ?? new Dictionary<string, object?>();
-            var feature = Feature.Create(0, geometryWkb, attributes.ToImmutableDictionary());
+            var attributesResult = layer.ValidateAttributes(
+                requestFeature.Properties,
+                ValidationExtensions.AttributeValidationMode.Strict);
+            if (!attributesResult.IsValid)
+            {
+                return OgcErrorHelpers.CreateBadRequest(context, attributesResult.ErrorMessage ?? "Invalid attributes.");
+            }
+
+            var feature = Feature.Create(0, geometryWkb, attributesResult.Value!);
 
             var created = await featureStore.CreateAsync(layerId, feature, cancellationToken);
             var createLinks = BuildFeatureLinks(
@@ -478,6 +495,11 @@ internal static partial class FeaturesEndpoints
             var response = ToOgcFeature(created, OgcFeaturesUtilities.AxisOrder.EastNorth, createLinks);
 
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
+        }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
         }
         catch (ResourceConflictException ex)
         {
@@ -518,10 +540,10 @@ internal static partial class FeaturesEndpoints
                 return OgcErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            var requestFeature = await ReadGeoJsonFeatureAsync(context, cancellationToken);
+            var (requestFeature, requestError) = await ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {
-                return OgcErrorHelpers.CreateBadRequest(context, "Invalid GeoJSON payload.");
+                return OgcErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");
             }
 
             byte[]? geometryWkb = null;
@@ -544,8 +566,15 @@ internal static partial class FeaturesEndpoints
                 }
             }
 
-            var attributes = requestFeature.Properties ?? new Dictionary<string, object?>();
-            var feature = Feature.Create(objectId, geometryWkb, attributes.ToImmutableDictionary());
+            var attributesResult = layer.ValidateAttributes(
+                requestFeature.Properties,
+                ValidationExtensions.AttributeValidationMode.Strict);
+            if (!attributesResult.IsValid)
+            {
+                return OgcErrorHelpers.CreateBadRequest(context, attributesResult.ErrorMessage ?? "Invalid attributes.");
+            }
+
+            var feature = Feature.Create(objectId, geometryWkb, attributesResult.Value!);
 
             Feature updated;
             try
@@ -572,6 +601,11 @@ internal static partial class FeaturesEndpoints
                 MediaTypes.GeoJson);
             var response = ToOgcFeature(updated, OgcFeaturesUtilities.AxisOrder.EastNorth, updateLinks);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
+        }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -615,6 +649,11 @@ internal static partial class FeaturesEndpoints
 
             return Results.NoContent();
         }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(logger, collectionId, ex);
@@ -622,7 +661,9 @@ internal static partial class FeaturesEndpoints
         }
     }
 
-    private static async Task<GeoJsonFeature?> ReadGeoJsonFeatureAsync(HttpContext context, CancellationToken cancellationToken)
+    private static async Task<(GeoJsonFeature? Feature, string? Error)> ReadGeoJsonFeatureAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -630,22 +671,40 @@ internal static partial class FeaturesEndpoints
             var body = await reader.ReadToEndAsync(cancellationToken);
             if (string.IsNullOrWhiteSpace(body))
             {
-                return null;
+                return (null, "Request body is required.");
             }
 
             using var document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind != JsonValueKind.Object ||
-                !document.RootElement.TryGetProperty("type", out var typeProperty) ||
-                !string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase))
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return null;
+                return (null, "GeoJSON payload must be an object.");
             }
 
-            return JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+            if (!document.RootElement.TryGetProperty("type", out var typeProperty))
+            {
+                return (null, "GeoJSON payload must include a 'type' member.");
+            }
+
+            if (!string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase))
+            {
+                return (null, "GeoJSON 'type' must be 'Feature'.");
+            }
+
+            try
+            {
+                var feature = JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+                return feature == null
+                    ? (null, "Invalid GeoJSON payload.")
+                    : (feature, null);
+            }
+            catch (JsonException)
+            {
+                return (null, "Invalid GeoJSON payload.");
+            }
         }
         catch (JsonException)
         {
-            return null;
+            return (null, "Invalid JSON payload.");
         }
     }
 

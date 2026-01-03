@@ -22,6 +22,9 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0014](0014-dependency-injection-limits.md) | Dependency Injection Limits Rationale | Accepted | 2025-12 |
 | [0015](0015-vertical-slice-architecture.md) | Vertical Slice Architecture Pattern | Accepted | 2025-12 |
 | [0016](0016-performance-optimization-strategies.md) | Performance Optimization Strategies | Accepted | 2025-12 |
+| [0017](0017-redis-caching-with-fallback.md) | Redis Caching with Fallback Strategy | Accepted | 2025-12 |
+| [0018](0018-source-generated-json-serialization.md) | Source-Generated JSON Serialization for AOT Compatibility | Accepted | 2025-12 |
+| [0019](0019-security-first-file-upload-design.md) | Security-First File Upload Design | Accepted | 2025-12 |
 
 ## Template
 

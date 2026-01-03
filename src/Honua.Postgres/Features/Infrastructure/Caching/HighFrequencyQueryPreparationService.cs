@@ -159,6 +159,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
 
         var successCount = 0;
         var failureCount = 0;
+        var skippedCount = 0;
 
         foreach (var query in _highPriorityQueries)
         {
@@ -166,14 +167,24 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
             {
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-                await _statementCache.PreparePriorityStatementAsync(
+                var prepared = await _statementCache.PreparePriorityStatementAsync(
                     (NpgsqlConnection)connection,
                     query.Sql,
                     query.Name,
                     cancellationToken);
 
+                if (prepared == null)
+                {
+                    stopwatch.Stop();
+                    skippedCount++;
+                    HighFrequencyQueryPreparationLog.PreparedHighPriorityStatementSkipped(_logger, query.Name);
+                    continue;
+                }
+
                 stopwatch.Stop();
                 successCount++;
+
+                prepared.Dispose();
 
                 HighFrequencyQueryPreparationLog.PreparedHighPriorityStatement(
                     _logger,
@@ -190,7 +201,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
             }
         }
 
-        HighFrequencyQueryPreparationLog.PreparationSummary(_logger, successCount, failureCount);
+        HighFrequencyQueryPreparationLog.PreparationSummary(_logger, successCount, failureCount, skippedCount);
     }
 }
 
@@ -235,6 +246,12 @@ internal static partial class HighFrequencyQueryPreparationLog
     [LoggerMessage(
         EventId = 8607,
         Level = LogLevel.Information,
-        Message = "High-frequency query preparation completed: {SuccessCount} successful, {FailureCount} failed")]
-    public static partial void PreparationSummary(ILogger logger, int successCount, int failureCount);
+        Message = "High-frequency query preparation completed: {SuccessCount} successful, {FailureCount} failed, {SkippedCount} skipped")]
+    public static partial void PreparationSummary(ILogger logger, int successCount, int failureCount, int skippedCount);
+
+    [LoggerMessage(
+        EventId = 8608,
+        Level = LogLevel.Debug,
+        Message = "Skipped high-priority statement preparation: {StatementName}")]
+    public static partial void PreparedHighPriorityStatementSkipped(ILogger logger, string statementName);
 }

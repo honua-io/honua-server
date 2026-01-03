@@ -6,7 +6,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -31,18 +33,18 @@ internal sealed partial class ArcGisRestClient
     public async Task<EsriServiceInfo> DiscoverServiceAsync(
         string serviceUrl,
         int timeoutSeconds,
+        int maxRetries,
         CancellationToken cancellationToken)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         Log.DiscoveringService(_logger, normalizedUrl);
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
         var serviceResponse = await GetJsonAsync(
             $"{normalizedUrl}?f=json",
             ArcGisJsonContext.Default.ArcGisServiceResponse,
-            cts.Token);
+            maxRetries,
+            timeoutSeconds,
+            cancellationToken);
 
         var layers = new List<EsriLayerInfo>();
 
@@ -52,7 +54,7 @@ internal sealed partial class ArcGisRestClient
             {
                 try
                 {
-                    var layerInfo = await GetLayerInfoAsync(normalizedUrl, layer.Id, timeoutSeconds, cancellationToken);
+                    var layerInfo = await GetLayerInfoAsync(normalizedUrl, layer.Id, timeoutSeconds, maxRetries, cancellationToken);
                     layers.Add(layerInfo);
                 }
                 catch (Exception ex)
@@ -83,18 +85,18 @@ internal sealed partial class ArcGisRestClient
         string serviceUrl,
         int layerId,
         int timeoutSeconds,
+        int maxRetries,
         CancellationToken cancellationToken)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var layerUrl = $"{normalizedUrl}/{layerId}?f=json";
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
         var layerResponse = await GetJsonAsync(
             layerUrl,
             ArcGisJsonContext.Default.ArcGisLayerResponse,
-            cts.Token);
+            maxRetries,
+            timeoutSeconds,
+            cancellationToken);
 
         // Try to get feature count
         int? featureCount = null;
@@ -104,7 +106,9 @@ internal sealed partial class ArcGisRestClient
             var countResponse = await GetJsonAsync(
                 countUrl,
                 ArcGisJsonContext.Default.ArcGisCountResponse,
-                cts.Token);
+                maxRetries,
+                timeoutSeconds,
+                cancellationToken);
             featureCount = countResponse.Count;
         }
         catch (Exception ex)
@@ -142,20 +146,20 @@ internal sealed partial class ArcGisRestClient
         string[]? outFields,
         int? outSrid,
         int timeoutSeconds,
+        int maxRetries,
         CancellationToken cancellationToken)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid);
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
         Log.QueryingFeatures(_logger, layerId, offset, batchSize);
 
         var response = await GetJsonAsync(
             queryUrl,
             ArcGisJsonContext.Default.ArcGisFeatureResponse,
-            cts.Token);
+            maxRetries,
+            timeoutSeconds,
+            cancellationToken);
 
         if (response.Error != null)
         {
@@ -201,14 +205,63 @@ internal sealed partial class ArcGisRestClient
     private async Task<T> GetJsonAsync<T>(
         string url,
         JsonTypeInfo<T> jsonTypeInfo,
+        int maxRetries,
+        int timeoutSeconds,
         CancellationToken cancellationToken)
     {
-        var response = await _httpClient.GetAsync(url, cancellationToken);
+        var options = BuildHttpOptions(maxRetries);
+        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
+        using var response = await policy.ExecuteAsync(
+            async ct =>
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                return await _httpClient.GetAsync(url, timeoutCts.Token);
+            },
+            cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync(jsonTypeInfo, cancellationToken);
 
         return result ?? throw new InvalidOperationException("Failed to deserialize response");
+    }
+
+    private static ResiliencePolicyOptions BuildHttpOptions(int maxRetries)
+    {
+        return new ResiliencePolicyOptions
+        {
+            MaxRetryAttempts = Math.Max(0, maxRetries),
+            BaseDelay = TimeSpan.FromSeconds(1)
+        };
+    }
+
+    private IAsyncPolicy<HttpResponseMessage> CreateHttpPolicy(
+        ResiliencePolicyOptions options,
+        int maxRetries,
+        CancellationToken cancellationToken)
+    {
+        var builder = Policy<HttpResponseMessage>
+            .Handle<HttpRequestException>()
+            .OrResult(response => (int)response.StatusCode >= 500)
+            .Or<OperationCanceledException>(_ => !cancellationToken.IsCancellationRequested);
+
+        return ResiliencePolicyFactory.CreateStandardPolicy(
+            builder,
+            options,
+            onRetry: (result, delay, attempt) =>
+                Log.RetryingRequest(_logger, attempt, maxRetries, delay.TotalSeconds, GetFailureMessage(result)));
+    }
+
+    private static string GetFailureMessage(DelegateResult<HttpResponseMessage> result)
+    {
+        if (result.Exception != null)
+        {
+            return result.Exception.Message;
+        }
+
+        return result.Result != null
+            ? $"HTTP {(int)result.Result.StatusCode}"
+            : "Unknown failure";
     }
 
     private static string NormalizeServiceUrl(string url)
@@ -315,6 +368,13 @@ internal sealed partial class ArcGisRestClient
             Level = LogLevel.Debug,
             Message = "Failed to get feature count for layer {LayerId}")]
         public static partial void FeatureCountFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7504,
+            Level = LogLevel.Warning,
+            Message = "ArcGIS request attempt {Attempt}/{MaxRetries} failed, retrying in {DelaySeconds}s: {ErrorMessage}")]
+        public static partial void RetryingRequest(
+            ILogger logger, int attempt, int maxRetries, double delaySeconds, string errorMessage);
     }
 }
 

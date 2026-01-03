@@ -191,7 +191,7 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
                 TableName = "",
                 StartedAt = DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = ex.Message,
+                ErrorMessage = "Import failed.",
                 CurrentPhase = "Import failed with exception"
             };
 
