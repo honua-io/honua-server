@@ -103,7 +103,7 @@ public static class OwaspComplianceFramework
         var pathParameters = context.Request.RouteValues;
         foreach (var param in pathParameters)
         {
-            if (param.Key.ToLower().Contains("id") && int.TryParse(param.Value?.ToString(), out var id))
+            if (param.Key.Contains("id", StringComparison.OrdinalIgnoreCase) && int.TryParse(param.Value?.ToString(), out var id))
             {
                 // Basic validation - in real implementation, check ownership
                 if (id <= 0)

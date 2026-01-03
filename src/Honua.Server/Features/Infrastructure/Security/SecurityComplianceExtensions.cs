@@ -166,8 +166,7 @@ internal class DefaultCryptographicService : ICryptographicService
 
     public async Task<string> GenerateSecureHashAsync(string data)
     {
-        using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(data));
+        var hashBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(data));
         return await Task.FromResult(Convert.ToBase64String(hashBytes));
     }
 }
@@ -175,6 +174,13 @@ internal class DefaultCryptographicService : ICryptographicService
 // Placeholder service implementations
 internal class DefaultComplianceDashboardService : IComplianceDashboardService
 {
+    private static readonly string[] DefaultRecommendations =
+    {
+        "Implement stronger password policies",
+        "Enable multi-factor authentication",
+        "Review access control configurations"
+    };
+
     public async Task<object> GetExecutiveDashboardAsync(DateTime startDate, DateTime endDate)
     {
         return await Task.FromResult(new
@@ -216,12 +222,7 @@ internal class DefaultComplianceDashboardService : IComplianceDashboardService
             CoveredControls = 9,
             TotalControls = 10,
             Violations = new { Critical = 0, High = 1, Medium = 4, Low = 8 },
-            Recommendations = new[]
-            {
-                "Implement stronger password policies",
-                "Enable multi-factor authentication",
-                "Review access control configurations"
-            },
+            Recommendations = DefaultRecommendations,
             DateRange = new { startDate, endDate }
         });
     }

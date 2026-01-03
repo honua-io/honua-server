@@ -734,5 +734,6 @@ public class SecurityMonitoringService : IHostedService, IDisposable
     public void Dispose()
     {
         _monitoringTimer?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

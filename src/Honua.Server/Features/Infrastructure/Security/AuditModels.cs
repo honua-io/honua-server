@@ -185,6 +185,8 @@ public class AdministrativeAction
 /// </summary>
 public class ComplianceReport
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = false };
+
     public string ReportId { get; set; } = string.Empty;
     public DateTime GeneratedDate { get; set; }
     public DateTime StartDate { get; set; }
@@ -200,7 +202,7 @@ public class ComplianceReport
 
     public override string ToString()
     {
-        return JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = false });
+        return JsonSerializer.Serialize(this, SerializerOptions);
     }
 }
 

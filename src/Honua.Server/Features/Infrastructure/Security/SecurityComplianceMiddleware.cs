@@ -267,7 +267,7 @@ public class SecurityComplianceMiddleware
     {
         var contentType = context.Request.ContentType;
         if (!string.IsNullOrEmpty(contentType) &&
-            _options.AllowedContentTypes.Any() &&
+            _options.AllowedContentTypes.Count > 0 &&
             !_options.AllowedContentTypes.Any(allowed => contentType.StartsWith(allowed, StringComparison.OrdinalIgnoreCase)))
         {
             throw new SecurityValidationException($"Content type not allowed: {contentType}");

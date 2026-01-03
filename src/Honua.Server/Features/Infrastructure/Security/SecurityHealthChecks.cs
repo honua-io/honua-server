@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Security;
 
@@ -13,23 +12,10 @@ namespace Honua.Server.Features.Infrastructure.Security;
 public partial class SecurityHealthCheck : IHealthCheck
 {
     private readonly ILogger<SecurityHealthCheck> _logger;
-    private readonly SecurityHealthCheckOptions _options;
-    private readonly ComprehensiveAuditLogger _auditLogger;
-    private readonly SecurityMonitoringService _monitoringService;
-    private readonly IServiceProvider _serviceProvider;
 
-    public SecurityHealthCheck(
-        ILogger<SecurityHealthCheck> logger,
-        IOptions<SecurityHealthCheckOptions> options,
-        ComprehensiveAuditLogger auditLogger,
-        SecurityMonitoringService monitoringService,
-        IServiceProvider serviceProvider)
+    public SecurityHealthCheck(ILogger<SecurityHealthCheck> logger)
     {
         _logger = logger;
-        _options = options.Value;
-        _auditLogger = auditLogger;
-        _monitoringService = monitoringService;
-        _serviceProvider = serviceProvider;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)

@@ -176,6 +176,12 @@ public interface IMonitoringIntegrationService
 /// </summary>
 internal sealed class MonitoringIntegrationService : IMonitoringIntegrationService, IHostedService, IDisposable
 {
+    private static readonly JsonSerializerOptions ExportJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
     private readonly MonitoringIntegrationOptions _options;
     private readonly IBusinessAnalyticsService _businessAnalytics;
     private readonly IPerformanceIntelligenceService _performanceIntelligence;
@@ -297,11 +303,7 @@ internal sealed class MonitoringIntegrationService : IMonitoringIntegrationServi
             }
         };
 
-        return JsonSerializer.Serialize(exportData, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-        });
+        return JsonSerializer.Serialize(exportData, ExportJsonOptions);
     }
 
     public async Task<string> ExportCsvDataAsync(DateTimeOffset startTime, DateTimeOffset endTime, string dataType, string? tenantId = null)

@@ -94,6 +94,12 @@ internal sealed class AnomalyDetectionService : IAnomalyDetectionService, IHoste
     private readonly ConcurrentQueue<DetectedAnomaly> _detectedAnomalies = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _alertCooldowns = new();
 
+    private static readonly Action<ILogger, string, double, double, string, Exception?> LogAnomalyDetected =
+        LoggerMessage.Define<string, double, double, string>(
+            LogLevel.Warning,
+            new EventId(1, "AnomalyDetected"),
+            "Anomaly detected in metric {MetricName}: {Value} (confidence: {Confidence:F2}, reason: {Reason})");
+
     public AnomalyDetectionService(
         IOptions<AnomalyDetectionOptions> options,
         ILogger<AnomalyDetectionService> logger)
@@ -347,8 +353,7 @@ internal sealed class AnomalyDetectionService : IAnomalyDetectionService, IHoste
         _alertCooldowns.AddOrUpdate(alertKey, DateTimeOffset.UtcNow, (_, _) => DateTimeOffset.UtcNow);
 
         // Log the anomaly
-        _logger.LogWarning("Anomaly detected in metric {MetricName}: {Value} (confidence: {Confidence:F2}, reason: {Reason})",
-            metricName, value, result.Confidence, result.Reason);
+        LogAnomalyDetected(_logger, metricName, value, result.Confidence, result.Reason, null);
 
         // Record telemetry
         using var activity = HonuaTelemetry.StartActivity(HonuaTelemetry.Activities.AnomalyDetection);

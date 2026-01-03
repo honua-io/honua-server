@@ -373,8 +373,7 @@ public partial class ComprehensiveAuditLogger
     private string GenerateIntegrityHash(AuditEvent auditEvent)
     {
         var hashInput = $"{auditEvent.EventId}{auditEvent.Timestamp:O}{auditEvent.UserId}{auditEvent.EventType}{auditEvent.Resource}{auditEvent.Action}";
-        using var sha256 = SHA256.Create();
-        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(hashInput));
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(hashInput));
         return Convert.ToBase64String(hashBytes);
     }
 
@@ -404,9 +403,26 @@ public partial class ComprehensiveAuditLogger
     private void LogAuditEventToLogger(AuditEvent auditEvent)
     {
         var logLevel = MapSeverityToLogLevel(auditEvent.Severity);
-        _logger.Log(logLevel,
-            "AUDIT: {EventType} | User: {UserId} | Resource: {Resource} | Action: {Action} | IP: {ClientIp} | Risk: {RiskScore}",
-            auditEvent.EventType, auditEvent.UserId, auditEvent.Resource, auditEvent.Action, auditEvent.ClientIp, auditEvent.RiskScore);
+        var eventType = auditEvent.EventType.ToString();
+
+        switch (logLevel)
+        {
+            case LogLevel.Information:
+                AuditEventInformation(_logger, eventType, auditEvent.UserId, auditEvent.Resource, auditEvent.Action, auditEvent.ClientIp, auditEvent.RiskScore);
+                break;
+            case LogLevel.Warning:
+                AuditEventWarning(_logger, eventType, auditEvent.UserId, auditEvent.Resource, auditEvent.Action, auditEvent.ClientIp, auditEvent.RiskScore);
+                break;
+            case LogLevel.Error:
+                AuditEventError(_logger, eventType, auditEvent.UserId, auditEvent.Resource, auditEvent.Action, auditEvent.ClientIp, auditEvent.RiskScore);
+                break;
+            case LogLevel.Critical:
+                AuditEventCritical(_logger, eventType, auditEvent.UserId, auditEvent.Resource, auditEvent.Action, auditEvent.ClientIp, auditEvent.RiskScore);
+                break;
+            default:
+                AuditEventInformation(_logger, eventType, auditEvent.UserId, auditEvent.Resource, auditEvent.Action, auditEvent.ClientIp, auditEvent.RiskScore);
+                break;
+        }
     }
 
     private async Task CheckComplianceViolationsAsync(AuditEvent auditEvent)
@@ -432,7 +448,7 @@ public partial class ComprehensiveAuditLogger
             violations.Add("PRIVILEGE_ESCALATION_DETECTED");
         }
 
-        if (violations.Any())
+        if (violations.Count > 0)
         {
             await LogSecurityIncidentAsync(new SecurityIncident
             {
@@ -623,4 +639,16 @@ public partial class ComprehensiveAuditLogger
 
     [LoggerMessage(1007, LogLevel.Warning, "Privileged operation executed: {ActionType} by {AdminUserId} on {TargetResource}")]
     private static partial void PrivilegedOperationExecuted(ILogger logger, string actionType, string adminUserId, string targetResource);
+
+    [LoggerMessage(1008, LogLevel.Information, "AUDIT: {EventType} | User: {UserId} | Resource: {Resource} | Action: {Action} | IP: {ClientIp} | Risk: {RiskScore}")]
+    private static partial void AuditEventInformation(ILogger logger, string eventType, string? userId, string resource, string action, string? clientIp, int riskScore);
+
+    [LoggerMessage(1009, LogLevel.Warning, "AUDIT: {EventType} | User: {UserId} | Resource: {Resource} | Action: {Action} | IP: {ClientIp} | Risk: {RiskScore}")]
+    private static partial void AuditEventWarning(ILogger logger, string eventType, string? userId, string resource, string action, string? clientIp, int riskScore);
+
+    [LoggerMessage(1010, LogLevel.Error, "AUDIT: {EventType} | User: {UserId} | Resource: {Resource} | Action: {Action} | IP: {ClientIp} | Risk: {RiskScore}")]
+    private static partial void AuditEventError(ILogger logger, string eventType, string? userId, string resource, string action, string? clientIp, int riskScore);
+
+    [LoggerMessage(1011, LogLevel.Critical, "AUDIT: {EventType} | User: {UserId} | Resource: {Resource} | Action: {Action} | IP: {ClientIp} | Risk: {RiskScore}")]
+    private static partial void AuditEventCritical(ILogger logger, string eventType, string? userId, string resource, string action, string? clientIp, int riskScore);
 }
