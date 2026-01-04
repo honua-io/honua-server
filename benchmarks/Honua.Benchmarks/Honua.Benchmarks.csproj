@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="PerformanceDashboard.cs" />
+    <Compile Remove="PerformanceRegressionDetector.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Honua.Server\Honua.Server.csproj" />

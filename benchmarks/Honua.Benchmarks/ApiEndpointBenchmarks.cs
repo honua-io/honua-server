@@ -17,11 +17,11 @@ namespace Honua.Benchmarks;
 /// - MVT Tiles (Mapbox Vector Tiles)
 ///
 /// Performance targets for enterprise geospatial API workloads:
-/// - Query responses: <100ms p95 for simple queries, <500ms p95 for complex
-/// - Metadata endpoints: <50ms p95
-/// - Tile generation: <200ms p95 for zoom levels 0-10
-/// - Throughput: >1000 requests/second for simple queries
-/// - Memory usage: <50MB for concurrent requests
+/// - Query responses: &lt;100ms p95 for simple queries, &lt;500ms p95 for complex
+/// - Metadata endpoints: &lt;50ms p95
+/// - Tile generation: &lt;200ms p95 for zoom levels 0-10
+/// - Throughput: &gt;1000 requests/second for simple queries
+/// - Memory usage: &lt;50MB for concurrent requests
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RuntimeMoniker.Net90)]

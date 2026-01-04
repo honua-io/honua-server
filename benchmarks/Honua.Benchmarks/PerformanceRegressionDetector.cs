@@ -36,13 +36,13 @@ public class PerformanceRegressionDetector
             WarningRegressionThreshold = 0.10,   // 10%
             MemoryRegressionThreshold = 0.20,    // 20%
             MinSamplesForSignificance = 5,
-            SignificanceLevel = 0.05            // p &lt; 0.05
+            SignificanceLevel = 0.05            // p < 0.05
         };
     }
 
-    /// &lt;summary&gt;
+    /// <summary>
     /// Analyze benchmark results and detect performance regressions
-    /// &lt;/summary&gt;
+    /// </summary>
     public RegressionAnalysisResult AnalyzeResults(Summary benchmarkSummary)
     {
         var result = new RegressionAnalysisResult
@@ -89,9 +89,9 @@ public class PerformanceRegressionDetector
         return result;
     }
 
-    /// &lt;summary&gt;
+    /// <summary>
     /// Update baseline with current results (typically after accepting performance changes)
-    /// &lt;/summary&gt;
+    /// </summary>
     public void UpdateBaseline(Summary benchmarkSummary, string reason)
     {
         foreach (var report in benchmarkSummary.Reports)
@@ -108,9 +108,9 @@ public class PerformanceRegressionDetector
         SaveBaseline();
     }
 
-    /// &lt;summary&gt;
+    /// <summary>
     /// Generate CI-friendly report
-    /// &lt;/summary&gt;
+    /// </summary>
     public string GenerateCiReport(RegressionAnalysisResult result)
     {
         var report = new System.Text.StringBuilder();
@@ -131,7 +131,7 @@ public class PerformanceRegressionDetector
         report.AppendLine();
 
         // Critical regressions (blocking)
-        var criticalRegressions = result.Regressions.Where(r = &gt;
+        var criticalRegressions = result.Regressions.Where(r =>
         r.Severity == RegressionSeverity.Critical).ToList();
         if (criticalRegressions.Any())
         {
@@ -155,7 +155,7 @@ public class PerformanceRegressionDetector
         }
 
         // Warnings
-        var warnings = result.Regressions.Where(r = &gt;
+        var warnings = result.Regressions.Where(r =>
         r.Severity == RegressionSeverity.Warning).ToList();
         if (warnings.Any())
         {
@@ -169,7 +169,7 @@ public class PerformanceRegressionDetector
         }
 
         // Improvements
-        var improvements = result.Regressions.Where(r = &gt;
+        var improvements = result.Regressions.Where(r =>
         r.Severity == RegressionSeverity.Improvement).ToList();
         if (improvements.Any())
         {
@@ -217,17 +217,17 @@ public class PerformanceRegressionDetector
         return report.ToString();
     }
 
-    /// &lt;summary&gt;
+    /// <summary>
     /// Get exit code for CI integration
-    /// &lt;/summary&gt;
+    /// </summary>
     public int GetExitCode(RegressionAnalysisResult result)
     {
         return result.OverallStatus switch
         {
-            RegressionStatus.Passed = &gt; 0,
-            RegressionStatus.Warning = &gt; (object *)1,
-            RegressionStatus.Failed = &gt; (object *)2,
-            _ = &gt; (object *)1
+            RegressionStatus.Passed => 0,
+            RegressionStatus.Warning => (object *)1,
+            RegressionStatus.Failed => (object *)2,
+            _ => (object *)1
         };
     }
 
@@ -267,12 +267,12 @@ public class PerformanceRegressionDetector
         };
 
         // Check for memory regression
-        if (baseline.AllocatedBytesPerOperation & gt;
-        0 && current.AllocatedBytesPerOperation & gt;
+        if (baseline.AllocatedBytesPerOperation >
+        0 && current.AllocatedBytesPerOperation >
         0)
         {
             var memoryChange = (current.AllocatedBytesPerOperation - baseline.AllocatedBytesPerOperation) / baseline.AllocatedBytesPerOperation;
-            if (memoryChange & gt;
+            if (memoryChange >
             _thresholds.MemoryRegressionThreshold)
             {
                 regression.MemoryRegression = memoryChange;
@@ -280,22 +280,22 @@ public class PerformanceRegressionDetector
         }
 
         // Determine severity
-        if (statisticalSignificance & lt;
+        if (statisticalSignificance <
         _thresholds.SignificanceLevel &&
-            Math.Min(baseline.SampleCount, current.SampleCount) & gt;= _thresholds.MinSamplesForSignificance)
+            Math.Min(baseline.SampleCount, current.SampleCount) >= _thresholds.MinSamplesForSignificance)
         {
-            if (performanceChange & gt;
-            _thresholds.CriticalRegressionThreshold || regression.MemoryRegression & gt;
+            if (performanceChange >
+            _thresholds.CriticalRegressionThreshold || regression.MemoryRegression >
             _thresholds.MemoryRegressionThreshold)
             {
                 regression.Severity = RegressionSeverity.Critical;
             }
-            else if (performanceChange & gt;
+            else if (performanceChange >
             _thresholds.WarningRegressionThreshold)
             {
                 regression.Severity = RegressionSeverity.Warning;
             }
-            else if (performanceChange & lt;
+            else if (performanceChange <
             -_thresholds.WarningRegressionThreshold) // Improvement
             {
                 regression.Severity = RegressionSeverity.Improvement;
@@ -327,22 +327,22 @@ public class PerformanceRegressionDetector
 
         // Approximate p-value for t-distribution (simplified)
         // This is a rough approximation - use proper statistical libraries in production
-        if (tStat & gt;
-        2.576) return 0.01;   // p &lt; 0.01
-        if (tStat & gt;
-        1.960) return 0.05;   // p &lt; 0.05
-        if (tStat & gt;
-        1.645) return 0.10;   // p &lt; 0.10
-        return 0.20; // p &gt;= 0.20
+        if (tStat >
+        2.576) return 0.01;   // p < 0.01
+        if (tStat >
+        1.960) return 0.05;   // p < 0.05
+        if (tStat >
+        1.645) return 0.10;   // p < 0.10
+        return 0.20; // p >= 0.20
     }
 
     private RegressionStatus DetermineOverallStatus(RegressionAnalysisResult result)
     {
-        if (result.CriticalRegressions & gt;
+        if (result.CriticalRegressions >
         0)
             return RegressionStatus.Failed;
 
-        if (result.WarningRegressions & gt;
+        if (result.WarningRegressions >
         0)
             return RegressionStatus.Warning;
 
@@ -356,8 +356,8 @@ public class PerformanceRegressionDetector
             try
             {
                 var json = File.ReadAllText(_baselineFilePath);
-                return JsonSerializer.Deserialize & lt;
-                PerformanceBaseline & gt;
+                return JsonSerializer.Deserialize <
+                PerformanceBaseline >
                 (json) ?? new PerformanceBaseline();
             }
             catch (Exception ex)
@@ -384,29 +384,29 @@ public class PerformanceRegressionDetector
         }
     }
 
-    private static string GetStatusEmoji(RegressionStatus status) =&gt; status switch
+    private static string GetStatusEmoji(RegressionStatus status) => status switch
     {
-        RegressionStatus.Passed =&gt; "✅",
-        RegressionStatus.Warning =&gt; "⚠️",
-        RegressionStatus.Failed =&gt; "❌",
-        _ =&gt; "❓"
+        RegressionStatus.Passed => "✅",
+        RegressionStatus.Warning => "⚠️",
+        RegressionStatus.Failed => "❌",
+        _ => "❓"
     };
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Performance baseline data structure
-/// &lt;/summary&gt;
+/// </summary>
 public class PerformanceBaseline
 {
     public int Version { get; set; } = 1;
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
     public string UpdateReason { get; set; } = "Initial baseline";
-    public Dictionary&lt;string, BenchmarkMetrics&gt; Benchmarks { get; set; } = new();
+    public Dictionary<string, BenchmarkMetrics> Benchmarks { get; set; } = new();
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Metrics for a single benchmark
-/// &lt;/summary&gt;
+/// </summary>
 public class BenchmarkMetrics
 {
     public double MedianNanoseconds { get; set; }
@@ -422,9 +422,9 @@ public class BenchmarkMetrics
     public DateTime Timestamp { get; set; }
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Regression detection thresholds
-/// &lt;/summary&gt;
+/// </summary>
 public class PerformanceThresholds
 {
     public double CriticalRegressionThreshold { get; set; }
@@ -434,9 +434,9 @@ public class PerformanceThresholds
     public double SignificanceLevel { get; set; }
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Analysis result for performance regression detection
-/// &lt;/summary&gt;
+/// </summary>
 public class RegressionAnalysisResult
 {
     public DateTime Timestamp { get; set; }
@@ -446,12 +446,12 @@ public class RegressionAnalysisResult
     public int WarningRegressions { get; set; }
     public int Improvements { get; set; }
     public int NewBenchmarks { get; set; }
-    public List&lt;BenchmarkRegression&gt; Regressions { get; set; } = new();
+    public List<BenchmarkRegression> Regressions { get; set; } = new();
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Individual benchmark regression data
-/// &lt;/summary&gt;
+/// </summary>
 public class BenchmarkRegression
 {
     public string BenchmarkName { get; set; } = string.Empty;
@@ -463,9 +463,9 @@ public class BenchmarkRegression
     public RegressionSeverity Severity { get; set; }
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Regression severity levels
-/// &lt;/summary&gt;
+/// </summary>
 public enum RegressionSeverity
 {
     None,
@@ -474,9 +474,9 @@ public enum RegressionSeverity
     Critical
 }
 
-/// &lt;summary&gt;
+/// <summary>
 /// Overall regression status
-/// &lt;/summary&gt;
+/// </summary>
 public enum RegressionStatus
 {
     Passed,
