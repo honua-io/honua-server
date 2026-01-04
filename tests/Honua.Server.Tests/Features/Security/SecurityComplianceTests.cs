@@ -20,7 +20,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     private const string AdminPassword = "valid-test-key";
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
-    private static readonly string[] SensitiveDataPatterns =
+    private static readonly string[] _sensitiveDataPatterns =
     [
         "password",
         "secret",
@@ -29,7 +29,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         "api_key",
         "token"
     ];
-    private static readonly string[] SystemLeakPatterns =
+    private static readonly string[] _systemLeakPatterns =
     [
         "pg_",
         "postgres",
@@ -391,7 +391,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
             var content = await response.Content.ReadAsStringAsync();
 
             // Sensitive data should not be in plain text
-            content.Should().NotContainAny(SensitiveDataPatterns,
+            content.Should().NotContainAny(_sensitiveDataPatterns,
                 "Sensitive data should be encrypted or masked");
 
             // Should use HTTPS for sensitive endpoints
@@ -445,7 +445,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
 
         // Error messages should not reveal system information
-        content.Should().NotContainAny(SystemLeakPatterns, "Error messages should not leak system information");
+        content.Should().NotContainAny(_systemLeakPatterns, "Error messages should not leak system information");
     }
 
     [IntegrationTest]

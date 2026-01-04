@@ -12,28 +12,28 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public class SecurityMonitoringService : IHostedService, IDisposable
 {
-    private static readonly Action<ILogger, Exception?> LogServiceStarted =
+    private static readonly Action<ILogger, Exception?> _logServiceStarted =
         LoggerMessage.Define(LogLevel.Information, new EventId(3001, "ServiceStarted"), "Security monitoring service started");
 
-    private static readonly Action<ILogger, Exception?> LogServiceStopped =
+    private static readonly Action<ILogger, Exception?> _logServiceStopped =
         LoggerMessage.Define(LogLevel.Information, new EventId(3002, "ServiceStopped"), "Security monitoring service stopped");
 
-    private static readonly Action<ILogger, string, Exception> LogEventAnalysisError =
+    private static readonly Action<ILogger, string, Exception> _logEventAnalysisError =
         LoggerMessage.Define<string>(LogLevel.Error, new EventId(3003, "EventAnalysisError"), "Error analyzing security event {EventId}");
 
-    private static readonly Action<ILogger, Exception> LogMonitoringCycleError =
+    private static readonly Action<ILogger, Exception> _logMonitoringCycleError =
         LoggerMessage.Define(LogLevel.Error, new EventId(3004, "MonitoringCycleError"), "Error in security monitoring cycle");
 
-    private static readonly Action<ILogger, string, string, int, Exception?> LogSecurityAlertProcessed =
+    private static readonly Action<ILogger, string, string, int, Exception?> _logSecurityAlertProcessed =
         LoggerMessage.Define<string, string, int>(LogLevel.Warning, new EventId(3005, "SecurityAlertProcessed"), "Security alert processed: {AlertType} - {Title} (Risk: {RiskScore})");
 
-    private static readonly Action<ILogger, string, Exception> LogAlertProcessingError =
+    private static readonly Action<ILogger, string, Exception> _logAlertProcessingError =
         LoggerMessage.Define<string>(LogLevel.Error, new EventId(3006, "AlertProcessingError"), "Error processing security alert {AlertId}");
 
-    private static readonly Action<ILogger, string, int, int, int, Exception?> LogSecurityAnalysis =
+    private static readonly Action<ILogger, string, int, int, int, Exception?> _logSecurityAnalysis =
         LoggerMessage.Define<string, int, int, int>(LogLevel.Warning, new EventId(3007, "SecurityAnalysis"), "Security analysis for {EventId}: Risk={RiskScore}, Threats={ThreatCount}, Anomalies={AnomalyCount}");
 
-    private static readonly string[] SqlInjectionPatterns =
+    private static readonly string[] _sqlInjectionPatterns =
     {
         @"\b(UNION|SELECT|INSERT|UPDATE|DELETE|DROP)\b",
         @"[';].*(-{2}|/\*)",
@@ -63,13 +63,13 @@ public class SecurityMonitoringService : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        LogServiceStarted(_logger, null);
+        _logServiceStarted(_logger, null);
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        LogServiceStopped(_logger, null);
+        _logServiceStopped(_logger, null);
         return Task.CompletedTask;
     }
 
@@ -118,7 +118,7 @@ public class SecurityMonitoringService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            LogEventAnalysisError(_logger, auditEvent.EventId, ex);
+            _logEventAnalysisError(_logger, auditEvent.EventId, ex);
             result.AnalysisErrors.Add($"Analysis failed: {ex.Message}");
         }
 
@@ -346,7 +346,7 @@ public class SecurityMonitoringService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            LogMonitoringCycleError(_logger, ex);
+            _logMonitoringCycleError(_logger, ex);
         }
     }
 
@@ -377,11 +377,11 @@ public class SecurityMonitoringService : IHostedService, IDisposable
             // Store alert for tracking
             await StoreAlertAsync(alert);
 
-            LogSecurityAlertProcessed(_logger, alert.AlertType.ToString(), alert.Title, alert.RiskScore, null);
+            _logSecurityAlertProcessed(_logger, alert.AlertType.ToString(), alert.Title, alert.RiskScore, null);
         }
         catch (Exception ex)
         {
-            LogAlertProcessingError(_logger, alert.AlertId, ex);
+            _logAlertProcessingError(_logger, alert.AlertId, ex);
         }
     }
 
@@ -419,7 +419,7 @@ public class SecurityMonitoringService : IHostedService, IDisposable
     // Helper methods for threat detection
     private bool ContainsSqlInjectionPatterns(string input)
     {
-        return SqlInjectionPatterns.Any(pattern =>
+        return _sqlInjectionPatterns.Any(pattern =>
             System.Text.RegularExpressions.Regex.IsMatch(input, pattern,
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase));
     }
@@ -683,7 +683,7 @@ public class SecurityMonitoringService : IHostedService, IDisposable
     {
         if (result.RiskScore > 50 || result.Threats.Count > 0 || result.Anomalies.Count > 0)
         {
-            LogSecurityAnalysis(_logger, auditEvent.EventId, result.RiskScore, result.Threats.Count, result.Anomalies.Count, null);
+            _logSecurityAnalysis(_logger, auditEvent.EventId, result.RiskScore, result.Threats.Count, result.Anomalies.Count, null);
         }
     }
 

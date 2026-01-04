@@ -15,7 +15,7 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public partial class ComprehensiveAuditLogger
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = false };
 
     private readonly ILogger<ComprehensiveAuditLogger> _logger;
     private readonly AuditLoggerOptions _options;
@@ -550,7 +550,7 @@ public partial class ComprehensiveAuditLogger
 
     private string GenerateReportIntegrityHash(ComplianceReport report)
     {
-        var hashInput = JsonSerializer.Serialize(report, JsonOptions);
+        var hashInput = JsonSerializer.Serialize(report, _jsonOptions);
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(hashInput));
         return Convert.ToBase64String(hashBytes);
     }

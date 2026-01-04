@@ -30,7 +30,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     private const int PointsLayerId = 11001;
     private const int PolygonsLayerId = 11002;
     private const int LinesLayerId = 11003;
-    private static readonly GeometryFactory GeometryFactory = new(new PrecisionModel(), 4326);
+    private static readonly GeometryFactory _geometryFactory = new(new PrecisionModel(), 4326);
 
     private readonly DatabaseFixtureAdapter _fixture;
     private readonly string _testSchema;
@@ -221,7 +221,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var store = CreateFeatureStore();
         var envelope = new Envelope(-122.0, -121.9, 37.0, 37.1);
-        var geometry = GeometryFactory.ToGeometry(envelope);
+        var geometry = _geometryFactory.ToGeometry(envelope);
         var wkb = new WKBWriter().Write(geometry);
         var spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, 4326);
         var query = FeatureQuery.WithSpatialFilter(spatialFilter);
@@ -510,21 +510,21 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     private static byte[] CreatePointWkb(double lon, double lat)
     {
-        var point = GeometryFactory.CreatePoint(new Coordinate(lon, lat));
+        var point = _geometryFactory.CreatePoint(new Coordinate(lon, lat));
         return new WKBWriter().Write(point);
     }
 
     private static byte[] CreateLineStringWkb(IEnumerable<(double lon, double lat)> coordinates)
     {
         var coords = coordinates.Select(c => new Coordinate(c.lon, c.lat)).ToArray();
-        var line = GeometryFactory.CreateLineString(coords);
+        var line = _geometryFactory.CreateLineString(coords);
         return new WKBWriter().Write(line);
     }
 
     private static byte[] CreatePolygonWkb(string wkt)
     {
         var polygon = new WKTReader(NtsGeometryServices.Instance).Read(wkt);
-        polygon.SRID = GeometryFactory.SRID;
+        polygon.SRID = _geometryFactory.SRID;
         return new WKBWriter().Write(polygon);
     }
 }

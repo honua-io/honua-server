@@ -75,10 +75,10 @@ public static class SecurityComplianceExtensions
 // Default implementations of service interfaces
 internal class DefaultAuditLogStorage : IAuditLogStorage
 {
-    private static readonly Action<ILogger, string, Exception?> LogAuditEventStored =
+    private static readonly Action<ILogger, string, Exception?> _logAuditEventStored =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(4001, "AuditEventStored"), "Stored audit event {EventId}");
 
-    private static readonly Action<ILogger, string, Exception?> LogComplianceReportStored =
+    private static readonly Action<ILogger, string, Exception?> _logComplianceReportStored =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(4002, "ComplianceReportStored"), "Stored compliance report {ReportId}");
 
     private readonly ILogger<DefaultAuditLogStorage> _logger;
@@ -93,7 +93,7 @@ internal class DefaultAuditLogStorage : IAuditLogStorage
     public async Task StoreAuditEventAsync(AuditEvent auditEvent)
     {
         _events.Add(auditEvent);
-        LogAuditEventStored(_logger, auditEvent.EventId, null);
+        _logAuditEventStored(_logger, auditEvent.EventId, null);
         await Task.CompletedTask;
     }
 
@@ -120,7 +120,7 @@ internal class DefaultAuditLogStorage : IAuditLogStorage
     public async Task StoreComplianceReportAsync(ComplianceReport report)
     {
         _reports.Add(report);
-        LogComplianceReportStored(_logger, report.ReportId, null);
+        _logComplianceReportStored(_logger, report.ReportId, null);
         await Task.CompletedTask;
     }
 
@@ -174,7 +174,7 @@ internal class DefaultCryptographicService : ICryptographicService
 // Placeholder service implementations
 internal class DefaultComplianceDashboardService : IComplianceDashboardService
 {
-    private static readonly string[] DefaultRecommendations =
+    private static readonly string[] _defaultRecommendations =
     {
         "Implement stronger password policies",
         "Enable multi-factor authentication",
@@ -222,7 +222,7 @@ internal class DefaultComplianceDashboardService : IComplianceDashboardService
             CoveredControls = 9,
             TotalControls = 10,
             Violations = new { Critical = 0, High = 1, Medium = 4, Low = 8 },
-            Recommendations = DefaultRecommendations,
+            Recommendations = _defaultRecommendations,
             DateRange = new { startDate, endDate }
         });
     }

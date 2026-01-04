@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public class AuditEvent
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions _serializerOptions = new() { WriteIndented = false };
 
     public string EventId { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
@@ -31,7 +31,7 @@ public class AuditEvent
 
     public override string ToString()
     {
-        return JsonSerializer.Serialize(this, SerializerOptions);
+        return JsonSerializer.Serialize(this, _serializerOptions);
     }
 }
 
@@ -185,7 +185,7 @@ public class AdministrativeAction
 /// </summary>
 public class ComplianceReport
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions _serializerOptions = new() { WriteIndented = false };
 
     public string ReportId { get; set; } = string.Empty;
     public DateTime GeneratedDate { get; set; }
@@ -202,7 +202,7 @@ public class ComplianceReport
 
     public override string ToString()
     {
-        return JsonSerializer.Serialize(this, SerializerOptions);
+        return JsonSerializer.Serialize(this, _serializerOptions);
     }
 }
 
