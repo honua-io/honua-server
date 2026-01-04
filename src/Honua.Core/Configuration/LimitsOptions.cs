@@ -83,7 +83,7 @@ public sealed class QueryLimits
     /// Range: 1,000-1,000,000.
     /// </summary>
     [Range(1000, 1000000, ErrorMessage = "MaxOffset must be between 1,000 and 1,000,000")]
-    public int MaxOffset { get; init; } = 100000;
+    public int MaxOffset { get; init; } = 1000000;
 
     /// <summary>
     /// Maximum bounding box area in square kilometers.

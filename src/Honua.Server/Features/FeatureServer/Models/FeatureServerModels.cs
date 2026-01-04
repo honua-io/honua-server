@@ -779,6 +779,16 @@ public sealed class QueryParameters
     public bool ReturnDistance { get; init; }
 
     /// <summary>
+    /// Whether to include centroid geometry for returned features.
+    /// </summary>
+    public bool ReturnCentroid { get; init; }
+
+    /// <summary>
+    /// Whether to return distinct values for the requested fields.
+    /// </summary>
+    public bool ReturnDistinctValues { get; init; }
+
+    /// <summary>
     /// Array of object IDs to retrieve. When specified, only features with these IDs will be returned.
     /// This parameter provides an alternative to using a WHERE clause for object ID filtering.
     /// </summary>

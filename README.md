@@ -91,7 +91,7 @@ HONUA_ADMIN_PASSWORD="change-me"
 # Query limits (affects all protocols: FeatureServer, OGC API, OData, MVT)
 Limits__Query__MaxRecordCount=2000        # Max features per query
 Limits__Query__DefaultRecordCount=1000    # Default when not specified
-Limits__Query__MaxOffset=100000           # Max paging offset
+Limits__Query__MaxOffset=1000000          # Max paging offset
 Limits__Query__QueryTimeout=00:00:30      # Query execution timeout
 
 # Geometry limits

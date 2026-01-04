@@ -169,7 +169,9 @@ internal static partial class FeatureServerEndpoints
                 "returnIdsOnly",
                 "returnCountOnly",
                 "returnExtentOnly",
-                "returnDistance"
+                "returnDistance",
+                "returnCentroid",
+                "returnDistinctValues"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -852,6 +854,18 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        if (!TryParseQueryBool(query, "returnCentroid", false, out bool returnCentroid, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnDistinctValues", false, out bool returnDistinctValues, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
         if (!TryParseQueryInt(query, "resultOffset", out int? resultOffset, out error))
         {
             queryParams = new QueryParameters();
@@ -887,6 +901,8 @@ internal static partial class FeatureServerEndpoints
             ReturnCountOnly = returnCountOnly,
             ReturnExtentOnly = returnExtentOnly,
             ReturnDistance = returnDistance,
+            ReturnCentroid = returnCentroid,
+            ReturnDistinctValues = returnDistinctValues,
             F = format,
             ResultOffset = resultOffset,
             ResultRecordCount = resultRecordCount,
