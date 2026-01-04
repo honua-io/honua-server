@@ -403,7 +403,7 @@ describe('Pagination', () => {
       const response = await client.query({
         where: '1=1',
         resultRecordCount: 10,
-        resultOffset: 1000000,
+        resultOffset: 1000001,
       });
 
       expect(response.status).toBe(400);
