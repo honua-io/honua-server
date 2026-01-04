@@ -8,7 +8,7 @@ namespace Honua.Server.Features.FeatureServer.Services;
 
 /// <summary>
 /// Service for validating feature query parameters and limits.
-/// Extracted from FeatureServerHandler to improve separation of concerns.
+/// Extracted from FeatureServerQueryHandler to improve separation of concerns.
 /// </summary>
 internal sealed class FeatureQueryValidationService
 {

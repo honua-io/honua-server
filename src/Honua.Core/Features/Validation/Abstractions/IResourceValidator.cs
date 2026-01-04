@@ -17,7 +17,7 @@ namespace Honua.Core.Features.Validation.Abstractions;
 /// </para>
 /// <para>
 /// Behavior reference: Consolidates validation patterns from:
-/// - FeatureServerHandler.cs (two-step service -> layer validation)
+/// - FeatureServerEditHandler.cs (two-step service -> layer validation)
 /// - FeaturesEndpoints.cs (collection ID parsing and layer lookup)
 /// - ODataEndpoints.cs (implicit route parameter validation)
 /// </para>

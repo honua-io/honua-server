@@ -157,8 +157,13 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeature
     Honua.Server.Features.FeatureServer.Services.FeatureQueryValidator>();
 builder.Services.AddScoped<Honua.Core.Features.Geometry.Abstractions.IGeometryValidator,
     Honua.Server.Features.FeatureServer.Services.GeometryValidator>();
-builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.FeatureServerServices>();
-builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHandler>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.SpatialReferenceResolver>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeatureServerQueryServices,
+    Honua.Server.Features.FeatureServer.Services.FeatureServerQueryServices>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.Services.IFeatureServerGeometryServices,
+    Honua.Server.Features.FeatureServer.Services.FeatureServerGeometryServices>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerQueryHandler>();
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerEditHandler>();
 
 // Register Esri import job manager and background service
 builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistributedImportJobManager>(sp =>
