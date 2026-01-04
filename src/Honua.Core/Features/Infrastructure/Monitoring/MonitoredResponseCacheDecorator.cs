@@ -15,7 +15,7 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This decorator wraps any IResponseCache implementation to provide detailed cache performance metrics
 /// including hit/miss ratios, operation timing, cache effectiveness, and storage analytics.
 /// </remarks>
-internal sealed class MonitoredResponseCacheDecorator : IResponseCache
+public sealed class MonitoredResponseCacheDecorator : IResponseCache
 {
     private readonly IResponseCache _innerCache;
     private readonly IPerformanceMonitor _performanceMonitor;

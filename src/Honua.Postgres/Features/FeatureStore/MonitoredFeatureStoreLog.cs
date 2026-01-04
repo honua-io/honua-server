@@ -261,6 +261,22 @@ internal static partial class MonitoredFeatureStoreLog
 
     #endregion
 
+    #region SRID Operations (7150-7159)
+
+    /// <summary>
+    /// Logs when SRID lookup fails.
+    /// </summary>
+    /// <param name="logger">The logger instance</param>
+    /// <param name="layerId">The layer identifier</param>
+    /// <param name="exception">Exception that occurred</param>
+    [LoggerMessage(
+        EventId = 7151,
+        Level = LogLevel.Warning,
+        Message = "Failed to lookup SRID for layer {LayerId}")]
+    public static partial void SridLookupFailed(ILogger logger, int layerId, Exception exception);
+
+    #endregion
+
     #region Performance Monitoring (7200-7299)
 
     /// <summary>

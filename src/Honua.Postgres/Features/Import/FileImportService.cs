@@ -24,12 +24,15 @@ internal sealed class FileImportService : IFileImportService
     private readonly string _connectionString;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ISchemaContext? _schemaContext;
+    private readonly Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? _cloudStorage;
 
-    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null)
+    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null,
+        Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
         _schemaContext = schemaContext;
+        _cloudStorage = cloudStorage;
     }
 
     /// <inheritdoc />
@@ -75,9 +78,42 @@ internal sealed class FileImportService : IFileImportService
                 stopwatch.Elapsed);
         }
 
+        request.Validate();
+
+        if (request.UsesCloudStorage && _cloudStorage == null)
+        {
+            throw new InvalidOperationException("Cloud storage is not configured, but CloudFileId was provided.");
+        }
+
+        Stream fileStream;
+        var shouldDisposeStream = false;
+
+        if (request.UsesCloudStorage)
+        {
+            var downloadStream = await _cloudStorage!.DownloadAsync(request.CloudFileId!, cancellationToken);
+            if (downloadStream == null)
+            {
+                return ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    "Failed to download file from cloud storage.",
+                    stopwatch.Elapsed);
+            }
+
+            fileStream = downloadStream;
+            shouldDisposeStream = true;
+        }
+        else
+        {
+            fileStream = request.FileStream!;
+        }
+
         try
         {
-            var features = await ReadFeaturesAsync(request.FileStream, format.Value, cancellationToken);
+            var detectedSrid = request.SourceSrid ??
+                await DetectCrsFromFileAsync(request.FileName, fileStream!, format.Value, cancellationToken);
+
+            var features = await ReadFeaturesAsync(fileStream!, format.Value, cancellationToken);
 
             if (!features.Any())
             {
@@ -87,9 +123,6 @@ internal sealed class FileImportService : IFileImportService
                     "No features found in file",
                     stopwatch.Elapsed);
             }
-
-            // Detect CRS if not provided in request
-            var detectedSrid = request.SourceSrid ?? await DetectCrsFromFileAsync(request.FileName, request.FileStream, format.Value, cancellationToken);
 
             // Use detected SRID or fall back to WGS84
             var sourceSrid = detectedSrid ?? 4326;
@@ -111,38 +144,231 @@ internal sealed class FileImportService : IFileImportService
                 detectedSrid,
                 stopwatch.Elapsed);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             stopwatch.Stop();
             return ImportResult.CreateFailure(
                 request.TableName,
                 format.Value,
-                "Import failed: " + ex.Message,
+                "Import failed.",
                 stopwatch.Elapsed);
+        }
+        finally
+        {
+            if (shouldDisposeStream)
+            {
+                await fileStream.DisposeAsync();
+            }
         }
     }
 
     /// <inheritdoc />
     public async Task<ImportResult> ImportFileAsync(ImportRequest request, IProgress<ImportProgress>? progress, CancellationToken cancellationToken = default)
     {
-        // For now, implement without progress reporting by calling the base method
-        // TODO: Add actual progress reporting in future implementation
-        var result = await ImportFileAsync(request, cancellationToken);
+        var jobId = Guid.NewGuid().ToString();
+        var startTime = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
 
-        // Report completion
+        // Report start
         progress?.Report(new ImportProgress
         {
-            JobId = Guid.NewGuid().ToString(),
-            Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
-            TableName = result.TableName,
-            Format = result.Format,
-            FeaturesProcessed = result.FeatureCount,
-            StartedAt = DateTimeOffset.UtcNow.AddSeconds(-1), // Approximate start time
-            CompletedAt = DateTimeOffset.UtcNow,
-            ErrorMessage = result.ErrorMessage
+            JobId = jobId,
+            Status = ImportStatus.Processing,
+            TableName = request.TableName,
+            Format = SupportedFileFormat.GeoJson, // Will be updated once detected
+            FeaturesProcessed = 0,
+            StartedAt = startTime
         });
 
-        return result;
+        var format = DetectFormat(request.FileName);
+        if (format == null)
+        {
+            var errorMessage = "Unsupported file format: " + Path.GetExtension(request.FileName);
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Failed,
+                TableName = request.TableName,
+                Format = SupportedFileFormat.GeoJson,
+                FeaturesProcessed = 0,
+                StartedAt = startTime,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = errorMessage
+            });
+
+            return ImportResult.CreateFailure(
+                request.TableName,
+                SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed);
+        }
+
+        // Update progress with detected format
+        progress?.Report(new ImportProgress
+        {
+            JobId = jobId,
+            Status = ImportStatus.Processing,
+            TableName = request.TableName,
+            Format = format.Value,
+            FeaturesProcessed = 0,
+            StartedAt = startTime
+        });
+
+        Stream? fileStream = null;
+        var shouldDisposeStream = false;
+
+        try
+        {
+            // Validate request has either FileStream or CloudFileId
+            request.Validate();
+
+            if (request.UsesCloudStorage)
+            {
+                // Download file from cloud storage
+                if (_cloudStorage == null)
+                {
+                    throw new InvalidOperationException("Cloud storage is not configured, but CloudFileId was provided.");
+                }
+
+                var downloadStream = await _cloudStorage.DownloadAsync(request.CloudFileId!, cancellationToken);
+                if (downloadStream == null)
+                {
+                    var errorMessage = "Failed to download file from cloud storage.";
+                    progress?.Report(new ImportProgress
+                    {
+                        JobId = jobId,
+                        Status = ImportStatus.Failed,
+                        TableName = request.TableName,
+                        Format = format.Value,
+                        FeaturesProcessed = 0,
+                        StartedAt = startTime,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        ErrorMessage = errorMessage
+                    });
+
+                    return ImportResult.CreateFailure(request.TableName, format.Value, errorMessage, stopwatch.Elapsed);
+                }
+
+                fileStream = downloadStream;
+                shouldDisposeStream = true;
+            }
+            else
+            {
+                // Use provided file stream
+                fileStream = request.FileStream!;
+            }
+
+            var detectedSrid = request.SourceSrid ??
+                await DetectCrsFromFileAsync(request.FileName, fileStream!, format.Value, cancellationToken);
+
+            var features = await ReadFeaturesAsync(fileStream!, format.Value, cancellationToken);
+            var featureList = features.ToList(); // Materialize for count and reuse
+
+            if (featureList.Count == 0)
+            {
+                var errorMessage = "No features found in file";
+                progress?.Report(new ImportProgress
+                {
+                    JobId = jobId,
+                    Status = ImportStatus.Failed,
+                    TableName = request.TableName,
+                    Format = format.Value,
+                    FeaturesProcessed = 0,
+                    StartedAt = startTime,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = errorMessage
+                });
+
+                return ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed);
+            }
+
+            // Report CRS detection phase
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Processing,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = 0,
+                EstimatedTotalFeatures = featureList.Count,
+                StartedAt = startTime
+            });
+
+            var sourceSrid = detectedSrid ?? 4326;
+
+            // Report import phase
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Processing,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = 0,
+                EstimatedTotalFeatures = featureList.Count,
+                StartedAt = startTime
+            });
+
+            var featureCount = await ImportFeaturesToPostGisAsync(
+                featureList,
+                request.TableName,
+                sourceSrid,
+                request.TargetSrid,
+                request.OverwriteExisting,
+                cancellationToken);
+
+            stopwatch.Stop();
+
+            // Report completion
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Completed,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = featureCount,
+                EstimatedTotalFeatures = featureCount,
+                StartedAt = startTime,
+                CompletedAt = DateTimeOffset.UtcNow
+            });
+
+            return ImportResult.CreateSuccess(
+                request.TableName,
+                format.Value,
+                featureCount,
+                detectedSrid,
+                stopwatch.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report(new ImportProgress
+            {
+                JobId = jobId,
+                Status = ImportStatus.Failed,
+                TableName = request.TableName,
+                Format = format.Value,
+                FeaturesProcessed = 0,
+                StartedAt = startTime,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = ex.Message
+            });
+
+            return ImportResult.CreateFailure(
+                request.TableName,
+                format.Value,
+                ex.Message,
+                stopwatch.Elapsed);
+        }
+        finally
+        {
+            if (shouldDisposeStream && fileStream != null)
+            {
+                await fileStream.DisposeAsync();
+            }
+        }
     }
 
     /// <summary>

@@ -27,17 +27,17 @@ public class EsriImportEndpointTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    #region POST /api/import/esri/discover
+    #region POST /api/v1/admin/import/esri/discover
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/discover")]
+    [Endpoint("POST /api/v1/admin/import/esri/discover")]
     public async Task Discover_WithMissingServiceUrl_ReturnsBadRequest()
     {
         // Arrange
         var request = new { };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/discover", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/discover", request);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -46,14 +46,14 @@ public class EsriImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/discover")]
+    [Endpoint("POST /api/v1/admin/import/esri/discover")]
     public async Task Discover_WithInvalidUrl_ReturnsBadRequest()
     {
         // Arrange
         var request = new { ServiceUrl = "not-a-valid-url" };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/discover", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/discover", request);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -62,7 +62,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/discover")]
+    [Endpoint("POST /api/v1/admin/import/esri/discover")]
     public async Task Discover_WithNonExistentServer_ReturnsBadGateway()
     {
         // Arrange - use a URL that will fail to connect
@@ -73,7 +73,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/discover", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/discover", request);
 
         // Assert - should return 502 Bad Gateway when can't connect
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
@@ -81,10 +81,10 @@ public class EsriImportEndpointTests : IAsyncLifetime
 
     #endregion
 
-    #region POST /api/import/esri/start
+    #region POST /api/v1/admin/import/esri/start
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/start")]
+    [Endpoint("POST /api/v1/admin/import/esri/start")]
     public async Task Start_WithMissingServiceUrl_ReturnsBadRequest()
     {
         // Arrange
@@ -95,7 +95,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/start", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/start", request);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -104,7 +104,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/start")]
+    [Endpoint("POST /api/v1/admin/import/esri/start")]
     public async Task Start_WithMissingTableName_ReturnsBadRequest()
     {
         // Arrange
@@ -115,7 +115,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/start", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/start", request);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -124,7 +124,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/start")]
+    [Endpoint("POST /api/v1/admin/import/esri/start")]
     public async Task Start_WithInvalidTableName_ReturnsBadRequest()
     {
         // Arrange
@@ -136,7 +136,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/start", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/start", request);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -145,7 +145,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/start")]
+    [Endpoint("POST /api/v1/admin/import/esri/start")]
     public async Task Start_WithValidRequest_ReturnsAccepted()
     {
         // Arrange
@@ -157,7 +157,7 @@ public class EsriImportEndpointTests : IAsyncLifetime
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/import/esri/start", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/start", request);
 
         // Assert - should return 202 Accepted with job info
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
@@ -170,21 +170,21 @@ public class EsriImportEndpointTests : IAsyncLifetime
 
     #endregion
 
-    #region GET /api/import/esri/jobs/{jobId}
+    #region GET /api/v1/admin/import/esri/jobs/{jobId}
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/esri/jobs/{jobId}")]
+    [Endpoint("GET /api/v1/admin/import/esri/jobs/{jobId}")]
     public async Task GetJobStatus_WithNonExistentJob_ReturnsNotFound()
     {
         // Act
-        var response = await _client.GetAsync("/api/import/esri/jobs/nonexistent123");
+        var response = await _client.GetAsync("/api/v1/admin/import/esri/jobs/nonexistent123");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/esri/jobs/{jobId}")]
+    [Endpoint("GET /api/v1/admin/import/esri/jobs/{jobId}")]
     public async Task GetJobStatus_AfterStartingJob_ReturnsProgress()
     {
         // Arrange - start a job first
@@ -195,14 +195,14 @@ public class EsriImportEndpointTests : IAsyncLifetime
             TableName = "test_job_status"
         };
 
-        var startResponse = await _client.PostAsJsonAsync("/api/import/esri/start", startRequest);
+        var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/start", startRequest);
         startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var startContent = await startResponse.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = startContent.GetProperty("jobId").GetString();
 
         // Act
-        var response = await _client.GetAsync($"/api/import/esri/jobs/{jobId}");
+        var response = await _client.GetAsync($"/api/v1/admin/import/esri/jobs/{jobId}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -215,21 +215,21 @@ public class EsriImportEndpointTests : IAsyncLifetime
 
     #endregion
 
-    #region POST /api/import/esri/jobs/{jobId}/cancel
+    #region POST /api/v1/admin/import/esri/jobs/{jobId}/cancel
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/jobs/{jobId}/cancel")]
+    [Endpoint("POST /api/v1/admin/import/esri/jobs/{jobId}/cancel")]
     public async Task CancelJob_WithNonExistentJob_ReturnsNotFound()
     {
         // Act
-        var response = await _client.PostAsync("/api/import/esri/jobs/nonexistent123/cancel", null);
+        var response = await _client.PostAsync("/api/v1/admin/import/esri/jobs/nonexistent123/cancel", null);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/esri/jobs/{jobId}/cancel")]
+    [Endpoint("POST /api/v1/admin/import/esri/jobs/{jobId}/cancel")]
     public async Task CancelJob_AfterStartingJob_ReturnsSuccess()
     {
         // Arrange - start a job first
@@ -240,14 +240,14 @@ public class EsriImportEndpointTests : IAsyncLifetime
             TableName = "test_cancel_job"
         };
 
-        var startResponse = await _client.PostAsJsonAsync("/api/import/esri/start", startRequest);
+        var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/esri/start", startRequest);
         startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var startContent = await startResponse.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = startContent.GetProperty("jobId").GetString();
 
         // Act
-        var response = await _client.PostAsync($"/api/import/esri/jobs/{jobId}/cancel", null);
+        var response = await _client.PostAsync($"/api/v1/admin/import/esri/jobs/{jobId}/cancel", null);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -259,14 +259,14 @@ public class EsriImportEndpointTests : IAsyncLifetime
 
     #endregion
 
-    #region GET /api/import/esri/jobs
+    #region GET /api/v1/admin/import/esri/jobs
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/esri/jobs")]
+    [Endpoint("GET /api/v1/admin/import/esri/jobs")]
     public async Task ListJobs_ReturnsJobsList()
     {
         // Act
-        var response = await _client.GetAsync("/api/import/esri/jobs");
+        var response = await _client.GetAsync("/api/v1/admin/import/esri/jobs");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);

@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.OData.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Polly.CircuitBreaker;
 using ValidationException = Honua.Core.Exceptions.ValidationException;
 
 namespace Honua.Server.Tests.Infrastructure;
@@ -51,6 +53,8 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new UnauthorizedAccessException("Access denied");
                                 if (path.Contains("throw-timeout"))
                                     throw new TimeoutException("Operation timed out");
+                                if (path.Contains("throw-circuit"))
+                                    throw new BrokenCircuitException("Circuit is open");
                                 if (path.Contains("throw-notfound"))
                                     throw new ResourceNotFoundException("Resource missing");
                                 if (path.Contains("throw-conflict"))
@@ -230,6 +234,23 @@ public class GlobalExceptionMiddlewareTests : IDisposable
     }
 
     [Fact]
+    public async Task GlobalExceptionMiddleware_ODataPath_ServiceUnavailable_ReturnsODataErrorFormat()
+    {
+        // Act
+        var response = await _client.GetAsync("/odata/throw-unavailable");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.Should().ContainKey("OData-Version");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var error = JsonSerializer.Deserialize<ODataError>(content);
+
+        error.Should().NotBeNull();
+        error!.Error.Code.Should().Be("ServiceUnavailable");
+    }
+
+    [Fact]
     public async Task GlobalExceptionMiddleware_GeoServicesPath_ReturnsGeoServicesErrorFormat()
     {
         // Act
@@ -302,6 +323,22 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         // Should include Retry-After header
         response.Headers.Should().ContainKey("Retry-After");
         response.Headers.GetValues("Retry-After").First().Should().Be("30");
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_BrokenCircuitException_Returns503ServiceUnavailable()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-circuit");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(503);
     }
 
     [Fact]

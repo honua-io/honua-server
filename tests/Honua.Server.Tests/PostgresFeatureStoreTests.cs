@@ -4,11 +4,14 @@
 using System.Collections.Immutable;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Server.Tests.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NSubstitute;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -38,8 +41,14 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         // Create feature store with the isolated schema
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
         var poolProvider = new DefaultObjectPoolProvider();
-        var stringBuilderPool = poolProvider.Create(new PostgresFeatureStore.StringBuilderPooledObjectPolicy());
-        _featureStore = new PostgresFeatureStore(connectionProvider, stringBuilderPool, _schemaName);
+        var stringBuilderPool = poolProvider.Create(new Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
+        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
+        _featureStore = new PostgresFeatureStore(
+            connectionProvider,
+            stringBuilderPool,
+            performanceMonitor,
+            NullLogger<PostgresFeatureStore>.Instance,
+            _schemaName);
 
         // Create test table structure
         await _fixture.ExecuteAsync("""

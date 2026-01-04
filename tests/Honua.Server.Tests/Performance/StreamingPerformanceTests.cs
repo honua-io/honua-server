@@ -23,7 +23,7 @@ public class StreamingPerformanceTests : IDisposable
         _testLayerId = 1;
 
         // Seed with test data
-        SeedLargeDataset().Wait();
+        SeedLargeDataset().GetAwaiter().GetResult();
     }
 
     [Fact]

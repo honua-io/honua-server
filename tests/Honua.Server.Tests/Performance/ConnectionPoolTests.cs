@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Data;
 using System.Globalization;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -238,7 +239,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         for (int i = 0; i < iterations; i++)
         {
             await using var conn = await _fixture.GetConnectionAsync(_schemaName);
-            await using var transaction = await conn.BeginTransactionAsync();
+            await using var transaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted);
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = transaction;
             cmd.CommandText = "SELECT 1";
@@ -265,7 +266,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         for (int i = 0; i < iterations; i++)
         {
             await using var conn = await _fixture.GetConnectionAsync(_schemaName);
-            await using var transaction = await conn.BeginTransactionAsync();
+            await using var transaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted);
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = transaction;
             cmd.CommandText = "SELECT 1";

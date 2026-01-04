@@ -28,4 +28,41 @@ internal static class NpgsqlDataSourceExtensions
         return await retryPolicy.ExecuteAsync(async () =>
             await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Executes a database operation with deadlock retry policy
+    /// </summary>
+    /// <typeparam name="T">Return type of the operation</typeparam>
+    /// <param name="dataSource">The Npgsql data source</param>
+    /// <param name="operation">The database operation to execute</param>
+    /// <param name="onRetry">Optional callback for retry events (for logging)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Result of the database operation</returns>
+    public static async Task<T> ExecuteWithDeadlockRetryAsync<T>(
+        this NpgsqlDataSource dataSource,
+        Func<Task<T>> operation,
+        Action<Exception, TimeSpan, int>? onRetry = null,
+        CancellationToken cancellationToken = default)
+    {
+        IAsyncPolicy retryPolicy = ResiliencePolicies.GetDeadlockRetryPolicy(onRetry);
+        return await retryPolicy.ExecuteAsync(operation).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Executes a database operation with deadlock retry policy (no return value)
+    /// </summary>
+    /// <param name="dataSource">The Npgsql data source</param>
+    /// <param name="operation">The database operation to execute</param>
+    /// <param name="onRetry">Optional callback for retry events (for logging)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Task representing the completion of the operation</returns>
+    public static async Task ExecuteWithDeadlockRetryAsync(
+        this NpgsqlDataSource dataSource,
+        Func<Task> operation,
+        Action<Exception, TimeSpan, int>? onRetry = null,
+        CancellationToken cancellationToken = default)
+    {
+        IAsyncPolicy retryPolicy = ResiliencePolicies.GetDeadlockRetryPolicy(onRetry);
+        await retryPolicy.ExecuteAsync(operation).ConfigureAwait(false);
+    }
 }

@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -41,6 +42,7 @@ internal sealed partial class EsriImportService : IEsriImportService
         return _restClient.DiscoverServiceAsync(
             request.ServiceUrl,
             request.TimeoutSeconds,
+            ResiliencePolicyOptions.Default.MaxRetryAttempts,
             cancellationToken);
     }
 
@@ -74,6 +76,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                 request.ServiceUrl,
                 request.LayerId,
                 request.RequestTimeoutSeconds,
+                request.MaxRetries,
                 cancellationToken);
 
             Log.LayerDiscovered(_logger, layerInfo.Name, layerInfo.Fields.Length, layerInfo.FeatureCount);
@@ -102,7 +105,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                     $"Retrieving batch {batchNumber}", featuresProcessed, totalFeatures, layerInfo.Name);
 
                 // Query features from remote service
-                var queryResult = await QueryWithRetryAsync(
+                var queryResult = await _restClient.QueryFeaturesAsync(
                     request.ServiceUrl,
                     request.LayerId,
                     offset,
@@ -184,40 +187,8 @@ internal sealed partial class EsriImportService : IEsriImportService
                 request.TableName,
                 request.ServiceUrl,
                 request.LayerId,
-                ex.Message,
+                "Import from ArcGIS service failed.",
                 stopwatch.Elapsed);
-        }
-    }
-
-    private async Task<ArcGisQueryResult> QueryWithRetryAsync(
-        string serviceUrl,
-        int layerId,
-        int offset,
-        int batchSize,
-        string? whereClause,
-        string[]? outFields,
-        int? outSrid,
-        int timeoutSeconds,
-        int maxRetries,
-        CancellationToken cancellationToken)
-    {
-        var attempt = 0;
-        while (true)
-        {
-            try
-            {
-                attempt++;
-                return await _restClient.QueryFeaturesAsync(
-                    serviceUrl, layerId, offset, batchSize,
-                    whereClause, outFields, outSrid, timeoutSeconds,
-                    cancellationToken);
-            }
-            catch (Exception ex) when (attempt < maxRetries && !cancellationToken.IsCancellationRequested)
-            {
-                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // Exponential backoff
-                Log.RetryingQuery(_logger, attempt, maxRetries, delay.TotalSeconds, ex.Message);
-                await Task.Delay(delay, cancellationToken);
-            }
         }
     }
 
@@ -631,11 +602,6 @@ internal sealed partial class EsriImportService : IEsriImportService
 
         [LoggerMessage(7807, LogLevel.Error, "Import failed: {TableName}")]
         public static partial void ImportFailed(ILogger logger, string tableName, Exception exception);
-
-        [LoggerMessage(7808, LogLevel.Warning,
-            "Query attempt {Attempt}/{MaxRetries} failed, retrying in {DelaySeconds}s: {ErrorMessage}")]
-        public static partial void RetryingQuery(
-            ILogger logger, int attempt, int maxRetries, double delaySeconds, string errorMessage);
 
         [LoggerMessage(7809, LogLevel.Debug, "Feature insert failed: {ErrorMessage}")]
         public static partial void FeatureInsertFailed(ILogger logger, string errorMessage);

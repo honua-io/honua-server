@@ -144,7 +144,7 @@ Enable detailed logging in development:
 Access real-time statistics via the monitoring endpoint:
 
 ```
-GET /api/admin/performance/database/query-cache/statistics
+GET /api/v1/admin/performance/database/query-cache/statistics
 ```
 
 Response includes:
@@ -217,7 +217,7 @@ await using var reader = await command.ExecuteReaderAsync();
 
 ```bash
 # Check cache statistics
-curl http://localhost:5000/api/admin/performance/database/query-cache/statistics
+curl http://localhost:5000/api/v1/admin/performance/database/query-cache/statistics
 
 # Enable debug logging
 export ASPNETCORE_ENVIRONMENT=Development

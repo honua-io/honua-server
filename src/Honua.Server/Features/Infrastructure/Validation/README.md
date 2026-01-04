@@ -28,13 +28,13 @@ The validation system eliminates code duplication by providing shared validation
 ValidationResult ValidatePagination(int? offset, int? limit)
 
 // Format parameter validation (json, geojson, xml, html, etc.)
-ValidationResult<string> ValidateFormat(string? format, ISet<string> allowedFormats)
+ValidationResult<string> ValidateFormat(string? format, IReadOnlySet<string> allowedFormats)
 
 // Spatial reference system validation
 ValidationResult<int?> ValidateSrid(string? srid, string parameterName)
 
 // Query parameter whitelist validation
-ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, ISet<string> allowedParameters)
+ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, IReadOnlySet<string> allowedParameters)
 
 // Bounding box validation with coordinate checks
 ValidationResult<BoundingBox> ValidateBbox(string? bboxValue, int targetSrid)

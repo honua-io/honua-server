@@ -49,7 +49,7 @@ Option A: Integrated (Default for dev/simple deployments)
 Option B: Standalone (Production/CDN)
 ┌─────────────────┐     ┌─────────────────┐
 │  S3/CloudFront  │     │  Honua.Server   │
-│  /admin/*       │────▶│  /api/admin/*   │
+│  /admin/*       │────▶│  /api/v1/admin/*   │
 │  (Static WASM)  │     │  (API only)     │
 └─────────────────┘     └─────────────────┘
 ```

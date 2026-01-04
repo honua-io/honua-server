@@ -12,13 +12,13 @@ namespace Honua.Postgres.Tests.Features.Import;
 [Collection("Database")]
 public class CrsDetectionServiceTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly PostgresFixture _fixture = new();
     private CrsDetectionService? _service;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _service = new CrsDetectionService(_fixture.Postgres.ConnectionString);
+        _service = new CrsDetectionService(_fixture.ConnectionString);
     }
 
     public async Task DisposeAsync()

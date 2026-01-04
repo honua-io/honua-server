@@ -108,6 +108,11 @@ internal static class CollectionsEndpoints
 
             return OgcFeaturesUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
         }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
         catch (ArgumentException ex)
         {
             // Note: Using static reference to logging from main endpoints class
@@ -184,6 +189,11 @@ internal static class CollectionsEndpoints
                 outputFormat,
                 collection.Title ?? collection.Id);
         }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
             CollectionsEndpointLogging.LogInvalidCollectionId(logger, collectionId, ex);
@@ -243,6 +253,11 @@ internal static class CollectionsEndpoints
             var queryables = CreateQueryablesSchema(layer);
 
             return OgcFeaturesUtilities.FormatMetadataResponse(queryables, OgcJsonContext.Default.QueryablesSchema, outputFormat, "Queryables");
+        }
+        catch (OperationCanceledException)
+            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
         }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {

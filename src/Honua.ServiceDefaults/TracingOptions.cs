@@ -29,7 +29,7 @@ public class TracingOptions
     /// Gets or sets whether to include database query text in spans.
     /// Disable in production for security if queries contain sensitive data.
     /// </summary>
-    public bool IncludeDbStatementText { get; set; } = true;
+    public bool IncludeDbStatementText { get; set; }
 
     /// <summary>
     /// Gets or sets whether to trace health check endpoints.

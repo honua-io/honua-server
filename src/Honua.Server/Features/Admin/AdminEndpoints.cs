@@ -24,7 +24,7 @@ internal static class AdminEndpoints
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Create admin group with authorization requirement
-        RouteGroupBuilder adminGroup = endpoints.MapGroup("/api/admin")
+        RouteGroupBuilder adminGroup = endpoints.MapGroup("/api/v1/admin")
             .WithTags("Admin")
             .RequireAdminAuthorization();
 
@@ -45,7 +45,7 @@ internal static class AdminEndpoints
     }
 
     /// <summary>
-    /// Handle GET /api/admin/config - Self-documenting configuration endpoint.
+    /// Handle GET /api/v1/admin/config - Self-documenting configuration endpoint.
     /// Returns all available configuration options, their current values, and environment variable mappings.
     /// </summary>
     private static async Task HandleGetConfiguration(HttpContext context)
@@ -102,7 +102,7 @@ internal static class AdminEndpoints
 
     /// <summary>
     /// Handle admin connection tables request
-    /// Implements the API from Issue #57: GET /api/admin/connections/{id}/tables
+    /// Implements the API from Issue #57: GET /api/v1/admin/connections/{id}/tables
     /// </summary>
     private static async Task HandleGetConnectionTables(HttpContext context)
     {

@@ -22,6 +22,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     private readonly ILogger<InMemoryImportJobService> _logger;
     private readonly ConcurrentDictionary<string, ImportJobState> _jobs = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
+    private const int MaxCompletedJobs = 1000;
+    private static readonly TimeSpan _completedJobRetention = TimeSpan.FromHours(24);
+    private static readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
+    private long _lastCleanupTick = Environment.TickCount64;
     private bool _disposed;
 
     public InMemoryImportJobService(
@@ -40,6 +44,9 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         long fileSize,
         CancellationToken cancellationToken = default)
     {
+        CleanupCompletedJobsIfNeeded();
+        request.Validate();
+
         var format = _importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
         var formatName = format.ToString();
 
@@ -70,52 +77,54 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         ImportJobLog.JobQueued(_logger, jobId, request.TableName, formatName, fileSize);
         RecordJobMetrics("queued", formatName, fileSize, null, null, null);
 
-        // Copy stream to a temp file for background processing
-        // In production, you'd want to save to durable storage
-        if (request.FileStream.CanSeek)
-        {
-            request.FileStream.Position = 0;
-        }
+        string? tempFilePath = null;
+        var backgroundRequest = request;
 
-        var tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
-        try
+        if (!request.UsesCloudStorage)
         {
-            await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
+            // Copy stream to a temp file for background processing
+            // In production, you'd want to save to durable storage
+            if (request.FileStream!.CanSeek)
             {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
+                request.FileStream.Position = 0;
+            }
+
+            tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
+            try
+            {
+                await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
+                {
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.Write,
+                    Share = FileShare.None,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                }))
+                {
+                    await request.FileStream.CopyToAsync(tempStream, cancellationToken);
+                }
+            }
+            catch
+            {
+                TryDeleteTempFile(tempFilePath);
+                throw;
+            }
+
+            var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
                 BufferSize = 64 * 1024,
                 Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            }))
+            });
+
+            backgroundRequest = request with
             {
-                await request.FileStream.CopyToAsync(tempStream, cancellationToken);
-            }
+                FileStream = backgroundStream,
+                CloudFileId = null
+            };
         }
-        catch
-        {
-            TryDeleteTempFile(tempFilePath);
-            throw;
-        }
-
-        var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-        {
-            Mode = FileMode.Open,
-            Access = FileAccess.Read,
-            Share = FileShare.Read,
-            BufferSize = 64 * 1024,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
-
-        var backgroundRequest = new ImportRequest
-        {
-            FileStream = backgroundStream,
-            FileName = request.FileName,
-            TableName = request.TableName,
-            SourceSrid = request.SourceSrid,
-            TargetSrid = request.TargetSrid,
-            OverwriteExisting = request.OverwriteExisting
-        };
 
         // Start background processing
         _ = ProcessJobAsync(jobId, backgroundRequest, tempFilePath, cts.Token);
@@ -126,7 +135,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     private async Task ProcessJobAsync(
         string jobId,
         ImportRequest request,
-        string tempFilePath,
+        string? tempFilePath,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -134,10 +143,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         int? featureCount = null;
         int? failedFeatures = null;
         string? errorMessage = null;
+        var stream = request.FileStream;
 
         try
         {
-            await using var stream = request.FileStream;
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 state.Progress = state.Progress with { Status = ImportStatus.Processing };
@@ -197,21 +206,21 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "failed";
-                errorMessage = ex.Message;
+                errorMessage = "Import failed.";
                 failedFeatures = state.Progress.FailedFeatures;
                 state.Progress = state.Progress with
                 {
                     Status = ImportStatus.Failed,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "Import failed."
                 };
                 ImportJobLog.JobFailed(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
-                    ex.Message, stopwatch.Elapsed.TotalMilliseconds);
+                    errorMessage, stopwatch.Elapsed.TotalMilliseconds);
             }
         }
         finally
@@ -222,15 +231,23 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 RecordJobMetrics(status, state.Format, state.FileSize, featureCount, failedFeatures, stopwatch.Elapsed);
             }
 
+            if (stream != null)
+            {
+                await stream.DisposeAsync();
+            }
+
             TryDeleteTempFile(tempFilePath);
             _cancellationTokens.TryRemove(jobId, out var cts);
             cts?.Dispose();
+            CleanupCompletedJobsIfNeeded();
         }
     }
 
     /// <inheritdoc/>
     public Task<ImportProgress?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default)
     {
+        CleanupCompletedJobsIfNeeded();
+
         if (_jobs.TryGetValue(jobId, out var state))
         {
             return Task.FromResult<ImportProgress?>(state.Progress);
@@ -254,6 +271,8 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     /// <inheritdoc/>
     public Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
     {
+        CleanupCompletedJobsIfNeeded();
+
         var activeJobs = _jobs.Values
             .Where(j => j.Progress.Status is ImportStatus.Queued or ImportStatus.Processing)
             .Select(j => j.Progress)
@@ -295,6 +314,78 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             _performanceMonitor.RecordHistogram("honua_import_job_failed_features", failedFeatures.Value, tags);
         }
     }
+
+    private void CleanupCompletedJobsIfNeeded()
+    {
+        var intervalMs = (long)_cleanupInterval.TotalMilliseconds;
+        var nowTick = Environment.TickCount64;
+        var last = Interlocked.Read(ref _lastCleanupTick);
+        if (nowTick - last < intervalMs)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastCleanupTick, nowTick, last) != last)
+        {
+            return;
+        }
+
+        CleanupCompletedJobs(DateTimeOffset.UtcNow);
+    }
+
+    private void CleanupCompletedJobs(DateTimeOffset now)
+    {
+        var expirationCutoff = now - _completedJobRetention;
+        var completedJobs = _jobs
+            .Where(kvp => IsTerminalStatus(kvp.Value.Progress.Status))
+            .Select(kvp => new
+            {
+                kvp.Key,
+                CompletedAt = kvp.Value.Progress.CompletedAt ?? kvp.Value.StartedAt
+            })
+            .ToList();
+
+        foreach (var job in completedJobs)
+        {
+            if (job.CompletedAt <= expirationCutoff)
+            {
+                RemoveJob(job.Key);
+            }
+        }
+
+        var remainingCompleted = _jobs
+            .Where(kvp => IsTerminalStatus(kvp.Value.Progress.Status))
+            .Select(kvp => new
+            {
+                kvp.Key,
+                CompletedAt = kvp.Value.Progress.CompletedAt ?? kvp.Value.StartedAt
+            })
+            .OrderBy(kvp => kvp.CompletedAt)
+            .ToList();
+
+        var overflow = remainingCompleted.Count - MaxCompletedJobs;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        for (var i = 0; i < overflow; i++)
+        {
+            RemoveJob(remainingCompleted[i].Key);
+        }
+    }
+
+    private void RemoveJob(string jobId)
+    {
+        _jobs.TryRemove(jobId, out _);
+        if (_cancellationTokens.TryRemove(jobId, out var cts))
+        {
+            cts.Dispose();
+        }
+    }
+
+    private static bool IsTerminalStatus(ImportStatus status)
+        => status is ImportStatus.Completed or ImportStatus.Failed or ImportStatus.Cancelled;
 
     public void Dispose()
     {
@@ -387,11 +478,11 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         public ImportResult? Result { get; set; }
     }
 
-    private static void TryDeleteTempFile(string tempFilePath)
+    private static void TryDeleteTempFile(string? tempFilePath)
     {
         try
         {
-            if (File.Exists(tempFilePath))
+            if (!string.IsNullOrWhiteSpace(tempFilePath) && File.Exists(tempFilePath))
             {
                 File.Delete(tempFilePath);
             }

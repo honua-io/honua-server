@@ -985,6 +985,8 @@ internal static partial class MetadataEndpoints
 
     private static async Task InvalidateServiceCache(HttpContext context, string serviceName)
     {
+        var normalizedServiceName = serviceName.ToLowerInvariant();
+
         var cachingCatalog = context.RequestServices.GetService<CachingLayerCatalog>();
         if (cachingCatalog != null)
         {
@@ -994,15 +996,16 @@ internal static partial class MetadataEndpoints
         var cacheService = context.RequestServices.GetService<ICacheService>();
         if (cacheService != null)
         {
-            await cacheService.RemoveAsync($"{ServiceCacheKeyPrefix}{serviceName.ToLowerInvariant()}", context.RequestAborted);
+            await cacheService.RemoveAsync($"{ServiceCacheKeyPrefix}{normalizedServiceName}", context.RequestAborted);
             await cacheService.RemoveAsync(ServiceListCacheKey, context.RequestAborted);
         }
 
         var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
         if (outputCache != null)
         {
-            await outputCache.EvictByTagAsync($"service-{serviceName}", context.RequestAborted);
-            await outputCache.EvictByTagAsync("services", context.RequestAborted);
+            await outputCache.EvictByTagAsync($"service:{normalizedServiceName}", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-metadata", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-tiles", context.RequestAborted);
         }
     }
 
@@ -1025,8 +1028,9 @@ internal static partial class MetadataEndpoints
         var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
         if (outputCache != null)
         {
-            await outputCache.EvictByTagAsync($"layer-{layerId}", context.RequestAborted);
-            await outputCache.EvictByTagAsync("layers", context.RequestAborted);
+            await outputCache.EvictByTagAsync($"layer:{layerId}", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-metadata", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-tiles", context.RequestAborted);
         }
     }
 

@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -18,7 +19,7 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// This decorator wraps any IFeatureStore implementation to provide detailed performance metrics
 /// including query timing, record counts, cache metrics, and database operation tracking.
 /// </remarks>
-internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
+internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore, IStreamingFeatureStore, IGmlFeatureStore
 {
     private readonly IFeatureStore _innerStore;
     private readonly IPerformanceMonitor _performanceMonitor;
@@ -97,6 +98,168 @@ internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
             scope.WithTag("error", ex.GetType().Name);
             MonitoredFeatureStoreLog.QueryFailed(_logger, layerIdText, ex.Message, ex);
             throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<QueryResult<GmlFeature>> QueryGmlAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("query_gml")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "query_gml");
+
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var result = await GetGmlStore().QueryGmlAsync(layerId, query, cancellationToken);
+            var itemCount = result.Items.Length;
+
+            _performanceMonitor.RecordDatabaseQuery("query_gml", layerIdText, stopwatch.Elapsed, itemCount);
+
+            MonitoredFeatureStoreLog.QueryCompleted(_logger, layerIdText, stopwatch.Elapsed.TotalMilliseconds);
+            MonitoredFeatureStoreLog.StreamingQueryCompleted(_logger, layerIdText, "query_gml", itemCount, stopwatch.Elapsed.TotalMilliseconds);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.WithTag("error", ex.GetType().Name);
+            MonitoredFeatureStoreLog.QueryFailed(_logger, layerIdText, ex.Message, ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("stream_features")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "stream");
+
+        var stopwatch = Stopwatch.StartNew();
+        var itemCount = 0;
+        var completed = false;
+
+        try
+        {
+            await foreach (var feature in GetStreamingStore().StreamFeaturesAsync(layerId, query, cancellationToken))
+            {
+                itemCount++;
+                yield return feature;
+            }
+
+            completed = true;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            if (completed)
+            {
+                _performanceMonitor.RecordDatabaseQuery("stream_features", layerIdText, stopwatch.Elapsed, itemCount);
+                MonitoredFeatureStoreLog.StreamingQueryCompleted(
+                    _logger,
+                    layerIdText,
+                    "stream",
+                    itemCount,
+                    stopwatch.Elapsed.TotalMilliseconds);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<IReadOnlyList<Feature>> StreamFeatureBatchesAsync(
+        int layerId,
+        FeatureQuery query,
+        int batchSize = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("stream_feature_batches")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "stream_batches");
+
+        var stopwatch = Stopwatch.StartNew();
+        var itemCount = 0;
+        var completed = false;
+
+        try
+        {
+            await foreach (var batch in GetStreamingStore()
+                               .StreamFeatureBatchesAsync(layerId, query, batchSize, cancellationToken))
+            {
+                itemCount += batch.Count;
+                yield return batch;
+            }
+
+            completed = true;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            if (completed)
+            {
+                _performanceMonitor.RecordDatabaseQuery("stream_batches", layerIdText, stopwatch.Elapsed, itemCount);
+                MonitoredFeatureStoreLog.StreamingQueryCompleted(
+                    _logger,
+                    layerIdText,
+                    "stream_batches",
+                    itemCount,
+                    stopwatch.Elapsed.TotalMilliseconds);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+
+        using var scope = _performanceMonitor.StartOperation("stream_gml_features")
+            .WithTag("layer_id", layerIdText)
+            .WithTag("operation", "stream_gml");
+
+        var stopwatch = Stopwatch.StartNew();
+        var itemCount = 0;
+        var completed = false;
+
+        try
+        {
+            await foreach (var feature in GetStreamingStore().StreamGmlFeaturesAsync(layerId, query, cancellationToken))
+            {
+                itemCount++;
+                yield return feature;
+            }
+
+            completed = true;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            if (completed)
+            {
+                _performanceMonitor.RecordDatabaseQuery("stream_gml_features", layerIdText, stopwatch.Elapsed, itemCount);
+                MonitoredFeatureStoreLog.StreamingQueryCompleted(
+                    _logger,
+                    layerIdText,
+                    "stream_gml",
+                    itemCount,
+                    stopwatch.Elapsed.TotalMilliseconds);
+            }
         }
     }
 
@@ -210,6 +373,26 @@ internal sealed class MonitoredFeatureStoreDecorator : IFeatureStore
             MonitoredFeatureStoreLog.QueryFailed(_logger, layerIdText, ex.Message, ex);
             throw;
         }
+    }
+
+    private IStreamingFeatureStore GetStreamingStore()
+    {
+        if (_innerStore is IStreamingFeatureStore streamingStore)
+        {
+            return streamingStore;
+        }
+
+        throw new NotSupportedException("Streaming operations are not supported by the configured feature store.");
+    }
+
+    private IGmlFeatureStore GetGmlStore()
+    {
+        if (_innerStore is IGmlFeatureStore gmlStore)
+        {
+            return gmlStore;
+        }
+
+        throw new NotSupportedException("GML query operations are not supported by the configured feature store.");
     }
 
     /// <inheritdoc />

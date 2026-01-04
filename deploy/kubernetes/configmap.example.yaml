@@ -39,7 +39,7 @@ data:
   # Query Limits
   Limits__Query__MaxRecordCount: "5000"
   Limits__Query__DefaultRecordCount: "1000"
-  Limits__Query__MaxOffset: "100000"
+  Limits__Query__MaxOffset: "1000000"
   Limits__Query__QueryTimeout: "00:01:00"
 
   # Geometry Limits

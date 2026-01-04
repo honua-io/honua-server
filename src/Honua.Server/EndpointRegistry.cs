@@ -16,9 +16,11 @@ public static class EndpointRegistry
     [
         new("GET", "/healthz/live"),
         new("GET", "/healthz/ready"),
+        new("GET", "/healthz/metrics"),
 
-        new("GET", "/api/admin/connections/{id}/tables"),
-        new("GET", "/api/admin/connections/{*path}"),
+        new("GET", "/api/v1/admin/config"),
+        new("GET", "/api/v1/admin/connections/{id}/tables"),
+        new("GET", "/api/v1/admin/connections/{*path}"),
 
         // v1 admin metadata endpoints
         new("GET", "/api/v1/admin/metadata/services"),
@@ -49,14 +51,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/import/jobs"),
         new("GET", "/api/v1/admin/import/limits"),
 
-        // Legacy import endpoints (backward compatibility aliases)
-        new("GET", "/api/import/formats"),
-        new("POST", "/api/import/preview"),
-        new("POST", "/api/import/upload"),
-        new("GET", "/api/import/jobs/{jobId}"),
-        new("POST", "/api/import/jobs/{jobId}/cancel"),
-        new("GET", "/api/import/jobs"),
-        new("GET", "/api/import/limits"),
+        // v1 admin import endpoints (Esri)
+        new("POST", "/api/v1/admin/import/esri/discover"),
+        new("POST", "/api/v1/admin/import/esri/start"),
+        new("GET", "/api/v1/admin/import/esri/jobs/{jobId}"),
+        new("POST", "/api/v1/admin/import/esri/jobs/{jobId}/cancel"),
+        new("GET", "/api/v1/admin/import/esri/jobs"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),

@@ -116,6 +116,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
 
         problem.GetProperty("title").GetString().Should().Be("Bad Request");
         problem.GetProperty("status").GetInt32().Should().Be(400);
+        problem.GetProperty("detail").GetString().Should().Be("GeoJSON payload must include a 'type' member.");
     }
 
     [Fact]
@@ -137,6 +138,7 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
 
         problem.GetProperty("title").GetString().Should().Be("Bad Request");
         problem.GetProperty("status").GetInt32().Should().Be(400);
+        problem.GetProperty("detail").GetString().Should().Be("GeoJSON payload must include a 'type' member.");
     }
 
     [Fact]

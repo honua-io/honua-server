@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -20,37 +21,36 @@ internal static class OgcFeaturesUtilities
     /// </summary>
     public static class AllowedQueryParameters
     {
-        public static readonly ISet<string> Metadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f"
-        };
+        public static readonly FrozenSet<string> Metadata =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> Items = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "bbox",
-            "bbox-crs",
-            "crs",
-            "datetime",
-            "limit",
-            "offset",
-            "filter",
-            "filter-lang",
-            "filter-crs"
-        };
+        public static readonly FrozenSet<string> Items = new[]
+            {
+                "f",
+                "bbox",
+                "bbox-crs",
+                "crs",
+                "datetime",
+                "limit",
+                "offset",
+                "filter",
+                "filter-lang",
+                "filter-crs"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> Item = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "crs"
-        };
+        public static readonly FrozenSet<string> Item = new[]
+            {
+                "f",
+                "crs"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> OpenApi = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f"
-        };
+        public static readonly FrozenSet<string> OpenApi =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> Transactions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public static readonly FrozenSet<string> Transactions =
+            Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -99,7 +99,7 @@ internal static class OgcFeaturesUtilities
     /// <summary>
     /// Validates query parameters against allowed set
     /// </summary>
-    public static BadRequest<string>? ValidateQueryParameters(HttpRequest request, ISet<string> allowedParameters)
+    public static BadRequest<string>? ValidateQueryParameters(HttpRequest request, IReadOnlySet<string> allowedParameters)
     {
         foreach (var key in request.Query.Keys)
         {

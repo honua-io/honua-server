@@ -32,13 +32,14 @@ internal static class GeoServicesErrorHelpers
     /// </summary>
     public static IResult CreateBadRequestError(string message, string[]? details = null)
     {
+        var resolvedDetails = details is { Length: > 0 } ? details : new[] { message };
         var errorResponse = new ApiErrorResponse
         {
             Error = new GeoServicesError
             {
                 Code = 400,
                 Message = message,
-                Details = details
+                Details = resolvedDetails
             }
         };
         return Results.Json(errorResponse, LimitsEnforcementJsonContext.Default.ApiErrorResponse, statusCode: 400);

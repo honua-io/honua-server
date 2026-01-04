@@ -18,6 +18,7 @@ sql:
           layer_id SERIAL PRIMARY KEY,
           layer_name TEXT NOT NULL,
           description TEXT,
+          table_schema TEXT NOT NULL DEFAULT current_schema(),
           table_name TEXT NOT NULL,
           geometry_type TEXT NOT NULL,
           srid INT NOT NULL DEFAULT 4326,
@@ -109,6 +110,7 @@ sql:
           layer_id,
           layer_name,
           description,
+          table_schema,
           table_name,
           geometry_type,
           srid,
@@ -116,12 +118,13 @@ sql:
           default_visibility
       )
       VALUES
-          (101, 'SRID Test Points', 'Point layer for SRID testing', 'features', 'Point', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
-          (102, 'SRID Test Lines', 'Line layer for SRID testing', 'features', 'LineString', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
-          (103, 'SRID Test Polygons', 'Polygon layer for SRID testing', 'features', 'Polygon', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true)
+          (101, 'SRID Test Points', 'Point layer for SRID testing', current_schema(), 'features', 'Point', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
+          (102, 'SRID Test Lines', 'Line layer for SRID testing', current_schema(), 'features', 'LineString', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
+          (103, 'SRID Test Polygons', 'Polygon layer for SRID testing', current_schema(), 'features', 'Polygon', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true)
       ON CONFLICT (layer_id) DO UPDATE
       SET layer_name = EXCLUDED.layer_name,
           description = EXCLUDED.description,
+          table_schema = EXCLUDED.table_schema,
           table_name = EXCLUDED.table_name,
           geometry_type = EXCLUDED.geometry_type,
           srid = EXCLUDED.srid,

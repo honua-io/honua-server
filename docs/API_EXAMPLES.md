@@ -414,7 +414,7 @@ All admin endpoints are now versioned under `/api/v1/admin/*` for stability and 
 
 ```bash
 # List available tables
-curl "http://localhost:8080/api/admin/connections/test/tables" \
+curl "http://localhost:8080/api/v1/admin/connections/test/tables" \
   -H "X-API-Key: your-secure-password"
 ```
 
@@ -588,13 +588,12 @@ curl -X POST "http://localhost:8080/api/v1/admin/import/jobs/{jobId}/cancel" \
   -H "X-API-Key: your-secure-password"
 ```
 
-### Legacy Admin Endpoints (Backward Compatibility)
+### Versioned Admin Endpoints
 
-The `/api/import/*` endpoints remain available as aliases for backward compatibility:
+All admin import endpoints are versioned under `/api/v1/admin/import/*`:
 
 ```bash
-# Legacy import endpoints (forwarded to v1)
-curl "http://localhost:8080/api/import/formats" \
+curl "http://localhost:8080/api/v1/admin/import/formats" \
   -H "X-API-Key: your-secure-password"
 ```
 

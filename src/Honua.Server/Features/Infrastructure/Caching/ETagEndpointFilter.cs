@@ -118,15 +118,32 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         return result;
     }
 
-    private async ValueTask<object> HandleObjectWithETag(HttpContext httpContext, object result, IETagService etagService)
+    private ValueTask<object> HandleObjectWithETag(HttpContext httpContext, object result, IETagService etagService)
     {
-        // For direct object responses, we'll let the JSON serialization happen naturally
-        // and set ETag headers in a response wrapper
-        Log.ETagGeneratedForObject(_logger, httpContext.Request.Path, result.GetType().Name);
+        var etag = ComputeETagForValueResult(result, etagService, _serializerOptions);
+        if (etag == null)
+        {
+            return ValueTask.FromResult<object>(result);
+        }
 
-        // We can't easily intercept the serialization here, so we'll return the object as-is
-        // and rely on middleware or response processing to add ETags
-        return result;
+        var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
+        var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
+
+        if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
+        {
+            Log.PreconditionFailed(_logger, httpContext.Request.Path, ifMatch, etag);
+            return ValueTask.FromResult<object>(Results.StatusCode((int)HttpStatusCode.PreconditionFailed));
+        }
+
+        if (!etagService.IsModified(ifNoneMatch, etag))
+        {
+            Log.NotModified(_logger, httpContext.Request.Path, ifNoneMatch, etag);
+            return ValueTask.FromResult<object>(new NotModifiedWithETagResult(etag, etagService));
+        }
+
+        etagService.SetCacheHeaders(httpContext.Response, etag);
+        Log.ETagGenerated(_logger, httpContext.Request.Path, etag);
+        return ValueTask.FromResult<object>(result);
     }
 
     private static string? ComputeETagForValueResult(

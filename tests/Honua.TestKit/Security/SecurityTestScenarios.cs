@@ -98,12 +98,13 @@ public static class SecurityTestScenarios
 
                 var response = await client.GetAsync(url);
 
+                var responseContent = await response.Content.ReadAsStringAsync();
                 results.Add(new SecurityTestAttempt
                 {
                     Payload = payload,
                     StatusCode = response.StatusCode,
-                    ResponseContent = await response.Content.ReadAsStringAsync(),
-                    IsSafe = IsResponseSafe(response, payload)
+                    ResponseContent = responseContent,
+                    IsSafe = IsResponseSafe(response.StatusCode, responseContent, payload)
                 });
             }
             catch (Exception ex)
@@ -331,15 +332,14 @@ public static class SecurityTestScenarios
         };
     }
 
-    private static bool IsResponseSafe(HttpResponseMessage response, string payload)
+    private static bool IsResponseSafe(HttpStatusCode statusCode, string responseContent, string payload)
     {
         // If request was rejected (4xx/5xx), it's likely safe
-        if ((int)response.StatusCode >= 400)
+        if ((int)statusCode >= 400)
             return true;
 
         // Check if payload appears unescaped in response
-        var content = response.Content.ReadAsStringAsync().Result;
-        return !content.Contains(payload, StringComparison.OrdinalIgnoreCase);
+        return !responseContent.Contains(payload, StringComparison.OrdinalIgnoreCase);
     }
 }
 

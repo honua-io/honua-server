@@ -95,7 +95,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     public async Task SecurityHeaders_AdminEndpoint_AppliesSecurityHeaders()
     {
         // Act - Test with admin endpoint - use an endpoint that should return 400 but still have headers
-        var response = await _fixture.Client.GetAsync("/api/admin/connections/test/tables");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/connections/test/tables");
 
         // Assert - Even error responses should have security headers
         Assert.True(response.Headers.TryGetValues("X-Content-Type-Options", out var contentTypeValues));

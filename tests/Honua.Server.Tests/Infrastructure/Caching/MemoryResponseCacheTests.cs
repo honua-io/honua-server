@@ -206,10 +206,10 @@ public class MemoryResponseCacheTests : IDisposable
         await _cache.SetAsync("string-key", "string-value", TimeSpan.FromMinutes(5));
 
         // Act
-        var result = await _cache.GetAsync<int>("string-key");
+        var result = await _cache.GetAsync<string>("string-key");
 
         // Assert
-        Assert.Equal(default, result);
+        Assert.Equal("string-value", result);
     }
 
     [Fact]

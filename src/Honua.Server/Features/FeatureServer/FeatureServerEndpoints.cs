@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +15,7 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -33,7 +35,7 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer", HandleGetServiceMetadata)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer", (Delegate)HandleGetServiceMetadata)
             .WithDisplayName("Get FeatureServer Service Metadata")
             .WithName("GetServiceMetadata")
             .WithSummary("Get FeatureServer service metadata")
@@ -45,7 +47,7 @@ internal static partial class FeatureServerEndpoints
         // .Produces<FeatureServerResponse>(200, "application/json")
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", HandleGetLayerMetadata)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", (Delegate)HandleGetLayerMetadata)
             .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
             .WithSummary("Get FeatureServer layer metadata")
@@ -57,26 +59,24 @@ internal static partial class FeatureServerEndpoints
         // .Produces<LayerResponse>(200, "application/json")
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", (Delegate)HandleQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via GET parameters")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .WithETag();
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", (Delegate)HandleQueryFeaturesPost)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .WithETag();
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
@@ -140,18 +140,87 @@ internal static partial class FeatureServerEndpoints
         return endpoints;
     }
 
+    private static class AllowedQueryParameters
+    {
+        public static readonly FrozenSet<string> ServiceMetadata =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> LayerMetadata =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> Query = new[]
+            {
+                "where",
+                "objectIds",
+                "outFields",
+                "orderByFields",
+                "geometry",
+                "inSR",
+                "outSR",
+                "geometryType",
+                "spatialRel",
+                "units",
+                "f",
+                "resultOffset",
+                "resultRecordCount",
+                "nearestCount",
+                "distance",
+                "returnGeometry",
+                "returnIdsOnly",
+                "returnCountOnly",
+                "returnExtentOnly",
+                "returnDistance",
+                "returnCentroid",
+                "returnDistinctValues"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> GenerateRenderer = new[]
+            {
+                "classificationDef",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> ApplyEdits =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryRelatedRecords = new[]
+            {
+                "objectIds",
+                "relationshipId",
+                "outFields",
+                "where",
+                "returnGeometry",
+                "resultOffset",
+                "resultRecordCount",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> Tiles =
+            new[] { "where" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Handles service metadata requests
     /// </summary>
-    private static async Task HandleGetServiceMetadata(HttpContext context)
+    private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
+
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.ServiceMetadata, out var error))
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error ?? "Invalid query parameter."]);
+        }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
@@ -159,14 +228,12 @@ internal static partial class FeatureServerEndpoints
         ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
-        IResult result = await GetServiceMetadataAsync(
+        return await GetServiceMetadataAsync(
             serviceId,
             catalog,
             limitsOptions.Value.Query,
             logger,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     /// <summary>
@@ -207,21 +274,27 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Handles layer metadata requests
     /// </summary>
-    private static async Task HandleGetLayerMetadata(HttpContext context)
+    private static async Task<IResult> HandleGetLayerMetadata(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
+
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.LayerMetadata, out var error))
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error ?? "Invalid query parameter."]);
+        }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Layer ID is required");
         }
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
@@ -230,7 +303,7 @@ internal static partial class FeatureServerEndpoints
         ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
-        IResult result = await GetLayerMetadataAsync(
+        return await GetLayerMetadataAsync(
             serviceId,
             layerId,
             catalog,
@@ -238,8 +311,6 @@ internal static partial class FeatureServerEndpoints
             limitsOptions.Value.Query,
             logger,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     /// <summary>
@@ -458,88 +529,91 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Handles GET query requests
     /// </summary>
-    private static async Task HandleQueryFeaturesGet(HttpContext context)
+    private static async Task<IResult> HandleQueryFeaturesGet(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Layer ID is required");
         }
 
-        if (!TryBuildQueryParameters(context.Request.Query, out QueryParameters? queryParams, out string? error))
+        var commonQueryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryBuildQueryParameters(context.Request.Query, commonQueryValidator, out QueryParameters? queryParams, out string? error))
         {
-            await WriteQueryParseErrorAsync(context, error);
-            return;
+            return CreateQueryParseErrorResult(error);
         }
 
         FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
 
-        IResult result = await handler.HandleQueryFeaturesAsync(
+        return await handler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
             queryParams,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     /// <summary>
     /// Handles POST query requests
     /// </summary>
-    private static async Task HandleQueryFeaturesPost(HttpContext context)
+    private static async Task<IResult> HandleQueryFeaturesPost(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Layer ID is required");
         }
 
-        var (queryParams, parseError) = await TryParseQueryParametersAsync(context);
+        var commonQueryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, commonQueryValidator, AllowedQueryParameters.Query, out var error))
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error ?? "Invalid query parameter."]);
+        }
+
+        var (queryParams, parseError) = await TryParseQueryParametersAsync(context, commonQueryValidator);
         if (parseError is not null)
         {
-            await WriteQueryParseErrorAsync(context, parseError);
-            return;
+            return CreateQueryParseErrorResult(parseError);
         }
 
         if (queryParams is null)
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Request body is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Request body is required");
         }
 
         FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
 
-        IResult result = await handler.HandleQueryFeaturesAsync(
+        return await handler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
             queryParams,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     private static async Task HandleGenerateRenderer(HttpContext context)
     {
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
             return;
+
+        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.GenerateRenderer))
+        {
+            return;
+        }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
@@ -580,7 +654,7 @@ internal static partial class FeatureServerEndpoints
 
         try
         {
-            _ = JsonDocument.Parse(classificationDef.ToString());
+            using var document = JsonDocument.Parse(classificationDef.ToString());
         }
         catch (JsonException)
         {
@@ -592,7 +666,9 @@ internal static partial class FeatureServerEndpoints
             .ExecuteAsync(context);
     }
 
-    private static async Task<(QueryParameters? Parameters, string? Error)> TryParseQueryParametersAsync(HttpContext context)
+    private static async Task<(QueryParameters? Parameters, string? Error)> TryParseQueryParametersAsync(
+        HttpContext context,
+        ICommonQueryValidator queryValidator)
     {
         context.Request.EnableBuffering();
 
@@ -616,7 +692,7 @@ internal static partial class FeatureServerEndpoints
                     formValues[entry.Key] = entry.Value;
                 }
 
-                if (!TryBuildQueryParameters(new QueryCollection(formValues), out var queryParams, out var formError))
+                if (!TryBuildQueryParameters(new QueryCollection(formValues), queryValidator, out var queryParams, out var formError))
                 {
                     return (null, formError);
                 }
@@ -659,7 +735,7 @@ internal static partial class FeatureServerEndpoints
 
         var queryString = trimmedBody.StartsWith('?') ? trimmedBody : $"?{trimmedBody}";
         var values = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(queryString);
-        if (!TryBuildQueryParameters(new QueryCollection(values), out var parsedParams, out var error))
+        if (!TryBuildQueryParameters(new QueryCollection(values), queryValidator, out var parsedParams, out var error))
         {
             return (null, error);
         }
@@ -667,9 +743,58 @@ internal static partial class FeatureServerEndpoints
         return (parsedParams, null);
     }
 
-
-    private static bool TryBuildQueryParameters(IQueryCollection query, out QueryParameters queryParams, out string? error)
+    private static async Task<bool> ValidateAllowedParametersAsync(
+        HttpContext context,
+        IReadOnlySet<string> allowedParameters)
     {
+        if (context.Request.Query.Count == 0)
+        {
+            return true;
+        }
+
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        var validationResult = queryValidator.ValidateAllowedParameters(context.Request.Query, allowedParameters);
+        if (!validationResult.IsValid)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(
+                context,
+                "Invalid query parameters",
+                details: [validationResult.ErrorMessage ?? "Invalid query parameter."]);
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateAllowedParameters(
+        IQueryCollection query,
+        ICommonQueryValidator queryValidator,
+        IReadOnlySet<string> allowedParameters,
+        out string? error)
+    {
+        var validationResult = queryValidator.ValidateAllowedParameters(query, allowedParameters);
+        if (!validationResult.IsValid)
+        {
+            error = validationResult.ErrorMessage ?? "Invalid query parameter.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryBuildQueryParameters(
+        IQueryCollection query,
+        ICommonQueryValidator queryValidator,
+        out QueryParameters queryParams,
+        out string? error)
+    {
+        if (!TryValidateAllowedParameters(query, queryValidator, AllowedQueryParameters.Query, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
         string? where = TryGetQueryValue(query, "where");
         string? objectIdsValue = TryGetQueryValue(query, "objectIds");
         string? outFields = TryGetQueryValue(query, "outFields");
@@ -686,21 +811,11 @@ internal static partial class FeatureServerEndpoints
         long[]? objectIds = null;
         if (!string.IsNullOrWhiteSpace(objectIdsValue))
         {
-            string[] objectIdStrings = objectIdsValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
             var objectIdList = new List<long>();
-
-            foreach (string idString in objectIdStrings)
+            if (!TryParseObjectIds(objectIdsValue.AsSpan(), objectIdList, "Invalid objectIds value", out error))
             {
-                if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
-                {
-                    objectIdList.Add(id);
-                }
-                else
-                {
-                    error = $"Invalid objectIds value: {idString}";
-                    queryParams = new QueryParameters();
-                    return false;
-                }
+                queryParams = new QueryParameters();
+                return false;
             }
 
             if (objectIdList.Count > 0)
@@ -734,6 +849,18 @@ internal static partial class FeatureServerEndpoints
         }
 
         if (!TryParseQueryBool(query, "returnDistance", false, out bool returnDistance, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnCentroid", false, out bool returnCentroid, out error))
+        {
+            queryParams = new QueryParameters();
+            return false;
+        }
+
+        if (!TryParseQueryBool(query, "returnDistinctValues", false, out bool returnDistinctValues, out error))
         {
             queryParams = new QueryParameters();
             return false;
@@ -774,6 +901,8 @@ internal static partial class FeatureServerEndpoints
             ReturnCountOnly = returnCountOnly,
             ReturnExtentOnly = returnExtentOnly,
             ReturnDistance = returnDistance,
+            ReturnCentroid = returnCentroid,
+            ReturnDistinctValues = returnDistinctValues,
             F = format,
             ResultOffset = resultOffset,
             ResultRecordCount = resultRecordCount,
@@ -790,18 +919,25 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    private static Task WriteQueryParseErrorAsync(HttpContext context, string? error)
+    private static IResult CreateQueryParseErrorResult(string? error)
     {
         if (!string.IsNullOrWhiteSpace(error) &&
             error.StartsWith("Invalid objectId", StringComparison.OrdinalIgnoreCase))
         {
-            return RouteValidationHelpers.WriteValidationErrorAsync(
-                context,
+            return GeoServicesErrorHelpers.CreateBadRequestError(
                 "Invalid query parameters",
                 details: [error]);
         }
 
-        return RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid query parameters");
+        if (!string.IsNullOrWhiteSpace(error) &&
+            error.StartsWith("Unknown query parameter", StringComparison.OrdinalIgnoreCase))
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error]);
+        }
+
+        return GeoServicesErrorHelpers.CreateBadRequestError(error ?? "Invalid query parameters");
     }
 
     private static string? TryGetQueryValue(IQueryCollection query, string key)
@@ -878,6 +1014,31 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
+    private static bool TryParseObjectIds(ReadOnlySpan<char> input, List<long> objectIds, string errorPrefix, out string? error)
+    {
+        error = null;
+
+        foreach (var range in input.Split(','))
+        {
+            var token = input[range].Trim();
+            if (token.IsEmpty)
+            {
+                continue;
+            }
+
+            if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            {
+                objectIds.Add(id);
+                continue;
+            }
+
+            error = $"{errorPrefix}: {token.ToString()}";
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Handles applyEdits requests
     /// </summary>
@@ -885,6 +1046,11 @@ internal static partial class FeatureServerEndpoints
     {
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
             return;
+
+        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.ApplyEdits))
+        {
+            return;
+        }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
         {
@@ -1101,9 +1267,9 @@ internal static partial class FeatureServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = $"Invalid {key} JSON payload: {ex.Message}";
+            error = $"Invalid {key} JSON payload.";
             return false;
         }
     }
@@ -1175,33 +1341,39 @@ internal static partial class FeatureServerEndpoints
                 deletes = values.ToArray();
                 return true;
             }
-            catch (JsonException ex)
+            catch (JsonException)
             {
-                error = $"Invalid {key} JSON payload: {ex.Message}";
+                error = $"Invalid {key} JSON payload.";
                 return false;
             }
         }
 
-        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length == 0)
+        var parsedValues = new List<object>();
+        ReadOnlySpan<char> valueSpan = trimmed.AsSpan();
+        foreach (var range in valueSpan.Split(','))
+        {
+            var token = valueSpan[range].Trim();
+            if (token.IsEmpty)
+            {
+                continue;
+            }
+
+            if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                parsedValues.Add(parsed);
+            }
+            else
+            {
+                parsedValues.Add(token.ToString());
+            }
+        }
+
+        if (parsedValues.Count == 0)
         {
             return true;
         }
 
-        var parsedValues = new object[parts.Length];
-        for (var i = 0; i < parts.Length; i++)
-        {
-            if (long.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-            {
-                parsedValues[i] = parsed;
-            }
-            else
-            {
-                parsedValues[i] = parts[i];
-            }
-        }
-
-        deletes = parsedValues;
+        deletes = parsedValues.ToArray();
         return true;
     }
 
@@ -1249,6 +1421,11 @@ internal static partial class FeatureServerEndpoints
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
             return;
 
+        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.QueryRelatedRecords))
+        {
+            return;
+        }
+
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
@@ -1286,6 +1463,11 @@ internal static partial class FeatureServerEndpoints
     {
         if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
             return;
+
+        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.QueryRelatedRecords))
+        {
+            return;
+        }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
@@ -1339,20 +1521,10 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
-        string[] objectIdStrings = objectIdsValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
         var objectIds = new List<long>();
-
-        foreach (string idString in objectIdStrings)
+        if (!TryParseObjectIds(objectIdsValue.AsSpan(), objectIds, "Invalid objectId", out error))
         {
-            if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
-            {
-                objectIds.Add(id);
-            }
-            else
-            {
-                error = $"Invalid objectId: {idString}";
-                return false;
-            }
+            return false;
         }
 
         if (objectIds.Count == 0)
@@ -1438,17 +1610,9 @@ internal static partial class FeatureServerEndpoints
                     return (false, null, "objectIds parameter is required");
                 }
 
-                string[] objectIdStrings = objectIdsString.Split(',', StringSplitOptions.RemoveEmptyEntries);
-                foreach (string idString in objectIdStrings)
+                if (!TryParseObjectIds(objectIdsString.AsSpan(), objectIds, "Invalid objectId", out var parseError))
                 {
-                    if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
-                    {
-                        objectIds.Add(id);
-                    }
-                    else
-                    {
-                        return (false, null, $"Invalid objectId: {idString}");
-                    }
+                    return (false, null, parseError);
                 }
             }
             else if (objectIdsElement.ValueKind == JsonValueKind.Array)
@@ -1579,6 +1743,17 @@ internal static partial class FeatureServerEndpoints
     {
         try
         {
+            var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+            var queryValidation = queryValidator.ValidateAllowedParameters(
+                context.Request.Query,
+                AllowedQueryParameters.Tiles);
+            if (!queryValidation.IsValid)
+            {
+                return GeoServicesErrorHelpers.CreateBadRequestError(
+                    "Invalid query parameters",
+                    [queryValidation.ErrorMessage ?? "Invalid query parameter."]);
+            }
+
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
 
             // Validate tile configuration
@@ -1623,9 +1798,9 @@ internal static partial class FeatureServerEndpoints
             context.Response.Headers["Cache-Control"] = $"public, max-age={options.CacheMaxAge}";
             return Results.Bytes(mvtData, "application/vnd.mapbox-vector-tile");
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return GeoServicesErrorHelpers.CreateBadRequestError(ex.Message);
+            return GeoServicesErrorHelpers.CreateBadRequestError("Invalid tile query parameters.");
         }
         catch (Exception ex)
         {

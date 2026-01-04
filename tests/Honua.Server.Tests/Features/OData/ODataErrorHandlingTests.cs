@@ -172,6 +172,17 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         await AssertODataErrorAsync(response);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /odata/Features({layerId})?unsupported=1")]
+    public async Task UnknownQueryParameter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?unsupported=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
+    }
+
     #endregion
 
     #region Invalid $orderby
@@ -185,6 +196,9 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQuery");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Contain("Invalid field name in $orderby");
     }
 
     [IntegrationTest]
@@ -196,6 +210,9 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Contain("Invalid sort direction in $orderby");
     }
 
     #endregion
@@ -597,6 +614,13 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             errorElement.TryGetProperty("code", out var codeElement).Should().BeTrue();
             codeElement.GetString().Should().Be(expectedCode);
         }
+    }
+
+    private static async Task<string> GetODataErrorMessageAsync(HttpResponseMessage response)
+    {
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        return document.RootElement.GetProperty("error").GetProperty("message").GetString() ?? string.Empty;
     }
 
     #endregion

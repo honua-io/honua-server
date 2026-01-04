@@ -59,14 +59,20 @@ public static class CorsConfiguration
     {
         var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
         var allowCredentials = configuration.GetValue("Cors:AllowCredentials", false);
+        var preflightMaxAgeMinutes = configuration.GetValue("Cors:PreflightMaxAgeMinutes", 10);
 
         if (allowedOrigins.Length > 0)
         {
-            policy.WithOrigins(allowedOrigins)
-                  .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            var explicitOrigins = FilterExplicitOrigins(allowedOrigins);
+            if (explicitOrigins.Length > 0)
+            {
+                policy.WithOrigins(explicitOrigins);
+            }
+
+            policy.WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                   .WithHeaders("Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID")
                   .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
-                  .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
+                  .SetPreflightMaxAge(TimeSpan.FromMinutes(preflightMaxAgeMinutes));
 
             if (allowCredentials)
             {
@@ -75,10 +81,8 @@ public static class CorsConfiguration
         }
         else
         {
-            // No origins configured - deny all cross-origin requests
-            policy.WithOrigins() // Empty origins list
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
+            // No origins configured - explicitly deny all cross-origin requests.
+            policy.SetIsOriginAllowed(_ => false);
         }
     }
 
@@ -91,18 +95,22 @@ public static class CorsConfiguration
 
         if (allowedOrigins.Length > 0)
         {
-            policy.WithOrigins(allowedOrigins)
-                  .WithMethods("GET", "POST") // Only safe methods
+            var explicitOrigins = FilterExplicitOrigins(allowedOrigins);
+            if (explicitOrigins.Length > 0)
+            {
+                policy.WithOrigins(explicitOrigins);
+            }
+
+            policy.WithMethods("GET", "POST") // Only safe methods
                   .WithHeaders("Content-Type", "Authorization", "X-API-Key")
+                  .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
                   .SetPreflightMaxAge(TimeSpan.FromMinutes(5))
                   .DisallowCredentials(); // Never allow credentials in restricted mode
         }
         else
         {
-            // No origins configured - deny all
-            policy.WithOrigins()
-                  .WithMethods()
-                  .WithHeaders();
+            // No origins configured - explicitly deny all.
+            policy.SetIsOriginAllowed(_ => false);
         }
     }
 
@@ -112,28 +120,123 @@ public static class CorsConfiguration
     /// </summary>
     private static bool IsOriginAllowed(string origin, string[] allowedOrigins)
     {
-        if (string.IsNullOrEmpty(origin))
+        if (string.IsNullOrWhiteSpace(origin))
+        {
             return false;
+        }
+
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
+        {
+            return false;
+        }
 
         foreach (var allowedOrigin in allowedOrigins)
         {
+            if (string.IsNullOrWhiteSpace(allowedOrigin))
+            {
+                continue;
+            }
+
+            var trimmedOrigin = allowedOrigin.Trim();
+
             // Exact match
-            if (string.Equals(origin, allowedOrigin, StringComparison.OrdinalIgnoreCase))
+            if (!trimmedOrigin.Contains('*') &&
+                string.Equals(origin, trimmedOrigin, StringComparison.OrdinalIgnoreCase))
+            {
                 return true;
+            }
 
             // Wildcard subdomain match (*.example.com)
-            if (allowedOrigin.StartsWith("*.") && origin.EndsWith(allowedOrigin[1..], StringComparison.OrdinalIgnoreCase))
+            if (!TryParseWildcardOrigin(trimmedOrigin, out var scheme, out var hostSuffix))
             {
-                var originHost = new Uri(origin).Host;
-                var allowedHost = allowedOrigin[2..]; // Remove "*."
+                continue;
+            }
 
-                // Ensure it's actually a subdomain, not just ending with the domain
-                if (originHost.EndsWith($".{allowedHost}", StringComparison.OrdinalIgnoreCase))
-                    return true;
+            if (scheme != null && !string.Equals(originUri.Scheme, scheme, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var originHost = originUri.Host;
+            if (originHost.EndsWith(hostSuffix, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(originHost, hostSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
             }
         }
 
         return false;
+    }
+
+    private static string[] FilterExplicitOrigins(string[] allowedOrigins)
+    {
+        if (allowedOrigins.Length == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var explicitOrigins = new List<string>();
+        foreach (var origin in allowedOrigins)
+        {
+            if (string.IsNullOrWhiteSpace(origin))
+            {
+                continue;
+            }
+
+            var trimmed = origin.Trim();
+            if (trimmed.Contains('*'))
+            {
+                continue;
+            }
+
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+            {
+                explicitOrigins.Add(trimmed);
+            }
+        }
+
+        return explicitOrigins.ToArray();
+    }
+
+    private static bool TryParseWildcardOrigin(string allowedOrigin, out string? scheme, out string hostSuffix)
+    {
+        scheme = null;
+        hostSuffix = string.Empty;
+
+        if (allowedOrigin.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            allowedOrigin.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            var schemeEnd = allowedOrigin.IndexOf("://", StringComparison.Ordinal);
+            if (schemeEnd <= 0)
+            {
+                return false;
+            }
+
+            scheme = allowedOrigin[..schemeEnd];
+            var hostPattern = allowedOrigin[(schemeEnd + 3)..];
+            if (!hostPattern.StartsWith("*.", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            hostSuffix = hostPattern[2..];
+        }
+        else
+        {
+            if (!allowedOrigin.StartsWith("*.", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            hostSuffix = allowedOrigin[2..];
+        }
+
+        if (string.IsNullOrWhiteSpace(hostSuffix) || hostSuffix.Contains('/', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

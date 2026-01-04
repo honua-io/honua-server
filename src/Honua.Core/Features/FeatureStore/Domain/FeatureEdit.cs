@@ -83,6 +83,7 @@ public readonly record struct FeatureEditBatch
 /// </summary>
 public readonly record struct FeatureEditResult
 {
+    private const string RollbackErrorMessage = "Operation rolled back.";
     /// <summary>
     /// Number of features successfully created
     /// </summary>
@@ -173,9 +174,9 @@ public readonly record struct FeatureEditResult
             UpdatedCount = 0,
             DeletedCount = 0,
             CreatedIds = ImmutableArray<long>.Empty,
-            CreateResults = createResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : createResults,
-            UpdateResults = updateResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : updateResults,
-            DeleteResults = deleteResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : deleteResults,
+            CreateResults = NormalizeRollbackResults(createResults, includeObjectId: false),
+            UpdateResults = NormalizeRollbackResults(updateResults, includeObjectId: true),
+            DeleteResults = NormalizeRollbackResults(deleteResults, includeObjectId: true),
             WasRolledBack = true
         };
 
@@ -191,6 +192,33 @@ public readonly record struct FeatureEditResult
         CreateResults.Any(r => !r.IsSuccess) ||
         UpdateResults.Any(r => !r.IsSuccess) ||
         DeleteResults.Any(r => !r.IsSuccess);
+
+    private static ImmutableArray<EditOperationResult> NormalizeRollbackResults(
+        ImmutableArray<EditOperationResult> results,
+        bool includeObjectId)
+    {
+        if (results.IsDefaultOrEmpty)
+        {
+            return ImmutableArray<EditOperationResult>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<EditOperationResult>(results.Length);
+        foreach (var result in results)
+        {
+            if (result.IsSuccess)
+            {
+                builder.Add(EditOperationResult.Failure(
+                    RollbackErrorMessage,
+                    objectId: includeObjectId ? result.ObjectId : null));
+            }
+            else
+            {
+                builder.Add(result);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
 }
 
 /// <summary>

@@ -215,6 +215,39 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithInvalidUrl_ReturnsBadRequestInResponse()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "invalid-url",
+                Method = "GET",
+                Url = "InvalidUrl"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var responses = document.RootElement.GetProperty("responses");
+        responses.GetArrayLength().Should().Be(1);
+
+        var firstResponse = responses[0];
+        firstResponse.GetProperty("id").GetString().Should().Be("invalid-url");
+        firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAtomicityGroupFailure_RollsBackChanges()
     {
         var initialCount = await CountFeaturesAsync();

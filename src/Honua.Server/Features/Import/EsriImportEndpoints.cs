@@ -18,7 +18,7 @@ internal static partial class EsriImportEndpoints
     /// </summary>
     public static void MapEsriImportEndpoints(this WebApplication app)
     {
-        RouteGroupBuilder group = app.MapGroup("/api/import/esri")
+        RouteGroupBuilder group = app.MapGroup("/api/v1/admin/import/esri")
             .WithTags("EsriImport")
             .RequireAdminAuthorization();
 
@@ -129,7 +129,7 @@ internal static partial class EsriImportEndpoints
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
             await WriteErrorAsync(context,
-                $"Failed to connect to ArcGIS service: {ex.Message}",
+                "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
         }
         catch (Exception ex)
@@ -248,8 +248,8 @@ internal static partial class EsriImportEndpoints
             {
                 JobId = jobId,
                 Message = "Import job queued for processing",
-                StatusUrl = $"/api/import/esri/jobs/{jobId}",
-                CancelUrl = $"/api/import/esri/jobs/{jobId}/cancel"
+                StatusUrl = $"/api/v1/admin/import/esri/jobs/{jobId}",
+                CancelUrl = $"/api/v1/admin/import/esri/jobs/{jobId}/cancel"
             };
 
             await Results.Json(response, EsriImportApiJsonContext.Default.EsriImportJobResponse,

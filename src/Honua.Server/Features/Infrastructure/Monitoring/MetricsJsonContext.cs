@@ -23,6 +23,8 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 [JsonSerializable(typeof(Dictionary<string, DatabaseOperationMetrics>))]
 [JsonSerializable(typeof(Dictionary<string, CacheTypeMetrics>))]
 [JsonSerializable(typeof(MemoryUsage))]
+[JsonSerializable(typeof(QueryCacheStatisticsResponse))]
+[JsonSerializable(typeof(QueryCachePerformanceMetrics))]
 internal partial class MetricsJsonContext : JsonSerializerContext
 {
 }

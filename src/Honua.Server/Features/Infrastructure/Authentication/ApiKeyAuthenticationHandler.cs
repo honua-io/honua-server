@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
@@ -82,7 +83,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? devAuthBypass = _authOptions.DevAuthBypass;
         if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            return _authOptions.IsDevelopmentMode || _authOptions.IsTestMode;
         }
 
         // Check if we're in development environment AND admin password is empty/not configured
@@ -104,19 +105,18 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// </summary>
     private static bool IsApiKeyValid(string providedKey, string configuredKey)
     {
-        if (providedKey.Length != configuredKey.Length)
-            return false;
-
         byte[] providedBytes = Encoding.UTF8.GetBytes(providedKey);
         byte[] configuredBytes = Encoding.UTF8.GetBytes(configuredKey);
 
-        bool areEqual = true;
-        for (int i = 0; i < providedBytes.Length; i++)
-        {
-            areEqual &= providedBytes[i] == configuredBytes[i];
-        }
+        var maxLength = Math.Max(providedBytes.Length, configuredBytes.Length);
+        Span<byte> paddedProvided = maxLength <= 256 ? stackalloc byte[maxLength] : new byte[maxLength];
+        Span<byte> paddedConfigured = maxLength <= 256 ? stackalloc byte[maxLength] : new byte[maxLength];
 
-        return areEqual;
+        providedBytes.CopyTo(paddedProvided);
+        configuredBytes.CopyTo(paddedConfigured);
+
+        var matches = CryptographicOperations.FixedTimeEquals(paddedProvided, paddedConfigured);
+        return matches && providedBytes.Length == configuredBytes.Length;
     }
 
     /// <summary>

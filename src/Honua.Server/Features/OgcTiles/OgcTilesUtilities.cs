@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Tiles;
@@ -11,42 +12,59 @@ namespace Honua.Server.Features.OgcTiles;
 
 internal static class OgcTilesUtilities
 {
+    /// <summary>
+    /// Allowed query parameter sets for OGC Tiles endpoints.
+    /// </summary>
     public static class AllowedQueryParameters
     {
-        public static readonly ISet<string> Metadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f"
-        };
+        /// <summary>
+        /// Allowed parameters for tile matrix set metadata endpoints.
+        /// </summary>
+        public static readonly FrozenSet<string> Metadata =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> DatasetTilesetMetadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "collections"
-        };
+        /// <summary>
+        /// Allowed parameters for dataset tileset metadata endpoints.
+        /// </summary>
+        public static readonly FrozenSet<string> DatasetTilesetMetadata = new[]
+            {
+                "f",
+                "collections"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> OpenApi = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f"
-        };
+        /// <summary>
+        /// Allowed parameters for OpenAPI endpoints.
+        /// </summary>
+        public static readonly FrozenSet<string> OpenApi =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> Tiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "datetime",
-            "subset",
-            "crs",
-            "subset-crs"
-        };
+        /// <summary>
+        /// Allowed parameters for tiles endpoints.
+        /// </summary>
+        public static readonly FrozenSet<string> Tiles = new[]
+            {
+                "f",
+                "datetime",
+                "subset",
+                "crs",
+                "subset-crs"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly ISet<string> DatasetTiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "f",
-            "datetime",
-            "subset",
-            "crs",
-            "subset-crs",
-            "collections"
-        };
+        /// <summary>
+        /// Allowed parameters for dataset tiles endpoints.
+        /// </summary>
+        public static readonly FrozenSet<string> DatasetTiles = new[]
+            {
+                "f",
+                "datetime",
+                "subset",
+                "crs",
+                "subset-crs",
+                "collections"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     public const string WebMercatorQuadId = "WebMercatorQuad";

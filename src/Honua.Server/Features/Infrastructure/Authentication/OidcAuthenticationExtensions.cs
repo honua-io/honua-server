@@ -207,12 +207,14 @@ public static class OidcAuthenticationExtensions
             };
 
             // Set valid issuers based on configured providers
-            var validIssuers = new List<string>();
+            var validIssuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             if (oidcOptions.AzureAd?.IsValid == true)
             {
-                var azureIssuer = $"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0";
+                var tenantId = oidcOptions.AzureAd.TenantId!;
+                var azureIssuer = $"{oidcOptions.AzureAd.Instance}{tenantId}/v2.0";
                 validIssuers.Add(azureIssuer);
+                validIssuers.Add($"https://sts.windows.net/{tenantId}/");
             }
 
             if (oidcOptions.Google?.IsValid == true)
@@ -227,17 +229,22 @@ public static class OidcAuthenticationExtensions
 
             if (oidcOptions.TokenValidation.ValidIssuers.Length > 0)
             {
-                validIssuers.AddRange(oidcOptions.TokenValidation.ValidIssuers);
+                foreach (var issuer in oidcOptions.TokenValidation.ValidIssuers)
+                {
+                    validIssuers.Add(issuer);
+                }
             }
 
-            options.TokenValidationParameters.ValidIssuers = validIssuers;
+            options.TokenValidationParameters.ValidIssuers = validIssuers.ToArray();
 
             // Set valid audiences
-            var validAudiences = new List<string>();
+            var validAudiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             if (oidcOptions.AzureAd?.IsValid == true)
             {
-                validAudiences.Add(oidcOptions.AzureAd.ClientId!);
+                var clientId = oidcOptions.AzureAd.ClientId!;
+                validAudiences.Add(clientId);
+                validAudiences.Add($"api://{clientId}");
             }
 
             if (oidcOptions.Google?.IsValid == true)
@@ -252,10 +259,13 @@ public static class OidcAuthenticationExtensions
 
             if (oidcOptions.TokenValidation.ValidAudiences.Length > 0)
             {
-                validAudiences.AddRange(oidcOptions.TokenValidation.ValidAudiences);
+                foreach (var audience in oidcOptions.TokenValidation.ValidAudiences)
+                {
+                    validAudiences.Add(audience);
+                }
             }
 
-            options.TokenValidationParameters.ValidAudiences = validAudiences;
+            options.TokenValidationParameters.ValidAudiences = validAudiences.ToArray();
 
             // Configure authority for metadata retrieval
             // Use the first available provider's authority

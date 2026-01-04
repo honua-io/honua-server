@@ -34,22 +34,14 @@ public static class FileStorageServiceExtensions
         else
         {
             // Default local storage path if not configured
-            services.Configure<LocalStorageOptions>(options =>
-            {
-                options = new LocalStorageOptions
-                {
-                    BasePath = Path.Combine(Path.GetTempPath(), "honua-storage"),
-                    CreateDirectoryIfNotExists = true
-                };
-            });
-            services.AddSingleton(new LocalStorageOptions
+            var defaultLocalOptions = new LocalStorageOptions
             {
                 BasePath = section.GetValue("LocalStorage:BasePath", null as string)
                            ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
                 CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
-            });
-            services.AddSingleton<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>(sp =>
-                Microsoft.Extensions.Options.Options.Create(sp.GetRequiredService<LocalStorageOptions>()));
+            };
+            services.AddSingleton<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>(
+                Microsoft.Extensions.Options.Options.Create(defaultLocalOptions));
         }
 
         // Determine provider from configuration or environment
@@ -69,22 +61,25 @@ public static class FileStorageServiceExtensions
                 break;
 
             case CloudStorageProvider.AwsS3:
-                // TODO: Sprint 2 - Add AWS S3 implementation
+                // Planned for Phase 1 - Cloud Storage Integration
+                // See docs/MVP_PLAN.md for implementation roadmap
                 throw new NotSupportedException(
                     "AWS S3 storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development or wait for Sprint 2 implementation.");
+                    "Use 'Local' provider for development.");
 
             case CloudStorageProvider.AzureBlob:
-                // TODO: Sprint 3 - Add Azure Blob implementation
+                // Planned for Phase 1 - Cloud Storage Integration
+                // See docs/MVP_PLAN.md for implementation roadmap
                 throw new NotSupportedException(
                     "Azure Blob storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development or wait for Sprint 3 implementation.");
+                    "Use 'Local' provider for development.");
 
             case CloudStorageProvider.GoogleCloudStorage:
-                // TODO: Sprint 3 - Add GCS implementation
+                // Planned for Phase 1 - Cloud Storage Integration
+                // See docs/MVP_PLAN.md for implementation roadmap
                 throw new NotSupportedException(
                     "Google Cloud Storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development or wait for Sprint 3 implementation.");
+                    "Use 'Local' provider for development.");
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {providerName}");

@@ -1,0 +1,327 @@
+# Performance Benchmarking CI Workflow
+# Runs comprehensive performance benchmarks and detects regressions
+
+name: Performance Benchmarks
+
+on:
+  # Run on PRs to main branch
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+      - '.github/workflows/performance-benchmarks.yml'
+
+  # Run on pushes to main (to update baseline)
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      benchmark_filter:
+        description: 'Benchmark filter pattern (e.g., "*Database*", "*API*")'
+        required: false
+        default: '*'
+      update_baseline:
+        description: 'Update performance baseline'
+        required: false
+        default: false
+        type: boolean
+      update_reason:
+        description: 'Reason for baseline update'
+        required: false
+        default: 'Manual baseline update'
+
+env:
+  DOTNET_VERSION: '9.0'
+  BENCHMARK_ARTIFACTS_PATH: 'benchmark-results'
+
+jobs:
+  performance-benchmarks:
+    name: Run Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: honua_bench
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        # Fetch enough history to access baseline file
+        fetch-depth: 10
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build solution
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Setup test database
+      run: |
+        # Create test data for benchmarks
+        PGPASSWORD=postgres psql -h localhost -U postgres -d honua_bench -c "
+          CREATE EXTENSION IF NOT EXISTS postgis;
+          CREATE SCHEMA IF NOT EXISTS benchmark_data;
+
+          -- Create sample layer
+          CREATE TABLE IF NOT EXISTS layers (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            spatial_reference_srid INT NOT NULL DEFAULT 4326,
+            geometry_type TEXT NOT NULL DEFAULT 'Point',
+            visible BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          INSERT INTO layers (name, geometry_type) VALUES
+            ('Test Layer', 'Point'),
+            ('Polygon Layer', 'Polygon'),
+            ('Line Layer', 'LineString')
+          ON CONFLICT DO NOTHING;
+        "
+
+    - name: Setup environment variables
+      run: |
+        echo "HONUA_BENCH_DB_URL=Host=localhost;Database=honua_bench;Username=postgres;Password=postgres" >> $GITHUB_ENV
+        echo "HONUA_BENCH_REDIS_URL=localhost:6379" >> $GITHUB_ENV
+        echo "ASPNETCORE_ENVIRONMENT=Benchmark" >> $GITHUB_ENV
+
+    - name: Create benchmark artifacts directory
+      run: mkdir -p ${{ env.BENCHMARK_ARTIFACTS_PATH }}
+
+    - name: Run Database Performance Benchmarks
+      if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.benchmark_filter, 'Database')
+      run: |
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*DatabasePerformance*" \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/database"
+
+    - name: Run API Endpoint Benchmarks
+      if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.benchmark_filter, 'API')
+      run: |
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*ApiEndpoint*" \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/api"
+
+    - name: Run Caching Performance Benchmarks
+      if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.benchmark_filter, 'Caching')
+      run: |
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*CachingPerformance*" \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/caching"
+
+    - name: Run Streaming Memory Benchmarks
+      if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.benchmark_filter, 'Memory')
+      run: |
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*StreamingMemory*" \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/memory"
+
+    - name: Run Load Test Benchmarks (Quick)
+      if: github.event_name == 'pull_request'
+      run: |
+        # Reduced load test for PR validation
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*LoadTestConcurrency*" \
+          --job short \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/load"
+      env:
+        # Smaller test parameters for PR builds
+        ConcurrentUsers: 10
+        TestDuration: 10s
+        RequestsPerSecond: 100
+
+    - name: Run Load Test Benchmarks (Full)
+      if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.benchmark_filter, 'Load'))
+      run: |
+        # Full load test for main branch
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*LoadTestConcurrency*" \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/load"
+
+    - name: Run Custom Benchmark Filter
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.benchmark_filter != '*'
+      run: |
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "${{ github.event.inputs.benchmark_filter }}" \
+          --memory \
+          --exporters json,html \
+          --artifacts "${{ env.BENCHMARK_ARTIFACTS_PATH }}/custom"
+
+    - name: Analyze Performance Results
+      id: analyze_results
+      run: |
+        # Run regression detection
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --analyze-results \
+          --baseline-file "performance-baseline.json" \
+          --results-dir "${{ env.BENCHMARK_ARTIFACTS_PATH }}" \
+          --output-file "${{ env.BENCHMARK_ARTIFACTS_PATH }}/regression-analysis.json" \
+          --ci-report-file "${{ env.BENCHMARK_ARTIFACTS_PATH }}/ci-report.md"
+
+        # Set outputs for subsequent steps
+        echo "analysis_exit_code=$?" >> $GITHUB_OUTPUT
+
+        if [ -f "${{ env.BENCHMARK_ARTIFACTS_PATH }}/ci-report.md" ]; then
+          echo "report_generated=true" >> $GITHUB_OUTPUT
+        else
+          echo "report_generated=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Update Performance Baseline
+      if: |
+        (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.analyze_results.outputs.analysis_exit_code == '0') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.update_baseline == 'true')
+      run: |
+        UPDATE_REASON="${{ github.event.inputs.update_reason || 'Automated baseline update after main branch merge' }}"
+
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --update-baseline "$UPDATE_REASON" \
+          --results-dir "${{ env.BENCHMARK_ARTIFACTS_PATH }}" \
+          --baseline-file "performance-baseline.json"
+
+        # Commit updated baseline back to repository
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        if git diff --exit-code performance-baseline.json; then
+          echo "No changes to baseline file"
+        else
+          git add performance-baseline.json
+          git commit -m "chore: update performance baseline - $UPDATE_REASON"
+          git push
+        fi
+
+    - name: Upload Benchmark Artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results-${{ github.run_id }}
+        path: ${{ env.BENCHMARK_ARTIFACTS_PATH }}
+        retention-days: 30
+
+    - name: Upload Performance Report to Job Summary
+      if: steps.analyze_results.outputs.report_generated == 'true'
+      run: |
+        echo "## Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
+        cat "${{ env.BENCHMARK_ARTIFACTS_PATH }}/ci-report.md" >> $GITHUB_STEP_SUMMARY
+
+    - name: Comment Performance Results on PR
+      if: github.event_name == 'pull_request' && steps.analyze_results.outputs.report_generated == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const reportPath = '${{ env.BENCHMARK_ARTIFACTS_PATH }}/ci-report.md';
+
+          if (fs.existsSync(reportPath)) {
+            const report = fs.readFileSync(reportPath, 'utf8');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+          }
+
+    - name: Fail build on critical performance regression
+      if: steps.analyze_results.outputs.analysis_exit_code == '2'
+      run: |
+        echo "❌ Critical performance regression detected!"
+        echo "Review the performance report and consider optimizations."
+        echo "To proceed anyway, update the performance baseline manually."
+        exit 1
+
+    - name: Warning on performance regression
+      if: steps.analyze_results.outputs.analysis_exit_code == '1'
+      run: |
+        echo "⚠️ Performance warnings detected!"
+        echo "Review the performance report for details."
+        echo "Build will continue but monitor these benchmarks in future changes."
+
+  # Separate job for performance comparison across different environments
+  cross-platform-benchmarks:
+    name: Cross-Platform Performance Comparison
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Run Core Benchmarks
+      run: |
+        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
+          --filter "*SqlGeneration*" \
+          --job short \
+          --exporters json \
+          --artifacts "cross-platform-${{ matrix.os }}"
+
+    - name: Upload Cross-Platform Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: cross-platform-results-${{ matrix.os }}
+        path: cross-platform-${{ matrix.os }}
+        retention-days: 7

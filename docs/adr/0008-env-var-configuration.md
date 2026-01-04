@@ -23,7 +23,7 @@ Basemap__Provider                     # Optional (default: openfreemap)
 # Resource Limits (Issue #63 - Shared limits configuration)
 Limits__Query__MaxRecordCount         # Default: 2000, Range: 100-10000
 Limits__Query__DefaultRecordCount     # Default: 1000, Range: 100+
-Limits__Query__MaxOffset              # Default: 100000, Range: 1000+
+Limits__Query__MaxOffset              # Default: 1000000, Range: 1000+
 Limits__Query__QueryTimeout           # Default: 00:00:30, Range: 00:00:05+
 
 Limits__Geometry__MaxVertices         # Default: 10000, Range: 1000+

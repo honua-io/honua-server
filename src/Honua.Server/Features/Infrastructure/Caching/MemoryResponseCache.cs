@@ -3,11 +3,12 @@
 
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
 
-internal sealed class MemoryResponseCache : IDisposable
+internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 {
     private readonly IMemoryCache _cache;
     private readonly ConcurrentDictionary<string, byte> _keys = new(StringComparer.Ordinal);
@@ -21,9 +22,10 @@ internal sealed class MemoryResponseCache : IDisposable
         _cache = cache;
     }
 
-    public Task<T?> GetAsync<T>(string key)
+    public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
     {
         ValidateKey(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (_cache.TryGetValue(key, out var value) && value is T typed)
         {
@@ -33,9 +35,10 @@ internal sealed class MemoryResponseCache : IDisposable
         return Task.FromResult<T?>(default);
     }
 
-    public Task SetAsync<T>(string key, T value, TimeSpan expiration)
+    public Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
     {
         ValidateKey(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
         ArgumentNullException.ThrowIfNull(value);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(expiration, TimeSpan.Zero);
@@ -57,13 +60,18 @@ internal sealed class MemoryResponseCache : IDisposable
         return Task.CompletedTask;
     }
 
-    public async Task<T?> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan expiration)
+    public async Task<T> GetOrCreateAsync<T>(
+        string key,
+        Func<Task<T>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default) where T : class
     {
         ValidateKey(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
         ArgumentNullException.ThrowIfNull(factory);
 
-        var existing = await GetAsync<T>(key);
+        var existing = await GetAsync<T>(key, cancellationToken);
         if (existing is not null)
         {
             return existing;
@@ -72,22 +80,24 @@ internal sealed class MemoryResponseCache : IDisposable
         var created = await factory();
         ArgumentNullException.ThrowIfNull(created, nameof(factory));
 
-        await SetAsync(key, created, expiration);
+        await SetAsync(key, created, expiration, cancellationToken);
         return created;
     }
 
-    public Task RemoveAsync(string key)
+    public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         ValidateKey(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
         _cache.Remove(key);
         _keys.TryRemove(key, out _);
         return Task.CompletedTask;
     }
 
-    public Task RemoveByPatternAsync(string pattern)
+    public Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
         ValidateKey(pattern);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var regex = new Regex(
             "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$",

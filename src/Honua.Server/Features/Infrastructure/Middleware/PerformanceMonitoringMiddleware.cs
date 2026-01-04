@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Options;
 
@@ -15,7 +16,7 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// This middleware measures request duration, tracks active requests, monitors memory usage,
 /// and provides comprehensive performance telemetry for operational monitoring.
 /// </remarks>
-internal sealed class PerformanceMonitoringMiddleware
+internal sealed partial class PerformanceMonitoringMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<PerformanceMonitoringMiddleware> _logger;
@@ -37,7 +38,7 @@ internal sealed class PerformanceMonitoringMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var stopwatch = Stopwatch.StartNew();
-        var endpoint = GetNormalizedEndpoint(context.Request.Path);
+        var endpoint = GetNormalizedEndpoint(context);
         IOperationScope? operationScope = null;
 
         if (_options.EnableDetailedRequestTracking)
@@ -176,7 +177,19 @@ internal sealed class PerformanceMonitoringMiddleware
     /// <summary>
     /// Normalizes endpoint paths to reduce cardinality in metrics.
     /// </summary>
-    private static string GetNormalizedEndpoint(PathString path)
+    private static string GetNormalizedEndpoint(HttpContext context)
+    {
+        var endpoint = context.GetEndpoint();
+        if (endpoint is RouteEndpoint routeEndpoint &&
+            !string.IsNullOrWhiteSpace(routeEndpoint.RoutePattern.RawText))
+        {
+            return routeEndpoint.RoutePattern.RawText!;
+        }
+
+        return NormalizePath(context.Request.Path);
+    }
+
+    private static string NormalizePath(PathString path)
     {
         var pathValue = path.Value ?? "/";
         if (pathValue == "/")
@@ -220,11 +233,9 @@ internal sealed class PerformanceMonitoringMiddleware
 
         // Normalize common patterns to reduce metric cardinality
         // Replace IDs, GUIDs, and OData key segments with placeholders
-        pathValue = System.Text.RegularExpressions.Regex.Replace(pathValue, @"\([^/]+\)", "({id})");
-        pathValue = System.Text.RegularExpressions.Regex.Replace(pathValue, @"\b\d+\b", "{id}");
-        pathValue = System.Text.RegularExpressions.Regex.Replace(pathValue,
-            @"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
-            "{guid}");
+        pathValue = ODataKeyRegex().Replace(pathValue, "({id})");
+        pathValue = NumericIdRegex().Replace(pathValue, "{id}");
+        pathValue = GuidRegex().Replace(pathValue, "{guid}");
 
         return pathValue;
     }
@@ -235,8 +246,23 @@ internal sealed class PerformanceMonitoringMiddleware
     private bool ShouldSampleMemory()
     {
         // Simple sampling: sample every N requests (thread-safe approximation)
+        if (_options.MemorySamplingInterval <= 0)
+        {
+            return false;
+        }
+
         return Environment.TickCount % _options.MemorySamplingInterval == 0;
     }
+
+    [GeneratedRegex(@"\([^/]+\)", RegexOptions.CultureInvariant)]
+    private static partial Regex ODataKeyRegex();
+
+    [GeneratedRegex(@"\b\d+\b", RegexOptions.CultureInvariant)]
+    private static partial Regex NumericIdRegex();
+
+    [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex GuidRegex();
 }
 
 /// <summary>

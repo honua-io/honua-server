@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
@@ -15,13 +16,14 @@ namespace Honua.Server.Features.Infrastructure.Validation;
 public sealed class SafeSqlIdentifierAttribute : ValidationAttribute
 {
     private static readonly Regex _sqlIdentifierRegex = new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled);
-    private static readonly HashSet<string> _reservedWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
-        "TABLE", "INDEX", "VIEW", "DATABASE", "SCHEMA", "USER", "GROUP", "ORDER", "BY",
-        "HAVING", "UNION", "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "ON",
-        "NULL", "TRUE", "FALSE", "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE"
-    };
+    private static readonly FrozenSet<string> _reservedWords = new[]
+        {
+            "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
+            "TABLE", "INDEX", "VIEW", "DATABASE", "SCHEMA", "USER", "GROUP", "ORDER", "BY",
+            "HAVING", "UNION", "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "ON",
+            "NULL", "TRUE", "FALSE", "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     protected override DataAnnotationsValidationResult IsValid(object? value, ValidationContext validationContext)
     {

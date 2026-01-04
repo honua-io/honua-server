@@ -17,6 +17,10 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider
 {
     private readonly ConcurrentDictionary<string, CacheOperationCounters> _cacheCounters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _gcLock = new();
+    private long _lastGen0Collections = -1;
+    private long _lastGen1Collections = -1;
+    private long _lastGen2Collections = -1;
 
     /// <inheritdoc />
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
@@ -60,9 +64,43 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
         var gen1Tags = new KeyValuePair<string, object?>[] { new("generation", "1") };
         var gen2Tags = new KeyValuePair<string, object?>[] { new("generation", "2") };
 
-        PerformanceMetrics.GarbageCollectionCount.Add(gen0Collections, gen0Tags);
-        PerformanceMetrics.GarbageCollectionCount.Add(gen1Collections, gen1Tags);
-        PerformanceMetrics.GarbageCollectionCount.Add(gen2Collections, gen2Tags);
+        long deltaGen0;
+        long deltaGen1;
+        long deltaGen2;
+
+        lock (_gcLock)
+        {
+            if (_lastGen0Collections < 0)
+            {
+                _lastGen0Collections = gen0Collections;
+                _lastGen1Collections = gen1Collections;
+                _lastGen2Collections = gen2Collections;
+                return;
+            }
+
+            deltaGen0 = Math.Max(0, gen0Collections - _lastGen0Collections);
+            deltaGen1 = Math.Max(0, gen1Collections - _lastGen1Collections);
+            deltaGen2 = Math.Max(0, gen2Collections - _lastGen2Collections);
+
+            _lastGen0Collections = gen0Collections;
+            _lastGen1Collections = gen1Collections;
+            _lastGen2Collections = gen2Collections;
+        }
+
+        if (deltaGen0 > 0)
+        {
+            PerformanceMetrics.GarbageCollectionCount.Add(deltaGen0, gen0Tags);
+        }
+
+        if (deltaGen1 > 0)
+        {
+            PerformanceMetrics.GarbageCollectionCount.Add(deltaGen1, gen1Tags);
+        }
+
+        if (deltaGen2 > 0)
+        {
+            PerformanceMetrics.GarbageCollectionCount.Add(deltaGen2, gen2Tags);
+        }
     }
 
     /// <inheritdoc />
@@ -79,7 +117,30 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
         var normalizedType = string.IsNullOrWhiteSpace(cacheType) ? "unknown" : cacheType;
         var normalizedOperation = string.IsNullOrWhiteSpace(operation) ? "unknown" : operation;
         var counters = _cacheCounters.GetOrAdd(normalizedType, _ => new CacheOperationCounters());
-        counters.Record(normalizedOperation);
+        var recordHitRatio = counters.Record(normalizedOperation);
+
+        if (recordHitRatio)
+        {
+            var hitRatio = counters.GetHitRatio();
+            var ratioTags = new KeyValuePair<string, object?>[]
+            {
+                new("cache_type", normalizedType)
+            };
+            PerformanceMetrics.CacheHitRatio.Record(hitRatio, ratioTags);
+        }
+    }
+
+    /// <inheritdoc />
+    public void RecordTransactionDuration(TimeSpan duration, int operationCount, bool wasCommitted)
+    {
+        var tags = new KeyValuePair<string, object?>[]
+        {
+            new("status", wasCommitted ? "committed" : "rolled_back"),
+            new("operation_count", operationCount.ToString(CultureInfo.InvariantCulture))
+        };
+
+        PerformanceMetrics.TransactionDuration.Record(duration.TotalMilliseconds, tags);
+        PerformanceMetrics.TransactionCount.Add(1, tags);
     }
 
     /// <inheritdoc />
@@ -190,21 +251,31 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
         private long _misses;
         private long _evictions;
 
-        public void Record(string operation)
+        public bool Record(string operation)
         {
             switch (operation.ToLowerInvariant())
             {
                 case "hit":
                     Interlocked.Increment(ref _hits);
-                    break;
+                    return true;
                 case "miss":
                     Interlocked.Increment(ref _misses);
-                    break;
+                    return true;
                 case "eviction":
                 case "pattern_eviction":
                     Interlocked.Increment(ref _evictions);
                     break;
             }
+
+            return false;
+        }
+
+        public double GetHitRatio()
+        {
+            var hits = Interlocked.Read(ref _hits);
+            var misses = Interlocked.Read(ref _misses);
+            var total = hits + misses;
+            return total > 0 ? (double)hits / total : 0.0;
         }
 
         public CacheTypeMetricsSnapshot Snapshot()

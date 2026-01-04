@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Shared.Models;
@@ -59,7 +60,7 @@ public static class ModelConversions
     /// <param name="exception">Exception to convert</param>
     /// <returns>Service error</returns>
     public static ServiceError ToServiceError(this Exception exception)
-        => ServiceError.Create("500", exception.Message);
+        => ServiceError.Create("500", GetSafeExceptionMessage(exception));
 
     /// <summary>
     /// Converts an exception to a ServiceError with custom code
@@ -68,7 +69,7 @@ public static class ModelConversions
     /// <param name="code">Error code to use</param>
     /// <returns>Service error</returns>
     public static ServiceError ToServiceError(this Exception exception, string code)
-        => ServiceError.Create(code, exception.Message);
+        => ServiceError.Create(code, GetSafeExceptionMessage(exception));
 
     /// <summary>
     /// Creates a validation ServiceError
@@ -102,4 +103,23 @@ public static class ModelConversions
     /// <returns>Service error</returns>
     public static ServiceError CreateForbiddenError(string operation)
         => ServiceError.Create("403", $"Forbidden to perform {operation}");
+
+    private static string GetSafeExceptionMessage(Exception exception)
+    {
+        return exception switch
+        {
+            ValidationException validationException => validationException.Message,
+            ResourceNotFoundException => "The requested resource was not found.",
+            ResourceConflictException => "The request could not be completed due to a conflict with the current state.",
+            ServiceUnavailableException => "The service is temporarily unavailable. Please try again later.",
+            ArgumentNullException => "A required parameter was not provided.",
+            ArgumentException => "Invalid request parameters.",
+            InvalidOperationException => "The requested operation is not valid in the current state.",
+            UnauthorizedAccessException => "Authentication is required to access this resource.",
+            NotSupportedException => "The requested operation is not supported.",
+            OperationCanceledException => "The request was cancelled or timed out.",
+            TimeoutException => "The request timed out.",
+            _ => "An unexpected error occurred."
+        };
+    }
 }

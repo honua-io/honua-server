@@ -9,8 +9,10 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Caching;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.HealthCheck;
@@ -27,11 +29,13 @@ using Honua.Server.Features.OgcTiles;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Serilog;
 using Serilog.Enrichers.Span;
+using StackExchange.Redis;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
 // This is the application layer that wires dependencies:
@@ -60,7 +64,12 @@ if (useAspire)
     builder.AddNpgsqlDataSource("honua");
 
     // Add Redis if configured
-    builder.AddRedisDistributedCache("redis");
+    var redisConnectionString = builder.Configuration.GetConnectionString("redis")
+        ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
+    if (!string.IsNullOrWhiteSpace(redisConnectionString))
+    {
+        builder.AddRedisDistributedCache("redis");
+    }
 }
 
 // Configure Serilog for structured logging with AOT compatibility
@@ -93,7 +102,7 @@ builder.Host.UseSerilog((context, services, config) =>
         // Production: Compact JSON for log aggregation
         config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
     }
-});
+}, preserveStaticLogger: false, writeToProviders: true);
 
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure
@@ -155,15 +164,23 @@ builder.Services.AddScoped<Honua.Server.Features.FeatureServer.FeatureServerHand
 builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistributedImportJobManager>(sp =>
     new Honua.Server.Features.Import.RedisImportJobManager(
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>()));
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>(),
+        sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.EsriImportBackgroundService>();
 
-// OData services use existing FeatureServer services
+// Register OData services
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataMetadataService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQueryService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataCrudService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataSearchService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQuerySearchService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataValidationService>();
 
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
 {
     options.IsDevelopmentMode = builder.Environment.IsDevelopment();
+    options.IsTestMode = builder.Environment.IsEnvironment("Test");
     options.AdminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
 });
@@ -187,7 +204,7 @@ builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 ConfigureOutputCaching(builder.Services);
 // Configure ETag support for cache validation
 builder.Services.AddETags();
-// Configure performance monitoring services
+// Configure OpenTelemetry-based performance monitoring
 builder.Services.AddPerformanceMonitoring();
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
@@ -198,12 +215,25 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
         Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Server.Features.OData.Models.ODataJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.OgcFeatures.OgcJsonContext.Default,
-        Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default);
+        Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default);
 });
 
 var app = builder.Build();
+
+var configurationErrors = ConfigurationValidationService.ValidateConfiguration(
+    app.Configuration,
+    app.Logger,
+    app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"));
+
+if (configurationErrors.Count > 0)
+{
+    ConfigurationLog.ConfigurationValidationFailed(app.Logger, configurationErrors.Count);
+    throw new InvalidOperationException("Configuration validation failed. See logs for details.");
+}
+
+ConfigurationLog.ConfigurationValidationSuccess(app.Logger);
 
 // Add security headers middleware (first in pipeline for all requests)
 app.UseSecurityHeaders();
@@ -310,6 +340,7 @@ if (useAspire)
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
+app.MapDatabasePerformanceEndpoints();
 
 app.Run();
 
@@ -461,9 +492,10 @@ async Task RunDatabaseMigrationsAsync()
             return;
         }
 
-        if (result.Scripts.Any())
+        var scriptCount = result.Scripts.Count();
+        if (scriptCount > 0)
         {
-            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, result.Scripts.Count());
+            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, scriptCount);
             // Log individual script names for debugging
             foreach (var script in result.Scripts)
             {
@@ -487,6 +519,9 @@ static void ConfigureOutputCaching(IServiceCollection services)
 {
     services.AddOutputCache(options =>
     {
+        // Add dynamic tags based on common route values for targeted invalidation.
+        options.AddBasePolicy(policy => policy.AddPolicy<RouteTagOutputCachePolicy>());
+
         // Service metadata caching policy
         options.AddPolicy("ServiceMetadata", policy =>
         {
@@ -681,15 +716,6 @@ static void ConfigureOutputCaching(IServiceCollection services)
             policy.Tag("mvt-tiles", "tiles");
         });
 
-        // OData features caching policy (temporarily disabled for Issue 46 performance testing)
-        // options.AddPolicy("ODataFeatures", policy =>
-        // {
-        //     policy.Expire(TimeSpan.FromMinutes(10)); // Cache feature queries for 10 minutes
-        //     policy.SetVaryByRouteValue("layerId");
-        //     policy.SetVaryByQuery("$filter", "$select", "$top", "$skip", "$orderby", "$count");
-        //     policy.Tag("odata-features", "features");
-        // });
-
         // Note: No default base policy - endpoints must explicitly opt into caching for security
     });
 }
@@ -716,11 +742,13 @@ static void ConfigureRateLimiting(IServiceCollection services, IConfiguration co
 // Configure caching services with Redis and in-memory fallback
 static void ConfigureCaching(IServiceCollection services, IConfiguration configuration)
 {
-    // Bind cache configuration
-    services.Configure<CacheOptions>(options =>
-    {
-        configuration.GetSection(CacheOptions.SectionName).Bind(options);
-    });
+    // Bind cache configuration with validation
+    services.AddOptions<CacheOptions>()
+        .Bind(configuration.GetSection(CacheOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
+
+    services.AddMemoryCache();
 
     // Register RedisCacheService (handles both Redis and fallback modes)
     // IDistributedCache is optionally provided by Aspire's AddRedisDistributedCache
@@ -730,12 +758,24 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
         var options = sp.GetRequiredService<IOptions<CacheOptions>>();
         var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
         var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-        return new RedisCacheService(distributedCache, options, logger, performanceMonitor);
+        var redis = sp.GetService<IConnectionMultiplexer>();
+        return new RedisCacheService(distributedCache, options, logger, performanceMonitor, redis);
     });
 
     // Register interfaces pointing to the singleton
     services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
     services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
+
+    services.AddSingleton<IResponseCache>(sp =>
+    {
+        var innerCache = new MemoryResponseCache(
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<ILogger<MemoryResponseCache>>());
+        return new MonitoredResponseCacheDecorator(
+            innerCache,
+            sp.GetRequiredService<IPerformanceMonitor>(),
+            sp.GetRequiredService<ILogger<MonitoredResponseCacheDecorator>>());
+    });
 
     // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
 }

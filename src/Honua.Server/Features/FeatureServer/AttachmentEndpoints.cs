@@ -125,7 +125,7 @@ internal static class AttachmentEndpoints
             return;
         }
 
-        if (!context.Request.Form.Files.Any())
+        if (context.Request.Form.Files.Count == 0)
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "At least one file must be uploaded");
             return;

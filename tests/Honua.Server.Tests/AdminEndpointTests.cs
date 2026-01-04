@@ -27,11 +27,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TableDiscovery)]
-    [Endpoint("GET /api/admin/connections/{id}/tables")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task GetConnectionTables_WithValidConnectionId_ReturnsTablesSuccessfully()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/connections/test/tables");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/connections/test/tables");
 
         // Assert
         response.Be200Ok();
@@ -57,11 +57,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TableDiscovery)]
-    [Endpoint("GET /api/admin/connections/{id}/tables")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task GetConnectionTables_WithInvalidConnectionId_Returns404()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/connections/nonexistent/tables");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/connections/nonexistent/tables");
 
         // Assert - Should return 404 for connections that don't exist
         // Note: In current implementation, this will still return 200 with empty tables
@@ -72,12 +72,12 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TableDiscovery)]
-    [Endpoint("GET /api/admin/connections/{id}/tables")]
-    [Endpoint("GET /api/admin/connections/{*path}")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    [Endpoint("GET /api/v1/admin/connections/{*path}")]
     public async Task GetConnectionTables_WithEmptyConnectionId_Returns400()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/connections//tables");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/connections//tables");
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
@@ -85,11 +85,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TableDiscovery)]
-    [Endpoint("POST /api/admin/connections/{id}/tables")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/tables")]
     public async Task GetConnectionTables_WithWrongHttpMethod_Returns405()
     {
         // Act
-        var response = await _fixture.Client.PostAsync("/api/admin/connections/test/tables", null);
+        var response = await _fixture.Client.PostAsync("/api/v1/admin/connections/test/tables", null);
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
@@ -97,11 +97,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/admin/config")]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_ReturnsConfigurationDocumentation()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/config");
 
         // Assert
         response.Be200Ok();
@@ -124,11 +124,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/admin/config")]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_ContainsRequiredSections()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/config");
         var content = await response.Content.ReadAsStringAsync();
         var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
             content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
@@ -145,11 +145,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/admin/config")]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_SensitiveValuesMasked()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/config");
         var content = await response.Content.ReadAsStringAsync();
         var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
             content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
@@ -166,11 +166,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/admin/config")]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_ContainsEnvironmentVariableReference()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/admin/config");
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/config");
         var content = await response.Content.ReadAsStringAsync();
         var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
             content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
@@ -184,11 +184,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/admin/config")]
+    [Endpoint("POST /api/v1/admin/config")]
     public async Task GetConfiguration_WithWrongHttpMethod_Returns405()
     {
         // Act
-        var response = await _fixture.Client.PostAsync("/api/admin/config", null);
+        var response = await _fixture.Client.PostAsync("/api/v1/admin/config", null);
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
