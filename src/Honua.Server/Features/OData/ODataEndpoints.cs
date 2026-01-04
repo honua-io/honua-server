@@ -6,11 +6,8 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Server.Features.FeatureServer.Models;
-using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -209,9 +206,9 @@ internal static partial class ODataEndpoints
     private static IResult HandleGetServiceDocument(
         HttpContext context,
         ODataMetadataService metadataService,
-        ICommonQueryValidator queryValidator)
+        ODataValidationService validationService)
     {
-        var queryValidation = ValidateAllowedParameters(context, queryValidator, AllowedQueryParameters.None);
+        var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -231,10 +228,10 @@ internal static partial class ODataEndpoints
     private static async Task<IResult> HandleGetMetadata(
         HttpContext context,
         ODataMetadataService metadataService,
-        ICommonQueryValidator queryValidator,
+        ODataValidationService validationService,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, queryValidator, AllowedQueryParameters.None);
+        var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -252,9 +249,8 @@ internal static partial class ODataEndpoints
     private static async Task<IResult> HandleGetLayers(
         HttpContext context,
         ILayerCatalog layerCatalog,
-        IFeatureQueryValidator queryValidator,
-        ICommonQueryValidator commonQueryValidator,
-        ODataQueryService queryService,
+        ODataValidationService validationService,
+        ODataQuerySearchService querySearchService,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$top")] int? top = null,
@@ -264,33 +260,20 @@ internal static partial class ODataEndpoints
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.Layers);
+            var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.Layers);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            // Validate basic query parameters
-            var (isValid, errorMessage) = ODataUtilityService.ValidateQueryParameters(top, skip);
-            if (!isValid)
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", errorMessage!);
-            }
-
-            // Validate against query limits
-            var validationResult = queryValidator.ValidateQueryLimits(new QueryParameters
-            {
-                ResultRecordCount = top,
-                ResultOffset = skip
-            });
-
-            if (!validationResult.IsValid)
+            var paginationResult = validationService.ValidateAndNormalizePagination(skip, top);
+            if (!paginationResult.IsValid)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption",
-                    $"Invalid OData query: {validationResult.ErrorMessage}");
+                    paginationResult.ErrorMessage ?? "Invalid OData query.");
             }
 
-            var validatedParams = validationResult.ValidatedParameters!;
+            var pagination = paginationResult.Value!;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(effectiveToken);
 
@@ -298,7 +281,7 @@ internal static partial class ODataEndpoints
             IEnumerable<LayerDefinition> layerQuery = layers;
             if (!string.IsNullOrWhiteSpace(filter))
             {
-                layerQuery = queryService.ApplyBasicFilter((IEnumerable<Core.Features.Catalog.Domain.LayerDefinition>)layerQuery, filter);
+                layerQuery = querySearchService.ApplyBasicFilter((IEnumerable<Core.Features.Catalog.Domain.LayerDefinition>)layerQuery, filter);
             }
 
             // Apply pagination and counting
@@ -310,15 +293,12 @@ internal static partial class ODataEndpoints
                 layerQuery = layersForCount;
             }
 
-            if (validatedParams.ResultOffset.HasValue)
+            if (pagination.Offset > 0)
             {
-                layerQuery = layerQuery.Skip(validatedParams.ResultOffset.Value);
+                layerQuery = layerQuery.Skip(pagination.Offset);
             }
 
-            if (validatedParams.ResultRecordCount.HasValue)
-            {
-                layerQuery = layerQuery.Take(validatedParams.ResultRecordCount.Value);
-            }
+            layerQuery = layerQuery.Take(pagination.Limit);
 
             // Convert to response format
             var layerData = layerQuery.Select(l => new Dictionary<string, object?>
@@ -331,7 +311,7 @@ internal static partial class ODataEndpoints
             // Apply field selection if specified
             object[] result = string.IsNullOrWhiteSpace(select)
                 ? layerData.Cast<object>().ToArray()
-                : queryService.ApplyFieldSelection(layerData, select);
+                : querySearchService.ApplyFieldSelection(layerData, select);
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
             var response = ODataUtilityService.CreateODataResponse(baseUrl, "Layers", result, totalCount);
@@ -367,10 +347,8 @@ internal static partial class ODataEndpoints
         int layerId,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
-        IFeatureQueryValidator queryValidator,
-        ICommonQueryValidator commonQueryValidator,
-        ODataQueryService queryService,
-        ODataSearchService searchService,
+        ODataValidationService validationService,
+        ODataQuerySearchService querySearchService,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$orderby")] string? orderby = null,
@@ -382,32 +360,20 @@ internal static partial class ODataEndpoints
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.Features);
+            var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.Features);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            // Validate basic query parameters
-            var (isValid, errorMessage) = ODataUtilityService.ValidateQueryParameters(top, skip);
-            if (!isValid)
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", errorMessage!);
-            }
-
-            var validationResult = queryValidator.ValidateQueryLimits(new QueryParameters
-            {
-                ResultRecordCount = top,
-                ResultOffset = skip
-            });
-
-            if (!validationResult.IsValid)
+            var paginationResult = validationService.ValidateAndNormalizePagination(skip, top);
+            if (!paginationResult.IsValid)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption",
-                    $"Invalid OData query: {validationResult.ErrorMessage}");
+                    paginationResult.ErrorMessage ?? "Invalid OData query.");
             }
 
-            var validatedParams = validationResult.ValidatedParameters!;
+            var pagination = paginationResult.Value!;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
             // Verify layer exists
@@ -419,9 +385,9 @@ internal static partial class ODataEndpoints
             }
 
             // Build feature query using query service
-            var featureQuery = queryService.BuildFeatureQuery(
-                filter, orderby, validatedParams.ResultRecordCount,
-                validatedParams.ResultOffset, layer, out var spatialFilter, out var queryError);
+            var featureQuery = querySearchService.BuildFeatureQuery(
+                filter, orderby, pagination.Limit,
+                pagination.Offset, layer, out var spatialFilter, out var queryError);
 
             if (queryError != null)
             {
@@ -435,7 +401,7 @@ internal static partial class ODataEndpoints
             Dictionary<long, Dictionary<string, object?[]>>? expandedRelations = null;
             if (!string.IsNullOrWhiteSpace(expand) && layer.HasRelationships)
             {
-                expandedRelations = await searchService.ProcessExpandAsync(
+                expandedRelations = await querySearchService.ProcessExpandAsync(
                     expand, layer, queryResult.Items.Select(f => f.Id).ToArray(), effectiveToken);
             }
 
@@ -465,16 +431,16 @@ internal static partial class ODataEndpoints
             // Apply field selection if specified
             object[] result = string.IsNullOrWhiteSpace(select)
                 ? featuresData.Cast<object>().ToArray()
-                : queryService.ApplyFieldSelection(featuresData, select);
+                : querySearchService.ApplyFieldSelection(featuresData, select);
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
             // Calculate @odata.nextLink if there are more results
             string? nextLink = null;
-            if (ODataUtilityService.ShouldPaginate(result.Length, skip ?? 0, (int)queryResult.TotalCount, top))
+            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, (int)queryResult.TotalCount, pagination.Limit))
             {
-                var nextSkip = ODataUtilityService.CalculateNextSkip(skip ?? 0, top);
-                nextLink = ODataUtilityService.GenerateNextLink(context.Request, layerId, nextSkip, top ?? 1000,
+                var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
+                nextLink = ODataUtilityService.GenerateNextLink(context.Request, layerId, nextSkip, pagination.Limit,
                     filter, select, orderby, count);
             }
 
@@ -517,10 +483,10 @@ internal static partial class ODataEndpoints
         int layerId,
         long objectId,
         ODataCrudService crudService,
-        ICommonQueryValidator commonQueryValidator,
+        ODataValidationService validationService,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.None);
+        var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -540,11 +506,11 @@ internal static partial class ODataEndpoints
         HttpContext context,
         int layerId,
         ODataCrudService crudService,
-        ICommonQueryValidator commonQueryValidator,
+        ODataValidationService validationService,
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.None);
+        var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -571,11 +537,11 @@ internal static partial class ODataEndpoints
         int layerId,
         long objectId,
         ODataCrudService crudService,
-        ICommonQueryValidator commonQueryValidator,
+        ODataValidationService validationService,
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.None);
+        var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -602,10 +568,10 @@ internal static partial class ODataEndpoints
         int layerId,
         long objectId,
         ODataCrudService crudService,
-        ICommonQueryValidator commonQueryValidator,
+        ODataValidationService validationService,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.None);
+        var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -624,14 +590,14 @@ internal static partial class ODataEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
-        ICommonQueryValidator commonQueryValidator,
+        ODataValidationService validationService,
         IOptions<LimitsOptions> limitsOptions,
         ILogger<ODataEndpointsLog> logger,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.None);
+            var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.None);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -686,8 +652,8 @@ internal static partial class ODataEndpoints
     private static async Task<IResult> HandleApply(
         HttpContext context,
         int layerId,
-        ODataSearchService searchService,
-        ICommonQueryValidator commonQueryValidator,
+        ODataQuerySearchService querySearchService,
+        ODataValidationService validationService,
         ILogger<ODataEndpointsLog> logger,
         [FromQuery(Name = "$apply")] string? apply = null,
         [FromQuery(Name = "$filter")] string? filter = null,
@@ -695,7 +661,7 @@ internal static partial class ODataEndpoints
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.Apply);
+            var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.Apply);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -709,7 +675,7 @@ internal static partial class ODataEndpoints
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-            var result = await searchService.HandleApplyAsync(layerId, apply, filter, baseUrl, effectiveToken);
+            var result = await querySearchService.HandleApplyAsync(layerId, apply, filter, baseUrl, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult,
@@ -719,6 +685,12 @@ internal static partial class ODataEndpoints
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
             throw;
+        }
+        catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
+        {
+            Log.InvalidApplyExpression(logger, layerId, ex);
+            var safeDetail = ExceptionMapper.Map(ex).Detail;
+            return ODataUtilityService.CreateODataError(context, "ResourceNotFound", safeDetail, 404);
         }
         catch (ArgumentException ex)
         {
@@ -740,8 +712,8 @@ internal static partial class ODataEndpoints
     private static async Task<IResult> HandleSearch(
         HttpContext context,
         int layerId,
-        ODataSearchService searchService,
-        ICommonQueryValidator commonQueryValidator,
+        ODataQuerySearchService querySearchService,
+        ODataValidationService validationService,
         ILogger<ODataEndpointsLog> logger,
         [FromQuery(Name = "$search")] string? search = null,
         [FromQuery(Name = "$top")] int? top = null,
@@ -751,7 +723,7 @@ internal static partial class ODataEndpoints
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, commonQueryValidator, AllowedQueryParameters.Search);
+            var queryValidation = ValidateAllowedParameters(context, validationService, AllowedQueryParameters.Search);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -765,7 +737,7 @@ internal static partial class ODataEndpoints
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-            var result = await searchService.HandleSearchAsync(layerId, search, baseUrl, top, skip, count, effectiveToken);
+            var result = await querySearchService.HandleSearchAsync(layerId, search, baseUrl, top, skip, count, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(result, ODataJsonContext.Default.ODataSearchResult,
@@ -775,6 +747,12 @@ internal static partial class ODataEndpoints
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
             throw;
+        }
+        catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
+        {
+            Log.SearchFailed(logger, layerId, ex);
+            var safeDetail = ExceptionMapper.Map(ex).Detail;
+            return ODataUtilityService.CreateODataError(context, "ResourceNotFound", safeDetail, 404);
         }
         catch (ArgumentException ex)
         {
@@ -792,10 +770,10 @@ internal static partial class ODataEndpoints
 
     private static IResult? ValidateAllowedParameters(
         HttpContext context,
-        ICommonQueryValidator queryValidator,
+        ODataValidationService validationService,
         IReadOnlySet<string> allowedParameters)
     {
-        var validationResult = queryValidator.ValidateAllowedParameters(context.Request.Query, allowedParameters);
+        var validationResult = validationService.ValidateAllowedParameters(context.Request.Query, allowedParameters);
         if (!validationResult.IsValid)
         {
             return ODataUtilityService.CreateODataError(

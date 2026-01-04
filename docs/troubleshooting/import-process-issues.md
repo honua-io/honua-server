@@ -11,10 +11,10 @@ This guide helps resolve issues with geospatial data import processes in Honua S
 curl -s http://localhost:8080/health | jq '.components.import'
 
 # Test file upload endpoint
-curl -X POST -F "file=@test-data.zip" http://localhost:8080/api/import/upload
+curl -X POST -F "file=@test-data.zip" http://localhost:8080/api/v1/admin/import/upload
 
 # Check import job status
-curl -H "X-API-Key: your-api-key" http://localhost:8080/admin/import/jobs
+curl -H "X-API-Key: your-api-key" http://localhost:8080/api/v1/admin/import/jobs
 
 # Monitor import logs
 docker logs honua-server | grep -i import
@@ -270,11 +270,11 @@ ls -la /var/lib/honua/uploads/
    ```bash
    # Get detailed job status
    curl -H "X-API-Key: your-api-key" \
-        "http://localhost:8080/admin/import/jobs/JOB_ID" | jq .
+        "http://localhost:8080/api/v1/admin/import/jobs/JOB_ID" | jq .
 
    # List all active jobs
    curl -H "X-API-Key: your-api-key" \
-        "http://localhost:8080/admin/import/jobs?status=processing" | jq .
+        "http://localhost:8080/api/v1/admin/import/jobs?status=processing" | jq .
    ```
 
 2. **Monitor Background Services**:
@@ -382,7 +382,7 @@ ls -la /var/lib/honua/uploads/
    # Monitor progress via API
    JOB_ID="your-job-id"
    watch -n 2 "curl -s -H 'X-API-Key: your-api-key' \
-              http://localhost:8080/admin/import/jobs/$JOB_ID | jq '.progress'"
+              http://localhost:8080/api/v1/admin/import/jobs/$JOB_ID | jq '.progress'"
 
    # Check Redis progress keys
    redis-cli keys "*progress*"
@@ -404,7 +404,7 @@ ls -la /var/lib/honua/uploads/
 
    # Restart progress tracking
    curl -X POST -H "X-API-Key: your-api-key" \
-        "http://localhost:8080/admin/import/jobs/$JOB_ID/refresh-progress"
+        "http://localhost:8080/api/v1/admin/import/jobs/$JOB_ID/refresh-progress"
    ```
 
 2. **Configure Progress Update Frequency**:
@@ -617,7 +617,7 @@ For import issues not covered here:
 
        echo "=== Recent Import Jobs ==="
        curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-            http://localhost:8080/admin/import/jobs?limit=10 | jq .
+            http://localhost:8080/api/v1/admin/import/jobs?limit=10 | jq .
 
        echo "=== File Format Details ==="
        file problematic-file.*

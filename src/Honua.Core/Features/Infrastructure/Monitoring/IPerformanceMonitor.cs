@@ -53,6 +53,14 @@ public interface IPerformanceMonitor
     void RecordCacheMetrics(string cacheType, string operation);
 
     /// <summary>
+    /// Records the duration of a database transaction.
+    /// </summary>
+    /// <param name="duration">Transaction duration</param>
+    /// <param name="operationCount">Number of operations in the transaction</param>
+    /// <param name="wasCommitted">Whether the transaction was committed (true) or rolled back (false)</param>
+    void RecordTransactionDuration(TimeSpan duration, int operationCount, bool wasCommitted);
+
+    /// <summary>
     /// Creates a scope for measuring operation duration. Dispose the returned object to record the metric.
     /// </summary>
     /// <param name="operationName">Name of the operation being measured</param>

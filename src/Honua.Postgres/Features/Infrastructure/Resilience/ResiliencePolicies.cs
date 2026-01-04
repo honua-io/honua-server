@@ -33,6 +33,32 @@ internal static class ResiliencePolicies
     }
 
     /// <summary>
+    /// Retry policy for deadlock errors ONLY.
+    /// Safe to retry deadlock errors with fresh transaction, as the entire transaction was rolled back.
+    /// Uses exponential backoff: 100ms, 200ms, 400ms for 3 retry attempts.
+    /// </summary>
+    /// <param name="onRetry">Optional callback for retry events (for logging)</param>
+    /// <returns>Async retry policy for deadlock detection</returns>
+    public static IAsyncPolicy GetDeadlockRetryPolicy(Action<Exception, TimeSpan, int>? onRetry = null)
+    {
+        var builder = Policy.Handle<NpgsqlException>(IsDeadlockError);
+
+        var options = new ResiliencePolicyOptions
+        {
+            MaxRetryAttempts = 3,
+            BaseDelay = TimeSpan.FromMilliseconds(100),
+            BackoffExponent = 2.0,
+            CircuitBreakerFailures = 10, // Higher threshold for deadlocks
+            CircuitBreakDuration = TimeSpan.FromSeconds(15) // Shorter circuit break duration
+        };
+
+        return ResiliencePolicyFactory.CreateStandardPolicy(
+            builder,
+            options,
+            onRetry: onRetry);
+    }
+
+    /// <summary>
     /// Determines if a PostgreSQL exception represents a connection-level error
     /// that is safe to retry without risking duplicate operations
     /// </summary>
@@ -49,8 +75,20 @@ internal static class ResiliencePolicies
             "08006" => true,  // connection_failure
             _ => false
         };
-        // NOTE: serialization_failure (40001) and deadlock_detected (40P01)
-        // are NOT retried here - they require application-level retry with
-        // fresh transaction, handled by the caller if needed.
+        // NOTE: serialization_failure (40001) is NOT retried here as it requires
+        // application-level retry with fresh transaction.
+        // deadlock_detected (40P01) is handled by GetDeadlockRetryPolicy().
+    }
+
+    /// <summary>
+    /// Determines if a PostgreSQL exception represents a deadlock error
+    /// that is safe to retry with a fresh transaction
+    /// </summary>
+    /// <param name="ex">The Npgsql exception to evaluate</param>
+    /// <returns>True if the error is a deadlock that can be retried</returns>
+    private static bool IsDeadlockError(NpgsqlException ex)
+    {
+        // PostgreSQL deadlock_detected error code
+        return ex.SqlState == "40P01";
     }
 }

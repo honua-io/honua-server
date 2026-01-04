@@ -1004,6 +1004,8 @@ internal static partial class MetadataEndpoints
         if (outputCache != null)
         {
             await outputCache.EvictByTagAsync($"service:{normalizedServiceName}", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-metadata", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-tiles", context.RequestAborted);
         }
     }
 
@@ -1027,6 +1029,8 @@ internal static partial class MetadataEndpoints
         if (outputCache != null)
         {
             await outputCache.EvictByTagAsync($"layer:{layerId}", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-metadata", context.RequestAborted);
+            await outputCache.EvictByTagAsync("ogc-tiles", context.RequestAborted);
         }
     }
 

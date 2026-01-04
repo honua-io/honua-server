@@ -91,39 +91,42 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
             });
         using var client = factory.CreateClient();
 
-        // Act - Try to access health endpoint (as a proxy for protected endpoints)
-        var response = await client.GetAsync("/healthz/live");
+        // Act - Try to access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
 
-        // Assert - Should work (basic connectivity test)
+        // Assert - Should not return 401 when dev bypass is active
         Assert.NotEqual(401, (int)response.StatusCode);
-        _output.WriteLine($"Development bypass test - Health response status: {response.StatusCode}");
+        _output.WriteLine($"Development bypass test - Admin response status: {response.StatusCode}");
     }
 
     [Fact]
-    public async Task ExplicitDevBypass_ShouldWork()
+    public async Task ExplicitDevBypass_Production_ShouldBeRejected()
     {
-        // Arrange - Explicitly enable development bypass
+        // Arrange - Explicitly enable development bypass in production
         using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseEnvironment("Production"); // Even in production
+                builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
+                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:redis"] = "localhost"
                     });
                 });
             });
         using var client = factory.CreateClient();
 
-        // Act - Access health endpoint
-        var response = await client.GetAsync("/healthz/live");
+        // Act - Access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
 
-        // Assert - Should work
-        Assert.Equal(200, (int)response.StatusCode);
-        _output.WriteLine($"Explicit dev bypass test - Response status: {response.StatusCode}");
+        // Assert - Dev bypass should be ignored in production
+        Assert.Equal(401, (int)response.StatusCode);
+        _output.WriteLine($"Explicit dev bypass in production test - Response status: {response.StatusCode}");
     }
 }

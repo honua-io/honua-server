@@ -119,24 +119,6 @@ internal static class ODataUtilityService
     }
 
     /// <summary>
-    /// Validates basic query parameters for OData operations.
-    /// </summary>
-    public static (bool isValid, string? errorMessage) ValidateQueryParameters(int? top, int? skip)
-    {
-        if (top.HasValue && top.Value <= 0)
-        {
-            return (false, "$top must be a positive integer.");
-        }
-
-        if (skip.HasValue && skip.Value < 0)
-        {
-            return (false, "$skip must be a non-negative integer.");
-        }
-
-        return (true, null);
-    }
-
-    /// <summary>
     /// Builds an OData context URL for the given base URL and entity type.
     /// </summary>
     public static string BuildContextUrl(string baseUrl, string entityType, bool isSingle = false)

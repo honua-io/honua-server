@@ -127,7 +127,6 @@ internal static partial class FeaturesEndpoints
         string? datetime,
         string? filter,
         string? crs,
-        ILayerCatalog layerCatalog,
         IFeatureStore featureStore,
         IOptions<LimitsOptions> limitsOptions,
         IResourceValidator resourceValidator,

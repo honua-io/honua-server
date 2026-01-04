@@ -186,6 +186,11 @@ public static class ValidationExtensions
         {
             if (!fieldsByName.TryGetValue(key, out var field))
             {
+                if (mode == AttributeValidationMode.GeoServices)
+                {
+                    continue;
+                }
+
                 errors.Add($"Unknown field '{key}'.");
                 continue;
             }

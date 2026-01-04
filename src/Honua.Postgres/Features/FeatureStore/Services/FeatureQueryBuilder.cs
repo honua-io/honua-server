@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Extensions.ObjectPool;
@@ -553,6 +554,12 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private static void AppendOrderByClause(StringBuilder sql, FeatureQuery query)
     {
+        if (query.SpatialFilter.HasValue &&
+            query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor)
+        {
+            return;
+        }
+
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
             return;
@@ -614,14 +621,60 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string MapOrderByField(OrderByClause orderBy)
     {
-        return orderBy.Field.ToLowerInvariant() switch
+        var fieldName = orderBy.Field;
+
+        if (!IsValidFieldName(fieldName))
         {
-            "objectid" => "objectid",
-            "object_id" => "objectid",
-            "created_at" => "created_at",
-            "updated_at" => "updated_at",
-            _ => $"(attributes->>'{orderBy.Field}')"
-        };
+            throw new ArgumentException($"Invalid field name for ordering: {fieldName}");
+        }
+
+        var fieldLower = fieldName.ToLowerInvariant();
+
+        if (fieldLower is "objectid" or "object_id" or "id")
+        {
+            return "objectid";
+        }
+
+        if (fieldLower is "created_at" or "updated_at")
+        {
+            return fieldLower;
+        }
+
+        if (fieldLower is "layerid" or "layer_id")
+        {
+            return "layer_id";
+        }
+
+        if (orderBy.FieldType.HasValue)
+        {
+            var attributeValue = $"attributes->>'{fieldName}'";
+            return orderBy.FieldType.Value switch
+            {
+                FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
+                FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
+                FieldType.Float => $"NULLIF({attributeValue}, '')::real",
+                FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
+                FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
+                FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
+                FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+                FieldType.Time => $"NULLIF({attributeValue}, '')::time",
+                FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
+                FieldType.String => attributeValue,
+                _ => attributeValue
+            };
+        }
+
+        return $"attributes->>'{fieldName}'";
+    }
+
+    private static bool IsValidFieldName(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return false;
+        }
+
+        return Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant);
     }
 
     private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
@@ -719,6 +772,19 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string MapWhereField(string fieldName, out bool isAttributeField)
     {
+        var jsonPathIndex = fieldName.IndexOf("->>", StringComparison.Ordinal);
+        if (jsonPathIndex >= 0)
+        {
+            var baseField = fieldName[..jsonPathIndex];
+            if (!baseField.Equals("attributes", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(UnsupportedWhereClauseMessage);
+            }
+
+            isAttributeField = true;
+            return $"attributes{fieldName[jsonPathIndex..]}";
+        }
+
         isAttributeField = fieldName.ToLowerInvariant() switch
         {
             "objectid" => false,

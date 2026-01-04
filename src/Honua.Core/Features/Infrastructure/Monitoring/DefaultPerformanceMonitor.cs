@@ -131,6 +131,19 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
     }
 
     /// <inheritdoc />
+    public void RecordTransactionDuration(TimeSpan duration, int operationCount, bool wasCommitted)
+    {
+        var tags = new KeyValuePair<string, object?>[]
+        {
+            new("status", wasCommitted ? "committed" : "rolled_back"),
+            new("operation_count", operationCount.ToString(CultureInfo.InvariantCulture))
+        };
+
+        PerformanceMetrics.TransactionDuration.Record(duration.TotalMilliseconds, tags);
+        PerformanceMetrics.TransactionCount.Add(1, tags);
+    }
+
+    /// <inheritdoc />
     public CacheMetricsSnapshot GetCacheMetricsSnapshot()
     {
         var types = new Dictionary<string, CacheTypeMetricsSnapshot>(StringComparer.OrdinalIgnoreCase);

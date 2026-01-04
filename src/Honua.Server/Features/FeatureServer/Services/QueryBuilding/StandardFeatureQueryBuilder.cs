@@ -13,6 +13,13 @@ namespace Honua.Server.Features.FeatureServer.Services.QueryBuilding;
 /// </summary>
 internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
 {
+    private static readonly HashSet<string> _allowedCoreOrderByFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "objectid",
+        "object_id",
+        "created_at",
+        "updated_at"
+    };
     /// <summary>
     /// Builds a standard feature query from the provided context
     /// </summary>
@@ -197,21 +204,65 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
             }
 
             var field = parts[0];
-            var ascending = true;
-
-            if (parts.Length > 1)
+            if (!IsValidOrderByField(field))
             {
-                ascending = !parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
+                throw new InvalidOperationException($"Invalid orderByFields value: {field}");
+            }
+
+            if (parts.Length > 2)
+            {
+                throw new InvalidOperationException($"Invalid orderByFields value: {trimmed}");
+            }
+
+            var ascending = true;
+            if (parts.Length == 2)
+            {
+                if (parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase))
+                {
+                    ascending = false;
+                }
+                else if (!parts[1].Equals("ASC", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Invalid orderByFields direction: {parts[1]}");
+                }
             }
 
             var fieldDefinition = layer.Fields.FirstOrDefault(f =>
                 f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+            if (fieldDefinition == null && !_allowedCoreOrderByFields.Contains(field))
+            {
+                throw new InvalidOperationException($"Unknown orderByFields value: {field}");
+            }
+
             var resolvedField = fieldDefinition?.Name ?? field;
+            if (!IsValidOrderByField(resolvedField))
+            {
+                throw new InvalidOperationException($"Invalid orderByFields value: {field}");
+            }
             var fieldType = fieldDefinition?.Type;
 
             clauses.Add(new OrderByClause(resolvedField, ascending, fieldType));
         }
 
         return clauses.Count == 0 ? null : clauses.ToImmutableArray();
+    }
+
+    private static bool IsValidOrderByField(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < fieldName.Length; i++)
+        {
+            var ch = fieldName[i];
+            if (!(char.IsLetterOrDigit(ch) || ch == '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

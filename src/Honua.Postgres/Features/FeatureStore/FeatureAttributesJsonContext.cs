@@ -26,6 +26,8 @@ namespace Honua.Postgres.Features.FeatureStore;
 [JsonSerializable(typeof(float))]
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
 [JsonSerializable(typeof(JsonElement))]
 internal partial class FeatureAttributesJsonContext : JsonSerializerContext
 {

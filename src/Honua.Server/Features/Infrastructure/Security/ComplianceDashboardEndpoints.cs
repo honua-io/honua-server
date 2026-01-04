@@ -13,7 +13,7 @@ public static class ComplianceDashboardEndpoints
 {
     public static void MapComplianceDashboardEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/security/compliance")
+        var group = app.MapGroup("/api/v1/admin/security/compliance")
             .WithTags("Security Compliance");
 
         // Executive dashboard endpoints
@@ -548,116 +548,330 @@ public static class ComplianceDashboardEndpoints
 }
 
 // Supporting request/response models
+/// <summary>
+/// Request parameters for generating a compliance report.
+/// </summary>
 public class ComplianceReportGenerationRequest
 {
+    /// <summary>
+    /// Start of the reporting period (UTC).
+    /// </summary>
     public DateTime StartDate { get; set; }
+
+    /// <summary>
+    /// End of the reporting period (UTC).
+    /// </summary>
     public DateTime EndDate { get; set; }
+
+    /// <summary>
+    /// Requested report type identifier.
+    /// </summary>
     public string ReportType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional compliance framework identifier.
+    /// </summary>
     public string? ComplianceFramework { get; set; }
+
+    /// <summary>
+    /// Whether to include personal data in the report output.
+    /// </summary>
     public bool IncludePersonalData { get; set; }
+
+    /// <summary>
+    /// Additional filter criteria for report generation.
+    /// </summary>
     public Dictionary<string, object> Filters { get; set; } = new();
+
+    /// <summary>
+    /// Business justification for generating the report.
+    /// </summary>
     public string? BusinessJustification { get; set; }
 }
 
+/// <summary>
+/// Request parameters for listing compliance reports.
+/// </summary>
 public class ComplianceReportListRequest
 {
+    /// <summary>
+    /// Page number (1-based).
+    /// </summary>
     public int Page { get; set; } = 1;
+
+    /// <summary>
+    /// Page size for paged results.
+    /// </summary>
     public int PageSize { get; set; } = 20;
+
+    /// <summary>
+    /// Optional report type filter.
+    /// </summary>
     public string? ReportType { get; set; }
+
+    /// <summary>
+    /// Optional start date filter (UTC).
+    /// </summary>
     public DateTime? StartDate { get; set; }
+
+    /// <summary>
+    /// Optional end date filter (UTC).
+    /// </summary>
     public DateTime? EndDate { get; set; }
 }
 
+/// <summary>
+/// Request parameters for querying security incidents.
+/// </summary>
 public class SecurityIncidentRequest
 {
+    /// <summary>
+    /// Start of the incident window (UTC).
+    /// </summary>
     public DateTime StartDate { get; set; }
+
+    /// <summary>
+    /// End of the incident window (UTC).
+    /// </summary>
     public DateTime EndDate { get; set; }
+
+    /// <summary>
+    /// Optional incident status filter.
+    /// </summary>
     public string? Status { get; set; }
+
+    /// <summary>
+    /// Optional incident severity filter.
+    /// </summary>
     public string? Severity { get; set; }
 }
 
+/// <summary>
+/// Request parameters for querying security alerts.
+/// </summary>
 public class SecurityAlertRequest
 {
+    /// <summary>
+    /// Maximum number of alerts to return.
+    /// </summary>
     public int Limit { get; set; } = 100;
+
+    /// <summary>
+    /// Optional severity filter.
+    /// </summary>
     public string? Severity { get; set; }
+
+    /// <summary>
+    /// Optional alert type filter.
+    /// </summary>
     public string? AlertType { get; set; }
+
+    /// <summary>
+    /// Optional alert status filter.
+    /// </summary>
     public string? Status { get; set; }
 }
 
+/// <summary>
+/// Request parameters for querying threat detections.
+/// </summary>
 public class ThreatDetectionRequest
 {
+    /// <summary>
+    /// Start of the threat detection window (UTC).
+    /// </summary>
     public DateTime StartDate { get; set; }
+
+    /// <summary>
+    /// End of the threat detection window (UTC).
+    /// </summary>
     public DateTime EndDate { get; set; }
+
+    /// <summary>
+    /// Optional threat type filter.
+    /// </summary>
     public string? ThreatType { get; set; }
+
+    /// <summary>
+    /// Optional severity filter.
+    /// </summary>
     public string? Severity { get; set; }
 }
 
+/// <summary>
+/// Request parameters for querying anomaly detections.
+/// </summary>
 public class AnomalyDetectionRequest
 {
+    /// <summary>
+    /// Start of the anomaly detection window (UTC).
+    /// </summary>
     public DateTime StartDate { get; set; }
+
+    /// <summary>
+    /// End of the anomaly detection window (UTC).
+    /// </summary>
     public DateTime EndDate { get; set; }
+
+    /// <summary>
+    /// Optional anomaly type filter.
+    /// </summary>
     public string? AnomalyType { get; set; }
+
+    /// <summary>
+    /// Optional severity filter.
+    /// </summary>
     public string? Severity { get; set; }
 }
 
+/// <summary>
+/// Request payload for updating alert thresholds.
+/// </summary>
 public class AlertThresholdsUpdateRequest
 {
+    /// <summary>
+    /// Threshold values keyed by alert type or metric.
+    /// </summary>
     public Dictionary<string, object> Thresholds { get; set; } = new();
+
+    /// <summary>
+    /// Reason for the threshold change.
+    /// </summary>
     public string? Reason { get; set; }
 }
 
 // Service interfaces (would be implemented separately)
+/// <summary>
+/// Service for building compliance dashboard views.
+/// </summary>
 public interface IComplianceDashboardService
 {
+    /// <summary>
+    /// Gets the executive security dashboard for the specified period.
+    /// </summary>
     Task<object> GetExecutiveDashboardAsync(DateTime startDate, DateTime endDate);
+
+    /// <summary>
+    /// Gets the technical security dashboard for the specified period.
+    /// </summary>
     Task<object> GetTechnicalDashboardAsync(DateTime startDate, DateTime endDate);
+
+    /// <summary>
+    /// Gets the compliance dashboard for the specified period and framework.
+    /// </summary>
     Task<object> GetComplianceDashboardAsync(string? framework, DateTime startDate, DateTime endDate);
 }
 
+/// <summary>
+/// Service for generating and retrieving compliance reports.
+/// </summary>
 public interface IComplianceReportingService
 {
+    /// <summary>
+    /// Gets a paged list of compliance reports.
+    /// </summary>
     Task<object> GetComplianceReportsAsync(ComplianceReportListRequest request);
+
+    /// <summary>
+    /// Generates a compliance report from the provided request.
+    /// </summary>
     Task<ComplianceReport> GenerateReportAsync(ComplianceReportRequest request);
+
+    /// <summary>
+    /// Gets a compliance report by identifier.
+    /// </summary>
     Task<ComplianceReport?> GetReportAsync(string reportId);
 }
 
+/// <summary>
+/// Service for security metrics and trend analysis.
+/// </summary>
 public interface ISecurityMetricsService
 {
+    /// <summary>
+    /// Gets a metrics overview for the specified period.
+    /// </summary>
     Task<object> GetMetricsOverviewAsync(DateTime startDate, DateTime endDate);
+
+    /// <summary>
+    /// Gets trend analytics for the specified period and granularity.
+    /// </summary>
     Task<object> GetSecurityTrendsAsync(DateTime startDate, DateTime endDate, string granularity);
 }
 
+/// <summary>
+/// Service for querying security incidents.
+/// </summary>
 public interface ISecurityIncidentService
 {
+    /// <summary>
+    /// Gets security incidents matching the request criteria.
+    /// </summary>
     Task<object> GetIncidentsAsync(SecurityIncidentRequest request);
 }
 
+/// <summary>
+/// Service for querying active security alerts.
+/// </summary>
 public interface ISecurityAlertService
 {
+    /// <summary>
+    /// Gets active alerts matching the request criteria.
+    /// </summary>
     Task<object> GetActiveAlertsAsync(SecurityAlertRequest request);
 }
 
+/// <summary>
+/// Service for querying threat detections.
+/// </summary>
 public interface IThreatDetectionService
 {
+    /// <summary>
+    /// Gets threat detections matching the request criteria.
+    /// </summary>
     Task<object> GetThreatDetectionsAsync(ThreatDetectionRequest request);
 }
 
+/// <summary>
+/// Service for querying anomaly detections.
+/// </summary>
 public interface IAnomalyDetectionService
 {
+    /// <summary>
+    /// Gets anomaly detections matching the request criteria.
+    /// </summary>
     Task<object> GetAnomalyDetectionsAsync(AnomalyDetectionRequest request);
 }
 
+/// <summary>
+/// Service for assessing compliance health status.
+/// </summary>
 public interface IComplianceHealthService
 {
+    /// <summary>
+    /// Gets overall compliance health status.
+    /// </summary>
     Task<object> GetComplianceHealthAsync();
 }
 
+/// <summary>
+/// Service for enumerating compliance frameworks.
+/// </summary>
 public interface IComplianceFrameworkService
 {
+    /// <summary>
+    /// Gets supported compliance frameworks.
+    /// </summary>
     Task<object> GetSupportedFrameworksAsync();
 }
 
+/// <summary>
+/// Service for updating security configuration settings.
+/// </summary>
 public interface ISecurityConfigurationService
 {
+    /// <summary>
+    /// Updates alert threshold settings.
+    /// </summary>
     Task UpdateAlertThresholdsAsync(Dictionary<string, object> thresholds);
 }

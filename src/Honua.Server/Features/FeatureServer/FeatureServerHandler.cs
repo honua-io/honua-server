@@ -33,6 +33,13 @@ internal sealed class FeatureServerHandler(
     ILogger<FeatureServerHandler> logger)
 {
     private static readonly char[] _coordinateSeparators = { ',', ' ' };
+    private static readonly HashSet<string> _allowedCoreOrderByFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "objectid",
+        "object_id",
+        "created_at",
+        "updated_at"
+    };
     private readonly ILayerCatalog _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
     private readonly IFeatureStore _featureStore = featureStore ?? throw new ArgumentNullException(nameof(featureStore));
     private readonly FeatureServerServices _services = services ?? throw new ArgumentNullException(nameof(services));
@@ -66,25 +73,13 @@ internal sealed class FeatureServerHandler(
                 return GeoServicesErrorHelpers.CreateNotFoundError($"Layer {layerId} not found in service '{serviceId}'");
             }
 
-            if (!string.IsNullOrEmpty(queryParams.Where) && queryParams.Where.Contains('\0'))
+            var basicValidation = FeatureQueryValidationService.ValidateBasicParameters(queryParams);
+            if (!basicValidation.IsValid)
             {
+                var message = basicValidation.ErrorMessage ?? "Invalid query parameters";
                 return GeoServicesErrorHelpers.CreateBadRequestError(
                     "Invalid query parameters",
-                    ["WHERE clause contains invalid control characters"]);
-            }
-
-            if (queryParams.ResultRecordCount is < 1)
-            {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
-                    "Invalid query parameters",
-                    [$"{nameof(QueryParameters.ResultRecordCount)} must be greater than 0"]);
-            }
-
-            if (queryParams.ResultOffset is < 0)
-            {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
-                    "Invalid query parameters",
-                    [$"{nameof(QueryParameters.ResultOffset)} must be 0 or greater"]);
+                    [message]);
             }
 
             // Apply limits enforcement
@@ -136,17 +131,35 @@ internal sealed class FeatureServerHandler(
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
             {
+                FilterExpression? filterExpression = null;
                 try
                 {
                     var parser = new Cql2Parser();
-                    var filterExpression = parser.Parse(validatedParams.Where);
-                    sqlFilter = _services.SqlFilterTranslator.Translate(filterExpression, layer);
+                    filterExpression = parser.Parse(validatedParams.Where);
                 }
                 catch (ArgumentException)
                 {
-                    return GeoServicesErrorHelpers.CreateBadRequestError(
-                        "Invalid query parameters",
-                        ["Invalid filter syntax."]);
+                    // Fall back to legacy WHERE parsing for backwards compatibility.
+                }
+
+                if (filterExpression != null)
+                {
+                    try
+                    {
+                        sqlFilter = _services.SqlFilterTranslator.Translate(filterExpression, layer);
+                    }
+                    catch (ArgumentException)
+                    {
+                        return GeoServicesErrorHelpers.CreateBadRequestError(
+                            "Invalid query parameters",
+                            ["Invalid filter syntax."]);
+                    }
+                    catch (NotSupportedException)
+                    {
+                        return GeoServicesErrorHelpers.CreateBadRequestError(
+                            "Invalid query parameters",
+                            ["Unsupported filter syntax."]);
+                    }
                 }
             }
 
@@ -1008,22 +1021,66 @@ internal sealed class FeatureServerHandler(
             }
 
             var field = parts[0];
-            var ascending = true;
-
-            if (parts.Length > 1)
+            if (!IsValidOrderByField(field))
             {
-                ascending = !parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
+                throw new InvalidOperationException($"Invalid orderByFields value: {field}");
+            }
+
+            if (parts.Length > 2)
+            {
+                throw new InvalidOperationException($"Invalid orderByFields value: {trimmed}");
+            }
+
+            var ascending = true;
+            if (parts.Length == 2)
+            {
+                if (parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase))
+                {
+                    ascending = false;
+                }
+                else if (!parts[1].Equals("ASC", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Invalid orderByFields direction: {parts[1]}");
+                }
             }
 
             var fieldDefinition = layer.Fields.FirstOrDefault(f =>
                 f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+            if (fieldDefinition == null && !_allowedCoreOrderByFields.Contains(field))
+            {
+                throw new InvalidOperationException($"Unknown orderByFields value: {field}");
+            }
+
             var resolvedField = fieldDefinition?.Name ?? field;
+            if (!IsValidOrderByField(resolvedField))
+            {
+                throw new InvalidOperationException($"Invalid orderByFields value: {field}");
+            }
             var fieldType = fieldDefinition?.Type;
 
             clauses.Add(new OrderByClause(resolvedField, ascending, fieldType));
         }
 
         return clauses.Count == 0 ? null : clauses.ToImmutableArray();
+    }
+
+    private static bool IsValidOrderByField(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < fieldName.Length; i++)
+        {
+            var ch = fieldName[i];
+            if (!(char.IsLetterOrDigit(ch) || ch == '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static ExtentInfo MapExtent(FeatureExtent extent)

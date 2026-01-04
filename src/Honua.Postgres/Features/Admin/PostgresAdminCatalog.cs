@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -209,8 +210,10 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         var tableInfo = await DiscoverTableAsync(schemaName, tableName, cancellationToken)
             ?? throw new InvalidOperationException($"Table '{schemaName}.{tableName}' not found or is not a valid geospatial table");
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // Use Serializable isolation level for critical catalog operations to prevent phantom reads
+        var (dbConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await using var connection = (NpgsqlConnection)dbConnection;
+        await using var transaction = (NpgsqlTransaction)dbTransaction;
 
         try
         {
@@ -349,8 +352,10 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     /// <inheritdoc />
     public async Task<bool> DeleteLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // Use Serializable isolation level for critical catalog operations to prevent phantom reads
+        var (dbConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await using var connection = (NpgsqlConnection)dbConnection;
+        await using var transaction = (NpgsqlTransaction)dbTransaction;
 
         try
         {
@@ -412,7 +417,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         if (tableInfo == null)
             return null;
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // Use RepeatableRead isolation level for layer refresh operations to ensure consistent field updates
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
 
         try
         {

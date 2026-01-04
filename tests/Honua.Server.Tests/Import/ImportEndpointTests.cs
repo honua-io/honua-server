@@ -48,11 +48,11 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/formats")]
-    public async Task GetSupportedFormats_Legacy_ReturnsAllSupportedExtensions()
+    [Endpoint("GET /api/v1/admin/import/formats")]
+    public async Task GetSupportedFormats_RepeatRequest_ReturnsAllSupportedExtensions()
     {
-        // Act - Legacy endpoint should still work as backward compatibility alias
-        var response = await _client.GetAsync("/api/import/formats");
+        // Act
+        var response = await _client.GetAsync("/api/v1/admin/import/formats");
 
         // Assert
         response.BeSuccessful();
@@ -112,10 +112,10 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/preview")]
-    public async Task PreviewFile_Legacy_WithValidGeoJson_ReturnsPreview()
+    [Endpoint("POST /api/v1/admin/import/preview")]
+    public async Task PreviewFile_RepeatRequest_WithValidGeoJson_ReturnsPreview()
     {
-        // Arrange - Legacy endpoint should still work as backward compatibility alias
+        // Arrange
         var geoJsonContent = """
         {
             "type": "FeatureCollection",
@@ -145,7 +145,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/import/preview", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.BeSuccessful();
@@ -170,7 +170,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/import/preview", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -190,7 +190,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/import/preview", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -249,10 +249,10 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
-    public async Task ImportFile_Legacy_WithValidRequest_ReturnsImportResult()
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_RepeatRequest_WithValidRequest_ReturnsImportResult()
     {
-        // Arrange - Legacy endpoint should still work as backward compatibility alias
+        // Arrange
         var geoJsonContent = """
         {
             "type": "FeatureCollection",
@@ -287,7 +287,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -317,7 +317,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("invalid-table-name!"), "TableName"); // Invalid characters
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -342,7 +342,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act (no TableName provided)
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -367,11 +367,11 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/limits")]
-    public async Task GetImportLimits_Legacy_ReturnsLimitsConfiguration()
+    [Endpoint("GET /api/v1/admin/import/limits")]
+    public async Task GetImportLimits_RepeatRequest_ReturnsLimitsConfiguration()
     {
-        // Act - Legacy endpoint should still work
-        var response = await _client.GetAsync("/api/import/limits");
+        // Act
+        var response = await _client.GetAsync("/api/v1/admin/import/limits");
 
         // Assert
         response.BeSuccessful();
@@ -393,11 +393,11 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/jobs")]
-    public async Task GetActiveJobs_Legacy_ReturnsJobsList()
+    [Endpoint("GET /api/v1/admin/import/jobs")]
+    public async Task GetActiveJobs_RepeatRequest_ReturnsJobsList()
     {
-        // Act - Legacy endpoint should still work
-        var response = await _client.GetAsync("/api/import/jobs");
+        // Act
+        var response = await _client.GetAsync("/api/v1/admin/import/jobs");
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable);
@@ -415,11 +415,11 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/jobs/{jobId}")]
-    public async Task GetJobStatus_Legacy_WithInvalidJobId_Returns404()
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
+    public async Task GetJobStatus_RepeatRequest_WithInvalidJobId_Returns404()
     {
-        // Act - Legacy endpoint should still work
-        var response = await _client.GetAsync("/api/import/jobs/nonexistent-job");
+        // Act
+        var response = await _client.GetAsync("/api/v1/admin/import/jobs/nonexistent-job");
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
@@ -437,11 +437,11 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/jobs/{jobId}/cancel")]
-    public async Task CancelJob_Legacy_WithInvalidJobId_Returns404()
+    [Endpoint("POST /api/v1/admin/import/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RepeatRequest_WithInvalidJobId_Returns404()
     {
-        // Act - Legacy endpoint should still work
-        var response = await _client.PostAsync("/api/import/jobs/nonexistent-job/cancel", null);
+        // Act
+        var response = await _client.PostAsync("/api/v1/admin/import/jobs/nonexistent-job/cancel", null);
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);

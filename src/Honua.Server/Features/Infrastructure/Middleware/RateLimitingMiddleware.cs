@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
@@ -50,23 +51,18 @@ internal sealed class RateLimitingMiddleware
 
         CleanupIfNeeded();
 
-        var clientIp = GetClientIpAddress(context, trustProxyHeaders);
-        if (clientIp == null)
-        {
-            // Cannot determine client IP, allow request through
-            // This can happen with malformed proxy headers
-            await _next(context);
-            return;
-        }
+        var clientIp = GetClientIpAddress(context, trustProxyHeaders) ?? IPAddress.None;
 
         // Get or create rate limit tracker for this IP address
         // Uses sliding window algorithm to track request timestamps
         var clientLimit = _clients.GetOrAdd(clientIp, _ => new ClientRateLimit(_options.WindowSize));
+        var now = DateTimeOffset.UtcNow;
 
-        if (!clientLimit.TryAddRequest(_options.MaxRequestsPerWindow))
+        if (!clientLimit.TryAddRequest(_options.MaxRequestsPerWindow, now))
         {
             // Client has exceeded rate limit, return 429 Too Many Requests
-            await HandleRateLimitExceededAsync(context, clientIp);
+            var retryAfter = clientLimit.GetRetryAfter(now);
+            await HandleRateLimitExceededAsync(context, clientIp, retryAfter);
             return;
         }
 
@@ -74,7 +70,8 @@ internal sealed class RateLimitingMiddleware
         // These headers follow RFC 6585 and common industry practices
         context.Response.Headers["X-RateLimit-Limit"] = _options.MaxRequestsPerWindow.ToString();
         context.Response.Headers["X-RateLimit-Remaining"] = Math.Max(0, _options.MaxRequestsPerWindow - clientLimit.RequestCount).ToString();
-        context.Response.Headers["X-RateLimit-Reset"] = DateTimeOffset.UtcNow.Add(clientLimit.WindowReset).ToUnixTimeSeconds().ToString();
+        var resetAt = clientLimit.GetWindowResetUtc(now);
+        context.Response.Headers["X-RateLimit-Reset"] = resetAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
 
         await _next(context);
     }
@@ -101,6 +98,11 @@ internal sealed class RateLimitingMiddleware
         }
 
         var connection = context.Connection;
+
+        if (connection.RemoteIpAddress == null)
+        {
+            return true;
+        }
 
         // localhost requests
         if (connection.RemoteIpAddress?.Equals(connection.LocalIpAddress) == true)
@@ -160,7 +162,7 @@ internal sealed class RateLimitingMiddleware
 
         if (_trustedProxies.Count == 0)
         {
-            return true;
+            return false;
         }
 
         var remoteIp = context.Connection.RemoteIpAddress;
@@ -220,11 +222,12 @@ internal sealed class RateLimitingMiddleware
         }
     }
 
-    private async Task HandleRateLimitExceededAsync(HttpContext context, IPAddress clientIp)
+    private async Task HandleRateLimitExceededAsync(HttpContext context, IPAddress clientIp, TimeSpan retryAfter)
     {
         Log.RateLimitExceeded(_logger, clientIp.ToString(), _options.MaxRequestsPerWindow, _options.WindowSize.TotalMinutes);
 
-        context.Response.Headers["Retry-After"] = _options.WindowSize.TotalSeconds.ToString();
+        var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+        context.Response.Headers["Retry-After"] = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
 
         var detail = $"Rate limit exceeded. Maximum {_options.MaxRequestsPerWindow} requests per {_options.WindowSize.TotalMinutes} minutes.";
         await ProtocolErrorWriter.WriteErrorAsync(context, StatusCodes.Status429TooManyRequests, "Too Many Requests", detail);
@@ -247,13 +250,10 @@ internal sealed class ClientRateLimit
     }
 
     public int RequestCount { get; private set; }
-    public TimeSpan WindowReset => _windowSize;
-
-    public bool TryAddRequest(int maxRequests)
+    public bool TryAddRequest(int maxRequests, DateTimeOffset now)
     {
         lock (_lock)
         {
-            var now = DateTimeOffset.UtcNow;
             var windowStart = now - _windowSize;
 
             // Remove expired requests
@@ -273,6 +273,35 @@ internal sealed class ClientRateLimit
             _requests.Enqueue(now);
             RequestCount = _requests.Count;
             return true;
+        }
+    }
+
+    public DateTimeOffset GetWindowResetUtc(DateTimeOffset now)
+    {
+        lock (_lock)
+        {
+            if (_requests.Count == 0)
+            {
+                return now;
+            }
+
+            var resetAt = _requests.Peek().Add(_windowSize);
+            return resetAt > now ? resetAt : now;
+        }
+    }
+
+    public TimeSpan GetRetryAfter(DateTimeOffset now)
+    {
+        lock (_lock)
+        {
+            if (_requests.Count == 0)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var resetAt = _requests.Peek().Add(_windowSize);
+            var remaining = resetAt - now;
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
         }
     }
 
@@ -313,7 +342,7 @@ public sealed class RateLimitOptions
 
     /// <summary>
     /// List of trusted proxy IPs allowed to supply forwarded headers.
-    /// Empty list trusts all proxies when TrustProxyHeaders is true.
+    /// Empty list disables trusting forwarded headers to prevent spoofing.
     /// </summary>
     public string[] TrustedProxies { get; set; } = Array.Empty<string>();
 

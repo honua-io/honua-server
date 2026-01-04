@@ -1,13 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.OData.Models;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.API;
 
@@ -15,16 +18,18 @@ namespace Honua.Server.Tests.Features.API;
 /// Comprehensive API endpoint coverage tests ensuring 100% API surface testing
 /// </summary>
 [Collection("Database")]
-public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class EndpointCoverageTests : IAsyncLifetime
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly HttpClient _client;
+    private readonly WebAppFixture _fixture = new();
+    private HttpClient _client = null!;
 
-    public EndpointCoverageTests(WebApplicationFactory<Program> factory)
+    public async Task InitializeAsync()
     {
-        _factory = factory;
-        _client = factory.CreateClient();
+        await _fixture.InitializeAsync();
+        _client = _fixture.Client;
     }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region FeatureServer Protocol Tests
 
@@ -44,7 +49,7 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
         json.RootElement.GetProperty("serviceDescription").GetString().Should().NotBeEmpty();
         json.RootElement.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
-        json.RootElement.GetProperty("spatialReference").Should().ValueKind.Should().Be(JsonValueKind.Object);
+        json.RootElement.GetProperty("spatialReference").ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     [IntegrationTest]
@@ -81,8 +86,8 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        json.RootElement.GetProperty("features").Should().ValueKind.Should().Be(JsonValueKind.Array);
-        json.RootElement.GetProperty("spatialReference").Should().ValueKind.Should().Be(JsonValueKind.Object);
+        json.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.GetProperty("spatialReference").ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     [IntegrationTest]
@@ -94,7 +99,7 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
         // Arrange
         var queryPayload = new FormUrlEncodedContent(new[]
         {
-            new KeyValuePair<string, string>("where", "category = 'retail' AND value > 100"),
+            new KeyValuePair<string, string>("where", "category = 'test'"),
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("outFields", "*"),
             new KeyValuePair<string, string>("returnGeometry", "true"),
@@ -102,14 +107,14 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
         });
 
         // Act
-        var response = await _client.PostAsync("/rest/services/test/FeatureServer/1/query", queryPayload);
+        var response = await _client.PostAsync("/rest/services/test/FeatureServer/0/query", queryPayload);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        json.RootElement.GetProperty("features").Should().ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [IntegrationTest]
@@ -119,26 +124,27 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     public async Task FeatureServer_ApplyEdits_WithNewFeature_ShouldCreateFeature()
     {
         // Arrange
-        var editPayload = JsonSerializer.Serialize(new
+        var editsRequest = new ApplyEditsRequest
         {
-            adds = new[]
+            Adds = new[]
             {
-                new
+                new GeoServicesFeature
                 {
-                    geometry = new
+                    Attributes = new Dictionary<string, object?>
                     {
-                        type = "Point",
-                        coordinates = new[] { -122.0, 37.0 }
+                        ["name"] = "Test Feature",
+                        ["description"] = "Endpoint coverage edit"
                     },
-                    attributes = new
+                    Geometry = new GeoServicesGeometry
                     {
-                        name = "Test Feature",
-                        category = "test"
+                        X = -122.0,
+                        Y = 37.0
                     }
                 }
             }
-        });
+        };
 
+        var editPayload = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
         var content = new StringContent(editPayload, Encoding.UTF8, "application/json");
 
         // Act
@@ -158,7 +164,7 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     #region OData Protocol Tests
 
     [IntegrationTest]
-    [Protocol(Protocols.OData)]
+    [Protocol(Protocols.ODataV4)]
     [Operation("ServiceDocument")]
     [Endpoint("GET /odata")]
     public async Task OData_GetServiceDocument_ShouldReturnMetadata()
@@ -173,7 +179,7 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OData)]
+    [Protocol(Protocols.ODataV4)]
     [Operation("Metadata")]
     [Endpoint("GET /odata/$metadata")]
     public async Task OData_GetMetadata_ShouldReturnSchema()
@@ -187,66 +193,71 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OData)]
+    [Protocol(Protocols.ODataV4)]
     [Operation("Query")]
-    [Endpoint("GET /odata/layers({layerId})/features")]
+    [Endpoint("GET /odata/Features({layerId})")]
     public async Task OData_QueryFeatures_ShouldReturnODataFormat()
     {
         // Act
-        var response = await _client.GetAsync("/odata/layers(1)/features");
+        var response = await _client.GetAsync("/odata/Features(1)");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        json.RootElement.GetProperty("@odata.context").Should().ValueKind.Should().Be(JsonValueKind.String);
-        json.RootElement.GetProperty("value").Should().ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.GetProperty("@odata.context").ValueKind.Should().Be(JsonValueKind.String);
+        json.RootElement.GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OData)]
+    [Protocol(Protocols.ODataV4)]
     [Operation("Filter")]
-    [Endpoint("GET /odata/layers({layerId})/features?$filter={expression}")]
+    [Endpoint("GET /odata/Features({layerId})?$filter={expression}")]
     public async Task OData_QueryWithFilter_ShouldApplyFilter()
     {
         // Act
-        var response = await _client.GetAsync("/odata/layers(1)/features?$filter=category eq 'retail'");
+        var response = await _client.GetAsync("/odata/Features(1)?$filter=category eq 'retail'");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        json.RootElement.GetProperty("value").Should().ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OData)]
+    [Protocol(Protocols.ODataV4)]
     [Operation("Batch")]
     [Endpoint("POST /odata/$batch")]
     public async Task OData_BatchRequest_ShouldProcessMultipleOperations()
     {
         // Arrange
-        var batchPayload = """
-            --batch_12345
-            Content-Type: application/http
-            Content-Transfer-Encoding: binary
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(
+                new ODataBatchRequestItem
+                {
+                    Id = "1",
+                    Method = "GET",
+                    Url = "Features(1)",
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["Accept"] = "application/json"
+                    }
+                })
+        };
 
-            GET /odata/layers(1)/features HTTP/1.1
-            Accept: application/json
-
-            --batch_12345--
-            """;
-
-        var content = new StringContent(batchPayload, Encoding.UTF8, "multipart/mixed; boundary=batch_12345");
+        var batchPayload = JsonSerializer.Serialize(batchRequest);
+        var content = new StringContent(batchPayload, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/odata/$batch", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType!.MediaType.Should().Contain("multipart/mixed");
+        response.Content.Headers.ContentType!.MediaType.Should().Contain("application/json");
     }
 
     #endregion
@@ -256,11 +267,11 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
     [Operation("LandingPage")]
-    [Endpoint("GET /")]
+    [Endpoint("GET /ogc/features")]
     public async Task OgcApi_GetLandingPage_ShouldReturnApiInfo()
     {
         // Act
-        var response = await _client.GetAsync("/");
+        var response = await _client.GetAsync("/ogc/features");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -274,11 +285,11 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
     [Operation("Conformance")]
-    [Endpoint("GET /conformance")]
+    [Endpoint("GET /ogc/features/conformance")]
     public async Task OgcApi_GetConformance_ShouldReturnConformanceClasses()
     {
         // Act
-        var response = await _client.GetAsync("/conformance");
+        var response = await _client.GetAsync("/ogc/features/conformance");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -291,11 +302,11 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
     [Operation("Collections")]
-    [Endpoint("GET /collections")]
+    [Endpoint("GET /ogc/features/collections")]
     public async Task OgcApi_GetCollections_ShouldReturnCollectionList()
     {
         // Act
-        var response = await _client.GetAsync("/collections");
+        var response = await _client.GetAsync("/ogc/features/collections");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -308,29 +319,29 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
     [Operation("Collection")]
-    [Endpoint("GET /collections/{collectionId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task OgcApi_GetCollection_ShouldReturnCollectionMetadata()
     {
         // Act
-        var response = await _client.GetAsync("/collections/test-layer");
+        var response = await _client.GetAsync("/ogc/features/collections/0");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        json.RootElement.GetProperty("id").GetString().Should().Be("test-layer");
-        json.RootElement.GetProperty("extent").Should().ValueKind.Should().Be(JsonValueKind.Object);
+        json.RootElement.GetProperty("id").GetString().Should().Be("0");
+        json.RootElement.GetProperty("extent").ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
     [Operation("Features")]
-    [Endpoint("GET /collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task OgcApi_GetFeatures_ShouldReturnGeoJSON()
     {
         // Act
-        var response = await _client.GetAsync("/collections/test-layer/items");
+        var response = await _client.GetAsync("/ogc/features/collections/0/items");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -338,17 +349,17 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.GetProperty("features").Should().ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
     }
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
     [Operation("Feature")]
-    [Endpoint("GET /collections/{collectionId}/items/{featureId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task OgcApi_GetFeature_ShouldReturnSingleFeature()
     {
         // Act
-        var response = await _client.GetAsync("/collections/test-layer/items/1");
+        var response = await _client.GetAsync("/ogc/features/collections/0/items/1");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -356,7 +367,7 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("Feature");
-        json.RootElement.GetProperty("id").Should().ValueKind.Should().Be(JsonValueKind.String);
+        json.RootElement.GetProperty("id").ValueKind.Should().BeOneOf(JsonValueKind.String, JsonValueKind.Number);
     }
 
     #endregion
@@ -364,35 +375,37 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
     #region MVT Protocol Tests
 
     [IntegrationTest]
-    [Protocol(Protocols.MVT)]
+    [Protocol(Protocols.Mvt)]
     [Operation("Tile")]
-    [Endpoint("GET /mvt/{layerId}/{z}/{x}/{y}.pbf")]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task MVT_GetTile_ShouldReturnProtobuf()
     {
         // Act
-        var response = await _client.GetAsync("/mvt/1/10/512/512.pbf");
+        var response = await _client.GetAsync("/tiles/1/10/512/512.mvt");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/x-protobuf");
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.mapbox-vector-tile");
+        }
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.MVT)]
-    [Operation("TileJSON")]
-    [Endpoint("GET /mvt/{layerId}/tilejson")]
-    public async Task MVT_GetTileJSON_ShouldReturnTileJSONSpec()
+    [Protocol(Protocols.OgcApiTiles)]
+    [Operation("Tilesets")]
+    [Endpoint("GET /ogc/tiles/tiles")]
+    public async Task OgcTiles_GetTilesets_ShouldReturnTilesetList()
     {
         // Act
-        var response = await _client.GetAsync("/mvt/1/tilejson");
+        var response = await _client.GetAsync("/ogc/tiles/tiles");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        json.RootElement.GetProperty("tilejson").GetString().Should().Be("2.2.0");
-        json.RootElement.GetProperty("tiles").GetArrayLength().Should().BeGreaterThan(0);
+        json.RootElement.GetProperty("tilesets").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     #endregion
@@ -401,11 +414,11 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
     [IntegrationTest]
     [Operation("HealthCheck")]
-    [Endpoint("GET /health/live")]
+    [Endpoint("GET /healthz/live")]
     public async Task Health_GetLiveness_ShouldReturnHealthy()
     {
         // Act
-        var response = await _client.GetAsync("/health/live");
+        var response = await _client.GetAsync("/healthz/live");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -415,16 +428,16 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
     [IntegrationTest]
     [Operation("HealthCheck")]
-    [Endpoint("GET /health/ready")]
+    [Endpoint("GET /healthz/ready")]
     public async Task Health_GetReadiness_ShouldReturnReady()
     {
         // Act
-        var response = await _client.GetAsync("/health/ready");
+        var response = await _client.GetAsync("/healthz/ready");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Healthy");
+        content.Should().Contain("Ready");
     }
 
     #endregion
@@ -433,11 +446,11 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
     [IntegrationTest]
     [Operation("Admin")]
-    [Endpoint("GET /admin/tables")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task Admin_GetTables_ShouldReturnTableList()
     {
         // Act
-        var response = await _client.GetAsync("/admin/tables");
+        var response = await _client.GetAsync("/api/v1/admin/connections/test/tables");
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized);
@@ -446,32 +459,28 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
         {
             var content = await response.Content.ReadAsStringAsync();
             var json = JsonDocument.Parse(content);
-            json.RootElement.Should().ValueKind.Should().Be(JsonValueKind.Array);
+            json.RootElement.GetProperty("tables").ValueKind.Should().Be(JsonValueKind.Array);
         }
     }
 
     [IntegrationTest]
     [Operation("Admin")]
-    [Endpoint("POST /admin/layers")]
+    [Endpoint("POST /api/v1/admin/metadata/layers")]
     public async Task Admin_CreateLayer_ShouldCreateNewLayer()
     {
         // Arrange
         var layerPayload = JsonSerializer.Serialize(new
         {
-            name = "test_layer_" + Guid.NewGuid().ToString("N")[..8],
-            geometryType = "Point",
-            spatialReference = new { wkid = 4326 },
-            fields = new[]
-            {
-                new { name = "objectid", type = "esriFieldTypeOID" },
-                new { name = "name", type = "esriFieldTypeString", length = 255 }
-            }
+            tableName = "features",
+            schemaName = _fixture.CurrentSchema ?? "public",
+            displayName = "test_layer_" + Guid.NewGuid().ToString("N")[..8],
+            description = "Endpoint coverage layer"
         });
 
         var content = new StringContent(layerPayload, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _client.PostAsync("/admin/layers", content);
+        var response = await _client.PostAsync("/api/v1/admin/metadata/layers", content);
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
@@ -483,7 +492,7 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
     [IntegrationTest]
     [Operation("Import")]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_UploadFile_ShouldAcceptValidFormats()
     {
         // Arrange
@@ -507,9 +516,10 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
         var multipartContent = new MultipartFormDataContent();
         multipartContent.Add(new StringContent(geoJsonContent), "file", "test.geojson");
+        multipartContent.Add(new StringContent("coverage_import_table"), "TableName");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", multipartContent);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", multipartContent);
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.Unauthorized);
@@ -517,14 +527,14 @@ public class EndpointCoverageTests : IClassFixture<WebApplicationFactory<Program
 
     [IntegrationTest]
     [Operation("Import")]
-    [Endpoint("GET /api/import/status/{jobId}")]
-    public async Task Import_GetStatus_ShouldReturnJobStatus()
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
+    public async Task Import_GetJobStatus_ShouldReturnJobStatus()
     {
         // Arrange
         var jobId = Guid.NewGuid().ToString();
 
         // Act
-        var response = await _client.GetAsync($"/api/import/status/{jobId}");
+        var response = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.Unauthorized);

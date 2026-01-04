@@ -310,7 +310,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/connections/test/tables");
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", adminPassword);
         var response = await client.SendAsync(request);
 
@@ -341,7 +341,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         var token = GenerateTestJwtToken();
 
         // Act - Access admin endpoint with Bearer token
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/connections/test/tables");
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 

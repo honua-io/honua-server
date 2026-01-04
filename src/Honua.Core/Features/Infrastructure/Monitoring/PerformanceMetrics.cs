@@ -53,6 +53,26 @@ internal sealed class PerformanceMetrics
 
     #endregion
 
+    #region Transaction Metrics
+
+    /// <summary>
+    /// Histogram for database transaction duration in milliseconds.
+    /// </summary>
+    public static readonly Histogram<double> TransactionDuration = Meter.CreateHistogram<double>(
+        "honua_transaction_duration_ms",
+        "ms",
+        "Duration of database transactions in milliseconds");
+
+    /// <summary>
+    /// Counter for database transactions.
+    /// </summary>
+    public static readonly Counter<long> TransactionCount = Meter.CreateCounter<long>(
+        "honua_transaction_total",
+        "transactions",
+        "Total number of database transactions");
+
+    #endregion
+
     #region HTTP Request Metrics
 
     /// <summary>

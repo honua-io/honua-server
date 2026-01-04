@@ -31,6 +31,19 @@ public class SecurityComplianceMiddleware
         _monitoringService = monitoringService;
     }
 
+    // LoggerMessage delegates for performance
+    private static readonly Action<ILogger, string, Exception?> LogPreRequestSecurityError =
+        LoggerMessage.Define<string>(LogLevel.Error, new EventId(1, "PreRequestSecurityError"),
+            "Error in pre-request security checks for {CorrelationId}");
+
+    private static readonly Action<ILogger, string, Exception?> LogPostRequestSecurityError =
+        LoggerMessage.Define<string>(LogLevel.Error, new EventId(2, "PostRequestSecurityError"),
+            "Error in post-request security analysis for {CorrelationId}");
+
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogOwaspViolation =
+        LoggerMessage.Define<string, string, string, string>(LogLevel.Warning, new EventId(3, "OwaspViolation"),
+            "OWASP violation detected: {Category} - {Message} ({RuleId}) for {CorrelationId}");
+
     public async Task InvokeAsync(HttpContext context)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -108,7 +121,7 @@ public class SecurityComplianceMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in pre-request security checks for {CorrelationId}", correlationId);
+            LogPreRequestSecurityError(_logger, correlationId, ex);
             // Don't throw non-security exceptions to avoid breaking the request pipeline
         }
     }
@@ -154,7 +167,7 @@ public class SecurityComplianceMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in post-request security analysis for {CorrelationId}", correlationId);
+            LogPostRequestSecurityError(_logger, correlationId, ex);
             // Don't throw to avoid impacting response
         }
     }
@@ -163,8 +176,7 @@ public class SecurityComplianceMiddleware
     {
         foreach (var violation in owaspResult.Violations)
         {
-            _logger.LogWarning("OWASP violation detected: {Category} - {Message} ({RuleId}) for {CorrelationId}",
-                violation.Category, violation.Message, violation.RuleId, correlationId);
+            LogOwaspViolation(_logger, violation.Category.ToString(), violation.Message, violation.RuleId, correlationId, null);
 
             // Log security incident for critical violations
             if (violation.RiskLevel == OwaspComplianceFramework.RiskLevel.Critical ||

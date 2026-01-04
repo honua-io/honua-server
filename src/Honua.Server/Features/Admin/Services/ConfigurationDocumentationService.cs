@@ -5,6 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
@@ -21,6 +22,8 @@ internal sealed class ConfigurationDocumentationService
     private readonly IOptions<CacheOptions> _cacheOptions;
     private readonly IOptions<TileOptions> _tileOptions;
     private readonly IOptions<RateLimitOptions> _rateLimitOptions;
+    private readonly IOptions<AdaptiveSamplingOptions> _adaptiveSamplingOptions;
+    private readonly IOptions<TracingOptions> _tracingOptions;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConfigurationDocumentationService"/> class.
@@ -31,7 +34,9 @@ internal sealed class ConfigurationDocumentationService
         IOptions<LimitsOptions> limitsOptions,
         IOptions<CacheOptions> cacheOptions,
         IOptions<TileOptions> tileOptions,
-        IOptions<RateLimitOptions> rateLimitOptions)
+        IOptions<RateLimitOptions> rateLimitOptions,
+        IOptions<AdaptiveSamplingOptions> adaptiveSamplingOptions,
+        IOptions<TracingOptions> tracingOptions)
     {
         _configuration = configuration;
         _environment = environment;
@@ -39,6 +44,8 @@ internal sealed class ConfigurationDocumentationService
         _cacheOptions = cacheOptions;
         _tileOptions = tileOptions;
         _rateLimitOptions = rateLimitOptions;
+        _adaptiveSamplingOptions = adaptiveSamplingOptions;
+        _tracingOptions = tracingOptions;
     }
 
     /// <summary>
@@ -60,7 +67,9 @@ internal sealed class ConfigurationDocumentationService
             BuildLimitsImportsSection(),
             BuildRateLimitSection(),
             BuildTileOptionsSection(),
-            BuildSecuritySection()
+            BuildSecuritySection(),
+            BuildTracingSection(),
+            BuildAdaptiveSamplingSection()
         };
 
         var envVars = BuildEnvironmentVariableQuickReference();
@@ -371,6 +380,80 @@ internal sealed class ConfigurationDocumentationService
         };
     }
 
+    private ConfigurationSection BuildTracingSection()
+    {
+        var options = _tracingOptions.Value;
+        return new ConfigurationSection
+        {
+            Name = "Tracing",
+            Description = "OpenTelemetry distributed tracing configuration",
+            Properties =
+            [
+                BuildProperty("Tracing:Enabled", "HONUA__TRACING__ENABLED", "boolean",
+                    "Enable distributed tracing", options.Enabled),
+                BuildProperty("Tracing:SamplingRatio", "HONUA__TRACING__SAMPLINGRATIO", "decimal",
+                    "Static sampling ratio (0.0 to 1.0)", options.SamplingRatio),
+                BuildProperty("Tracing:IncludeDbStatementText", "HONUA__TRACING__INCLUDEDBSTATEMENTTEXT", "boolean",
+                    "Include database query text in spans", options.IncludeDbStatementText),
+                BuildProperty("Tracing:TraceHealthEndpoints", "HONUA__TRACING__TRACEHEALTHENDPOINTS", "boolean",
+                    "Trace health check endpoints", options.TraceHealthEndpoints),
+                BuildProperty("Tracing:RecordExceptionStackTraces", "HONUA__TRACING__RECORDEXCEPTIONSTACKTRACES", "boolean",
+                    "Record exception stack traces in spans", options.RecordExceptionStackTraces),
+                BuildProperty("Tracing:OtlpEndpoint", "HONUA__TRACING__OTLPENDPOINT", "string",
+                    "OTLP exporter endpoint URL", options.OtlpEndpoint ?? ""),
+                BuildProperty("Tracing:OtlpHeaders", "HONUA__TRACING__OTLPHEADERS", "string",
+                    "OTLP exporter headers", options.OtlpHeaders ?? "", isSensitive: true)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildAdaptiveSamplingSection()
+    {
+        var options = _adaptiveSamplingOptions.Value;
+        return new ConfigurationSection
+        {
+            Name = "AdaptiveSampling",
+            Description = "Intelligent adaptive sampling for distributed tracing - automatically adjusts sampling rates based on system load and error rates",
+            Properties =
+            [
+                BuildProperty("AdaptiveSampling:Enabled", "HONUA__ADAPTIVESAMPLING__ENABLED", "boolean",
+                    "Enable adaptive sampling (when disabled, uses static Tracing:SamplingRatio)", options.Enabled),
+                BuildProperty("AdaptiveSampling:BaseSamplingRate", "HONUA__ADAPTIVESAMPLING__BASESAMPLRATE", "decimal",
+                    "Base sampling rate used as starting point (0.001 to 1.0)", options.BaseSamplingRate),
+                BuildProperty("AdaptiveSampling:MinSamplingRate", "HONUA__ADAPTIVESAMPLING__MINSAMPLRATE", "decimal",
+                    "Minimum sampling rate under high load (0.001 to 0.5)", options.MinSamplingRate),
+                BuildProperty("AdaptiveSampling:MaxSamplingRate", "HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE", "decimal",
+                    "Maximum sampling rate during errors/low load (0.1 to 1.0)", options.MaxSamplingRate),
+                BuildProperty("AdaptiveSampling:EvaluationWindow", "HONUA__ADAPTIVESAMPLING__EVALUATIONWINDOW", "timespan",
+                    "How often to adjust sampling rates (format: hh:mm:ss)", options.EvaluationWindow.ToString()),
+                BuildProperty("AdaptiveSampling:Load:CpuThreshold", "HONUA__ADAPTIVESAMPLING__LOAD__CPUTHRESHOLD", "decimal",
+                    "CPU usage % threshold for reducing sampling (30-95)", options.Load.CpuThreshold),
+                BuildProperty("AdaptiveSampling:Load:MemoryThreshold", "HONUA__ADAPTIVESAMPLING__LOAD__MEMORYTHRESHOLD", "decimal",
+                    "Memory usage % threshold for reducing sampling (30-95)", options.Load.MemoryThreshold),
+                BuildProperty("AdaptiveSampling:Load:ActiveRequestThreshold", "HONUA__ADAPTIVESAMPLING__LOAD__ACTIVEREQUESTTHRESHOLD", "integer",
+                    "Active request count threshold (10-1000)", options.Load.ActiveRequestThreshold),
+                BuildProperty("AdaptiveSampling:Load:ResponseTimeThresholdMs", "HONUA__ADAPTIVESAMPLING__LOAD__RESPONSETIMETHRESHOLDMS", "integer",
+                    "Response time threshold in ms (100-10000)", options.Load.ResponseTimeThresholdMs),
+                BuildProperty("AdaptiveSampling:Error:ErrorRateThreshold", "HONUA__ADAPTIVESAMPLING__ERROR__ERRORRATETHRESHOLD", "decimal",
+                    "Error rate % that triggers increased sampling (0.1-50)", options.Error.ErrorRateThreshold),
+                BuildProperty("AdaptiveSampling:Error:ErrorMultiplier", "HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER", "decimal",
+                    "Multiplier for sampling during errors (1.5-10)", options.Error.ErrorMultiplier),
+                BuildProperty("AdaptiveSampling:Error:ErrorWindowMinutes", "HONUA__ADAPTIVESAMPLING__ERROR__ERRORWINDOWMINUTES", "integer",
+                    "Time window for error rate calculation in minutes (1-30)", options.Error.ErrorWindowMinutes),
+                BuildProperty("AdaptiveSampling:Operations:Enabled", "HONUA__ADAPTIVESAMPLING__OPERATIONS__ENABLED", "boolean",
+                    "Enable operation-specific sampling rates", options.Operations.Enabled),
+                BuildProperty("AdaptiveSampling:Operations:CriticalRate", "HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE", "decimal",
+                    "Sampling rate for critical operations (auth, data writes) (0.1-1.0)", options.Operations.CriticalRate),
+                BuildProperty("AdaptiveSampling:Operations:ImportantRate", "HONUA__ADAPTIVESAMPLING__OPERATIONS__IMPORTANTRATE", "decimal",
+                    "Sampling rate for important operations (spatial queries) (0.05-1.0)", options.Operations.ImportantRate),
+                BuildProperty("AdaptiveSampling:Operations:NormalRate", "HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE", "decimal",
+                    "Sampling rate for normal operations (standard queries) (0.01-1.0)", options.Operations.NormalRate),
+                BuildProperty("AdaptiveSampling:Operations:BackgroundRate", "HONUA__ADAPTIVESAMPLING__OPERATIONS__BACKGROUNDRATE", "decimal",
+                    "Sampling rate for background operations (health checks) (0.001-0.1)", options.Operations.BackgroundRate)
+            ]
+        };
+    }
+
     private ConfigurationProperty BuildProperty(string path, string envVar, string type, string description,
         object? defaultValue, bool isRequired = false, bool isSensitive = false, string? validation = null)
     {
@@ -481,7 +564,24 @@ internal sealed class ConfigurationDocumentationService
 
             // CORS
             new() { Name = "Cors__AllowedOrigins__0", ConfigPath = "Security", Description = "First CORS origin", Required = false, Example = "https://myapp.example.com" },
-            new() { Name = "Cors__AllowedOrigins__1", ConfigPath = "Security", Description = "Second CORS origin", Required = false, Example = "https://admin.example.com" }
+            new() { Name = "Cors__AllowedOrigins__1", ConfigPath = "Security", Description = "Second CORS origin", Required = false, Example = "https://admin.example.com" },
+
+            // Tracing
+            new() { Name = "HONUA__TRACING__ENABLED", ConfigPath = "Tracing", Description = "Enable OpenTelemetry tracing", Default = "true", Example = "false" },
+            new() { Name = "HONUA__TRACING__SAMPLINGRATIO", ConfigPath = "Tracing", Description = "Static sampling ratio (0.0-1.0)", Default = "0.1", Example = "0.05" },
+            new() { Name = "HONUA__TRACING__OTLPENDPOINT", ConfigPath = "Tracing", Description = "OTLP exporter endpoint", Required = false, Example = "http://jaeger:4317" },
+
+            // Adaptive Sampling
+            new() { Name = "HONUA__ADAPTIVESAMPLING__ENABLED", ConfigPath = "AdaptiveSampling", Description = "Enable adaptive sampling", Default = "true", Example = "false" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__BASESAMPLRATE", ConfigPath = "AdaptiveSampling", Description = "Base sampling rate", Default = "0.1", Example = "0.05" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__MINSAMPLRATE", ConfigPath = "AdaptiveSampling", Description = "Minimum sampling rate", Default = "0.01", Example = "0.005" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE", ConfigPath = "AdaptiveSampling", Description = "Maximum sampling rate", Default = "0.5", Example = "0.8" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__LOAD__CPUTHRESHOLD", ConfigPath = "AdaptiveSampling.Load", Description = "CPU threshold for load reduction", Default = "70", Example = "80" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__LOAD__MEMORYTHRESHOLD", ConfigPath = "AdaptiveSampling.Load", Description = "Memory threshold for load reduction", Default = "80", Example = "90" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORRATETHRESHOLD", ConfigPath = "AdaptiveSampling.Error", Description = "Error rate % that increases sampling", Default = "5.0", Example = "10.0" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER", ConfigPath = "AdaptiveSampling.Error", Description = "Sampling multiplier during errors", Default = "3.0", Example = "5.0" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Critical operation sampling rate", Default = "1.0", Example = "0.8" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Normal operation sampling rate", Default = "0.1", Example = "0.05" }
         };
     }
 }

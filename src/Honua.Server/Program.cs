@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Caching;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.HealthCheck;
@@ -63,7 +64,12 @@ if (useAspire)
     builder.AddNpgsqlDataSource("honua");
 
     // Add Redis if configured
-    builder.AddRedisDistributedCache("redis");
+    var redisConnectionString = builder.Configuration.GetConnectionString("redis")
+        ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
+    if (!string.IsNullOrWhiteSpace(redisConnectionString))
+    {
+        builder.AddRedisDistributedCache("redis");
+    }
 }
 
 // Configure Serilog for structured logging with AOT compatibility
@@ -167,11 +173,14 @@ builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataMetadataSer
 builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQueryService>();
 builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataCrudService>();
 builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataSearchService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataQuerySearchService>();
+builder.Services.AddScoped<Honua.Server.Features.OData.Services.ODataValidationService>();
 
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
 {
     options.IsDevelopmentMode = builder.Environment.IsDevelopment();
+    options.IsTestMode = builder.Environment.IsEnvironment("Test");
     options.AdminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
 });
@@ -195,28 +204,8 @@ builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 ConfigureOutputCaching(builder.Services);
 // Configure ETag support for cache validation
 builder.Services.AddETags();
-// Configure performance monitoring services
+// Configure OpenTelemetry-based performance monitoring
 builder.Services.AddPerformanceMonitoring();
-
-// Configure comprehensive monitoring and observability services
-if (builder.Environment.IsProduction())
-{
-    // Production: Full enterprise monitoring with all features
-    builder.Services.AddEnterpriseMonitoring(builder.Configuration);
-}
-else if (builder.Environment.IsDevelopment())
-{
-    // Development: Basic monitoring with reduced overhead
-    builder.Services.AddDevelopmentMonitoring(builder.Configuration);
-}
-else
-{
-    // Staging/Test: Comprehensive monitoring without enterprise features
-    builder.Services.AddComprehensiveMonitoring(builder.Configuration);
-}
-
-// Add monitoring middleware for automatic tracking
-builder.Services.AddMonitoringMiddleware();
 // Configure response compression
 ConfigureResponseCompression(builder.Services);
 
@@ -226,13 +215,25 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
         Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Server.Features.OData.Models.ODataJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Monitoring.DashboardJsonContext.Default,
         Honua.Server.Features.OgcFeatures.OgcJsonContext.Default,
-        Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default);
+        Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default);
 });
 
 var app = builder.Build();
+
+var configurationErrors = ConfigurationValidationService.ValidateConfiguration(
+    app.Configuration,
+    app.Logger,
+    app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"));
+
+if (configurationErrors.Count > 0)
+{
+    ConfigurationLog.ConfigurationValidationFailed(app.Logger, configurationErrors.Count);
+    throw new InvalidOperationException("Configuration validation failed. See logs for details.");
+}
+
+ConfigurationLog.ConfigurationValidationSuccess(app.Logger);
 
 // Add security headers middleware (first in pipeline for all requests)
 app.UseSecurityHeaders();
@@ -250,11 +251,6 @@ if (useTestSchemaHeaders)
 
 // Add performance monitoring middleware (tracks request duration and memory)
 app.UsePerformanceMonitoring();
-
-// Add comprehensive monitoring middleware for automatic tracking
-app.UseMiddleware<RequestTrackingMiddleware>();
-app.UseMiddleware<PerformanceTrackingMiddleware>();
-app.UseMiddleware<BusinessAnalyticsMiddleware>();
 
 // Add global exception handling middleware (after correlation ID for exception logging)
 app.UseGlobalExceptionHandling();
@@ -345,9 +341,6 @@ if (useAspire)
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
 app.MapDatabasePerformanceEndpoints();
-
-// Map comprehensive monitoring and observability endpoints
-app.MapDashboardEndpoints();
 
 app.Run();
 
@@ -749,11 +742,11 @@ static void ConfigureRateLimiting(IServiceCollection services, IConfiguration co
 // Configure caching services with Redis and in-memory fallback
 static void ConfigureCaching(IServiceCollection services, IConfiguration configuration)
 {
-    // Bind cache configuration
-    services.Configure<CacheOptions>(options =>
-    {
-        configuration.GetSection(CacheOptions.SectionName).Bind(options);
-    });
+    // Bind cache configuration with validation
+    services.AddOptions<CacheOptions>()
+        .Bind(configuration.GetSection(CacheOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
 
     services.AddMemoryCache();
 

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -13,8 +14,10 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Tiles;
 using Honua.Postgres.Features.FeatureStore.Internal;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
@@ -37,54 +40,13 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// - Null checks: field IS NULL, field IS NOT NULL
 /// Complex expressions with subqueries or functions are not supported for security.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IStreamingFeatureStore
+internal sealed partial class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IStreamingFeatureStore
 {
     private enum GeometryStorageType
     {
         Geometry,
         Geography,
         Bytea
-    }
-    /// <summary>
-    /// PERFORMANCE OPTIMIZATION: Pooled object policy for dictionary allocations
-    /// Reduces garbage collection pressure for frequently allocated dictionaries in ReadFeatureAsync
-    /// </summary>
-    internal sealed class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictionary<string, object?>>
-    {
-        public override Dictionary<string, object?> Create() => new();
-
-        public override bool Return(Dictionary<string, object?> obj)
-        {
-            // Clear the dictionary and return it to the pool if size is reasonable
-            // Prevents memory bloat by rejecting oversized dictionaries
-            if (obj.Count <= 100)
-            {
-                obj.Clear();
-                return true;
-            }
-            return false; // Let it be garbage collected if too large
-        }
-    }
-
-    /// <summary>
-    /// PERFORMANCE OPTIMIZATION: Pooled object policy for StringBuilder allocations
-    /// Reduces garbage collection pressure for frequently allocated StringBuilders in SQL generation
-    /// </summary>
-    internal sealed class StringBuilderPooledObjectPolicy : PooledObjectPolicy<StringBuilder>
-    {
-        public override StringBuilder Create() => new();
-
-        public override bool Return(StringBuilder obj)
-        {
-            // Clear the StringBuilder and return it to the pool if capacity is reasonable
-            // Prevents memory bloat by rejecting oversized StringBuilders
-            if (obj.Capacity <= 8192) // 8KB capacity limit
-            {
-                obj.Clear();
-                return true;
-            }
-            return false; // Let it be garbage collected if too large
-        }
     }
 
     /// <summary>
@@ -156,6 +118,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ObjectPool<StringBuilder> _stringBuilderPool;
+    private readonly IPerformanceMonitor _performanceMonitor;
+    private readonly ILogger<PostgresFeatureStore> _logger;
     private readonly string _tableName;
     private readonly string _tableNameOnly;
     private readonly string? _tableSchema;
@@ -163,10 +127,17 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
     private bool? _hasLayerCatalog;
     private readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
 
-    public PostgresFeatureStore(IDatabaseConnectionProvider connectionProvider, ObjectPool<StringBuilder> stringBuilderPool, string? schemaName = null)
+    public PostgresFeatureStore(
+        IDatabaseConnectionProvider connectionProvider,
+        ObjectPool<StringBuilder> stringBuilderPool,
+        IPerformanceMonitor performanceMonitor,
+        ILogger<PostgresFeatureStore> logger,
+        string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _stringBuilderPool = stringBuilderPool ?? throw new ArgumentNullException(nameof(stringBuilderPool));
+        _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tableNameOnly = "features";
         _tableSchema = string.IsNullOrEmpty(schemaName) ? null : schemaName;
         _tableName = string.IsNullOrEmpty(schemaName) ? _tableNameOnly : $"{schemaName}.{_tableNameOnly}";
@@ -833,10 +804,27 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = editBatch.RollbackOnFailure
-            ? await connection.BeginTransactionAsync(cancellationToken)
-            : null;
+        NpgsqlConnection connection;
+        NpgsqlTransaction? transaction;
+
+        if (editBatch.RollbackOnFailure)
+        {
+            // Use RepeatableRead isolation level for feature edits to prevent phantom reads during batch operations
+            var (dbConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
+            connection = (NpgsqlConnection)dbConnection;
+            transaction = (NpgsqlTransaction)dbTransaction;
+        }
+        else
+        {
+            connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            transaction = null;
+        }
+
+        await using var _ = connection;
+        await using var __ = transaction;
+
+        var transactionStart = DateTime.UtcNow;
+        var transactionOperationCount = editBatch.Creates.Length + editBatch.Updates.Length + editBatch.Deletes.Length;
 
         try
         {
@@ -876,6 +864,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
                 if (transaction != null)
                 {
                     await transaction.RollbackAsync(cancellationToken);
+                    var transactionDuration = DateTime.UtcNow - transactionStart;
+                    _performanceMonitor.RecordTransactionDuration(transactionDuration, transactionOperationCount, wasCommitted: false);
                 }
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
@@ -883,6 +873,8 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
             if (transaction != null)
             {
                 await transaction.CommitAsync(cancellationToken);
+                var transactionDuration = DateTime.UtcNow - transactionStart;
+                _performanceMonitor.RecordTransactionDuration(transactionDuration, transactionOperationCount, wasCommitted: true);
             }
 
             return FeatureEditResult.Success(
@@ -899,11 +891,15 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
+
             if (transaction != null)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                var transactionDuration = DateTime.UtcNow - transactionStart;
+                _performanceMonitor.RecordTransactionDuration(transactionDuration, transactionOperationCount, wasCommitted: false);
 
                 // Create failure results for all attempted operations
                 var createResults = System.Linq.Enumerable.Select(editBatch.Creates, (_, i) =>
@@ -933,6 +929,15 @@ internal sealed class PostgresFeatureStore : IFeatureStore, IGmlFeatureStore, IS
                 failedDeleteResults,
                 wasRolledBack: false);
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = 6120,
+            Level = LogLevel.Error,
+            Message = "ApplyEdits failed for layer {LayerId} with {OperationCount} operations.")]
+        public static partial void ApplyEditsFailed(ILogger logger, int layerId, int operationCount, Exception exception);
     }
 
     private async Task<(ImmutableArray<long> createdIds, ImmutableArray<EditOperationResult> results)> ProcessCreatesWithResultsAsync(
@@ -2129,6 +2134,12 @@ WHERE layer_id = $1");
 
     private static void AppendOrderByClause(StringBuilder sql, FeatureQuery query)
     {
+        if (query.SpatialFilter.HasValue &&
+            query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor)
+        {
+            return;
+        }
+
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
             return;

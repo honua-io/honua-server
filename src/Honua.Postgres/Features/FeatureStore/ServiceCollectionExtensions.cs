@@ -62,7 +62,8 @@ internal static class ServiceCollectionExtensions
             var cacheManager = provider.GetRequiredService<IFeatureCacheManager>();
             var dictionaryPool = provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>();
             var statementCache = provider.GetService<PreparedStatementCache>();
-            return new FeatureDataAccess(connectionProvider, geometryProcessor, cacheManager, dictionaryPool, statementCache, schemaName);
+            var logger = provider.GetRequiredService<ILogger<FeatureDataAccess>>();
+            return new FeatureDataAccess(connectionProvider, geometryProcessor, cacheManager, dictionaryPool, statementCache, logger, schemaName);
         });
 
         // Register the main feature store implementation

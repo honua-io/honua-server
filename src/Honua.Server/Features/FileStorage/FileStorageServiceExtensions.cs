@@ -34,22 +34,14 @@ public static class FileStorageServiceExtensions
         else
         {
             // Default local storage path if not configured
-            services.Configure<LocalStorageOptions>(options =>
-            {
-                options = new LocalStorageOptions
-                {
-                    BasePath = Path.Combine(Path.GetTempPath(), "honua-storage"),
-                    CreateDirectoryIfNotExists = true
-                };
-            });
-            services.AddSingleton(new LocalStorageOptions
+            var defaultLocalOptions = new LocalStorageOptions
             {
                 BasePath = section.GetValue("LocalStorage:BasePath", null as string)
                            ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
                 CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
-            });
-            services.AddSingleton<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>(sp =>
-                Microsoft.Extensions.Options.Options.Create(sp.GetRequiredService<LocalStorageOptions>()));
+            };
+            services.AddSingleton<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>(
+                Microsoft.Extensions.Options.Options.Create(defaultLocalOptions));
         }
 
         // Determine provider from configuration or environment

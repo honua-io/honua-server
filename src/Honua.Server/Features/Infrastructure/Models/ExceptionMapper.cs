@@ -194,6 +194,7 @@ internal static class ExceptionMapper
         return message.Contains("filter", StringComparison.OrdinalIgnoreCase)
             || message.Contains("query", StringComparison.OrdinalIgnoreCase)
             || message.Contains("parameter", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("orderby", StringComparison.OrdinalIgnoreCase)
             || message.Contains("CQL", StringComparison.OrdinalIgnoreCase)
             || message.Contains("bbox", StringComparison.OrdinalIgnoreCase)
             || message.Contains("datetime", StringComparison.OrdinalIgnoreCase);
@@ -226,6 +227,16 @@ internal static class ExceptionMapper
         if (message.Contains("bbox", StringComparison.OrdinalIgnoreCase))
         {
             return "Invalid bbox parameter format.";
+        }
+
+        if (message.Contains("orderby", StringComparison.OrdinalIgnoreCase))
+        {
+            if (message.Length > 200)
+            {
+                return message[..200] + "...";
+            }
+
+            return message;
         }
 
         if (message.Contains("datetime", StringComparison.OrdinalIgnoreCase))

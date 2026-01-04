@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -11,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Infrastructure.Caching;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -20,13 +22,14 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// <summary>
 /// Handles database data access operations for PostgreSQL feature store
 /// </summary>
-internal sealed class FeatureDataAccess : IFeatureDataAccess
+internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly IGeometryProcessor _geometryProcessor;
     private readonly IFeatureCacheManager _cacheManager;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
     private readonly PreparedStatementCache? _statementCache;
+    private readonly ILogger<FeatureDataAccess> _logger;
     private readonly string _tableName;
 
     public FeatureDataAccess(
@@ -35,6 +38,7 @@ internal sealed class FeatureDataAccess : IFeatureDataAccess
         IFeatureCacheManager cacheManager,
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
         PreparedStatementCache? statementCache,
+        ILogger<FeatureDataAccess> logger,
         string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
@@ -42,6 +46,7 @@ internal sealed class FeatureDataAccess : IFeatureDataAccess
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _statementCache = statementCache;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         var tableNameOnly = "features";
         _tableName = string.IsNullOrEmpty(schemaName) ? tableNameOnly : $"{schemaName}.{tableNameOnly}";
@@ -282,10 +287,24 @@ internal sealed class FeatureDataAccess : IFeatureDataAccess
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = editBatch.RollbackOnFailure
-            ? await connection.BeginTransactionAsync(cancellationToken)
-            : null;
+        NpgsqlConnection connection;
+        NpgsqlTransaction? transaction;
+
+        if (editBatch.RollbackOnFailure)
+        {
+            // Use RepeatableRead isolation level for feature edits to prevent phantom reads during batch operations
+            var (dbConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
+            connection = (NpgsqlConnection)dbConnection;
+            transaction = (NpgsqlTransaction)dbTransaction;
+        }
+        else
+        {
+            connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            transaction = null;
+        }
+
+        await using var _ = connection;
+        await using var __ = transaction;
 
         try
         {
@@ -355,8 +374,10 @@ internal sealed class FeatureDataAccess : IFeatureDataAccess
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
+
             if (transaction != null)
             {
                 await transaction.RollbackAsync(cancellationToken);
@@ -388,6 +409,15 @@ internal sealed class FeatureDataAccess : IFeatureDataAccess
                 failedDeleteResults,
                 wasRolledBack: false);
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = 6121,
+            Level = LogLevel.Error,
+            Message = "ApplyEdits failed for layer {LayerId} with {OperationCount} operations.")]
+        public static partial void ApplyEditsFailed(ILogger logger, int layerId, int operationCount, Exception exception);
     }
 
     private async Task<Feature> CreateWithConnectionAsync(

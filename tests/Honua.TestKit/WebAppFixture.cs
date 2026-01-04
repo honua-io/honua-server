@@ -81,6 +81,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                 // Configure authentication bypass for test environment
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
 
                 _configureWebHost?.Invoke(builder);
 
@@ -90,7 +91,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:honua"] = _postgres.ConnectionString,
-                        ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString
+                        ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
+                        ["HONUA_SKIP_MIGRATIONS"] = "true"
                     });
                 });
 
@@ -177,6 +179,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     {
                         builder.UseEnvironment("Development");
                         builder.UseSetting("HONUA_DEV_AUTH", "true");
+                        builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
 
                         builder.ConfigureAppConfiguration((context, configBuilder) =>
                         {
@@ -185,6 +188,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 ["ConnectionStrings:honua"] = _sharedPostgres.ConnectionString,
                                 ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
                                 ["HONUA_DEV_AUTH"] = "true",
+                                ["HONUA_SKIP_MIGRATIONS"] = "true",
                                 ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
                                 ["Database:QueryCache:EnableAutomaticCaching"] = "false",
                                 ["Attachments:StoragePath"] = attachmentsPath

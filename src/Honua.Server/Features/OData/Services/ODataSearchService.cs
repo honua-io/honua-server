@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -57,7 +58,8 @@ internal sealed partial class ODataSearchService
         }
 
         // Verify layer exists
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken) ?? throw new ArgumentException($"Layer {layerId} not found");
+        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken)
+            ?? throw new ResourceNotFoundException($"Layer {layerId} not found");
 
         // Build a text search query using PostgreSQL full-text search
         var searchTerms = ParseSearchExpression(searchExpression);
@@ -105,7 +107,8 @@ internal sealed partial class ODataSearchService
         }
 
         // Verify layer exists
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken) ?? throw new ArgumentException($"Layer {layerId} not found");
+        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken)
+            ?? throw new ResourceNotFoundException($"Layer {layerId} not found");
 
         // Use existing aggregation handler for processing
         var handler = new ODataAggregationHandler(_featureStore, _queryService);

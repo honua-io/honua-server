@@ -14,6 +14,11 @@ public sealed class ApiKeyAuthenticationOptions
     public bool IsDevelopmentMode { get; set; }
 
     /// <summary>
+    /// Gets or sets whether the application is running in the test environment
+    /// </summary>
+    public bool IsTestMode { get; set; }
+
+    /// <summary>
     /// Gets or sets the admin password for authentication
     /// </summary>
     public string? AdminPassword { get; set; }

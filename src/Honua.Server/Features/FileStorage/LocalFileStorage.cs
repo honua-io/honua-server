@@ -119,6 +119,12 @@ internal sealed class LocalFileStorage : ICloudFileStorage
 
             return UploadResult.CreateSuccess(cloudFile, stopwatch.Elapsed);
         }
+        catch (ArgumentException ex) when (string.Equals(ex.ParamName, "folder", StringComparison.Ordinal))
+        {
+            stopwatch.Stop();
+            FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
+            return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();

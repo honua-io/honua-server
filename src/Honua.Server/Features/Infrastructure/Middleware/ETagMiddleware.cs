@@ -47,12 +47,7 @@ internal sealed partial class ETagMiddleware
             return;
         }
 
-        var originalBodyStream = context.Response.Body;
-        using var responseBody = new MemoryStream();
-        context.Response.Body = responseBody;
-
-        // Store original response headers
-        var originalHeaders = new Dictionary<string, string>();
+        using var responseBody = SwapResponseBody(context, out var originalBodyStream);
 
         try
         {
@@ -145,6 +140,14 @@ internal sealed partial class ETagMiddleware
     {
         responseBody.Seek(0, SeekOrigin.Begin);
         await responseBody.CopyToAsync(originalBodyStream);
+    }
+
+    private static MemoryStream SwapResponseBody(HttpContext context, out Stream originalBodyStream)
+    {
+        originalBodyStream = context.Response.Body;
+        var responseBody = new MemoryStream();
+        context.Response.Body = responseBody;
+        return responseBody;
     }
 
     private static partial class Log

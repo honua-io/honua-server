@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -78,7 +79,8 @@ internal static class SeedRunner
         var collectionLookup = BuildCollectionLookup(seed.Collections);
 
         await using var connection = await dataSource.OpenConnectionAsync().ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+        // Use RepeatableRead for test seeding to ensure consistent data setup
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(schemaName))
         {

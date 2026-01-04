@@ -115,7 +115,8 @@ public class DatabasePerformanceBenchmarks
         foreach (var task in _connectionTasks.Where(t = &gt;
         t.IsCompletedSuccessfully))
         {
-            await task.Result.DisposeAsync();
+            var connection = await task;
+            await connection.DisposeAsync();
         }
         _connectionTasks.Clear();
 

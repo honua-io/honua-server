@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -33,6 +34,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly ISchemaContext? _schemaContext;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<StreamingFileImportService> _logger;
+    private readonly Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? _cloudStorage;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
@@ -56,7 +58,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         IPerformanceMonitor performanceMonitor,
         ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
-        ISchemaContext? schemaContext = null)
+        ISchemaContext? schemaContext = null,
+        Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
@@ -64,6 +67,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         _limits = limits ?? ImportLimits.Default;
         _geoJsonReader = new StreamingGeoJsonReader(_limits);
         _schemaContext = schemaContext;
+        _cloudStorage = cloudStorage;
     }
 
     /// <inheritdoc/>
@@ -90,12 +94,49 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         IProgress<ImportProgress>? progress,
         CancellationToken cancellationToken = default)
     {
+        // Validate request has either FileStream or CloudFileId
+        request.Validate();
+
         var stopwatch = Stopwatch.StartNew();
         var format = DetectFormat(request.FileName);
         var formatName = format?.ToString() ?? "unknown";
         var mode = progress == null ? "sync" : "background";
         var jobId = Guid.NewGuid().ToString("N")[..8];
-        long? totalBytes = request.FileStream.CanSeek ? request.FileStream.Length : null;
+
+        // Handle cloud storage file download if needed
+        Stream fileStream;
+        bool shouldDisposeStream = false;
+        long? totalBytes = null;
+
+        if (request.UsesCloudStorage)
+        {
+            if (_cloudStorage == null)
+            {
+                throw new InvalidOperationException("Cloud storage is not configured, but CloudFileId was provided.");
+            }
+
+            var metadata = await _cloudStorage.GetMetadataAsync(request.CloudFileId!, cancellationToken);
+            var downloadStream = await _cloudStorage.DownloadAsync(request.CloudFileId!, cancellationToken);
+            if (downloadStream == null)
+            {
+                var cloudErrorMessage = "Failed to download file from cloud storage.";
+                return ImportResult.CreateFailure(
+                    request.TableName,
+                    format ?? SupportedFileFormat.GeoJson,
+                    cloudErrorMessage,
+                    stopwatch.Elapsed);
+            }
+
+            fileStream = downloadStream;
+            shouldDisposeStream = true;
+            totalBytes = metadata?.SizeBytes;
+        }
+        else
+        {
+            fileStream = request.FileStream!;
+            totalBytes = fileStream.CanSeek ? fileStream.Length : null;
+        }
+
         long? bytesRead = null;
         var importedCount = 0;
         var failedCount = 0;
@@ -119,13 +160,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
 
             // Detect CRS using streaming (doesn't load entire file)
-            var detectedSrid = await DetectCrsStreamingAsync(request.FileStream, format.Value, cancellationToken);
+            var detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
             var sourceSrid = request.SourceSrid ?? detectedSrid ?? 4326;
 
             // Reset stream position after CRS detection
-            if (request.FileStream.CanSeek)
+            if (fileStream.CanSeek)
             {
-                request.FileStream.Position = 0;
+                fileStream.Position = 0;
             }
 
             // Report initial progress
@@ -133,11 +174,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 jobId,
                 request.TableName,
                 format.Value,
-                request.FileStream.CanSeek ? request.FileStream.Length : null));
+                fileStream.CanSeek ? fileStream.Length : null));
 
             // Stream features and insert in batches
             (importedCount, failedCount) = await ImportStreamingAsync(
                 request,
+                fileStream,
                 format.Value,
                 sourceSrid,
                 progress,
@@ -188,9 +230,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         finally
         {
             stopwatch.Stop();
-            if (request.FileStream.CanSeek)
+            if (fileStream.CanSeek)
             {
-                bytesRead = request.FileStream.Position;
+                bytesRead = fileStream.Position;
+            }
+
+            // Dispose cloud storage stream if needed
+            if (shouldDisposeStream)
+            {
+                await fileStream.DisposeAsync();
             }
 
             RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
@@ -218,6 +266,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// </summary>
     private async Task<(int imported, int failed)> ImportStreamingAsync(
         ImportRequest request,
+        Stream fileStream,
         SupportedFileFormat format,
         int sourceSrid,
         IProgress<ImportProgress>? progress,
@@ -244,12 +293,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         // Stream features based on format
         var featureStream = format switch
         {
-            SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(request.FileStream, cancellationToken),
-            SupportedFileFormat.Wkt => ReadWktStreamingAsync(request.FileStream, cancellationToken),
-            SupportedFileFormat.Kml => ReadKmlStreamingAsync(request.FileStream, cancellationToken),
-            SupportedFileFormat.Gpx => ReadGpxStreamingAsync(request.FileStream, cancellationToken),
-            SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(request.FileStream, cancellationToken),
-            SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(request.FileStream, cancellationToken),
+            SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Wkt => ReadWktStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Kml => ReadKmlStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Gpx => ReadGpxStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
         };
 
@@ -285,8 +334,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     TableName = request.TableName,
                     Format = format,
                     StartedAt = startTime,
-                    BytesRead = request.FileStream.CanSeek ? request.FileStream.Position : 0,
-                    TotalBytes = request.FileStream.CanSeek ? request.FileStream.Length : null
+                    BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
+                    TotalBytes = fileStream.CanSeek ? fileStream.Length : null
                 });
 
                 // Yield control to prevent blocking
@@ -323,8 +372,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             Format = format,
             StartedAt = startTime,
             CompletedAt = DateTimeOffset.UtcNow,
-            BytesRead = request.FileStream.CanSeek ? request.FileStream.Position : 0,
-            TotalBytes = request.FileStream.CanSeek ? request.FileStream.Length : null
+            BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
+            TotalBytes = fileStream.CanSeek ? fileStream.Length : null
         });
 
         return (totalImported, totalFailed);
@@ -379,7 +428,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         // Continue-on-error can't run inside a single transaction because any statement error aborts it.
         var useTransaction = _limits.UseTransactions && !_limits.ContinueOnError;
         await using var transaction = useTransaction
-            ? await connection.BeginTransactionAsync(cancellationToken)
+            ? await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
             : null;
 
         try

@@ -24,12 +24,15 @@ internal sealed class FileImportService : IFileImportService
     private readonly string _connectionString;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ISchemaContext? _schemaContext;
+    private readonly Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? _cloudStorage;
 
-    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null)
+    public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null,
+        Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
         _schemaContext = schemaContext;
+        _cloudStorage = cloudStorage;
     }
 
     /// <inheritdoc />
@@ -75,9 +78,42 @@ internal sealed class FileImportService : IFileImportService
                 stopwatch.Elapsed);
         }
 
+        request.Validate();
+
+        if (request.UsesCloudStorage && _cloudStorage == null)
+        {
+            throw new InvalidOperationException("Cloud storage is not configured, but CloudFileId was provided.");
+        }
+
+        Stream fileStream;
+        var shouldDisposeStream = false;
+
+        if (request.UsesCloudStorage)
+        {
+            var downloadStream = await _cloudStorage!.DownloadAsync(request.CloudFileId!, cancellationToken);
+            if (downloadStream == null)
+            {
+                return ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    "Failed to download file from cloud storage.",
+                    stopwatch.Elapsed);
+            }
+
+            fileStream = downloadStream;
+            shouldDisposeStream = true;
+        }
+        else
+        {
+            fileStream = request.FileStream!;
+        }
+
         try
         {
-            var features = await ReadFeaturesAsync(request.FileStream, format.Value, cancellationToken);
+            var detectedSrid = request.SourceSrid ??
+                await DetectCrsFromFileAsync(request.FileName, fileStream!, format.Value, cancellationToken);
+
+            var features = await ReadFeaturesAsync(fileStream!, format.Value, cancellationToken);
 
             if (!features.Any())
             {
@@ -87,9 +123,6 @@ internal sealed class FileImportService : IFileImportService
                     "No features found in file",
                     stopwatch.Elapsed);
             }
-
-            // Detect CRS if not provided in request
-            var detectedSrid = request.SourceSrid ?? await DetectCrsFromFileAsync(request.FileName, request.FileStream, format.Value, cancellationToken);
 
             // Use detected SRID or fall back to WGS84
             var sourceSrid = detectedSrid ?? 4326;
@@ -119,6 +152,13 @@ internal sealed class FileImportService : IFileImportService
                 format.Value,
                 "Import failed.",
                 stopwatch.Elapsed);
+        }
+        finally
+        {
+            if (shouldDisposeStream)
+            {
+                await fileStream.DisposeAsync();
+            }
         }
     }
 
@@ -174,9 +214,54 @@ internal sealed class FileImportService : IFileImportService
             StartedAt = startTime
         });
 
+        Stream? fileStream = null;
+        var shouldDisposeStream = false;
+
         try
         {
-            var features = await ReadFeaturesAsync(request.FileStream, format.Value, cancellationToken);
+            // Validate request has either FileStream or CloudFileId
+            request.Validate();
+
+            if (request.UsesCloudStorage)
+            {
+                // Download file from cloud storage
+                if (_cloudStorage == null)
+                {
+                    throw new InvalidOperationException("Cloud storage is not configured, but CloudFileId was provided.");
+                }
+
+                var downloadStream = await _cloudStorage.DownloadAsync(request.CloudFileId!, cancellationToken);
+                if (downloadStream == null)
+                {
+                    var errorMessage = "Failed to download file from cloud storage.";
+                    progress?.Report(new ImportProgress
+                    {
+                        JobId = jobId,
+                        Status = ImportStatus.Failed,
+                        TableName = request.TableName,
+                        Format = format.Value,
+                        FeaturesProcessed = 0,
+                        StartedAt = startTime,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        ErrorMessage = errorMessage
+                    });
+
+                    return ImportResult.CreateFailure(request.TableName, format.Value, errorMessage, stopwatch.Elapsed);
+                }
+
+                fileStream = downloadStream;
+                shouldDisposeStream = true;
+            }
+            else
+            {
+                // Use provided file stream
+                fileStream = request.FileStream!;
+            }
+
+            var detectedSrid = request.SourceSrid ??
+                await DetectCrsFromFileAsync(request.FileName, fileStream!, format.Value, cancellationToken);
+
+            var features = await ReadFeaturesAsync(fileStream!, format.Value, cancellationToken);
             var featureList = features.ToList(); // Materialize for count and reuse
 
             if (featureList.Count == 0)
@@ -213,8 +298,6 @@ internal sealed class FileImportService : IFileImportService
                 StartedAt = startTime
             });
 
-            // Detect CRS if not provided in request
-            var detectedSrid = request.SourceSrid ?? await DetectCrsFromFileAsync(request.FileName, request.FileStream, format.Value, cancellationToken);
             var sourceSrid = detectedSrid ?? 4326;
 
             // Report import phase
@@ -278,6 +361,13 @@ internal sealed class FileImportService : IFileImportService
                 format.Value,
                 ex.Message,
                 stopwatch.Elapsed);
+        }
+        finally
+        {
+            if (shouldDisposeStream && fileStream != null)
+            {
+                await fileStream.DisposeAsync();
+            }
         }
     }
 

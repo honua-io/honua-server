@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,7 +35,7 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// It does not cache queries with inline values to prevent SQL injection risks.
 /// </para>
 /// </remarks>
-internal sealed class PreparedStatementCache : IDisposable
+internal sealed class PreparedStatementCache : IPreparedStatementCacheStatisticsProvider, IDisposable
 {
     private readonly QueryCacheOptions _options;
     private readonly ILogger<PreparedStatementCache> _logger;
@@ -69,18 +70,6 @@ internal sealed class PreparedStatementCache : IDisposable
         {
             Command.Dispose();
         }
-    }
-
-    /// <summary>
-    /// Cache performance statistics
-    /// </summary>
-    public sealed class CacheStatistics
-    {
-        public int TotalStatements { get; init; }
-        public int CacheHits { get; init; }
-        public int CacheMisses { get; init; }
-        public int PreparedStatements { get; init; }
-        public double HitRatio => CacheHits + CacheMisses > 0 ? (double)CacheHits / (CacheHits + CacheMisses) : 0;
     }
 
     public PreparedStatementCache(IOptions<QueryCacheOptions> options, ILogger<PreparedStatementCache> logger)
@@ -283,14 +272,14 @@ internal sealed class PreparedStatementCache : IDisposable
     /// <summary>
     /// Gets current cache performance statistics
     /// </summary>
-    public CacheStatistics GetStatistics()
+    public PreparedStatementCacheStatistics GetStatistics()
     {
         var totalHits = _cache.Values.Sum(s => s.HitCount);
         var totalMisses = _executionCounts.Values
             .Where(m => m.ExecutionCount >= _options.MinExecutionsForCaching)
             .Sum(m => m.ExecutionCount) - totalHits;
 
-        return new CacheStatistics
+        return new PreparedStatementCacheStatistics
         {
             TotalStatements = _executionCounts.Count,
             CacheHits = totalHits,

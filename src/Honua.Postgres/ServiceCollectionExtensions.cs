@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Queries.Filters;
@@ -84,6 +85,10 @@ internal static class ServiceCollectionExtensions
             // Note: Not using EnableDynamicJson() for AOT compatibility
             // Manual JSON serialization is used instead for JSONB parameters
 
+            // SECURITY: Configure lock timeouts to prevent indefinite blocking
+            dataSourceBuilder.ConnectionStringBuilder.Options =
+                "-c lock_timeout=30s -c statement_timeout=120s -c idle_in_transaction_session_timeout=60s";
+
             return dataSourceBuilder.Build();
         });
 
@@ -91,11 +96,18 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<ObjectPool<StringBuilder>>(serviceProvider =>
         {
             var provider = new DefaultObjectPoolProvider();
-            return provider.Create(new PostgresFeatureStore.StringBuilderPooledObjectPolicy());
+            return provider.Create(new Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
         });
 
         // Register feature store implementation
-        services.AddScoped<PostgresFeatureStore>();
+        services.AddScoped<PostgresFeatureStore>(serviceProvider =>
+            new PostgresFeatureStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ObjectPool<StringBuilder>>(),
+                serviceProvider.GetRequiredService<IPerformanceMonitor>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresFeatureStore>>(),
+                schemaName: configuration["Database:Schema"]
+            ));
         services.AddScoped<IFeatureStore>(serviceProvider =>
         {
             var innerStore = serviceProvider.GetRequiredService<PostgresFeatureStore>();
@@ -145,6 +157,8 @@ internal static class ServiceCollectionExtensions
         // PERFORMANCE OPTIMIZATION: Register prepared statement cache as singleton
         // Singleton ensures cache persistence across requests for optimal performance
         services.AddSingleton<PreparedStatementCache>();
+        services.AddSingleton<IPreparedStatementCacheStatisticsProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<PreparedStatementCache>());
 
         // PERFORMANCE OPTIMIZATION: Register high-frequency query preparation service
         // Pre-prepares known frequently-used queries for optimal initial performance
@@ -202,12 +216,14 @@ internal static class ServiceCollectionExtensions
             var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
             var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
             var logger = serviceProvider.GetRequiredService<ILogger<StreamingFileImportService>>();
+            var cloudStorage = serviceProvider.GetService<Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage>();
             return new StreamingFileImportService(
                 connectionString,
                 performanceMonitor,
                 logger,
                 limits,
-                serviceProvider.GetService<ISchemaContext>());
+                serviceProvider.GetService<ISchemaContext>(),
+                cloudStorage);
         });
 
         // Register background import job service

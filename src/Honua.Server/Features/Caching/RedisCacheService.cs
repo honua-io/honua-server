@@ -21,6 +21,10 @@ namespace Honua.Server.Features.Caching;
 /// Uses IDistributedCache (provided by Aspire's Redis integration) for primary caching.
 /// Falls back to in-memory caching when Redis is unavailable to maintain availability.
 /// Tracks cache metrics (hits/misses) using <see cref="IPerformanceMonitor"/>.
+///
+/// PERFORMANCE NOTE: DistributedLock class uses IAsyncDisposable pattern to avoid
+/// blocking operations in disposal. Always use 'await using' syntax to ensure
+/// proper async cleanup and prevent thread pool starvation.
 /// </remarks>
 internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, IDisposable
 {
@@ -263,6 +267,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             try
             {
+                const int scanPageSize = 250;
                 var db = _redis.GetDatabase();
                 var database = db.Database;
                 foreach (var endpoint in _redis.GetEndPoints())
@@ -273,10 +278,30 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                         continue;
                     }
 
-                    foreach (var key in server.Keys(database, pattern: prefixedPattern))
+                    var deleteBatch = new List<RedisKey>(scanPageSize);
+                    foreach (var key in server.Keys(database, pattern: prefixedPattern, pageSize: scanPageSize))
                     {
-                        await db.KeyDeleteAsync(key).ConfigureAwait(false);
-                        RecordCacheEviction();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        deleteBatch.Add(key);
+
+                        if (deleteBatch.Count >= scanPageSize)
+                        {
+                            await db.KeyDeleteAsync(deleteBatch.ToArray()).ConfigureAwait(false);
+                            for (var i = 0; i < deleteBatch.Count; i++)
+                            {
+                                RecordCacheEviction();
+                            }
+                            deleteBatch.Clear();
+                        }
+                    }
+
+                    if (deleteBatch.Count > 0)
+                    {
+                        await db.KeyDeleteAsync(deleteBatch.ToArray()).ConfigureAwait(false);
+                        for (var i = 0; i < deleteBatch.Count; i++)
+                        {
+                            RecordCacheEviction();
+                        }
                     }
                 }
             }
@@ -329,21 +354,44 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         if (cached != null)
             return cached;
 
-        await using var keyLock = await AcquireKeyLockAsync(GetPrefixedKey(key), cancellationToken).ConfigureAwait(false);
+        // Use distributed lock for cache stampede protection
+        await using var distributedLock = await AcquireDistributedLockAsync(GetPrefixedKey(key), cancellationToken).ConfigureAwait(false);
 
-        // Re-check cache after acquiring the lock
-        cached = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-        if (cached != null)
-            return cached;
+        if (distributedLock.IsAcquired)
+        {
+            // Re-check cache after acquiring the distributed lock
+            cached = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+            if (cached != null)
+                return cached;
 
-        // Not in cache, call factory
-        T? value = await factory(cancellationToken).ConfigureAwait(false);
+            // Not in cache, call factory under distributed lock
+            T? value = await factory(cancellationToken).ConfigureAwait(false);
 
-        // Cache the result if not null
-        if (value != null)
-            await SetAsync(key, value, ttl, cancellationToken).ConfigureAwait(false);
+            // Cache the result if not null
+            if (value != null)
+                await SetAsync(key, value, ttl, cancellationToken).ConfigureAwait(false);
 
-        return value;
+            return value;
+        }
+        else
+        {
+            // Failed to acquire distributed lock, fallback to local lock
+            await using var keyLock = await AcquireKeyLockAsync(GetPrefixedKey(key), cancellationToken).ConfigureAwait(false);
+
+            // Re-check cache after acquiring local lock
+            cached = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+            if (cached != null)
+                return cached;
+
+            // Call factory with local lock only
+            T? value = await factory(cancellationToken).ConfigureAwait(false);
+
+            // Cache the result if not null
+            if (value != null)
+                await SetAsync(key, value, ttl, cancellationToken).ConfigureAwait(false);
+
+            return value;
+        }
     }
 
     /// <inheritdoc />
@@ -446,6 +494,39 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             HandleRedisFailure(ex);
         }
+    }
+
+    private async ValueTask<DistributedLock> AcquireDistributedLockAsync(string key, CancellationToken cancellationToken)
+    {
+        // Try to acquire distributed lock using Redis first
+        if (!_isUsingFallback && _redis != null)
+        {
+            try
+            {
+                var lockKey = $"lock:{key}";
+                var lockValue = Environment.MachineName + ":" + Environment.ProcessId + ":" + Guid.NewGuid().ToString("N")[..8];
+                var lockExpiry = TimeSpan.FromSeconds(30); // Lock timeout
+
+                var db = _redis.GetDatabase();
+                bool acquired = await db.StringSetAsync(lockKey, lockValue, lockExpiry, When.NotExists).ConfigureAwait(false);
+
+                if (acquired)
+                {
+                    return new DistributedLock(lockKey, lockValue, db, isAcquired: true);
+                }
+
+                // Lock not acquired, but Redis is available
+                return new DistributedLock(lockKey, lockValue, db, isAcquired: false);
+            }
+            catch (Exception ex)
+            {
+                // Redis failed, handle as failure but don't switch to fallback for locks
+                RedisCacheServiceLog.DistributedLockFailed(_logger, key, ex);
+            }
+        }
+
+        // Fallback: no distributed lock acquired
+        return new DistributedLock("", "", null, isAcquired: false);
     }
 
     private async ValueTask<KeyLock> AcquireKeyLockAsync(string key, CancellationToken cancellationToken)
@@ -576,6 +657,65 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
     }
 
+    private sealed class DistributedLock : IAsyncDisposable, IDisposable
+    {
+        private readonly string _lockKey;
+        private readonly string _lockValue;
+        private readonly IDatabase? _database;
+        private bool _disposed;
+
+        public bool IsAcquired { get; }
+
+        public DistributedLock(string lockKey, string lockValue, IDatabase? database, bool isAcquired)
+        {
+            _lockKey = lockKey;
+            _lockValue = lockValue;
+            _database = database;
+            IsAcquired = isAcquired;
+        }
+
+        public void Dispose()
+        {
+            // For synchronous disposal, we cannot safely perform async Redis operations
+            // without risking deadlocks. Mark as disposed and rely on lock expiration.
+            // Use DisposeAsync() for proper async cleanup when possible.
+            _disposed = true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await ReleaseAsync().ConfigureAwait(false);
+        }
+
+        private async ValueTask ReleaseAsync()
+        {
+            if (_disposed || !IsAcquired || _database == null || string.IsNullOrEmpty(_lockKey))
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            try
+            {
+                // Use Lua script to ensure we only delete our own lock
+                const string script = """
+                    if redis.call("GET", KEYS[1]) == ARGV[1] then
+                        return redis.call("DEL", KEYS[1])
+                    else
+                        return 0
+                    end
+                    """;
+
+                await _database.ScriptEvaluateAsync(script, new RedisKey[] { _lockKey }, new RedisValue[] { _lockValue }).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Ignore failures during lock release - the lock will expire anyway
+            }
+        }
+    }
+
     private sealed record CacheEntry(byte[] Data, DateTime ExpiresAt);
 
     private static partial class RedisCacheServiceLog
@@ -594,5 +734,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1005, LogLevel.Warning, "Failed to deserialize cache entry {CacheKey}")]
         public static partial void CacheEntryDeserializationFailed(ILogger logger, string cacheKey, Exception exception);
+
+        [LoggerMessage(1006, LogLevel.Debug, "Failed to acquire distributed lock for cache key {CacheKey}")]
+        public static partial void DistributedLockFailed(ILogger logger, string cacheKey, Exception exception);
     }
 }

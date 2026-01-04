@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -30,13 +31,6 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         MapImportRoutes(v1Group, isV1: true);
-
-        // Legacy routes at /api/import as backward compatibility aliases
-        RouteGroupBuilder legacyGroup = app.MapGroup("/api/import")
-            .WithTags("Import (Legacy)")
-            .RequireAdminAuthorization();
-
-        MapImportRoutes(legacyGroup, isV1: false);
     }
 
     /// <summary>
@@ -281,49 +275,112 @@ internal static partial class ImportEndpoints
             var limits = importService.Limits;
             var shouldQueueBackground = forceBackground || file.Length > limits.BackgroundJobThresholdBytes;
 
-            using Stream stream = file.OpenReadStream();
+            // First, upload file to cloud storage for better handling of large files
+            var cloudStorage = context.RequestServices.GetService<Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage>();
+            string? cloudFileId = null;
 
-            var importRequest = new ImportRequest
+            if (cloudStorage != null && (shouldQueueBackground || file.Length > 10 * 1024 * 1024)) // Use cloud storage for files > 10MB
             {
-                FileStream = stream,
-                FileName = safeFileName,
-                TableName = tableName,
-                SourceSrid = sourceSrid,
-                TargetSrid = targetSrid,
-                OverwriteExisting = overwriteExisting
-            };
-
-            if (shouldQueueBackground)
-            {
-                // Queue for background processing
-                var jobService = context.RequestServices.GetService<IImportJobService>();
-                if (jobService == null)
+                using Stream uploadStream = file.OpenReadStream();
+                var uploadRequest = new Honua.Core.Features.FileStorage.Domain.FileUploadRequest
                 {
-                    await WriteErrorAsync(context,
-                        "Background import service not available. File is too large for synchronous import.",
-                        StatusCodes.Status503ServiceUnavailable);
-                    return;
-                }
-
-                var jobId = await jobService.QueueImportAsync(importRequest, file.Length, cancellationToken);
-
-                var response = new BackgroundImportResponse
-                {
-                    JobId = jobId,
-                    Message = "File queued for background processing",
-                    StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
-                    CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel"
+                    Content = uploadStream,
+                    FileName = safeFileName,
+                    ContentType = file.ContentType ?? "application/octet-stream",
+                    SizeBytes = file.Length,
+                    TimeToLive = TimeSpan.FromDays(1), // Temporary storage for processing
+                    Folder = "imports",
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["tableName"] = tableName,
+                        ["uploadedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+                        ["sourceSrid"] = sourceSrid?.ToString() ?? "",
+                        ["targetSrid"] = targetSrid.ToString()
+                    }.ToImmutableDictionary()
                 };
 
-                IResult result = Results.Json(response, ImportJsonContext.Default.BackgroundImportResponse, statusCode: StatusCodes.Status202Accepted);
-                await result.ExecuteAsync(context);
+                var uploadResult = await cloudStorage.UploadAsync(uploadRequest, cancellationToken);
+                if (!uploadResult.Success)
+                {
+                    await WriteErrorAsync(context, $"Failed to upload file to cloud storage: {uploadResult.ErrorMessage}",
+                        StatusCodes.Status500InternalServerError);
+                    return;
+                }
+                cloudFileId = uploadResult.File!.FileId;
             }
-            else
+
+            Stream? localStream = null;
+            try
             {
-                // Process synchronously with streaming
-                ImportResult result = await importService.ImportFileAsync(importRequest, cancellationToken);
-                IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
-                await response.ExecuteAsync(context);
+                // Create import request with either cloud file reference or local stream
+                ImportRequest importRequest;
+                if (cloudFileId != null)
+                {
+                    // Create request referencing cloud-stored file
+                    importRequest = new ImportRequest
+                    {
+                        CloudFileId = cloudFileId,
+                        FileName = safeFileName,
+                        TableName = tableName,
+                        SourceSrid = sourceSrid,
+                        TargetSrid = targetSrid,
+                        OverwriteExisting = overwriteExisting
+                    };
+                }
+                else
+                {
+                    // Fallback to local stream processing
+                    localStream = file.OpenReadStream();
+                    importRequest = new ImportRequest
+                    {
+                        FileStream = localStream,
+                        FileName = safeFileName,
+                        TableName = tableName,
+                        SourceSrid = sourceSrid,
+                        TargetSrid = targetSrid,
+                        OverwriteExisting = overwriteExisting
+                    };
+                }
+
+                if (shouldQueueBackground)
+                {
+                    // Queue for background processing
+                    var jobService = context.RequestServices.GetService<IImportJobService>();
+                    if (jobService == null)
+                    {
+                        await WriteErrorAsync(context,
+                            "Background import service not available. File is too large for synchronous import.",
+                            StatusCodes.Status503ServiceUnavailable);
+                        return;
+                    }
+
+                    var jobId = await jobService.QueueImportAsync(importRequest, file.Length, cancellationToken);
+
+                    var response = new BackgroundImportResponse
+                    {
+                        JobId = jobId,
+                        Message = "File queued for background processing",
+                        StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
+                        CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel"
+                    };
+
+                    IResult result = Results.Json(response, ImportJsonContext.Default.BackgroundImportResponse, statusCode: StatusCodes.Status202Accepted);
+                    await result.ExecuteAsync(context);
+                }
+                else
+                {
+                    // Process synchronously with streaming
+                    ImportResult result = await importService.ImportFileAsync(importRequest, cancellationToken);
+                    IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
+                    await response.ExecuteAsync(context);
+                }
+            }
+            finally
+            {
+                if (localStream != null)
+                {
+                    await localStream.DisposeAsync();
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

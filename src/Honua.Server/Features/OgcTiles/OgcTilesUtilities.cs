@@ -12,11 +12,20 @@ namespace Honua.Server.Features.OgcTiles;
 
 internal static class OgcTilesUtilities
 {
+    /// <summary>
+    /// Allowed query parameter sets for OGC Tiles endpoints.
+    /// </summary>
     public static class AllowedQueryParameters
     {
+        /// <summary>
+        /// Allowed parameters for tile matrix set metadata endpoints.
+        /// </summary>
         public static readonly FrozenSet<string> Metadata =
             new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Allowed parameters for dataset tileset metadata endpoints.
+        /// </summary>
         public static readonly FrozenSet<string> DatasetTilesetMetadata = new[]
             {
                 "f",
@@ -24,9 +33,15 @@ internal static class OgcTilesUtilities
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Allowed parameters for OpenAPI endpoints.
+        /// </summary>
         public static readonly FrozenSet<string> OpenApi =
             new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Allowed parameters for tiles endpoints.
+        /// </summary>
         public static readonly FrozenSet<string> Tiles = new[]
             {
                 "f",
@@ -37,6 +52,9 @@ internal static class OgcTilesUtilities
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Allowed parameters for dataset tiles endpoints.
+        /// </summary>
         public static readonly FrozenSet<string> DatasetTiles = new[]
             {
                 "f",

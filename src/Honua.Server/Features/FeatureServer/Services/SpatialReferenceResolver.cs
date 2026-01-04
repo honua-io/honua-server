@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Postgres.Features.Import;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 
 namespace Honua.Server.Features.FeatureServer.Services;
@@ -14,9 +14,9 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// </summary>
 internal sealed class SpatialReferenceResolver
 {
-    private readonly CrsDetectionService _crsDetectionService;
+    private readonly ICrsDetectionService _crsDetectionService;
 
-    public SpatialReferenceResolver(CrsDetectionService crsDetectionService)
+    public SpatialReferenceResolver(ICrsDetectionService crsDetectionService)
     {
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
     }

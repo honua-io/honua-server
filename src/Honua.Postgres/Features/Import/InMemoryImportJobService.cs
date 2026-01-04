@@ -45,6 +45,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         CancellationToken cancellationToken = default)
     {
         CleanupCompletedJobsIfNeeded();
+        request.Validate();
 
         var format = _importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
         var formatName = format.ToString();
@@ -76,52 +77,54 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         ImportJobLog.JobQueued(_logger, jobId, request.TableName, formatName, fileSize);
         RecordJobMetrics("queued", formatName, fileSize, null, null, null);
 
-        // Copy stream to a temp file for background processing
-        // In production, you'd want to save to durable storage
-        if (request.FileStream.CanSeek)
-        {
-            request.FileStream.Position = 0;
-        }
+        string? tempFilePath = null;
+        var backgroundRequest = request;
 
-        var tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
-        try
+        if (!request.UsesCloudStorage)
         {
-            await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
+            // Copy stream to a temp file for background processing
+            // In production, you'd want to save to durable storage
+            if (request.FileStream!.CanSeek)
             {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
+                request.FileStream.Position = 0;
+            }
+
+            tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
+            try
+            {
+                await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
+                {
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.Write,
+                    Share = FileShare.None,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                }))
+                {
+                    await request.FileStream.CopyToAsync(tempStream, cancellationToken);
+                }
+            }
+            catch
+            {
+                TryDeleteTempFile(tempFilePath);
+                throw;
+            }
+
+            var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
                 BufferSize = 64 * 1024,
                 Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            }))
+            });
+
+            backgroundRequest = request with
             {
-                await request.FileStream.CopyToAsync(tempStream, cancellationToken);
-            }
+                FileStream = backgroundStream,
+                CloudFileId = null
+            };
         }
-        catch
-        {
-            TryDeleteTempFile(tempFilePath);
-            throw;
-        }
-
-        var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-        {
-            Mode = FileMode.Open,
-            Access = FileAccess.Read,
-            Share = FileShare.Read,
-            BufferSize = 64 * 1024,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
-
-        var backgroundRequest = new ImportRequest
-        {
-            FileStream = backgroundStream,
-            FileName = request.FileName,
-            TableName = request.TableName,
-            SourceSrid = request.SourceSrid,
-            TargetSrid = request.TargetSrid,
-            OverwriteExisting = request.OverwriteExisting
-        };
 
         // Start background processing
         _ = ProcessJobAsync(jobId, backgroundRequest, tempFilePath, cts.Token);
@@ -132,7 +135,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     private async Task ProcessJobAsync(
         string jobId,
         ImportRequest request,
-        string tempFilePath,
+        string? tempFilePath,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -140,10 +143,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         int? featureCount = null;
         int? failedFeatures = null;
         string? errorMessage = null;
+        var stream = request.FileStream;
 
         try
         {
-            await using var stream = request.FileStream;
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 state.Progress = state.Progress with { Status = ImportStatus.Processing };
@@ -226,6 +229,11 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 RecordJobMetrics(status, state.Format, state.FileSize, featureCount, failedFeatures, stopwatch.Elapsed);
+            }
+
+            if (stream != null)
+            {
+                await stream.DisposeAsync();
             }
 
             TryDeleteTempFile(tempFilePath);
@@ -470,11 +478,11 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         public ImportResult? Result { get; set; }
     }
 
-    private static void TryDeleteTempFile(string tempFilePath)
+    private static void TryDeleteTempFile(string? tempFilePath)
     {
         try
         {
-            if (File.Exists(tempFilePath))
+            if (!string.IsNullOrWhiteSpace(tempFilePath) && File.Exists(tempFilePath))
             {
                 File.Delete(tempFilePath);
             }

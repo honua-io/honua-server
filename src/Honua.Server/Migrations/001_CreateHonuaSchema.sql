@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     layer_id SERIAL PRIMARY KEY,
     layer_name TEXT NOT NULL,
     description TEXT,
+    table_schema TEXT NOT NULL DEFAULT current_schema(),
     table_name TEXT NOT NULL,
     geometry_type TEXT NOT NULL,
     srid INT NOT NULL DEFAULT 4326,

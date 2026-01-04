@@ -1138,7 +1138,7 @@ public static class ImportEndpoints
 {
     public static void MapImportEndpoints(this IEndpointRouteBuilder app)
     {
-        var import = app.MapGroup("/api/admin/import")
+        var import = app.MapGroup("/api/v1/admin/import")
             .WithTags("Import")
             .RequireAuthorization("Admin");
 
@@ -4201,19 +4201,19 @@ public sealed class HonuaApiClient
     public HonuaApiClient(HttpClient http) => _http = http;
 
     public Task<List<LayerInfo>> GetLayersAsync() =>
-        _http.GetFromJsonAsync<List<LayerInfo>>("/api/admin/layers")
+        _http.GetFromJsonAsync<List<LayerInfo>>("/api/v1/admin/layers")
             ?? Task.FromResult(new List<LayerInfo>());
 
     public Task<LayerInfo?> GetLayerAsync(string layerId) =>
-        _http.GetFromJsonAsync<LayerInfo>($"/api/admin/layers/{layerId}");
+        _http.GetFromJsonAsync<LayerInfo>($"/api/v1/admin/layers/{layerId}");
 
     public Task<ImportPreviewResponse> PreviewImportAsync(MultipartFormDataContent content) =>
-        _http.PostAsync("/api/admin/import/preview", content)
+        _http.PostAsync("/api/v1/admin/import/preview", content)
             .ContinueWith(t => t.Result.Content.ReadFromJsonAsync<ImportPreviewResponse>())
             .Unwrap()!;
 
     public Task<ImportResult> ImportFileAsync(string table, int sourceSrid, int targetSrid) =>
-        _http.PostAsJsonAsync("/api/admin/import", new { table, sourceSrid, targetSrid })
+        _http.PostAsJsonAsync("/api/v1/admin/import", new { table, sourceSrid, targetSrid })
             .ContinueWith(t => t.Result.Content.ReadFromJsonAsync<ImportResult>())
             .Unwrap()!;
 }

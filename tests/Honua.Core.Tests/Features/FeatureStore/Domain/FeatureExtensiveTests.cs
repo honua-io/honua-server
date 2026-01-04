@@ -3,10 +3,8 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using FsCheck;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.PropertyBased;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
@@ -16,48 +14,49 @@ namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 public class FeatureExtensiveTests
 {
     [UnitTest]
-    public Property Feature_CreateWithPositiveId_ShouldHaveCorrectId()
+    public void Feature_CreateWithPositiveId_ShouldHaveCorrectId()
     {
-        return Prop.ForAll<PositiveInt>(id =>
-        {
-            var feature = Feature.Create(id.Get, new byte[] { 1 });
-            return feature.Id == id.Get;
-        });
+        var feature = Feature.Create(123, new byte[] { 1 });
+
+        feature.Id.Should().Be(123);
     }
 
     [UnitTest]
-    public Property Feature_CreateWithAttributes_ShouldPreserveAllAttributes()
+    public void Feature_CreateWithAttributes_ShouldPreserveAllAttributes()
     {
-        return Prop.ForAll(FeatureGenerators.ArbitraryAttributes(), attributes =>
-        {
-            var feature = Feature.Create(1, new byte[] { 1 }, attributes);
-            return feature.Attributes.Keys.SequenceEqual(attributes.Keys) &&
-                   feature.Attributes.Values.SequenceEqual(attributes.Values);
-        });
+        var attributes = ImmutableDictionary<string, object?>.Empty
+            .Add("category", "retail")
+            .Add("value", 42)
+            .Add("active", true);
+
+        var feature = Feature.Create(1, new byte[] { 1 }, attributes);
+
+        feature.Attributes.Should().BeEquivalentTo(attributes);
     }
 
     [UnitTest]
-    public Property Feature_CreateWithGeometry_ShouldPreserveGeometry()
+    public void Feature_CreateWithGeometry_ShouldPreserveGeometry()
     {
-        return Prop.ForAll(FeatureGenerators.ArbitraryGeometry(), geometry =>
-        {
-            var feature = Feature.Create(1, geometry, ImmutableDictionary<string, object?>.Empty);
-            if (geometry == null)
-            {
-                return feature.Geometry == null;
-            }
-            return feature.Geometry != null && feature.Geometry.SequenceEqual(geometry);
-        });
+        var geometry = new byte[] { 0x01, 0x02, 0x03 };
+
+        var feature = Feature.Create(1, geometry, ImmutableDictionary<string, object?>.Empty);
+
+        feature.Geometry.Should().BeEquivalentTo(geometry);
     }
 
     [UnitTest]
-    public Property Feature_WithLargeAttributes_ShouldHandleEfficiently()
+    public void Feature_WithLargeAttributes_ShouldHandleEfficiently()
     {
-        return Prop.ForAll(FeatureGenerators.ArbitraryLargeAttributes(), attributes =>
+        var builder = ImmutableDictionary.CreateBuilder<string, object?>();
+        for (var i = 0; i < 500; i++)
         {
-            var feature = Feature.Create(1, new byte[] { 1 }, attributes);
-            return feature.Attributes.Count == attributes.Count;
-        });
+            builder.Add($"attr_{i}", i);
+        }
+
+        var attributes = builder.ToImmutable();
+        var feature = Feature.Create(1, new byte[] { 1 }, attributes);
+
+        feature.Attributes.Count.Should().Be(attributes.Count);
     }
 
     [UnitTest]

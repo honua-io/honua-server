@@ -108,9 +108,7 @@ internal static class ProtocolErrorWriter
         path.StartsWithSegments("/collections");
 
     private static bool IsAdmin(PathString path) =>
-        path.StartsWithSegments("/api/v1/admin") ||
-        path.StartsWithSegments("/api/admin") ||
-        path.StartsWithSegments("/api/import");
+        path.StartsWithSegments("/api/v1/admin");
 
     private static bool IsGeoServices(PathString path) =>
         path.StartsWithSegments("/rest/services") ||

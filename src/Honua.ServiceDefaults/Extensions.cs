@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
@@ -22,6 +24,9 @@ public static partial class Extensions
 {
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
+        // Adaptive sampling configuration
+        builder.AddAdaptiveSampling();
+
         // OpenTelemetry (traces, metrics, logs)
         builder.ConfigureOpenTelemetry();
 
@@ -83,11 +88,24 @@ public static partial class Extensions
         {
             otelBuilder.WithTracing(tracing =>
             {
-                // Configure sampling based on options
-                if (tracingOptions.SamplingRatio < 1.0)
+                // Configure sampling using DI at provider build time to avoid early ServiceProvider creation.
+                tracing.SetSampler(serviceProvider =>
                 {
-                    tracing.SetSampler(new TraceIdRatioBasedSampler(tracingOptions.SamplingRatio));
-                }
+                    var adaptiveSamplingOptions = serviceProvider.GetService<IOptions<AdaptiveSamplingOptions>>()?.Value;
+
+                    if (adaptiveSamplingOptions?.Enabled == true)
+                    {
+                        var adaptiveSampler = serviceProvider.GetRequiredService<IAdaptiveSampler>();
+                        return new AdaptiveOpenTelemetrySampler(adaptiveSampler, tracingOptions);
+                    }
+
+                    if (tracingOptions.SamplingRatio < 1.0)
+                    {
+                        return new TraceIdRatioBasedSampler(tracingOptions.SamplingRatio);
+                    }
+
+                    return new AlwaysOnSampler();
+                });
 
                 tracing
                     .AddSource(HonuaTelemetry.ServiceName)
@@ -388,5 +406,23 @@ public static partial class Extensions
         }
 
         return app;
+    }
+
+    /// <summary>
+    /// Adds adaptive sampling services for intelligent distributed tracing.
+    /// </summary>
+    private static IHostApplicationBuilder AddAdaptiveSampling(this IHostApplicationBuilder builder)
+    {
+        // Bind adaptive sampling configuration from environment variables
+        builder.Services.Configure<AdaptiveSamplingOptions>(
+            builder.Configuration.GetSection(AdaptiveSamplingOptions.SectionName));
+
+        // Register system metrics collector as singleton
+        builder.Services.AddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
+
+        // Register adaptive sampler as singleton
+        builder.Services.AddSingleton<IAdaptiveSampler, AdaptiveSampler>();
+
+        return builder;
     }
 }

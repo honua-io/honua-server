@@ -31,7 +31,7 @@ public class StreamingImportTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_LargeGeoJsonFile_StreamsWithConstantMemory()
     {
         // Arrange - Create a 1MB GeoJSON file with ~1000 features
@@ -73,7 +73,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -86,7 +86,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GeoJsonWithMultipleFeatureTypes_StreamsCorrectly()
     {
         // Arrange - GeoJSON with different geometry types
@@ -134,7 +134,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -143,11 +143,11 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/limits")]
+    [Endpoint("GET /api/v1/admin/import/limits")]
     public async Task GetLimits_ReturnsConfiguredLimits()
     {
         // Act
-        var response = await _client.GetAsync("/api/import/limits");
+        var response = await _client.GetAsync("/api/v1/admin/import/limits");
 
         // Assert
         response.BeSuccessful();
@@ -161,11 +161,11 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/jobs")]
+    [Endpoint("GET /api/v1/admin/import/jobs")]
     public async Task GetActiveJobs_WithNoJobs_ReturnsEmptyList()
     {
         // Act
-        var response = await _client.GetAsync("/api/import/jobs");
+        var response = await _client.GetAsync("/api/v1/admin/import/jobs");
 
         // Assert
         response.BeSuccessful();
@@ -174,18 +174,18 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/import/jobs/{jobId}")]
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
     public async Task GetJobStatus_WithInvalidJobId_ReturnsNotFound()
     {
         // Act
-        var response = await _client.GetAsync("/api/import/jobs/nonexistent");
+        var response = await _client.GetAsync("/api/v1/admin/import/jobs/nonexistent");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_WktFile_StreamsLineByLine()
     {
         // Arrange - WKT file with multiple geometries
@@ -207,7 +207,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -217,7 +217,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_KmlFile_StreamsPlacemarks()
     {
         // Arrange - KML file with placemarks
@@ -254,7 +254,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -264,7 +264,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GpxFile_StreamsTracks()
     {
         // Arrange - GPX file with waypoints and tracks
@@ -298,7 +298,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -308,7 +308,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/preview")]
+    [Endpoint("POST /api/v1/admin/import/preview")]
     public async Task Preview_LargeFile_LimitsFeatureCount()
     {
         // Arrange - Create GeoJSON with more features than preview limit
@@ -343,7 +343,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/import/preview", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.BeSuccessful();
@@ -353,7 +353,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_WithForceBackground_QueuesJob()
     {
         // Arrange
@@ -386,7 +386,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "ForceBackground");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
@@ -428,7 +428,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert - Should handle the error gracefully (either skip invalid features or fail with message)
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -437,18 +437,18 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/jobs/{jobId}/cancel")]
+    [Endpoint("POST /api/v1/admin/import/jobs/{jobId}/cancel")]
     public async Task CancelJob_WithInvalidJobId_ReturnsNotFound()
     {
         // Act
-        var response = await _client.PostAsync("/api/import/jobs/nonexistent/cancel", null);
+        var response = await _client.PostAsync("/api/v1/admin/import/jobs/nonexistent/cancel", null);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_EmptyFeatureCollection_ReturnsError()
     {
         // Arrange
@@ -471,7 +471,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/import/upload", content);
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         var responseContent = await response.Content.ReadAsStringAsync();

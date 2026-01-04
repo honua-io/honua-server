@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,7 +23,7 @@ internal static class DatabasePerformanceEndpoints
     /// <param name="app">Web application builder</param>
     public static void MapDatabasePerformanceEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/admin/performance/database")
+        var group = app.MapGroup("/api/v1/admin/performance/database")
             .WithTags("Database Performance")
             .RequireAdminAuthorization();
 
@@ -38,12 +38,13 @@ internal static class DatabasePerformanceEndpoints
     /// <summary>
     /// Gets current query cache performance statistics
     /// </summary>
-    /// <param name="cache">Prepared statement cache instance</param>
+    /// <param name="httpContext">HTTP context for resolving services</param>
     /// <returns>Cache performance statistics</returns>
-    private static IResult GetQueryCacheStatistics(PreparedStatementCache cache)
+    private static IResult GetQueryCacheStatistics(HttpContext httpContext)
     {
         try
         {
+            var cache = httpContext.RequestServices.GetRequiredService<IPreparedStatementCacheStatisticsProvider>();
             var stats = cache.GetStatistics();
 
             var response = new QueryCacheStatisticsResponse

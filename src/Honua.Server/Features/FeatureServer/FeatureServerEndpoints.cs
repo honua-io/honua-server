@@ -35,7 +35,7 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer", HandleGetServiceMetadata)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer", (Delegate)HandleGetServiceMetadata)
             .WithDisplayName("Get FeatureServer Service Metadata")
             .WithName("GetServiceMetadata")
             .WithSummary("Get FeatureServer service metadata")
@@ -47,7 +47,7 @@ internal static partial class FeatureServerEndpoints
         // .Produces<FeatureServerResponse>(200, "application/json")
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", HandleGetLayerMetadata)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}", (Delegate)HandleGetLayerMetadata)
             .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
             .WithSummary("Get FeatureServer layer metadata")
@@ -59,26 +59,24 @@ internal static partial class FeatureServerEndpoints
         // .Produces<LayerResponse>(200, "application/json")
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", (Delegate)HandleQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via GET parameters")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .WithETag();
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
 
-        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+        _ = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", (Delegate)HandleQueryFeaturesPost)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .WithETag();
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
@@ -205,20 +203,22 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Handles service metadata requests
     /// </summary>
-    private static async Task HandleGetServiceMetadata(HttpContext context)
+    private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
 
-        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.ServiceMetadata))
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.ServiceMetadata, out var error))
         {
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error ?? "Invalid query parameter."]);
         }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
@@ -226,14 +226,12 @@ internal static partial class FeatureServerEndpoints
         ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
-        IResult result = await GetServiceMetadataAsync(
+        return await GetServiceMetadataAsync(
             serviceId,
             catalog,
             limitsOptions.Value.Query,
             logger,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     /// <summary>
@@ -274,26 +272,27 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Handles layer metadata requests
     /// </summary>
-    private static async Task HandleGetLayerMetadata(HttpContext context)
+    private static async Task<IResult> HandleGetLayerMetadata(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
 
-        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.LayerMetadata))
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.LayerMetadata, out var error))
         {
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error ?? "Invalid query parameter."]);
         }
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Layer ID is required");
         }
 
         ILayerCatalog catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
@@ -302,7 +301,7 @@ internal static partial class FeatureServerEndpoints
         ILoggerFactory loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
-        IResult result = await GetLayerMetadataAsync(
+        return await GetLayerMetadataAsync(
             serviceId,
             layerId,
             catalog,
@@ -310,8 +309,6 @@ internal static partial class FeatureServerEndpoints
             limitsOptions.Value.Query,
             logger,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     /// <summary>
@@ -530,89 +527,80 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Handles GET query requests
     /// </summary>
-    private static async Task HandleQueryFeaturesGet(HttpContext context)
+    private static async Task<IResult> HandleQueryFeaturesGet(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Get))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Layer ID is required");
         }
 
         var commonQueryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryBuildQueryParameters(context.Request.Query, commonQueryValidator, out QueryParameters? queryParams, out string? error))
         {
-            await WriteQueryParseErrorAsync(context, error);
-            return;
+            return CreateQueryParseErrorResult(error);
         }
 
         FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
 
-        IResult result = await handler.HandleQueryFeaturesAsync(
+        return await handler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
             queryParams,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     /// <summary>
     /// Handles POST query requests
     /// </summary>
-    private static async Task HandleQueryFeaturesPost(HttpContext context)
+    private static async Task<IResult> HandleQueryFeaturesPost(HttpContext context)
     {
-        if (!RouteValidationHelpers.ValidateHttpMethod(context, HttpMethods.Post))
-            return;
+        if (!string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
 
         if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Service ID is required");
         }
 
         if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID is required");
-            return;
-        }
-
-        if (!await ValidateAllowedParametersAsync(context, AllowedQueryParameters.Query))
-        {
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Layer ID is required");
         }
 
         var commonQueryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, commonQueryValidator, AllowedQueryParameters.Query, out var error))
+        {
+            return GeoServicesErrorHelpers.CreateBadRequestError(
+                "Invalid query parameters",
+                details: [error ?? "Invalid query parameter."]);
+        }
+
         var (queryParams, parseError) = await TryParseQueryParametersAsync(context, commonQueryValidator);
         if (parseError is not null)
         {
-            await WriteQueryParseErrorAsync(context, parseError);
-            return;
+            return CreateQueryParseErrorResult(parseError);
         }
 
         if (queryParams is null)
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Request body is required");
-            return;
+            return GeoServicesErrorHelpers.CreateBadRequestError("Request body is required");
         }
 
         FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
 
-        IResult result = await handler.HandleQueryFeaturesAsync(
+        return await handler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
             queryParams,
             GetTimeoutAwareCancellationToken(context));
-
-        await result.ExecuteAsync(context);
     }
 
     private static async Task HandleGenerateRenderer(HttpContext context)
@@ -915,13 +903,12 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    private static Task WriteQueryParseErrorAsync(HttpContext context, string? error)
+    private static IResult CreateQueryParseErrorResult(string? error)
     {
         if (!string.IsNullOrWhiteSpace(error) &&
             error.StartsWith("Invalid objectId", StringComparison.OrdinalIgnoreCase))
         {
-            return RouteValidationHelpers.WriteValidationErrorAsync(
-                context,
+            return GeoServicesErrorHelpers.CreateBadRequestError(
                 "Invalid query parameters",
                 details: [error]);
         }
@@ -929,13 +916,12 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(error) &&
             error.StartsWith("Unknown query parameter", StringComparison.OrdinalIgnoreCase))
         {
-            return RouteValidationHelpers.WriteValidationErrorAsync(
-                context,
+            return GeoServicesErrorHelpers.CreateBadRequestError(
                 "Invalid query parameters",
                 details: [error]);
         }
 
-        return RouteValidationHelpers.WriteValidationErrorAsync(context, error ?? "Invalid query parameters");
+        return GeoServicesErrorHelpers.CreateBadRequestError(error ?? "Invalid query parameters");
     }
 
     private static string? TryGetQueryValue(IQueryCollection query, string key)

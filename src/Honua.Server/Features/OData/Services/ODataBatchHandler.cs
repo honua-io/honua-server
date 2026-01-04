@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -452,6 +453,11 @@ internal sealed partial class ODataBatchHandler
                     return CreateErrorResponse(request.Id, 405, "MethodNotAllowed", $"Method {request.Method} is not supported.");
             }
         }
+        catch (ArgumentException ex)
+        {
+            Log.BatchRequestParseFailed(_logger, request.Id, ex);
+            return CreateErrorResponse(request.Id, 400, "InvalidRequest", ex.Message);
+        }
         catch (Exception ex)
         {
             Log.BatchSingleRequestFailed(_logger, request.Id, ex);
@@ -579,9 +585,14 @@ internal sealed partial class ODataBatchHandler
     private static (int layerId, long? objectId) ParseUrl(string url)
     {
         // Parse URLs like "Features(1)" or "Features(1,100)"
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new ArgumentException("Request URL is required.", nameof(url));
+        }
+
         var match = System.Text.RegularExpressions.Regex.Match(
             url,
-            @"Features\((\d+)(?:,(\d+))?\)",
+            @"^Features\((\d+)(?:,(\d+))?\)$",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         if (!match.Success)
@@ -589,8 +600,21 @@ internal sealed partial class ODataBatchHandler
             throw new ArgumentException($"Invalid URL format: {url}. Expected format: Features(layerId) or Features(layerId,objectId)");
         }
 
-        var layerId = int.Parse(match.Groups[1].Value);
-        long? objectId = match.Groups[2].Success ? long.Parse(match.Groups[2].Value) : null;
+        if (!int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var layerId))
+        {
+            throw new ArgumentException($"Layer ID '{match.Groups[1].Value}' is not a valid integer.");
+        }
+
+        long? objectId = null;
+        if (match.Groups[2].Success)
+        {
+            if (!long.TryParse(match.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedObjectId))
+            {
+                throw new ArgumentException($"Object ID '{match.Groups[2].Value}' is not a valid integer.");
+            }
+
+            objectId = parsedObjectId;
+        }
 
         return (layerId, objectId);
     }

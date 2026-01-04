@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
@@ -22,5 +23,39 @@ internal sealed class TestDatabaseConnectionProvider : IDatabaseConnectionProvid
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         return await _dataSource.OpenConnectionAsync(cancellationToken);
+    }
+
+    public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await OpenConnectionAsync(cancellationToken);
+
+        try
+        {
+            var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
+            return (connection, transaction);
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task<T> ExecuteWithDeadlockRetryAsync<T>(
+        Func<Task<T>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await operation();
+    }
+
+    public async Task ExecuteWithDeadlockRetryAsync(
+        Func<Task> operation,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await operation();
     }
 }

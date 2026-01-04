@@ -191,6 +191,10 @@ public sealed class InMemoryImportJobServiceCleanupTests
         {
         }
 
+        public void RecordTransactionDuration(TimeSpan duration, int operationCount, bool wasCommitted)
+        {
+        }
+
         public IOperationScope StartOperation(string operationName)
         {
             return new NoopOperationScope();
