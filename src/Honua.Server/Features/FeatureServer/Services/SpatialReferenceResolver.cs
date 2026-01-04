@@ -10,7 +10,7 @@ namespace Honua.Server.Features.FeatureServer.Services;
 
 /// <summary>
 /// Service for resolving spatial reference system identifiers from various input formats.
-/// Extracted from FeatureServerHandler to improve separation of concerns and testability.
+/// Extracted from FeatureServerQueryHandler to improve separation of concerns and testability.
 /// </summary>
 internal sealed class SpatialReferenceResolver
 {

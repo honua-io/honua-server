@@ -550,7 +550,7 @@ internal static partial class FeatureServerEndpoints
             return CreateQueryParseErrorResult(error);
         }
 
-        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        FeatureServerQueryHandler handler = context.RequestServices.GetRequiredService<FeatureServerQueryHandler>();
 
         return await handler.HandleQueryFeaturesAsync(
             serviceId,
@@ -596,7 +596,7 @@ internal static partial class FeatureServerEndpoints
             return GeoServicesErrorHelpers.CreateBadRequestError("Request body is required");
         }
 
-        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        FeatureServerQueryHandler handler = context.RequestServices.GetRequiredService<FeatureServerQueryHandler>();
 
         return await handler.HandleQueryFeaturesAsync(
             serviceId,
@@ -1077,7 +1077,7 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
-        var handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        var handler = context.RequestServices.GetRequiredService<FeatureServerEditHandler>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
 
         var result = await handler.HandleApplyEditsAsync(
@@ -1445,7 +1445,7 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
-        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        FeatureServerQueryHandler handler = context.RequestServices.GetRequiredService<FeatureServerQueryHandler>();
 
         IResult result = await handler.HandleQueryRelatedRecordsAsync(
             serviceId,
@@ -1495,7 +1495,7 @@ internal static partial class FeatureServerEndpoints
             return;
         }
 
-        FeatureServerHandler handler = context.RequestServices.GetRequiredService<FeatureServerHandler>();
+        FeatureServerQueryHandler handler = context.RequestServices.GetRequiredService<FeatureServerQueryHandler>();
 
         IResult result = await handler.HandleQueryRelatedRecordsAsync(
             serviceId,

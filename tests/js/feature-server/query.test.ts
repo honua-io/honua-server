@@ -553,7 +553,12 @@ describe('Response Formats', () => {
       for (const feature of data.features) {
         if (feature.geometry) {
           expect(feature.geometry).toHaveProperty('type');
-          expect(feature.geometry).toHaveProperty('coordinates');
+          if (feature.geometry.type === 'GeometryCollection') {
+            expect(feature.geometry).toHaveProperty('geometries');
+            expect(Array.isArray(feature.geometry.geometries)).toBe(true);
+          } else {
+            expect(feature.geometry).toHaveProperty('coordinates');
+          }
         }
       }
     });
