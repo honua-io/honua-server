@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Memory;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 
@@ -47,7 +48,7 @@ internal sealed class StreamingGeoJsonReader
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(_limits.StreamBufferSize);
+        var buffer = MemoryPool.RentByteArray(_limits.StreamBufferSize);
         try
         {
             var jsonReaderState = new JsonReaderState(new JsonReaderOptions
@@ -121,7 +122,7 @@ internal sealed class StreamingGeoJsonReader
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            MemoryPool.ReturnByteArray(buffer);
         }
     }
 
@@ -439,12 +440,16 @@ internal sealed class StreamingGeoJsonReader
 
     private Coordinate[] ParseCoordinateArray(JsonElement coords)
     {
-        var coordinates = new List<Coordinate>();
+        // Pre-allocate array to avoid List growth and ToArray() allocation
+        var coordCount = coords.GetArrayLength();
+        var coordinates = new Coordinate[coordCount];
+
+        var index = 0;
         foreach (var coord in coords.EnumerateArray())
         {
-            coordinates.Add(ParseCoordinate(coord));
+            coordinates[index++] = ParseCoordinate(coord);
         }
-        return coordinates.ToArray();
+        return coordinates;
     }
 
     private static object? GetPropertyValue(JsonElement element)
@@ -470,7 +475,8 @@ internal sealed class StreamingGeoJsonReader
     {
         // Read only the first few KB to find CRS
         const int headerSize = 8192;
-        var buffer = new byte[headerSize];
+        using var bufferRental = GeometryMemoryManager.RentWkbBuffer(headerSize);
+        var buffer = bufferRental.Buffer;
         var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, headerSize), cancellationToken);
 
         if (bytesRead == 0)
@@ -483,7 +489,7 @@ internal sealed class StreamingGeoJsonReader
         try
         {
             // Parse the header portion
-            var headerJson = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+            var headerJson = Encoding.UTF8.GetString(buffer.AsSpan(0, bytesRead));
 
             // Look for CRS property in the beginning of the document
             // The CRS is typically at the root level, so we can use simple string search
