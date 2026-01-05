@@ -21,7 +21,7 @@
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
 
     <!-- Testcontainers -->
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.9.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
 
     <!-- xUnit -->
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -44,7 +44,7 @@
     <PackageReference Include="NBomber.Http" Version="6.1.0" />
 
     <!-- HTTP Client for Contract Testing -->
-    <PackageReference Include="WireMock.Net" Version="1.21.0" />
+    <PackageReference Include="WireMock.Net" Version="1.22.0" />
 
     <!-- JSON Schema Validation -->
     <PackageReference Include="Newtonsoft.Json.Schema" Version="4.0.1" />
@@ -54,6 +54,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
     <ProjectReference Include="..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
