@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.FeatureServer.Services.QueryBuilding;
 
@@ -36,7 +37,7 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
             ObjectIds = hasObjectIds ? context.QueryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = context.QueryParams.ResultOffset,
             Limit = context.QueryParams.ResultRecordCount ?? context.Service.MaxRecordCount,
-            SpatialReferenceSrid = context.Layer.SpatialReference.Srid,
+            SpatialReferenceSrid = context.Layer.SpatialReference.ToSrid(),
             OutputSrid = context.OutputSrid,
             OrderBy = ParseOrderByFields(context.QueryParams.OrderByFields, context.Layer)
         };

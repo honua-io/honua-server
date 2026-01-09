@@ -1,0 +1,1411 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testng-results ignored="0" total="20" passed="13" failed="6" skipped="1">
+  <reporter-output>
+  </reporter-output>
+  <suite started-at="2025-12-31T10:54:38 UTC" name="ogcapi-features-1.0-1.9" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1653">
+    <groups>
+      <group name="crs-discovery">
+        <method signature="DiscoveryCollectionCrsUri.verifyCollectionCrsIdentifierOfCrsProperty(java.lang.String,org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.CoordinateSystem)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri@420745d7]" name="verifyCollectionCrsIdentifierOfCrsProperty" class="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri"/>
+        <method signature="DiscoveryCollectionCrsUri.verifyCollectionCrsIdentifierOfStorageCrsProperty(java.lang.String,org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.CoordinateSystem)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri@420745d7]" name="verifyCollectionCrsIdentifierOfStorageCrsProperty" class="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri"/>
+        <method signature="DiscoveryCollectionDefaultCrs.verifyCollectionCrsIdentifierOfCrsProperty(java.lang.String,io.restassured.path.json.JsonPath)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionDefaultCrs@2392212b]" name="verifyCollectionCrsIdentifierOfCrsProperty" class="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionDefaultCrs"/>
+      </group> <!-- crs-discovery -->
+      <group name="collections">
+        <method signature="FeatureCollections.validateFeatureCollectionsMetadataOperation(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" name="validateFeatureCollectionsMetadataOperation" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections"/>
+        <method signature="FeatureCollections.validateFeatureCollectionsMetadataOperationResponse_Content(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" name="validateFeatureCollectionsMetadataOperationResponse_Content" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections"/>
+        <method signature="FeatureCollections.validateFeatureCollectionsMetadataOperationResponse_CrsProperty(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" name="validateFeatureCollectionsMetadataOperationResponse_CrsProperty" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections"/>
+        <method signature="FeatureCollections.validateFeatureCollectionsMetadataOperationResponse_Items(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" name="validateFeatureCollectionsMetadataOperationResponse_Items" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections"/>
+        <method signature="FeatureCollections.validateFeatureCollectionsMetadataOperationResponse_Links(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" name="validateFeatureCollectionsMetadataOperationResponse_Links" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections"/>
+      </group> <!-- collections -->
+      <group name="conformance">
+        <method signature="Conformance.validateConformanceOperationAndResponse(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance@1c4ee95c]" name="validateConformanceOperationAndResponse" class="org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance"/>
+      </group> <!-- conformance -->
+      <group name="landingpage">
+        <method signature="LandingPage.landingPageRetrieval()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" name="landingPageRetrieval" class="org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage"/>
+        <method signature="LandingPage.landingPageValidation()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" name="landingPageValidation" class="org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage"/>
+      </group> <!-- landingpage -->
+      <group name="apidefinition">
+        <method signature="ApiDefinition.openapiDocumentRetrieval()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" name="openapiDocumentRetrieval" class="org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition"/>
+        <method signature="ApiDefinition.apiDefinitionValidation(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" name="apiDefinitionValidation" class="org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition"/>
+      </group> <!-- apidefinition -->
+      <group name="crs-conformance">
+        <method signature="CrsRequirementClassPrecondition.verifyConformanceClass()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.CrsRequirementClassPrecondition@62b3df3a]" name="verifyConformanceClass" class="org.opengis.cite.ogcapifeatures10.conformance.crs.CrsRequirementClassPrecondition"/>
+      </group> <!-- crs-conformance -->
+      <group name="featuresBase">
+        <method signature="Features.validateFeaturesOperation(org.testng.ITestContext,java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features@35e52059]" name="validateFeaturesOperation" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features"/>
+        <method signature="FeaturesErrorConditions.validateFeaturesOperation_QueryParamInvalid(java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" name="validateFeaturesOperation_QueryParamInvalid" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions"/>
+        <method signature="FeaturesErrorConditions.validateFeaturesOperation_QueryParamUnknown(java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" name="validateFeaturesOperation_QueryParamUnknown" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions"/>
+      </group> <!-- featuresBase -->
+      <group name="collection">
+        <method signature="FeatureCollection.validateFeatureCollectionMetadataOperation(org.testng.ITestContext,java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" name="validateFeatureCollectionMetadataOperation" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection"/>
+        <method signature="FeatureCollection.validateFeatureCollectionMetadataResponse(java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" name="validateFeatureCollectionMetadataResponse" class="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection"/>
+      </group> <!-- collection -->
+    </groups>
+    <test started-at="2025-12-31T10:54:38 UTC" name="Core" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1609">
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit">
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method signature="limitParameterDefinition(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="limitParameterDefinition" description="A.2.7. Features {root}/collections/{collectionId}/items - Limit, Abstract Test 16: (Requirement /req/core/fc-limit-definition)" data-provider="collectionPaths" depends-on-groups="featuresBase" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="FAIL">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections/{collectionId}/items, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <exception class="java.lang.AssertionError">
+            <message>
+              <![CDATA[Expected property 'style' with value 'form' but was 'null' expected [form] but found [null]]]>
+            </message>
+          </exception> <!-- java.lang.AssertionError -->
+          <reporter-output>
+          </reporter-output>
+          <attributes>
+            <attribute name="request">
+              <![CDATA[]]>
+            </attribute> <!-- request -->
+            <attribute name="response">
+              <![CDATA[]]>
+            </attribute> <!-- response -->
+          </attributes>
+        </test-method> <!-- limitParameterDefinition -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit@6b5f8707]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesLimit -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections">
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method signature="validateFeatureCollectionsMetadataOperation(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureCollectionsMetadataOperation" description="Implements A.2.5. Feature Collections {root}/collections, Abstract Test 9 (Requirement /req/core/fc-md-op)" groups="collections" data-provider="collectionsUris" depends-on-groups="conformance, apidefinition" finished-at="2025-12-31T10:54:40 UTC" duration-ms="15" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateFeatureCollectionsMetadataOperation -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateFeatureCollectionsMetadataOperationResponse_Content(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureCollectionsMetadataOperationResponse_Content" description="A.2.5. Feature Collections {root}/collections, Abstract Test 10, Test Method 4 (Requirement /req/core/fc-md-success, /req/core/crs84)" groups="collections" data-provider="collectionsUris" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections.validateFeatureCollectionsMetadataOperation" duration-ms="31" status="FAIL">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <exception class="java.lang.AssertionError">
+            <message>
+              <![CDATA[Feature Collections Metadata document does not contain collections.]]>
+            </message>
+          </exception> <!-- java.lang.AssertionError -->
+          <reporter-output>
+          </reporter-output>
+          <attributes>
+            <attribute name="request">
+              <![CDATA[]]>
+            </attribute> <!-- request -->
+            <attribute name="response">
+              <![CDATA[]]>
+            </attribute> <!-- response -->
+          </attributes>
+        </test-method> <!-- validateFeatureCollectionsMetadataOperationResponse_Content -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateFeatureCollectionsMetadataOperationResponse_CrsProperty(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureCollectionsMetadataOperationResponse_CrsProperty" description="A.2.5. Feature Collections {root}/collections, Abstract Test 10, Test Method 3 (Requirement /req/core/fc-md-success, /req/core/crs84)" groups="collections" data-provider="collectionsUris" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections.validateFeatureCollectionsMetadataOperation" duration-ms="8" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateFeatureCollectionsMetadataOperationResponse_CrsProperty -->
+        <test-method signature="validateFeatureCollectionsMetadataOperationResponse_Items(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureCollectionsMetadataOperationResponse_Items" description="A.2.5. Feature Collections {root}/collections, Abstract Test 10, Test Method 2 (Requirement /req/core/fc-md-success, /req/core/crs84)" groups="collections" data-provider="collectionsUris" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections.validateFeatureCollectionsMetadataOperation" duration-ms="7" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateFeatureCollectionsMetadataOperationResponse_Items -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateFeatureCollectionsMetadataOperationResponse_Links(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureCollectionsMetadataOperationResponse_Links" description="A.2.5. Feature Collections {root}/collections, Abstract Test 10, Test Method 1 (Requirement /req/core/fc-md-success, /req/core/crs84)" groups="collections" data-provider="collectionsUris" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections.validateFeatureCollectionsMetadataOperation" duration-ms="14" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateFeatureCollectionsMetadataOperationResponse_Links -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="storeCollectionsInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="storeCollectionsInTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeCollectionsInTestContext -->
+        <test-method is-config="true" signature="storeCollectionsResponseInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections@1556f2dd]" started-at="2025-12-31T10:54:40 UTC" name="storeCollectionsResponseInTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeCollectionsResponseInTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollections -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features@35e52059]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features@35e52059]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features@35e52059]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features@35e52059]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features@35e52059]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.Features -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="timeParameterDefinition(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime@e27ba81]" started-at="2025-12-31T10:54:40 UTC" name="timeParameterDefinition" description="A.2.7. Features {root}/collections/{collectionId}/items - Datetime, Abstract Test 18: (Requirement /req/core/fc-time-definition)" data-provider="collectionPaths" depends-on-groups="featuresBase" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="FAIL">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections/{collectionId}/items, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <exception class="java.lang.AssertionError">
+            <message>
+              <![CDATA[Expected property 'style' with value 'form' but was 'null' expected [form] but found [null]]]>
+            </message>
+          </exception> <!-- java.lang.AssertionError -->
+          <reporter-output>
+          </reporter-output>
+          <attributes>
+            <attribute name="request">
+              <![CDATA[]]>
+            </attribute> <!-- request -->
+            <attribute name="response">
+              <![CDATA[]]>
+            </attribute> <!-- response -->
+          </attributes>
+        </test-method> <!-- timeParameterDefinition -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesTime -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions@62577d6]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesErrorConditions -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method signature="validateFeatureCollectionMetadataOperation(org.testng.ITestContext,java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureCollectionMetadataOperation" description="Implements A.2.6. Feature Collection {root}/collections/{collectionId}, Abstract Test 11 (Requirement /req/core/sfc-md-op)" groups="collection" depends-on-groups="collections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="SKIP">
+          <exception class="java.lang.Throwable">
+            <message>
+              <![CDATA[Method FeatureCollection.validateFeatureCollectionMetadataOperation(org.testng.ITestContext,java.util.Map)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea] depends on not successfully finished methods in group "collections"]]>
+            </message>
+          </exception> <!-- java.lang.Throwable -->
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateFeatureCollectionMetadataOperation -->
+        <test-method is-config="true" signature="storeCollectionInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection@5aa360ea]" started-at="2025-12-31T10:54:40 UTC" name="storeCollectionInTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeCollectionInTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeatureCollection -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance@1c4ee95c]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method signature="validateConformanceOperationAndResponse(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance@1c4ee95c]" started-at="2025-12-31T10:54:40 UTC" name="validateConformanceOperationAndResponse" description="Implements A.2.4. Conformance Path {root}/conformance, Abstract Test 7 + 8 (Requirements /req/core/conformance-op and /req/core/conformance-success)" groups="conformance" data-provider="conformanceUris" depends-on-groups="apidefinition" finished-at="2025-12-31T10:54:40 UTC" duration-ms="28" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /conformance, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateConformanceOperationAndResponse -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance@1c4ee95c]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="storeRequirementClassesInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance@1c4ee95c]" started-at="2025-12-31T10:54:40 UTC" name="storeRequirementClassesInTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeRequirementClassesInTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.conformance.Conformance -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveApiUrl()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiUrl" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.CommonFixture.initCommonFixture" duration-ms="42" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiUrl -->
+        <test-method signature="openapiDocumentRetrieval()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" started-at="2025-12-31T10:54:40 UTC" name="openapiDocumentRetrieval" description="Implements A.2.3. API Definition Path {root}/api (link), Abstract Test 5 (Requirement /req/core/api-definition-op)" groups="apidefinition" depends-on-groups="landingpage" finished-at="2025-12-31T10:54:40 UTC" duration-ms="25" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- openapiDocumentRetrieval -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="apiDefinitionValidation(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition@e362c57]" started-at="2025-12-31T10:54:40 UTC" name="apiDefinitionValidation" description="Implements A.2.3. API Definition Path {root}/api (link), Abstract Test 6 (Requirement /req/core/api-definition-success)" groups="apidefinition" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition.openapiDocumentRetrieval" duration-ms="223" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- apiDefinitionValidation -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.apidefinition.ApiDefinition -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method signature="featureOperation(java.util.Map,java.lang.String)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="featureOperation" description="Implements A.2.8. Feature, Abstract Test 27 (Requirement /req/core/f-op)" data-provider="collectionFeatureId" depends-on-groups="featuresBase" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="FAIL">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[{id=dUmmYColLection}]]>
+              </value>
+            </param>
+            <param index="1">
+              <value is-null="true"/>
+            </param>
+          </params>
+          <exception class="java.lang.AssertionError">
+            <message>
+              <![CDATA[No feature Ids found in tested collections.]]>
+            </message>
+          </exception> <!-- java.lang.AssertionError -->
+          <reporter-output>
+          </reporter-output>
+          <attributes>
+            <attribute name="request">
+              <![CDATA[]]>
+            </attribute> <!-- request -->
+            <attribute name="response">
+              <![CDATA[]]>
+            </attribute> <!-- response -->
+          </attributes>
+        </test-method> <!-- featureOperation -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateFeatureResponse(java.util.Map,java.lang.String)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature@49bd54f7]" started-at="2025-12-31T10:54:40 UTC" name="validateFeatureResponse" description="Implements A.2.8. Feature, Abstract Test 28 + 29 (Requirements /req/core/f-success, /req/core/f-links)" data-provider="collectionFeatureId" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature.featureOperation" duration-ms="1" status="FAIL">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[{id=dUmmYColLection}]]>
+              </value>
+            </param>
+            <param index="1">
+              <value is-null="true"/>
+            </param>
+          </params>
+          <exception class="java.lang.AssertionError">
+            <message>
+              <![CDATA[No feature Ids found in tested collections.]]>
+            </message>
+          </exception> <!-- java.lang.AssertionError -->
+          <reporter-output>
+          </reporter-output>
+          <attributes>
+            <attribute name="request">
+              <![CDATA[]]>
+            </attribute> <!-- request -->
+            <attribute name="response">
+              <![CDATA[]]>
+            </attribute> <!-- response -->
+          </attributes>
+        </test-method> <!-- validateFeatureResponse -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.Feature -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox">
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method signature="boundingBoxParameterDefinition(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="boundingBoxParameterDefinition" description="A.2.7. Features {root}/collections/{collectionId}/items - BoundingBox, Abstract Test 14: (Requirement /req/core/fc-bbox-definition)" data-provider="collectionPaths" depends-on-groups="featuresBase" finished-at="2025-12-31T10:54:40 UTC" duration-ms="5" status="FAIL">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections/{collectionId}/items, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <exception class="java.lang.AssertionError">
+            <message>
+              <![CDATA[Expected property 'style' with value 'form' for collections path '/collections/{collectionId}/items' but was 'null'. expected [form] but found [null]]]>
+            </message>
+          </exception> <!-- java.lang.AssertionError -->
+          <reporter-output>
+          </reporter-output>
+          <attributes>
+            <attribute name="request">
+              <![CDATA[]]>
+            </attribute> <!-- request -->
+            <attribute name="response">
+              <![CDATA[]]>
+            </attribute> <!-- response -->
+          </attributes>
+        </test-method> <!-- boundingBoxParameterDefinition -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox@6548bb7d]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.collections.FeaturesBBox -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.general.GeneralHttp">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.general.GeneralHttp@5cad8b7d]" started-at="2025-12-31T10:54:39 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:39 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method signature="http()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.general.GeneralHttp@5cad8b7d]" started-at="2025-12-31T10:54:39 UTC" name="http" description="Implements A.2.1.1. HTTP, Abstract Test 1 (Requirement /req/core/http)" finished-at="2025-12-31T10:54:39 UTC" duration-ms="33" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- http -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.general.GeneralHttp@5cad8b7d]" started-at="2025-12-31T10:54:39 UTC" name="clearMessages" finished-at="2025-12-31T10:54:39 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.general.GeneralHttp -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" started-at="2025-12-31T10:54:38 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:39 UTC" duration-ms="182" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5602e540]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" started-at="2025-12-31T10:54:39 UTC" name="clearMessages" finished-at="2025-12-31T10:54:39 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="landingPageRetrieval()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" started-at="2025-12-31T10:54:39 UTC" name="landingPageRetrieval" description="Implements A.2.2. Landing Page {root}/, Abstract Test 3 (Requirement /req/core/root-op)" groups="landingpage" finished-at="2025-12-31T10:54:39 UTC" duration-ms="576" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- landingPageRetrieval -->
+        <test-method signature="landingPageValidation()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" started-at="2025-12-31T10:54:39 UTC" name="landingPageValidation" description="Implements A.2.2. Landing Page {root}/, Abstract Test 4 (Requirement /req/core/root-success)" groups="landingpage" finished-at="2025-12-31T10:54:40 UTC" depends-on-methods="org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage.landingPageRetrieval" duration-ms="335" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- landingPageValidation -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage@1e287667]" started-at="2025-12-31T10:54:39 UTC" name="clearMessages" finished-at="2025-12-31T10:54:39 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.core.landingpage.LandingPage -->
+    </test> <!-- Core -->
+    <test started-at="2025-12-31T10:54:40 UTC" name="Coordinate Reference Systems by Reference" finished-at="2025-12-31T10:54:40 UTC" duration-ms="42">
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameter">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameter@17f460bb]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameter@17f460bb]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameter -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterInvalid">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterInvalid@64a1923a]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterInvalid@64a1923a]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterInvalid -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameter">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameter@41c62850]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameter@41c62850]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameter -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterDefault">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterDefault@50b1f030]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterDefault@50b1f030]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterDefault -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.CrsRequirementClassPrecondition">
+        <test-method signature="verifyConformanceClass()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.CrsRequirementClassPrecondition@62b3df3a]" started-at="2025-12-31T10:54:40 UTC" name="verifyConformanceClass" description="Precondition: conformance class http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs must be implemented" groups="crs-conformance" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- verifyConformanceClass -->
+        <test-method is-config="true" signature="conformanceClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.CrsRequirementClassPrecondition@62b3df3a]" started-at="2025-12-31T10:54:40 UTC" name="conformanceClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- conformanceClasses -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.CrsRequirementClassPrecondition -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri">
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method signature="verifyCollectionsCrsIdentifierOfCrsProperty(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint,io.restassured.path.json.JsonPath)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="verifyCollectionsCrsIdentifierOfCrsProperty" description="Implements A.1 Discovery, Abstract Test 1 (Requirement /req/crs/crs-uri, /req/crs/fc-md-crs-list A, /req/crs/fc-md-storageCrs, /req/crs/fc-md-crs-list-global), crs property in the collections object in the path /collections" data-provider="collectionsResponses" depends-on-groups="crs-conformance" finished-at="2025-12-31T10:54:40 UTC" duration-ms="9" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+            <param index="1">
+              <value>
+                <![CDATA[io.restassured.path.json.JsonPath@1e23ee0e]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- verifyCollectionsCrsIdentifierOfCrsProperty -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="verifyCollectionsCrsIdentifierOfStorageCrs(org.opengis.cite.ogcapifeatures10.openapi3.TestPoint,io.restassured.path.json.JsonPath)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="verifyCollectionsCrsIdentifierOfStorageCrs" description="Implements A.1 Discovery, Abstract Test 1 (Requirement /req/crs/crs-uri, /req/crs/fc-md-crs-list A, /req/crs/fc-md-storageCrs, /req/crs/fc-md-crs-list-global), storageCrs property in the collections object in the path /collections" data-provider="collectionsResponses" depends-on-groups="crs-conformance" finished-at="2025-12-31T10:54:40 UTC" duration-ms="7" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/features , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+            <param index="1">
+              <value>
+                <![CDATA[io.restassured.path.json.JsonPath@1e23ee0e]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- verifyCollectionsCrsIdentifierOfStorageCrs -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri@5b43e173]" started-at="2025-12-31T10:54:40 UTC" name="clearMessages" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsCrsUri -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri">
+        <test-method is-config="true" signature="storeCollectionInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri@420745d7]" started-at="2025-12-31T10:54:40 UTC" name="storeCollectionInTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeCollectionInTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionCrsUri -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterDefault">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterDefault@7d2a6eac]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterDefault@7d2a6eac]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterDefault -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterInvalid">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterInvalid@88a8218]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterInvalid@88a8218]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameterInvalid -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs">
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs@545f80bf]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs@545f80bf]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs@545f80bf]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs@545f80bf]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs@545f80bf]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsStorageCrs -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterInvalid">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterInvalid@6b530eb9]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterInvalid@6b530eb9]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterInvalid -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterDefault">
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterDefault@15b986cd]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterDefault@15b986cd]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterDefault -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameter">
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameter@4163f1cd]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameter@4163f1cd]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.bboxcrs.BBoxCrsParameter -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterTransform">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterTransform@2b50150]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterTransform@2b50150]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.features.FeaturesCrsParameterTransform -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.SuitePreconditions">
+        <test-method is-config="true" signature="verifyTestSubject()[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.SuitePreconditions@5b69fd74]" started-at="2025-12-31T10:54:38 UTC" name="verifyTestSubject" finished-at="2025-12-31T10:54:38 UTC" duration-ms="7" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- verifyTestSubject -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.SuitePreconditions -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterTransform">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterTransform@678040b3]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterTransform@678040b3]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.query.crs.feature.FeatureCrsParameterTransform -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs@66f66866]" started-at="2025-12-31T10:54:40 UTC" name="initCommonFixture" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="noOfCollections(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs@66f66866]" started-at="2025-12-31T10:54:40 UTC" name="noOfCollections" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- noOfCollections -->
+        <test-method is-config="true" signature="requirementClasses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs@66f66866]" started-at="2025-12-31T10:54:40 UTC" name="requirementClasses" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- requirementClasses -->
+        <test-method is-config="true" signature="retrieveRequiredInformationFromTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs@66f66866]" started-at="2025-12-31T10:54:40 UTC" name="retrieveRequiredInformationFromTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveRequiredInformationFromTestContext -->
+        <test-method is-config="true" signature="retrieveApiModel(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs@66f66866]" started-at="2025-12-31T10:54:40 UTC" name="retrieveApiModel" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiModel -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collections.DiscoveryCollectionsDefaultCrs -->
+      <class name="org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionDefaultCrs">
+        <test-method is-config="true" signature="storeCollectionInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionDefaultCrs@2392212b]" started-at="2025-12-31T10:54:40 UTC" name="storeCollectionInTestContext" finished-at="2025-12-31T10:54:40 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@4f7ae05]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeCollectionInTestContext -->
+      </class> <!-- org.opengis.cite.ogcapifeatures10.conformance.crs.discovery.collection.DiscoveryCollectionDefaultCrs -->
+    </test> <!-- Coordinate Reference Systems by Reference -->
+  </suite> <!-- ogcapi-features-1.0-1.9 -->
+</testng-results>

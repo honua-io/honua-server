@@ -3,9 +3,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Postgres.Features.Import;
@@ -17,8 +15,7 @@ namespace Honua.Postgres.Features.Import;
 /// </summary>
 internal sealed class CrsDetectionService : ICrsDetectionService
 {
-    private readonly string _connectionString;
-    private readonly ISchemaContext? _schemaContext;
+    private readonly IDatabaseConnectionProvider _connectionProvider;
 
     /// <summary>
     /// Common EPSG codes and their variations for quick lookup
@@ -58,10 +55,9 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{4,5})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public CrsDetectionService(string connectionString, ISchemaContext? schemaContext = null)
+    public CrsDetectionService(IDatabaseConnectionProvider connectionProvider)
     {
-        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-        _schemaContext = schemaContext;
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }
 
     /// <inheritdoc />
@@ -281,9 +277,13 @@ internal sealed class CrsDetectionService : ICrsDetectionService
 
     private async Task<NpgsqlConnection> OpenConnectionAsync()
     {
-        var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync().ConfigureAwait(false);
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema).ConfigureAwait(false);
-        return connection;
+        var connection = await _connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
+        if (connection is NpgsqlConnection npgsqlConnection)
+        {
+            return npgsqlConnection;
+        }
+
+        await connection.DisposeAsync().ConfigureAwait(false);
+        throw new InvalidOperationException("Expected NpgsqlConnection for CRS detection.");
     }
 }

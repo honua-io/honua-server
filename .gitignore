@@ -241,6 +241,9 @@ appsettings.Development.json
 .serena/
 .claude/plans/
 
+# Local Python test environment
+.venv-tests/
+
 # Benchmark artifacts
 benchmarks/**/BenchmarkDotNet.Artifacts/
 
@@ -249,3 +252,8 @@ benchmarks/**/BenchmarkDotNet.Artifacts/
 
 # Coverage
 coverage*/
+
+# Local runtime/test artifacts
+tmp/
+src/Honua.Server/tmp/
+src/Honua.Server/attachments/

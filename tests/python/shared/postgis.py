@@ -292,6 +292,7 @@ class PostGISFixture:
                         supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                         capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
                         service_extent GEOMETRY,
+                        metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
@@ -312,6 +313,7 @@ class PostGISFixture:
                         min_scale DOUBLE PRECISION,
                         max_scale DOUBLE PRECISION,
                         default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+                        metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -432,6 +434,7 @@ class PostGISFixture:
                         table_name,
                         geometry_type,
                         srid,
+                        extent,
                         default_visibility
                     )
                     VALUES (
@@ -442,6 +445,7 @@ class PostGISFixture:
                         'features',
                         'GeometryCollection',
                         4326,
+                        ST_MakeEnvelope(-180, -90, 180, 90, 4326),
                         true
                     )
                     ON CONFLICT (layer_id) DO NOTHING;

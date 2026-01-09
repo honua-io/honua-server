@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.OData.Services;
@@ -34,7 +36,7 @@ internal static class ODataUtilityService
     }
 
     /// <summary>
-    /// Creates an OData v4 compliant error response.
+    /// Creates an OData v4 compliant error response using standardized error handling.
     /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.01/odata-json-format-v4.01.html#sec_ErrorResponseBody
     /// </summary>
     public static IResult CreateODataError(
@@ -45,20 +47,46 @@ internal static class ODataUtilityService
         string? target = null,
         ErrorDetail[]? details = null)
     {
-        var error = new ODataError
+        // Convert to standardized error response
+        var additionalDetails = details?.Select(d => d.Message).ToList();
+        var errorResponse = statusCode switch
         {
-            Error = new ErrorDetails
-            {
-                Code = code,
-                Message = message,
-                Details = details
-            }
+            StatusCodes.Status400BadRequest => StandardErrorResponse.BadRequest(message, additionalDetails),
+            StatusCodes.Status401Unauthorized => StandardErrorResponse.Unauthorized(message, additionalDetails),
+            StatusCodes.Status403Forbidden => StandardErrorResponse.Forbidden(message, additionalDetails),
+            StatusCodes.Status404NotFound => StandardErrorResponse.NotFound(message, additionalDetails),
+            StatusCodes.Status409Conflict => StandardErrorResponse.Conflict(message, additionalDetails),
+            StatusCodes.Status500InternalServerError => StandardErrorResponse.InternalServerError(message, additionalDetails),
+            StatusCodes.Status503ServiceUnavailable => StandardErrorResponse.ServiceUnavailable(message, null, additionalDetails),
+            _ => new StandardErrorResponse(statusCode, code, message, additionalDetails)
         };
 
-        SetODataHeaders(context);
-        return Results.Json(error, ODataJsonContext.Default.ODataError,
-            contentType: ODataContentType,
-            statusCode: statusCode);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
+    /// Creates an OData error response using standardized error handling.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="statusCode">The HTTP status code.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A standardized OData error response.</returns>
+    public static IResult CreateStandardODataError(HttpContext context, string detail, int statusCode = 400, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = statusCode switch
+        {
+            StatusCodes.Status400BadRequest => StandardErrorResponse.BadRequest(detail, additionalDetails),
+            StatusCodes.Status401Unauthorized => StandardErrorResponse.Unauthorized(detail, additionalDetails),
+            StatusCodes.Status403Forbidden => StandardErrorResponse.Forbidden(detail, additionalDetails),
+            StatusCodes.Status404NotFound => StandardErrorResponse.NotFound(detail, additionalDetails),
+            StatusCodes.Status409Conflict => StandardErrorResponse.Conflict(detail, additionalDetails),
+            StatusCodes.Status500InternalServerError => StandardErrorResponse.InternalServerError(detail, additionalDetails),
+            StatusCodes.Status503ServiceUnavailable => StandardErrorResponse.ServiceUnavailable(detail, null, additionalDetails),
+            _ => new StandardErrorResponse(statusCode, "Error", detail, additionalDetails)
+        };
+
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 
     /// <summary>
@@ -74,7 +102,7 @@ internal static class ODataUtilityService
         string? orderby,
         bool? count)
     {
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>
         {
             $"$skip={nextSkip}",
@@ -171,7 +199,7 @@ internal static class ODataUtilityService
     /// </summary>
     public static string GetBaseUrl(HttpRequest request)
     {
-        return $"{request.Scheme}://{request.Host}";
+        return BaseUrlResolver.GetBaseUrl(request);
     }
 
     /// <summary>

@@ -3,6 +3,7 @@
 
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
@@ -12,6 +13,8 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// are applied to all responses per MVP security requirements.
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Comprehensive)]
+[Operation(Operations.Security)]
 public class SecurityHeadersMiddlewareTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
@@ -33,6 +36,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task SecurityHeaders_HealthEndpoint_AppliesAllRequiredHeaders()
     {
         // Act
@@ -75,6 +79,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task SecurityHeaders_FeatureServerEndpoint_AppliesSecurityHeaders()
     {
         // Act - Test with a FeatureServer endpoint that should return 400 (no serviceId provided)
@@ -92,6 +97,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task SecurityHeaders_AdminEndpoint_AppliesSecurityHeaders()
     {
         // Act - Test with admin endpoint - use an endpoint that should return 400 but still have headers
@@ -108,6 +114,8 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /healthz/ready")]
     public async Task SecurityHeaders_MultipleRequests_ConsistentlyAppliesHeaders()
     {
         // Act - Make multiple requests to health endpoints (guaranteed to work)
@@ -134,6 +142,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task SecurityHeaders_ContentSecurityPolicy_HasStrictDirectives()
     {
         // Act
@@ -161,6 +170,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task SecurityHeaders_PermissionsPolicy_HasSecureDefaults()
     {
         // Act

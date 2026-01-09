@@ -249,7 +249,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("code").GetInt32().Should().Be(400);
-        errorElement.GetProperty("message").GetString().Should().Contain("objectIds parameter is required");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("objectIds parameter is required"));
     }
 
     [IntegrationTest]
@@ -268,7 +271,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("code").GetInt32().Should().Be(400);
-        errorElement.GetProperty("message").GetString().Should().Contain("relationshipId parameter is required");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("relationshipId parameter is required"));
     }
 
     [IntegrationTest]
@@ -286,7 +292,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Contain("Invalid objectId");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid objectId"));
     }
 
     [IntegrationTest]
@@ -304,7 +313,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Contain("relationshipId must be an integer");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("relationshipId must be an integer"));
     }
 
     [IntegrationTest]
@@ -323,7 +335,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("code").GetInt32().Should().Be(404);
-        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
@@ -339,7 +354,12 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Layer 999 not found in service");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Layer 999 not found in service"));
     }
 
     [IntegrationTest]
@@ -355,7 +375,12 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Relationship 999 not found for layer");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Relationship 999 not found for layer"));
     }
 
     [IntegrationTest]
@@ -465,7 +490,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
     }
 
     [IntegrationTest]
@@ -484,7 +512,10 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
     }
 
     #endregion

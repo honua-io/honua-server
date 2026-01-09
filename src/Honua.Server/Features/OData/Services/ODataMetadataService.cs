@@ -60,12 +60,14 @@ internal sealed partial class ODataMetadataService
     /// <summary>
     /// Generates the OData metadata document, attempting dynamic generation first with fallback to static.
     /// </summary>
-    public async Task<string> GenerateMetadataDocumentAsync(CancellationToken cancellationToken = default)
+    public async Task<string> GenerateMetadataDocumentAsync(
+        IEnumerable<LayerDefinition>? layers = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
-            return GenerateODataMetadata(layers.ToArray());
+            var resolvedLayers = layers ?? await _layerCatalog.ListLayersAsync(cancellationToken);
+            return GenerateODataMetadata(resolvedLayers.ToArray());
         }
         catch (Exception ex)
         {

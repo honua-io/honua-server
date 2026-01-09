@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
@@ -13,6 +14,8 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// across client-provided IDs, OpenTelemetry integration, and fallback generation.
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Health)]
+[Operation(Operations.HealthCheck)]
 public class CorrelationIdMiddlewareTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
@@ -34,6 +37,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_WithClientProvidedId_ReturnsClientId()
     {
         // Arrange
@@ -51,6 +55,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_WithoutClientId_GeneratesCorrelationId()
     {
         // Act
@@ -69,6 +74,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_WithInvalidClientId_GeneratesNewId()
     {
         // Arrange - client ID with Unicode control characters (non-printable)
@@ -92,6 +98,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_WithEmptyClientId_GeneratesNewId()
     {
         // Act
@@ -110,6 +117,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_WithTooLongClientId_GeneratesNewId()
     {
         // Arrange - client ID exceeding 128 character limit
@@ -130,6 +138,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_MultipleRequests_GeneratesDifferentIds()
     {
         // Act - make multiple requests without client correlation IDs
@@ -157,6 +166,8 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /healthz/ready")]
     public async Task CorrelationIdMiddleware_HealthEndpoints_AlwaysIncludeCorrelationId()
     {
         // Act & Assert - test both health endpoints
@@ -199,6 +210,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task CorrelationIdMiddleware_IntegrationWithOpenTelemetry_WorksWithActivity()
     {
         // Arrange - Start an Activity to simulate OpenTelemetry context

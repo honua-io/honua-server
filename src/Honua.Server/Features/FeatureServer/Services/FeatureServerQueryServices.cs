@@ -11,12 +11,13 @@ namespace Honua.Server.Features.FeatureServer.Services;
 internal sealed class FeatureServerQueryServices(
     IQueryFormatter queryFormatter,
     IFeatureQueryValidator queryValidator,
-    ISqlFilterTranslator sqlFilterTranslator,
+    IFilterExpressionTranslator filterExpressionTranslator,
     SpatialReferenceResolver spatialReferenceResolver) : IFeatureServerQueryServices
 {
     private readonly IQueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
     private readonly IFeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
-    private readonly ISqlFilterTranslator _sqlFilterTranslator = sqlFilterTranslator ?? throw new ArgumentNullException(nameof(sqlFilterTranslator));
+    private readonly IFilterExpressionTranslator _filterExpressionTranslator =
+        filterExpressionTranslator ?? throw new ArgumentNullException(nameof(filterExpressionTranslator));
     private readonly SpatialReferenceResolver _spatialReferenceResolver =
         spatialReferenceResolver ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
 
@@ -27,7 +28,7 @@ internal sealed class FeatureServerQueryServices(
         => _queryValidator.ValidateRelatedRecordsLimits(queryParams);
 
     public SqlFragment? TranslateFilter(FilterExpression filterExpression, LayerDefinition layer)
-        => _sqlFilterTranslator.Translate(filterExpression, layer);
+        => _filterExpressionTranslator.Translate(filterExpression, layer);
 
     public Task<int?> ResolveSridAsync(
         string? srValue,

@@ -25,6 +25,7 @@ internal static partial class AttachmentHandler
         long featureId,
         IAttachmentStore attachmentStore,
         ILogger<AttachmentOperations> logger,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         try
@@ -52,7 +53,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to query attachments");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to query attachments");
         }
     }
 
@@ -60,6 +61,7 @@ internal static partial class AttachmentHandler
     /// Adds an attachment to a feature with comprehensive security validation.
     /// </summary>
     public static async Task<IResult> AddAttachmentAsync(
+        HttpContext context,
         int layerId,
         long featureId,
         IFormFile file,
@@ -80,7 +82,7 @@ internal static partial class AttachmentHandler
             if (!fileNameValidation.IsValid)
             {
                 LogSecurityValidationFailed(logger, layerId, featureId, "filename", fileNameValidation.ErrorMessage);
-                return GeoServicesErrorHelpers.CreateBadRequestError(
+                return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid file name",
                     [fileNameValidation.ErrorMessage ?? "File name validation failed"]);
             }
@@ -88,14 +90,14 @@ internal static partial class AttachmentHandler
             // Security Layer 2: Validate file size against configured limits
             if (file.Length > limits.MaxAttachmentSize)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
+                return StandardErrorHelpers.CreateBadRequest(context,
                     $"File size ({file.Length:N0} bytes) exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
             }
 
             // Security Layer 3: Validate MIME type against allowed types
             if (!IsAllowedMimeType(file.ContentType, limits.AllowedMimeTypes))
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
+                return StandardErrorHelpers.CreateBadRequest(context,
                     $"File type '{file.ContentType}' is not allowed");
             }
 
@@ -107,7 +109,7 @@ internal static partial class AttachmentHandler
             if (!contentValidation.IsValid)
             {
                 LogSecurityValidationFailed(logger, layerId, featureId, "content", contentValidation.ErrorMessage);
-                return GeoServicesErrorHelpers.CreateBadRequestError(
+                return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid file content",
                     [contentValidation.ErrorMessage ?? "File content validation failed"]);
             }
@@ -116,7 +118,7 @@ internal static partial class AttachmentHandler
             var existingAttachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
             if (existingAttachments.Length >= limits.MaxAttachmentsPerFeature)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
+                return StandardErrorHelpers.CreateBadRequest(context,
                     $"Feature already has the maximum number of attachments ({limits.MaxAttachmentsPerFeature})");
             }
 
@@ -124,7 +126,7 @@ internal static partial class AttachmentHandler
             var totalExistingSize = existingAttachments.Sum(a => a.Size);
             if (totalExistingSize + file.Length > limits.MaxTotalAttachmentSize)
             {
-                return GeoServicesErrorHelpers.CreateBadRequestError(
+                return StandardErrorHelpers.CreateBadRequest(context,
                     $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
             }
 
@@ -155,7 +157,7 @@ internal static partial class AttachmentHandler
         {
             var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
             LogAddAttachmentError(logger, layerId, featureId, safeFileName, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to add attachment");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to add attachment");
         }
     }
 
@@ -163,6 +165,7 @@ internal static partial class AttachmentHandler
     /// Updates an attachment's metadata
     /// </summary>
     public static async Task<IResult> UpdateAttachmentAsync(
+        HttpContext context,
         int layerId,
         long featureId,
         long attachmentId,
@@ -178,7 +181,7 @@ internal static partial class AttachmentHandler
             var existingAttachment = await attachmentStore.GetAsync(layerId, featureId, attachmentId, cancellationToken);
             if (!existingAttachment.HasValue)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError(
+                return StandardErrorHelpers.CreateNotFound(context,
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 
@@ -212,13 +215,13 @@ internal static partial class AttachmentHandler
         catch (ResourceNotFoundException ex)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return GeoServicesErrorHelpers.CreateNotFoundError(
+            return StandardErrorHelpers.CreateNotFound(context,
                 $"Attachment {attachmentId} not found for feature {featureId}");
         }
         catch (Exception ex)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to update attachment");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to update attachment");
         }
     }
 
@@ -226,6 +229,7 @@ internal static partial class AttachmentHandler
     /// Deletes attachments from a feature
     /// </summary>
     public static async Task<IResult> DeleteAttachmentsAsync(
+        HttpContext context,
         int layerId,
         long featureId,
         long[] attachmentIds,
@@ -262,7 +266,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogDeleteAttachmentsError(logger, layerId, featureId, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to delete attachments");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to delete attachments");
         }
     }
 
@@ -270,6 +274,7 @@ internal static partial class AttachmentHandler
     /// Downloads attachment content
     /// </summary>
     public static async Task<IResult> DownloadAttachmentAsync(
+        HttpContext context,
         int layerId,
         long featureId,
         long attachmentId,
@@ -284,7 +289,7 @@ internal static partial class AttachmentHandler
             var attachmentContent = await attachmentStore.DownloadAsync(layerId, featureId, attachmentId, cancellationToken);
             if (attachmentContent == null)
             {
-                return GeoServicesErrorHelpers.CreateNotFoundError(
+                return StandardErrorHelpers.CreateNotFound(context,
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 
@@ -302,7 +307,7 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             LogDownloadAttachmentError(logger, layerId, featureId, attachmentId, ex);
-            return GeoServicesErrorHelpers.CreateInternalServerError("Failed to download attachment");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to download attachment");
         }
     }
 

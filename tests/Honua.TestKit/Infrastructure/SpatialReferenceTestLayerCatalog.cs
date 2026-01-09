@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -29,7 +30,7 @@ public sealed class SpatialReferenceTestLayerCatalog : ILayerCatalog
             new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
         };
 
-        var spatialReference = new SpatialReference(LayerSrid);
+        var spatialReference = SpatialReference.Create(LayerSrid);
 
         _layers =
         [

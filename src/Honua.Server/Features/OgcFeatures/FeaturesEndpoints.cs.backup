@@ -1,0 +1,127 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.Cql2;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Ogc.Common;
+using Honua.Server.Features.OgcFeatures.Models;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
+using NetTopologySuite;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using static Honua.Server.Features.OgcFeatures.OgcFeaturesUtilities;
+
+namespace Honua.Server.Features.OgcFeatures;
+
+/// <summary>
+/// Features/Items CRUD endpoints for OGC API Features
+/// </summary>
+/// <summary>
+/// Features/Items CRUD endpoints for OGC API Features
+/// </summary>
+internal static partial class FeaturesEndpoints
+{
+    private const string InvalidCqlFilterPrefix = "Invalid CQL filter";
+    private const string FilterLangCql2Text = "cql2-text";
+    private const string FilterLangCql2Json = "cql2-json";
+
+    /// <summary>
+    /// Maps features/items CRUD endpoints
+    /// </summary>
+    public static IEndpointRouteBuilder MapFeaturesEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var requireAuth = endpoints.ShouldRequirePublicReadAuth();
+
+        var items = endpoints.MapGet("/ogc/features/collections/{collectionId}/items", HandleGetItems)
+            .WithDisplayName("OGC API Features Items")
+            .WithName("ItemsList")
+            .WithSummary("Get features from a collection")
+            .WithDescription("Get features from a collection with optional filtering using CQL2-Text")
+            .WithTags("OGC API Features")
+            .Produces<FeatureCollection>(200, MediaTypes.GeoJson)
+            .Produces<FeatureCollection>(200, MediaTypes.Json)
+            .Produces<string>(200, MediaTypes.Gml)
+            .Produces<string>(200, MediaTypes.Html)
+            .Produces(400)
+            .Produces(404);
+        if (requireAuth)
+        {
+            items.RequireAuthorization();
+        }
+
+        var item = endpoints.MapGet("/ogc/features/collections/{collectionId}/items/{featureId}", HandleGetItemById)
+            .WithDisplayName("OGC API Features Item")
+            .WithName("ItemById")
+            .WithSummary("Get a feature by ID")
+            .WithDescription("Get a specific feature by its ID from a collection")
+            .WithTags("OGC API Features")
+            .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
+            .Produces<GeoJsonFeature>(200, MediaTypes.Json)
+            .Produces<string>(200, MediaTypes.Gml)
+            .Produces<string>(200, MediaTypes.Html)
+            .Produces(404)
+            .Produces(400);
+        if (requireAuth)
+        {
+            item.RequireAuthorization();
+        }
+
+        endpoints.MapPost("/ogc/features/collections/{collectionId}/items", HandleCreateItem)
+            .WithDisplayName("OGC API Features Create Item")
+            .WithName("CreateItem")
+            .WithSummary("Create a new feature")
+            .WithDescription("Add a new feature to the specified collection")
+            .WithTags("OGC API Features", "Transactions")
+            .Accepts<GeoJsonFeature>(MediaTypes.GeoJson)
+            .Produces<GeoJsonFeature>(201, MediaTypes.GeoJson)
+            .Produces(400)
+            .Produces(404)
+            .Produces(409)
+            .RequireAuthorization();
+
+        endpoints.MapPut("/ogc/features/collections/{collectionId}/items/{featureId}", HandleUpdateItem)
+            .WithDisplayName("OGC API Features Update Item")
+            .WithName("UpdateItem")
+            .WithSummary("Update a feature")
+            .WithDescription("Replace an existing feature with new data")
+            .WithTags("OGC API Features", "Transactions")
+            .Accepts<GeoJsonFeature>(MediaTypes.GeoJson)
+            .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
+            .Produces(201) // If feature didn't exist (upsert behavior)
+            .Produces(400)
+            .Produces(404)
+            .RequireAuthorization();
+
+        endpoints.MapDelete("/ogc/features/collections/{collectionId}/items/{featureId}", HandleDeleteItem)
+            .WithDisplayName("OGC API Features Delete Item")
+            .WithName("DeleteItem")
+            .WithSummary("Delete a feature")
+            .WithDescription("Remove a feature from the collection")
+            .WithTags("OGC API Features", "Transactions")
+            .Produces(204)
+            .Produces(404)
+            .RequireAuthorization();
+
+        return endpoints;
+    }
+}

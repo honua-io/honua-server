@@ -194,7 +194,7 @@ public static async Task<IResult> HandleGetItems(
 
     // 2. Validate query parameters
     var allowedParams = new HashSet<string> { "f", "bbox", "limit", "offset" };
-    var paramsResult = queryValidator.ValidateAllowedParameters(context.Request.Query, allowedParams);
+    var paramsResult = queryValidator.ValidateAllowedParameters(context.Request.Query.Keys, allowedParams);
     validationError = ValidationErrorHelpers.CreateErrorIfInvalid(
         paramsResult,
         error => ValidationErrorHelpers.CreateOgcValidationError("Invalid Parameter", error));

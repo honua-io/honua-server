@@ -5,6 +5,7 @@ using System.Net;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -17,12 +18,12 @@ namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 /// Integration tests for PerformanceMonitoringMiddleware.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Infrastructure)]
+[Protocol(Protocols.TestQuality)]
 public class PerformanceMonitoringMiddlewareTests
 {
 
     [IntegrationTest]
-    [Operation(Operations.Monitoring)]
+    [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /test-performance")]
     public async Task PerformanceMiddleware_ShouldTrackRequestMetrics()
     {
@@ -55,7 +56,7 @@ public class PerformanceMonitoringMiddlewareTests
     }
 
     [IntegrationTest]
-    [Operation(Operations.Monitoring)]
+    [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /test-slow")]
     public async Task PerformanceMiddleware_ShouldDetectSlowRequests()
     {
@@ -88,7 +89,7 @@ public class PerformanceMonitoringMiddlewareTests
     }
 
     [IntegrationTest]
-    [Operation(Operations.Monitoring)]
+    [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /test-error")]
     public async Task PerformanceMiddleware_ShouldTrackFailedRequests()
     {
@@ -117,7 +118,7 @@ public class PerformanceMonitoringMiddlewareTests
     }
 
     [IntegrationTest]
-    [Operation(Operations.Monitoring)]
+    [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /test-memory-tracking")]
     public async Task PerformanceMiddleware_WithMemoryTracking_ShouldSampleMemory()
     {
@@ -216,19 +217,4 @@ public class PerformanceMonitoringMiddlewareTests
         return app.GetTestClient();
     }
 
-    /// <summary>
-    /// Test protocols for the middleware tests.
-    /// </summary>
-    public static class Protocols
-    {
-        public const string Infrastructure = "Infrastructure";
-    }
-
-    /// <summary>
-    /// Test operations for the middleware tests.
-    /// </summary>
-    public static class Operations
-    {
-        public const string Monitoring = "Monitoring";
-    }
 }

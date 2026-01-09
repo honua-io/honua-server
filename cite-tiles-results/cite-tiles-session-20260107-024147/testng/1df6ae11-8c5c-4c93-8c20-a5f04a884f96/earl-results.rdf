@@ -1,0 +1,442 @@
+<rdf:RDF
+    xmlns:dct="http://purl.org/dc/terms/"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:http="http://www.w3.org/2011/http#"
+    xmlns:cnt="http://www.w3.org/2011/content#"
+    xmlns:earl="http://www.w3.org/ns/earl#"
+    xmlns:cite="http://cite.opengeospatial.org/">
+  <earl:Assertion rdf:about="assert-1">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy>
+      <earl:Assertor rdf:about="https://github.com/opengeospatial/teamengine">
+        <dct:title xml:lang="en">OGC TEAM Engine</dct:title>
+        <dct:description xml:lang="en">Official test harness of the OGC conformance testing program (CITE).</dct:description>
+      </earl:Assertor>
+    </earl:assertedBy>
+    <earl:subject>
+      <earl:TestSubject rdf:about="http://honua-server:8080/ogc/tiles"/>
+    </earl:subject>
+    <earl:result>
+      <earl:TestResult rdf:about="result-1">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:50.1Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test>
+      <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/core/MandatoryCore#validateSuccessfulTilesExecution">
+        <dct:title>validate Successful Tiles Execution </dct:title>
+        <dct:description>Implements Abstract test A.6, Requirement 5: /req/core/tc-success</dct:description>
+      </earl:TestCase>
+    </earl:test>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-5">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-5">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.404Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test>
+      <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTilesErrorConditions">
+        <dct:title>validate Tiles Error Conditions </dct:title>
+        <dct:description>Implements Abstract test A.7: /conf/core/tc-error, Requirement 6: /req/core/tc-error</dct:description>
+      </earl:TestCase>
+    </earl:test>
+  </earl:Assertion>
+  <cite:TestRun>
+    <cite:webDirPath></cite:webDirPath>
+    <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+    >0</cite:testsFailed>
+    <dct:title>ogcapi-tiles-1.0-1.2</dct:title>
+    <cite:inputs>
+      <rdf:Bag>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>mintilerow</dct:title>
+          <dct:description>0</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>tilematrix</dct:title>
+          <dct:description>0</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>tilematrixsetdefinitionuri</dct:title>
+          <dct:description>http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>urltemplatefortiles</dct:title>
+          <dct:description>http://honua-server:8080/ogc/tiles/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>iut</dct:title>
+          <dct:description>http://honua-server:8080/ogc/tiles</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>maxtilerow</dct:title>
+          <dct:description>0</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>mintilecol</dct:title>
+          <dct:description>0</dct:description>
+        </rdf:li>
+        <rdf:li rdf:parseType="Resource">
+          <dct:title>maxtilecol</dct:title>
+          <dct:description>0</dct:description>
+        </rdf:li>
+      </rdf:Bag>
+    </cite:inputs>
+    <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+    >0</cite:testsSkipped>
+    <cite:requirements>
+      <rdf:Seq>
+        <rdf:li>
+          <earl:TestRequirement rdf:about="Core">
+            <dct:title>Core</dct:title>
+            <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >3</cite:testsPassed>
+            <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsFailed>
+            <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsSkipped>
+            <dct:hasPart rdf:resource="org/opengis/cite/ogcapitiles10/core/MandatoryCore#validateSuccessfulTilesExecution"/>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/core/MandatoryCore#verifyErrorResponses">
+                <dct:title>verify Error Responses </dct:title>
+                <dct:description>Implements Abstract test A.7, Requirement 6: /req/core/tc-error</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/core/MandatoryCore#verifyMinimalConformance">
+                <dct:title>verify Minimal Conformance </dct:title>
+                <dct:description>Implements Abstract test A.2, Requirement 1: /req/core/tc-op</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+          </earl:TestRequirement>
+        </rdf:li>
+        <rdf:li>
+          <earl:TestRequirement rdf:about="Conditional-Core">
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTileColDefinitionIsAvailable">
+                <dct:title>validate Tile Col Definition Is Available </dct:title>
+                <dct:description>Implements Abstract test A.5, Requirement 4: /req/core/tc-tilecol-definition</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Conformance#validateConformanceOperationAndResponse">
+                <dct:title>validate Conformance Operation And Response </dct:title>
+                <dct:description>Implements Abstract test A.1, Requirement 7: /req/core/conformance-success</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Tile#validateSuccessfulTilesExecutionFollowingLinks">
+                <dct:title>validate Successful Tiles Execution Following Links </dct:title>
+                <dct:description>Implements Abstract test A.6, Requirement 5: /req/core/tc-success</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:title>Conditional Core</dct:title>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTileMatrixDefinitionIsAvailable">
+                <dct:title>validate Tile Matrix Definition Is Available </dct:title>
+                <dct:description>Implements Abstract test A.3, Requirement 2: /req/core/tc-tilematrix-definition</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsSkipped>
+            <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsFailed>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTileRowDefinitionIsAvailable">
+                <dct:title>validate Tile Row Definition Is Available </dct:title>
+                <dct:description>Implements Abstract test A.4, Requirement 3: /req/core/tc-tilerow-definition</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:hasPart rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTilesErrorConditions"/>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTilesAreAvailable">
+                <dct:title>validate Tiles Are Available </dct:title>
+                <dct:description>Implements Abstract test A.2, Requirement 1: /req/core/tc-op</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >7</cite:testsPassed>
+          </earl:TestRequirement>
+        </rdf:li>
+        <rdf:li>
+          <earl:TestRequirement rdf:about="OpenAPI-Specification-3.0">
+            <dct:title>OpenAPI Specification 3.0</dct:title>
+            <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >2</cite:testsPassed>
+            <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsFailed>
+            <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsSkipped>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/apidefinition/ApiDefinition#apiDefinitionOperationIdValidation">
+                <dct:title>api Definition Operation Id Validation </dct:title>
+                <dct:description>Implements Abstract test A.24, Requirement 23: /req/oas30/operation-id</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/apidefinition/ApiDefinition#apiDefinitionValidation">
+                <dct:title>api Definition Validation </dct:title>
+                <dct:description>Implements Abstract test A.23, Requirement 22: /req/oas30/completeness</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+          </earl:TestRequirement>
+        </rdf:li>
+        <rdf:li>
+          <earl:TestRequirement rdf:about="Tilesets-List">
+            <dct:title>Tilesets List</dct:title>
+            <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >1</cite:testsPassed>
+            <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsFailed>
+            <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsSkipped>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/tilesetslist/TilesetLlinks#validateTilesetsListResponse">
+                <dct:title>validate Tilesets List Response </dct:title>
+                <dct:description>Implements Abstract test A.9, addresses Requirement 10 (/req/tilesets-list/tileset-links)</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+          </earl:TestRequirement>
+        </rdf:li>
+        <rdf:li>
+          <earl:TestRequirement rdf:about="Dataset-Tilesets">
+            <dct:title>Dataset Tilesets</dct:title>
+            <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >1</cite:testsPassed>
+            <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsFailed>
+            <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsSkipped>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/datasettilesets/LandingPage#landingPageRetrieval">
+                <dct:title>landing Page Retrieval </dct:title>
+                <dct:description>Implements Abstract test A.10, addresses Requirement 11</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+          </earl:TestRequirement>
+        </rdf:li>
+        <rdf:li>
+          <earl:TestRequirement rdf:about="GeoData-Tilesets">
+            <dct:title>GeoData Tilesets</dct:title>
+            <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >2</cite:testsPassed>
+            <cite:testsFailed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsFailed>
+            <cite:testsSkipped rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+            >0</cite:testsSkipped>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/geodatatilesets/GeospatialDataResource#geospatialResourceTilesetsRetrieval">
+                <dct:title>geospatial Resource Tilesets Retrieval </dct:title>
+                <dct:description>Implements Abstract test A.13, addresses Requirement 14</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+            <dct:hasPart>
+              <earl:TestCase rdf:about="org/opengis/cite/ogcapitiles10/geodatatilesets/GeospatialDataResource#geospatialResourceTilesetsLinksCheck">
+                <dct:title>geospatial Resource Tilesets Links Check </dct:title>
+                <dct:description>Implements Abstract test A.12, addresses Requirement 13</dct:description>
+              </earl:TestCase>
+            </dct:hasPart>
+          </earl:TestRequirement>
+        </rdf:li>
+      </rdf:Seq>
+    </cite:requirements>
+    <cite:testSuiteType>testng</cite:testSuiteType>
+    <cite:areCoreConformanceClassesPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean"
+    >true</cite:areCoreConformanceClassesPassed>
+    <dct:created>2026-01-07T02:41:53.187842239Z</dct:created>
+    <dct:extent rdf:datatype="http://www.w3.org/2001/XMLSchema#duration"
+    >PT3.549S</dct:extent>
+    <cite:testsPassed rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+    >16</cite:testsPassed>
+    <dct:identifier>1df6ae11-8c5c-4c93-8c20-a5f04a884f96</dct:identifier>
+  </cite:TestRun>
+  <earl:Assertion rdf:about="assert-9">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-9">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.019Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Tile#validateSuccessfulTilesExecutionFollowingLinks"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-13">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-13">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.956Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/tilesetslist/TilesetLlinks#validateTilesetsListResponse"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-2">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-2">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:50.108Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/core/MandatoryCore#verifyErrorResponses"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-6">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-6">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:51.776Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Conformance#validateConformanceOperationAndResponse"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-10">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-10">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.259Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTileRowDefinitionIsAvailable"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-14">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-14">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.989Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/datasettilesets/LandingPage#landingPageRetrieval"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-3">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-3">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:50.113Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/core/MandatoryCore#verifyMinimalConformance"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-7">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-7">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.18Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTileMatrixDefinitionIsAvailable"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-11">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-11">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.78Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/apidefinition/ApiDefinition#apiDefinitionOperationIdValidation"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-15">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-15">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:53.175Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/geodatatilesets/GeospatialDataResource#geospatialResourceTilesetsRetrieval"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-4">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-4">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.331Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTilesAreAvailable"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-12">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-12">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.843Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/apidefinition/ApiDefinition#apiDefinitionValidation"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-8">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-8">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:52.103Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/conformance/Tile#validateTileColDefinitionIsAvailable"/>
+  </earl:Assertion>
+  <earl:Assertion rdf:about="assert-16">
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+    <earl:assertedBy rdf:resource="https://github.com/opengeospatial/teamengine"/>
+    <earl:subject rdf:resource="http://honua-server:8080/ogc/tiles"/>
+    <earl:result>
+      <earl:TestResult rdf:about="result-16">
+        <dct:date rdf:datatype="http://www.w3.org/2001/XMLSchema#dateTime"
+        >2026-01-07T02:41:53.09Z</dct:date>
+        <earl:outcome rdf:resource="http://www.w3.org/ns/earl#passed"/>
+      </earl:TestResult>
+    </earl:result>
+    <earl:test rdf:resource="org/opengis/cite/ogcapitiles10/geodatatilesets/GeospatialDataResource#geospatialResourceTilesetsLinksCheck"/>
+  </earl:Assertion>
+</rdf:RDF>

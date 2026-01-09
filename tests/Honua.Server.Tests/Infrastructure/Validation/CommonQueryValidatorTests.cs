@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Core.Features.Validation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
@@ -107,7 +107,14 @@ public class CommonQueryValidatorTests
         else
         {
             result.ErrorMessage.Should().NotBeNullOrEmpty();
-            result.ErrorMessage.Should().Contain("testSRID");
+            if (srid == "abc")
+            {
+                result.ErrorMessage.Should().Contain("testSRID");
+            }
+            else
+            {
+                result.ErrorMessage.Should().Contain("SRID must be between 0 and 999,999");
+            }
         }
     }
 
@@ -123,7 +130,7 @@ public class CommonQueryValidatorTests
         var allowedParams = new HashSet<string> { "f", "bbox", "limit", "offset" };
 
         // Act
-        var result = _validator.ValidateAllowedParameters(queryCollection, allowedParams);
+        var result = _validator.ValidateAllowedParameters(queryCollection.Keys.ToArray(), allowedParams);
 
         // Assert
         result.IsValid.Should().BeTrue();
@@ -141,7 +148,7 @@ public class CommonQueryValidatorTests
         var allowedParams = new HashSet<string> { "f", "bbox", "limit", "offset" };
 
         // Act
-        var result = _validator.ValidateAllowedParameters(queryCollection, allowedParams);
+        var result = _validator.ValidateAllowedParameters(queryCollection.Keys.ToArray(), allowedParams);
 
         // Assert
         result.IsValid.Should().BeFalse();

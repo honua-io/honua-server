@@ -34,6 +34,56 @@ public readonly record struct SpatialReference
     public string? Wkt { get; init; }
 
     /// <summary>
+    /// Alias for Wkid to maintain backward compatibility
+    /// </summary>
+    public int Srid => Wkid;
+
+    /// <summary>
+    /// Alias for Wkt to maintain backward compatibility
+    /// </summary>
+    public string? WellKnownText => Wkt;
+
+    /// <summary>
+    /// WGS84 Geographic coordinate system (EPSG:4326)
+    /// Most commonly used for web mapping and GPS coordinates
+    /// </summary>
+    public static readonly SpatialReference WGS84 = new()
+    {
+        Wkid = 4326,
+        Wkt = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]"
+    };
+
+    /// <summary>
+    /// Web Mercator projection (EPSG:3857)
+    /// Used by most web mapping services (Google Maps, OpenStreetMap)
+    /// </summary>
+    public static readonly SpatialReference WebMercator = new()
+    {
+        Wkid = 3857,
+        Wkt = "PROJCS[\"WGS 84 / Pseudo-Mercator\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Mercator_1SP\"],PARAMETER[\"central_meridian\",0],PARAMETER[\"scale_factor\",1],PARAMETER[\"false_easting\",0],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1]]"
+    };
+
+    /// <summary>
+    /// Display name for the spatial reference system
+    /// </summary>
+    public readonly string DisplayName => Wkid switch
+    {
+        4326 => "WGS 84 (Geographic)",
+        3857 => "WGS 84 / Web Mercator",
+        _ => $"EPSG:{Wkid}"
+    };
+
+    /// <summary>
+    /// Whether this is a geographic (lat/lon) coordinate system
+    /// </summary>
+    public readonly bool IsGeographic => Wkid == 4326 || (Wkt?.Contains("GEOGCS") == true);
+
+    /// <summary>
+    /// Whether this is a projected coordinate system
+    /// </summary>
+    public readonly bool IsProjected => !IsGeographic;
+
+    /// <summary>
     /// Creates a spatial reference with only WKID
     /// </summary>
     /// <param name="wkid">Well-Known ID (EPSG code)</param>

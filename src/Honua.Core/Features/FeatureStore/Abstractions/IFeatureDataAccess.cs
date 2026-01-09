@@ -27,6 +27,11 @@ internal interface IFeatureDataAccess
     Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes a related records query and returns matching features
+    /// </summary>
+    Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Creates a single feature
     /// </summary>
     Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken);
@@ -49,7 +54,11 @@ internal interface IFeatureDataAccess
     /// <summary>
     /// Calculates feature extent
     /// </summary>
-    Task<FeatureExtent?> GetExtentAsync(int layerId, ParameterizedQuery? query, CancellationToken cancellationToken);
+    Task<FeatureExtent?> GetExtentAsync(
+        int layerId,
+        ParameterizedQuery? query,
+        FeatureQuery featureQuery,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Generates MVT tile data
@@ -59,12 +68,12 @@ internal interface IFeatureDataAccess
     /// <summary>
     /// Streams features for large result sets
     /// </summary>
-    IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken);
+    IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, CancellationToken cancellationToken);
 
     /// <summary>
     /// Streams GML features for large result sets
     /// </summary>
-    IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken);
+    IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, CancellationToken cancellationToken);
 
     /// <summary>
     /// Processes batch edits with transaction support

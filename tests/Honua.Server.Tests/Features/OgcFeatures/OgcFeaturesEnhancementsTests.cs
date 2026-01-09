@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.OgcFeatures;
 /// </summary>
 [Collection("Database")]
 [Protocol(Protocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
 public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

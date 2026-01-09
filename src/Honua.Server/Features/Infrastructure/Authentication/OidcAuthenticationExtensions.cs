@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
@@ -57,6 +58,8 @@ public static class OidcAuthenticationExtensions
         {
             return services;
         }
+
+        ResolveOidcSecrets(oidcOptions);
 
         // Disable automatic claim type mapping to preserve original claim names
         JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
@@ -136,48 +139,96 @@ public static class OidcAuthenticationExtensions
         // Update the admin policy to accept OIDC-authenticated users with admin roles
         services.PostConfigure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(authzOptions =>
         {
-            // Remove existing Admin policy if present
-            var existingPolicy = authzOptions.GetPolicy(AuthenticationExtensions.AdminPolicy);
-            if (existingPolicy != null)
-            {
-                // Recreate with OIDC support
-                authzOptions.AddPolicy(AuthenticationExtensions.AdminPolicy, policy =>
-                {
-                    policy.RequireAuthenticatedUser();
+            var schemes = BuildSchemes(oidcOptions);
+            var adminRoles = BuildRoleSet(oidcOptions.AdminRoles, "admin", "administrator", "Administrator");
 
-                    // Accept admin role from any authentication scheme
-                    policy.RequireAssertion(context =>
-                    {
-                        // Check for admin role claim
-                        var hasAdminRole = context.User.IsInRole("admin") ||
-                            oidcOptions.AdminRoles.Any(role => context.User.IsInRole(role));
+            UpdateRolePolicy(
+                authzOptions,
+                AuthenticationExtensions.AdminPolicy,
+                adminRoles,
+                schemes);
 
-                        return hasAdminRole;
-                    });
-
-                    // Add all authentication schemes
-                    policy.AuthenticationSchemes.Add(AuthenticationExtensions.ApiKeyScheme);
-                    policy.AuthenticationSchemes.Add(JwtBearerScheme);
-
-                    if (oidcOptions.AzureAd?.IsValid == true)
-                    {
-                        policy.AuthenticationSchemes.Add(AzureAdScheme);
-                    }
-
-                    if (oidcOptions.Google?.IsValid == true)
-                    {
-                        policy.AuthenticationSchemes.Add(GoogleScheme);
-                    }
-
-                    if (oidcOptions.Generic?.IsValid == true)
-                    {
-                        policy.AuthenticationSchemes.Add(OidcScheme);
-                    }
-                });
-            }
+            UpdateRolePolicy(
+                authzOptions,
+                AuthenticationExtensions.AdminPolicyAlias,
+                adminRoles,
+                schemes);
         });
 
         return services;
+    }
+
+    private static List<string> BuildSchemes(OidcAuthenticationOptions oidcOptions)
+    {
+        var schemes = new List<string>
+        {
+            AuthenticationExtensions.ApiKeyScheme,
+            JwtBearerScheme
+        };
+
+        if (oidcOptions.AzureAd?.IsValid == true)
+        {
+            schemes.Add(AzureAdScheme);
+        }
+
+        if (oidcOptions.Google?.IsValid == true)
+        {
+            schemes.Add(GoogleScheme);
+        }
+
+        if (oidcOptions.Generic?.IsValid == true)
+        {
+            schemes.Add(OidcScheme);
+        }
+
+        return schemes;
+    }
+
+    private static HashSet<string> BuildRoleSet(IEnumerable<string> roles, params string[] additionalRoles)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var role in roles)
+        {
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                set.Add(role.Trim());
+            }
+        }
+
+        foreach (var role in additionalRoles)
+        {
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                set.Add(role.Trim());
+            }
+        }
+
+        return set;
+    }
+
+    private static void UpdateRolePolicy(
+        Microsoft.AspNetCore.Authorization.AuthorizationOptions authzOptions,
+        string policyName,
+        IReadOnlyCollection<string> roles,
+        IReadOnlyCollection<string> schemes)
+    {
+        var existingPolicy = authzOptions.GetPolicy(policyName);
+        if (existingPolicy == null)
+        {
+            return;
+        }
+
+        authzOptions.AddPolicy(policyName, policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireAssertion(context => roles.Any(role => context.User.IsInRole(role)));
+
+            foreach (var scheme in schemes)
+            {
+                policy.AuthenticationSchemes.Add(scheme);
+            }
+        });
     }
 
     private static bool HasAnyProviderEnabled(OidcAuthenticationOptions options)
@@ -301,10 +352,108 @@ public static class OidcAuthenticationExtensions
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
                     var userId = context.Principal?.FindFirst(oidcOptions.ClaimsMapping.UserIdClaimType)?.Value ?? "unknown";
                     OidcAuthenticationLog.JwtTokenValidated(logger, userId);
+
+                    if (oidcOptions.TokenValidation.EnableTokenReplayProtection)
+                    {
+                        var cache = context.HttpContext.RequestServices.GetService<IMemoryCache>();
+                        var tokenKey = TryGetTokenReplayKey(context.SecurityToken);
+                        if (cache != null && !string.IsNullOrWhiteSpace(tokenKey) && context.SecurityToken is JwtSecurityToken jwtToken)
+                        {
+                            if (cache.TryGetValue(tokenKey, out _))
+                            {
+                                OidcAuthenticationLog.TokenReplayDetected(logger, userId);
+                                context.Fail("Token replay detected");
+                                return Task.CompletedTask;
+                            }
+
+                            var expiresOn = GetReplayCacheExpiration(jwtToken, oidcOptions.TokenValidation);
+                            cache.Set(tokenKey, true, new MemoryCacheEntryOptions
+                            {
+                                AbsoluteExpiration = expiresOn
+                            });
+                        }
+                    }
+
                     return Task.CompletedTask;
                 }
             };
         });
+    }
+
+    private static void ResolveOidcSecrets(OidcAuthenticationOptions options)
+    {
+        options.AzureAd?.ClientSecret = ResolveSecretReference(options.AzureAd?.ClientSecret, "Oidc:AzureAd:ClientSecret");
+        options.Google?.ClientSecret = ResolveSecretReference(options.Google?.ClientSecret, "Oidc:Google:ClientSecret");
+        options.Generic?.ClientSecret = ResolveSecretReference(options.Generic?.ClientSecret, "Oidc:Generic:ClientSecret");
+    }
+
+    private static string? ResolveSecretReference(string? value, string settingName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        if (!value.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+        {
+            return value;
+        }
+
+        var envVar = value[4..].Trim();
+        if (string.IsNullOrWhiteSpace(envVar))
+        {
+            throw new InvalidOperationException($"Invalid secret reference for {settingName}. Expected env:VARIABLE_NAME.");
+        }
+
+        var resolved = Environment.GetEnvironmentVariable(envVar);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            throw new InvalidOperationException($"Environment variable '{envVar}' is not set for {settingName}.");
+        }
+
+        return resolved;
+    }
+
+    private static string? TryGetTokenReplayKey(SecurityToken token)
+    {
+        if (token is JwtSecurityToken jwtToken)
+        {
+            if (!string.IsNullOrWhiteSpace(jwtToken.Id))
+            {
+                return $"jti:{jwtToken.Id}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(jwtToken.RawData))
+            {
+                return $"raw:{jwtToken.RawData}";
+            }
+        }
+
+        return null;
+    }
+
+    private static DateTime GetReplayCacheExpiration(JwtSecurityToken token, TokenValidationOptions options)
+    {
+        var now = DateTime.UtcNow;
+        var expires = token.ValidTo == DateTime.MinValue
+            ? now
+            : token.ValidTo.ToUniversalTime();
+
+        if (options.TokenReplayCacheDuration > TimeSpan.Zero)
+        {
+            var maxExpiration = now.Add(options.TokenReplayCacheDuration);
+            if (expires == DateTime.MinValue || expires > maxExpiration)
+            {
+                expires = maxExpiration;
+            }
+        }
+
+        if (expires <= now)
+        {
+            expires = now.AddMinutes(5);
+        }
+
+        return expires;
     }
 
     private static void ConfigureAzureAdAuthentication(

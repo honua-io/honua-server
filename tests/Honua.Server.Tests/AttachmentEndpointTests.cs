@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -30,14 +31,14 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        var storagePath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
-        await AttachmentTestData.SeedAsync(_fixture.Postgres, TestLayerId, TestFeatureId, storagePath);
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
     }
 
     public async Task DisposeAsync()
     {
-        var storagePath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
-        await AttachmentTestData.CleanupAsync(_fixture.Postgres, TestLayerId, TestFeatureId, storagePath);
+        var storage = _fixture.GetService<ICloudFileStorage>();
+        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
         await _fixture.DisposeAsync();
     }
 
@@ -307,7 +308,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
-    public async Task AddAttachment_FileTooLarge_Returns400()
+    public async Task AddAttachment_FileTooLarge_Returns413()
     {
         // Arrange - Create a 15MB file (larger than default 10MB limit)
         var largeContent = new byte[15 * 1024 * 1024];
@@ -322,7 +323,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment", form);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.RequestEntityTooLarge);
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("exceeds maximum allowed size");

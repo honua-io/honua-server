@@ -1,0 +1,31 @@
+<rdf:RDF
+    xmlns:dct="http://purl.org/dc/terms/"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:http="http://www.w3.org/2011/http#"
+    xmlns:cnt="http://www.w3.org/2011/content#"
+    xmlns:earl="http://www.w3.org/ns/earl#"
+    xmlns:cite="http://cite.opengeospatial.org/">
+  <earl:Assertion rdf:about="assert-1">
+    <earl:subject>
+      <earl:TestSubject rdf:about=""/>
+    </earl:subject>
+    <earl:assertedBy>
+      <earl:Assertor rdf:about="https://github.com/opengeospatial/teamengine">
+        <dct:description xml:lang="en">Official test harness of the OGC conformance testing program (CITE).</dct:description>
+        <dct:title xml:lang="en">OGC TEAM Engine</dct:title>
+      </earl:Assertor>
+    </earl:assertedBy>
+    <earl:mode rdf:resource="http://www.w3.org/ns/earl#automatic"/>
+  </earl:Assertion>
+  <earl:TestResult rdf:about="result-1">
+    <earl:outcome rdf:resource="http://www.w3.org/ns/earl#failed"/>
+    <dct:description>Required test run parameter not found: iut</dct:description>
+  </earl:TestResult>
+  <cite:TestRun>
+    <cite:inputs>
+      <rdf:Bag/>
+    </cite:inputs>
+    <dct:created>2025-12-31T09:45:21.372405331Z</dct:created>
+    <dct:title>Default Suite</dct:title>
+  </cite:TestRun>
+</rdf:RDF>

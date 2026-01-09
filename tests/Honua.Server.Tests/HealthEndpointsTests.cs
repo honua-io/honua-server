@@ -5,6 +5,7 @@ using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,7 +15,7 @@ namespace Honua.Server.Tests;
 /// Tests for health check endpoints (/healthz/live, /healthz/ready)
 /// Validates Kubernetes-compatible health checks with PostgreSQL connectivity
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.Health)]
 public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly WebApplicationFactory<Program> _factory;
@@ -27,7 +28,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.LivenessCheck)]
     [Endpoint("GET /healthz/live")]
     public async Task LivenessProbe_Always_Returns200AndHealthy()
     {
@@ -43,7 +44,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.ReadinessCheck)]
     [Endpoint("GET /healthz/ready")]
     public async Task ReadinessProbe_WithHealthyDatabase_Returns200AndReady()
     {
@@ -71,7 +72,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.ReadinessCheck)]
     [Endpoint("GET /healthz/ready")]
     public async Task ReadinessProbe_WithUnhealthyDatabase_Returns503()
     {
@@ -103,8 +104,11 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     [InlineData("PUT")]
     [InlineData("DELETE")]
     [InlineData("PATCH")]
-    [Operation("HealthCheck")]
-    [Endpoint("* /healthz/live")]
+    [Operation(Operations.LivenessCheck)]
+    [Endpoint("POST /healthz/live")]
+    [Endpoint("PUT /healthz/live")]
+    [Endpoint("DELETE /healthz/live")]
+    [Endpoint("PATCH /healthz/live")]
     public async Task LivenessProbe_WithNonGetMethod_Returns405(string method)
     {
         // Arrange
@@ -122,8 +126,11 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     [InlineData("PUT")]
     [InlineData("DELETE")]
     [InlineData("PATCH")]
-    [Operation("HealthCheck")]
-    [Endpoint("* /healthz/ready")]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("POST /healthz/ready")]
+    [Endpoint("PUT /healthz/ready")]
+    [Endpoint("DELETE /healthz/ready")]
+    [Endpoint("PATCH /healthz/ready")]
     public async Task ReadinessProbe_WithNonGetMethod_Returns405(string method)
     {
         // Arrange
@@ -137,7 +144,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.LivenessCheck)]
     [Endpoint("GET /healthz/live")]
     public async Task LivenessProbe_ResponseTime_IsUnder200Ms()
     {
@@ -155,7 +162,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.ReadinessCheck)]
     [Endpoint("GET /healthz/ready")]
     public async Task ReadinessProbe_WithHealthyDatabase_ResponseTime_IsUnder200Ms()
     {
@@ -183,7 +190,9 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /healthz/ready")]
     public async Task HealthEndpoints_AreRegistered()
     {
         // Test that endpoints are properly registered by checking they don't return 404

@@ -10,6 +10,7 @@ export default defineConfig({
     include: ['**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
     reporters: ['verbose'],
+    globalSetup: ['./vitest.global.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -18,11 +19,5 @@ export default defineConfig({
     // Sequential by default for database-backed tests
     pool: 'forks',
     fileParallelism: false,
-    // Environment variables for test configuration
-    env: {
-      HONUA_BASE_URL: process.env.HONUA_BASE_URL || 'http://localhost:5555',
-      HONUA_SERVICE_ID: process.env.HONUA_SERVICE_ID || 'test_service_gw0',
-      HONUA_LAYER_ID: process.env.HONUA_LAYER_ID || '1000',
-    },
   },
 });

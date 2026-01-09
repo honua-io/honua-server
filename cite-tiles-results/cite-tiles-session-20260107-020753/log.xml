@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log mode="0">
+   <starttest defaultResult="1"
+              file="/root/te_base/work/_root_te_base_scripts_ogcapi-tiles-1.0_1.0_ctl_ogcapi-tiles-1.0-suite.ctl/tns$Main.test"
+              local-name="Main"
+              namespace-uri="http://www.opengis.net/cite/ogcapi-tiles-1.0"
+              path="cite-tiles-session-20260107-020753"
+              prefix="tns"
+              type="Mandatory">
+      <assertion>The test subject satisfies all applicable constraints.</assertion>
+      <params/>
+   </starttest>
+   <formresults id="d68e46_1">
+      <values xmlns:parsers="http://www.occamlab.com/te/parsers">
+         <parsers:session>
+            <parsers:test>ets-ogcapi-tiles10</parsers:test>
+            <parsers:profile>full</parsers:profile>
+         </parsers:session>
+         <value key="tilematrixsetdefinitionuri">http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad</value>
+         <value key="urltemplatefortiles">http://honua-server:8080/ogc/tiles/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}</value>
+         <value key="tilematrix">0</value>
+         <value key="mintilerow">0</value>
+         <value key="maxtilerow">0</value>
+         <value key="mintilecol">0</value>
+         <value key="maxtilecol">0</value>
+         <value key="ogc-api-tiles-uri">http://honua-server:8080/ogc/tiles</value>
+         <value key="collectionsLimit">limited</value>
+         <value key="noOfCollections">1</value>
+      </values>
+   </formresults>
+   <message id="d68e289_1">Test suite: ogcapi-tiles-1.0-1.2
+======== Test groups ========
+Core
+    Passed: 3 | Failed: 0 | Skipped: 0
+Conditional Core
+    Passed: 4 | Failed: 3 | Skipped: 0
+OpenAPI Specification 3.0
+    Passed: 1 | Failed: 1 | Skipped: 0
+Tilesets List
+    Passed: 1 | Failed: 0 | Skipped: 0
+Dataset Tilesets
+    Passed: 1 | Failed: 0 | Skipped: 0
+GeoData Tilesets
+    Passed: 2 | Failed: 0 | Skipped: 0
+
+
+        See detailed test report in the TE_BASE/users/
+        cite/logs/cite-tiles-session-20260107-020753/html/
+        directory.
+      </message>
+   <message id="d68e300_1">
+            Test methodvalidateSuccessfulTilesExecutionFollowingLinks:
+            
+              Cannot invoke "Object.toString()" because the return value of "java.util.Map.get(Object)" is null
+            </message>
+   <message id="d68e300_2">
+            Test methodvalidateTilesAreAvailable:
+            
+              Cannot invoke "Object.toString()" because the return value of "java.util.Map.get(Object)" is null
+            </message>
+   <message id="d68e300_3">
+            Test methodvalidateTilesErrorConditions:
+            
+              Cannot invoke "Object.toString()" because the return value of "java.util.Map.get(Object)" is null
+            </message>
+   <message id="d68e300_4">
+            Test methodapiDefinitionOperationIdValidation:
+            
+              None of the operationIDs matched those specified by Requirement /req/oas30/operation-id and Table 11
+            </message>
+   <endtest result="6"/>
+</log>

@@ -11,6 +11,7 @@ namespace Honua.Server.Tests.Features.FeatureServer;
 
 [Collection("Database")]
 [Protocol(Protocols.FeatureServer)]
+[Operation(Operations.GetTile)]
 public class MvtTileEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

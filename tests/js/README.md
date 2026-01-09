@@ -56,6 +56,16 @@ cd tests/js
 npm install
 ```
 
+### Automatic Test Server (Default)
+
+If `HONUA_BASE_URL` points to a healthy server (`/healthz/live` returns 200), the tests use it. Otherwise Vitest will bootstrap a local stack by running `tests/python/shared/js_test_server.py`, which:
+
+- Starts a PostGIS container (Docker required)
+- Seeds the catalog and test features
+- Launches the Honua server and exports runtime IDs
+
+The bootstrap uses `.venv-tests/bin/python` when available, otherwise `python3`. You can control the port and startup timeout via `HONUA_TEST_PORT` and `HONUA_TEST_TIMEOUT` if needed.
+
 ### Environment Variables
 
 ```bash

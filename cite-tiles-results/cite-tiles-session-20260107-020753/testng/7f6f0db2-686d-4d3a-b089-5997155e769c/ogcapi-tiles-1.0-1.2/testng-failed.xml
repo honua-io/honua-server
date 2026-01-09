@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite configfailurepolicy="continue" name="Failed suite [ogcapi-tiles-1.0-1.2]" guice-stage="DEVELOPMENT" verbose="0">
+  <parameter name="mintilerow" value="0"/>
+  <parameter name="tilematrix" value="0"/>
+  <parameter name="tilematrixsetdefinitionuri" value="http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad"/>
+  <parameter name="urltemplatefortiles" value="http://honua-server:8080/ogc/tiles/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}"/>
+  <parameter name="iut" value="http://honua-server:8080/ogc/tiles"/>
+  <parameter name="maxtilerow" value="0"/>
+  <parameter name="mintilecol" value="0"/>
+  <parameter name="uuid" value="7f6f0db2-686d-4d3a-b089-5997155e769c"/>
+  <parameter name="maxtilecol" value="0"/>
+  <listeners>
+    <listener class-name="org.opengis.cite.ogcapitiles10.TestRunListener"/>
+    <listener class-name="org.opengis.cite.ogcapitiles10.SuiteFixtureListener"/>
+    <listener class-name="org.opengis.cite.ogcapitiles10.TestFailureListener"/>
+  </listeners>
+  <test thread-count="5" name="Conditional Core(failed)" verbose="0">
+    <classes>
+      <class name="org.opengis.cite.ogcapitiles10.conformance.Tile">
+        <methods>
+          <include name="initCommonFixture"/>
+          <include name="validateTilesAreAvailable"/>
+          <include name="validateSuccessfulTilesExecutionFollowingLinks"/>
+          <include name="clearMessages"/>
+          <include name="validateTilesErrorConditions"/>
+        </methods>
+      </class> <!-- org.opengis.cite.ogcapitiles10.conformance.Tile -->
+    </classes>
+  </test> <!-- Conditional Core(failed) -->
+  <test thread-count="5" name="OpenAPI Specification 3.0(failed)" verbose="0">
+    <classes>
+      <class name="org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition">
+        <methods>
+          <include name="initCommonFixture"/>
+          <include name="retrieveApiUrl"/>
+          <include name="clearMessages"/>
+          <include name="openapiDocumentRetrieval"/>
+          <include name="apiDefinitionOperationIdValidation" invocation-numbers="0"/>
+        </methods>
+      </class> <!-- org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition -->
+    </classes>
+  </test> <!-- OpenAPI Specification 3.0(failed) -->
+</suite> <!-- Failed suite [ogcapi-tiles-1.0-1.2] -->

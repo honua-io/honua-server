@@ -376,7 +376,7 @@ public static class HonuaTelemetry
 
         var category = allocationBytes switch
         {
-            < 1024 => "small",           // < 1KB
+            <= 1024 => "small",          // <= 1KB
             < 1024 * 1024 => "medium",  // < 1MB
             < 10 * 1024 * 1024 => "large", // < 10MB
             _ => "xlarge"                // >= 10MB

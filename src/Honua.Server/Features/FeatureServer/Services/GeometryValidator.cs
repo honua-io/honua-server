@@ -5,12 +5,10 @@ using System.Collections.Immutable;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using Npgsql;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -18,22 +16,22 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// Implements three-layer geometry validation and repair.
 /// Layer 1: Esri JSON input validation
 /// Layer 2: WKB structure validation
-/// Layer 3: PostGIS topology validation
+/// Layer 3: Topology validation via configured backend
 /// </summary>
 internal sealed partial class GeometryValidator : IGeometryValidator
 {
     private readonly GeometryValidationOptions _options;
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IGeometryTopologyValidator _topologyValidator;
     private readonly ILogger<GeometryValidator> _logger;
     private readonly WKBReader _wkbReader = new();
 
     public GeometryValidator(
         IOptions<LimitsOptions> limitsOptions,
-        IDatabaseConnectionProvider connectionProvider,
+        IGeometryTopologyValidator topologyValidator,
         ILogger<GeometryValidator> logger)
     {
         _options = limitsOptions?.Value?.Validation ?? new GeometryValidationOptions();
-        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _topologyValidator = topologyValidator ?? throw new ArgumentNullException(nameof(topologyValidator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -182,30 +180,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
 
         try
         {
-            await using var connection = await _connectionProvider.OpenConnectionAsync(cts.Token);
-
-            // Check if geometry is valid using PostGIS ST_IsValid
-            await using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT ST_IsValid($1::geometry), ST_IsValidReason($1::geometry)";
-            cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
-
-            await using var reader = await cmd.ExecuteReaderAsync(cts.Token);
-
-            if (await reader.ReadAsync(cts.Token))
-            {
-                var isValid = reader.GetBoolean(0);
-                var reason = reader.IsDBNull(1) ? null : reader.GetString(1);
-
-                if (isValid)
-                {
-                    return GeometryValidationResult.Success();
-                }
-
-                var errorCode = MapPostGisReasonToErrorCode(reason);
-                return GeometryValidationResult.Failure(errorCode, reason ?? "Geometry is topologically invalid");
-            }
-
-            return GeometryValidationResult.Success();
+            return await _topologyValidator.ValidateTopologyAsync(wkb, cts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -235,75 +210,13 @@ internal sealed partial class GeometryValidator : IGeometryValidator
 
         try
         {
-            await using var connection = await _connectionProvider.OpenConnectionAsync(cts.Token);
-
-            // First get the validation reason
-            string? originalReason = null;
-            await using (var reasonCmd = connection.CreateCommand())
+            var repairResult = await _topologyValidator.RepairAsync(wkb, cts.Token).ConfigureAwait(false);
+            if (repairResult.Success)
             {
-                reasonCmd.CommandText = "SELECT ST_IsValidReason($1::geometry)";
-                reasonCmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
-                var result = await reasonCmd.ExecuteScalarAsync(cts.Token);
-                originalReason = result as string;
+                LogGeometryRepaired(_logger, repairResult.OriginalValidationReason);
             }
 
-            // Apply ST_MakeValid to repair
-            await using var cmd = connection.CreateCommand();
-            cmd.CommandText = @"
-                SELECT
-                    ST_AsBinary(repaired),
-                    ST_GeometryType(repaired),
-                    ST_GeometryType($1::geometry) as original_type,
-                    ST_IsEmpty(repaired)
-                FROM (SELECT ST_MakeValid($1::geometry) as repaired) sub";
-            cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
-
-            await using var reader = await cmd.ExecuteReaderAsync(cts.Token);
-
-            if (await reader.ReadAsync(cts.Token))
-            {
-                var isEmpty = reader.GetBoolean(3);
-                if (isEmpty)
-                {
-                    return GeometryRepairResult.Failed(
-                        "Repair resulted in empty geometry",
-                        originalReason);
-                }
-
-                var repairedWkb = reader.IsDBNull(0) ? null : (byte[])reader[0];
-                if (repairedWkb == null)
-                {
-                    return GeometryRepairResult.Failed("Repair produced null result", originalReason);
-                }
-
-                var repairedType = reader.GetString(1);
-                var originalType = reader.GetString(2);
-                var typeChanged = !string.Equals(repairedType, originalType, StringComparison.OrdinalIgnoreCase);
-
-                var repairs = new List<string>();
-                if (originalReason != null && !originalReason.StartsWith("Valid Geometry", StringComparison.OrdinalIgnoreCase))
-                {
-                    repairs.Add($"Fixed: {originalReason}");
-                }
-
-                if (typeChanged)
-                {
-                    repairs.Add($"Geometry type changed from {originalType} to {repairedType}");
-                }
-
-                LogGeometryRepaired(_logger, originalReason);
-
-                return new GeometryRepairResult
-                {
-                    Success = true,
-                    RepairedWkb = repairedWkb,
-                    RepairsApplied = repairs.ToImmutableList(),
-                    OriginalValidationReason = originalReason,
-                    GeometryTypeChanged = typeChanged
-                };
-            }
-
-            return GeometryRepairResult.Failed("No result from repair operation", originalReason);
+            return repairResult;
         }
         catch (OperationCanceledException)
         {
@@ -583,25 +496,6 @@ internal sealed partial class GeometryValidator : IGeometryValidator
             GeometryCollection collection => Enumerable.Range(0, collection.NumGeometries)
                 .Sum(i => CountRings(collection.GetGeometryN(i))),
             _ => 0
-        };
-    }
-
-    private static ValidationErrorCode MapPostGisReasonToErrorCode(string? reason)
-    {
-        if (string.IsNullOrEmpty(reason))
-        {
-            return ValidationErrorCode.InvalidTopology;
-        }
-
-        return reason.ToUpperInvariant() switch
-        {
-            var r when r.Contains("SELF-INTERSECTION") => ValidationErrorCode.SelfIntersection,
-            var r when r.Contains("DUPLICATE") => ValidationErrorCode.DuplicatePoints,
-            var r when r.Contains("RING") && r.Contains("ORIENT") => ValidationErrorCode.IncorrectOrientation,
-            var r when r.Contains("HOLE") && r.Contains("OUTSIDE") => ValidationErrorCode.HoleOutsideShell,
-            var r when r.Contains("NESTED") => ValidationErrorCode.NestedHoles,
-            var r when r.Contains("DISCONNECT") => ValidationErrorCode.DisconnectedInterior,
-            _ => ValidationErrorCode.InvalidTopology
         };
     }
 

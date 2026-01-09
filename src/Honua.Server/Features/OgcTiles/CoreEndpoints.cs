@@ -3,9 +3,10 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
-using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -17,7 +18,7 @@ internal static class CoreEndpoints
 
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/ogc/tiles", HandleGetLandingPage)
+        var landing = endpoints.MapGet("/ogc/tiles", HandleGetLandingPage)
             .WithDisplayName("OGC API Tiles Landing Page")
             .WithName("OgcTilesLandingPage")
             .WithSummary("Get OGC API Tiles landing page")
@@ -27,7 +28,7 @@ internal static class CoreEndpoints
             .Produces<LandingPage>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        endpoints.MapGet("/ogc/tiles/conformance", HandleGetConformance)
+        var conformance = endpoints.MapGet("/ogc/tiles/conformance", HandleGetConformance)
             .WithDisplayName("OGC API Tiles Conformance")
             .WithName("OgcTilesConformance")
             .WithSummary("Get OGC API Tiles conformance declaration")
@@ -37,7 +38,7 @@ internal static class CoreEndpoints
             .Produces<ConformanceDeclaration>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        endpoints.MapGet("/ogc/tiles/openapi.json", HandleGetOpenApiSpec)
+        var openApi = endpoints.MapGet("/ogc/tiles/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Tiles OpenAPI Specification")
             .WithName("OgcTilesOpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Tiles")
@@ -52,22 +53,22 @@ internal static class CoreEndpoints
 
     private static IResult HandleGetLandingPage(HttpContext context, string? f)
     {
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
             return CreateFormatError(context, formatError);
         }
 
         var request = context.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/tiles";
 
-        var links = OgcFeaturesUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcFeaturesUtilities.MetadataFormats, "This document")
+        var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
             .ToBuilder();
 
         links.Add(Link.Create(
@@ -101,18 +102,18 @@ internal static class CoreEndpoints
             Links = links.ToImmutable()
         };
 
-        return OgcFeaturesUtilities.FormatMetadataResponse(landingPage, OgcTilesJsonContext.Default.LandingPage, outputFormat, "Landing page");
+        return OgcCommonUtilities.FormatMetadataResponse(landingPage, OgcTilesJsonContext.Default.LandingPage, outputFormat, "Landing page");
     }
 
     private static IResult HandleGetConformance(HttpContext context, string? f)
     {
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
             return CreateFormatError(context, formatError);
         }
@@ -133,15 +134,15 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-common-2/1.0/conf/collections"
             ),
-            Links = OgcFeaturesUtilities.BuildFormatLinks(
+            Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
                 $"{context.Request.Scheme}://{context.Request.Host}/ogc/tiles/conformance",
                 outputFormat,
-                OgcFeaturesUtilities.MetadataFormats,
+                OgcCommonUtilities.MetadataFormats,
                 "Conformance declaration")
         };
 
-        return OgcFeaturesUtilities.FormatMetadataResponse(conformance, OgcTilesJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
+        return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcTilesJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
     }
 
     private static async Task<IResult> HandleGetOpenApiSpec(
@@ -150,15 +151,15 @@ internal static class CoreEndpoints
         IWebHostEnvironment environment)
     {
         var request = context.Request;
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.OpenApi);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.OpenApi);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
         if (!string.IsNullOrWhiteSpace(f) && !string.Equals(f, "json", StringComparison.OrdinalIgnoreCase))
         {
-            return OgcErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'");
+            return StandardErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'");
         }
 
         var acceptHeader = request.Headers.Accept.ToString();
@@ -208,7 +209,7 @@ internal static class CoreEndpoints
     {
         if (formatError is BadRequest<string> badRequest)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
         }
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
@@ -220,7 +221,7 @@ internal static class CoreEndpoints
                 "Requested format is not acceptable.");
         }
 
-        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
+        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
     private static Task<string?> GetOpenApiContentAsync(string contentRootPath)

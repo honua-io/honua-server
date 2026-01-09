@@ -19,6 +19,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private const double CoordinateTolerance = 0.0001;
+    private long _pointObjectId;
 
     public async Task InitializeAsync()
     {
@@ -26,7 +27,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         await _fixture.InitializeAsync();
 
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await SpatialReferenceTestData.InsertPointAsync(
+        _pointObjectId = await SpatialReferenceTestData.InsertPointAsync(
             _fixture.Postgres,
             schema,
             SpatialReferenceTestLayerCatalog.PointLayerId,
@@ -64,6 +65,64 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         var geometryResult = result.Features[0].Geometry!;
         geometryResult.X.Should().BeApproximately(-122.4194, CoordinateTolerance);
         geometryResult.Y.Should().BeApproximately(37.7749, CoordinateTolerance);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoJsonFormat_OnProjectedLayer_ReturnsWgs84Coordinates()
+    {
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&f=geojson";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var feature = document.RootElement.GetProperty("features")[0];
+        var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+
+        coordinates[0].GetDouble().Should().BeApproximately(-122.4194, CoordinateTolerance);
+        coordinates[1].GetDouble().Should().BeApproximately(37.7749, CoordinateTolerance);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoJsonFormat_LargeResultSet_UsesStreamingAndReturnsWgs84()
+    {
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&resultRecordCount=1500&f=geojson";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+        Assert.True(response.Headers.TransferEncodingChunked ?? false, "Response should use chunked transfer encoding for streaming");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var feature = document.RootElement.GetProperty("features")[0];
+        var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+
+        coordinates[0].GetDouble().Should().BeApproximately(-122.4194, CoordinateTolerance);
+        coordinates[1].GetDouble().Should().BeApproximately(37.7749, CoordinateTolerance);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoJsonFormat_RejectsNonWgs84OutSr()
+    {
+        var requestUri = $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/query" +
+                         $"?where=objectid%20%3D%20{_pointObjectId}&f=geojson&outSR=3857";
+
+        var response = await _fixture.Client.GetAsync(requestUri);
+
+        response.Be400BadRequest();
     }
 
     [IntegrationTest]

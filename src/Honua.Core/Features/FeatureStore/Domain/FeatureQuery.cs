@@ -138,7 +138,14 @@ public readonly record struct TemporalFilter
 /// </summary>
 public enum TemporalPropertyType
 {
+    /// <summary>
+    /// DateTime values with time and timezone information
+    /// </summary>
     DateTime,
+
+    /// <summary>
+    /// Date values without time component
+    /// </summary>
     Date
 }
 

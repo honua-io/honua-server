@@ -38,6 +38,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Cache)]
+    [Endpoint("POST /api/v1/admin/metadata/services")]
     public async Task CreateService_InvalidatesServiceCache_NewServiceVisibleInList()
     {
         // Arrange - Get initial service list
@@ -79,6 +80,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Cache)]
+    [Endpoint("PUT /api/v1/admin/metadata/services/{name}")]
     public async Task UpdateService_InvalidatesServiceCache_UpdatedDescriptionVisible()
     {
         // Arrange - Create a service first
@@ -128,6 +130,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Cache)]
+    [Endpoint("DELETE /api/v1/admin/metadata/services/{name}")]
     public async Task DeleteService_InvalidatesServiceCache_ServiceRemovedFromList()
     {
         // Arrange - Create a service first
@@ -174,6 +177,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Cache)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}")]
     public async Task UpdateLayer_InvalidatesLayerCache_UpdatedNameVisible()
     {
         // Arrange - Get list of layers to find an existing layer
@@ -229,6 +233,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Cache)]
+    [Endpoint("POST /api/v1/admin/metadata/services")]
     public async Task ServiceUpdate_DoesNotInvalidateUnrelatedLayerCache()
     {
         // This test verifies targeted invalidation by checking that
@@ -279,6 +284,8 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Cache)]
+    [Endpoint("POST /api/v1/admin/metadata/services")]
+    [Endpoint("DELETE /api/v1/admin/metadata/services/{name}")]
     public async Task MultipleServiceOperations_InvalidatesCorrectly()
     {
         // This test verifies that multiple service operations properly

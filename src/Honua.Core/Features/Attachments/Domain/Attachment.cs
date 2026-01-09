@@ -44,7 +44,7 @@ public readonly record struct Attachment
     public required DateTime CreatedAt { get; init; }
 
     /// <summary>
-    /// Physical storage path of the file
+    /// Storage key or file identifier within the configured storage provider
     /// </summary>
     public required string StoragePath { get; init; }
 
@@ -63,7 +63,7 @@ public readonly record struct Attachment
     /// <param name="contentType">MIME content type</param>
     /// <param name="size">File size in bytes</param>
     /// <param name="createdAt">Upload timestamp</param>
-    /// <param name="storagePath">Physical storage path</param>
+    /// <param name="storagePath">Storage key or file identifier</param>
     /// <param name="keywords">Optional keywords</param>
     /// <returns>New attachment instance</returns>
     public static Attachment Create(
@@ -98,7 +98,7 @@ public readonly record struct Attachment
     /// <param name="filename">Original filename</param>
     /// <param name="contentType">MIME content type</param>
     /// <param name="size">File size in bytes</param>
-    /// <param name="storagePath">Physical storage path</param>
+    /// <param name="storagePath">Storage key or file identifier</param>
     /// <param name="keywords">Optional keywords</param>
     /// <returns>New attachment instance with current timestamp</returns>
     public static Attachment CreateForUpload(

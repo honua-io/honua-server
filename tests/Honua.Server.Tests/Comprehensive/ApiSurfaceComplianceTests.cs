@@ -307,11 +307,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         xssResult.AllSafe.Should().BeTrue("XSS attempts should be sanitized");
         _output.WriteLine($"XSS Test: {xssResult.SafetyScore:P1} safety score");
 
-        // Test rate limiting (if implemented)
-        var rateLimitResult = await SecurityTestScenarios.TestRateLimiting(
-            client, "/healthz/live", requestCount: 50);
-
-        _output.WriteLine($"Rate Limiting Test: {rateLimitResult.SafetyScore:P1} effectiveness");
     }
 
     /// <summary>

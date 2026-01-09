@@ -97,7 +97,7 @@ public Property TileConversionIsReversible()
 - ✅ XSS: 8+ payload variants with sanitization validation
 - ✅ Path Traversal: Directory access attempts blocked
 - ✅ CORS: Malicious origin rejection
-- ✅ Rate Limiting: Burst protection validation
+- ✅ Edge rate limiting: Burst protection validation at proxy
 - ✅ Authorization: Privilege escalation prevention
 
 ### 3. Performance Testing

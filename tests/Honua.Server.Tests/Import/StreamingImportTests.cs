@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
@@ -17,6 +18,8 @@ namespace Honua.Server.Tests.Import;
 /// Tests the streaming parser, batch processing, and background job functionality.
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Admin)]
+[Operation(Operations.Import)]
 public class StreamingImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -397,6 +400,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_InvalidGeoJson_HandlesErrorGracefully()
     {
         // Arrange - Invalid GeoJSON with malformed geometry

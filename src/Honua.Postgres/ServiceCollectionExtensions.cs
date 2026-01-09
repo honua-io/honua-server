@@ -1,31 +1,34 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
+using Honua.Postgres.Features.Geometry;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
 using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
 namespace Honua.Postgres;
@@ -46,13 +49,9 @@ internal static class ServiceCollectionExtensions
         var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 
         // Register NpgsqlDataSource as specified in Issue #3
-        services.AddSingleton<NpgsqlDataSource>(serviceProvider =>
+        services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
-            }
+            var connectionString = ResolveConnectionString(serviceProvider, configuration);
 
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 
@@ -92,41 +91,21 @@ internal static class ServiceCollectionExtensions
             return dataSourceBuilder.Build();
         });
 
-        // PERFORMANCE OPTIMIZATION: Register StringBuilder object pool
-        services.AddSingleton<ObjectPool<StringBuilder>>(serviceProvider =>
-        {
-            var provider = new DefaultObjectPoolProvider();
-            return provider.Create(new Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
-        });
-
-        // Register feature store implementation
-        services.AddScoped<PostgresFeatureStore>(serviceProvider =>
-            new PostgresFeatureStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                serviceProvider.GetRequiredService<ObjectPool<StringBuilder>>(),
-                serviceProvider.GetRequiredService<IPerformanceMonitor>(),
-                serviceProvider.GetRequiredService<ILogger<PostgresFeatureStore>>(),
-                schemaName: configuration["Database:Schema"]
-            ));
-        services.AddScoped<IFeatureStore>(serviceProvider =>
-        {
-            var innerStore = serviceProvider.GetRequiredService<PostgresFeatureStore>();
-            var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
-            var logger = serviceProvider.GetRequiredService<ILogger<MonitoredFeatureStoreDecorator>>();
-            return new MonitoredFeatureStoreDecorator(innerStore, performanceMonitor, logger);
-        });
+        // Register refactored feature store implementation
+        services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
 
         // Register database performance metrics provider
-        services.AddSingleton<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
+        services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
 
         // Register attachment store implementation (metadata tables live in the honua schema)
         services.AddScoped<IAttachmentStore>(serviceProvider =>
             new PostgresAttachmentStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ICloudFileStorage>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"
-                    : configuration["Attachments:Schema"],
-                storageBasePath: configuration["Attachments:StoragePath"]));
+                    : configuration["Attachments:Schema"]));
 
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
@@ -139,6 +118,12 @@ internal static class ServiceCollectionExtensions
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
+
+        // Register migration runner for schema upgrades
+        services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
+
+        // Register topology validator for geometry operations
+        services.AddScoped<IGeometryTopologyValidator, PostgresGeometryTopologyValidator>();
 
         // Register SQL filter translator
         services.AddScoped<ISqlFilterTranslator>(_ => new PostgresSqlFilterTranslator(
@@ -169,15 +154,7 @@ internal static class ServiceCollectionExtensions
 
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
-        {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("DefaultConnection connection string is required for CRS detection services");
-            }
-
-            return new CrsDetectionService(connectionString, serviceProvider.GetService<ISchemaContext>());
-        });
+            new CrsDetectionService(serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
 
         // Register import limits configuration
         services.AddSingleton(serviceProvider =>
@@ -207,33 +184,28 @@ internal static class ServiceCollectionExtensions
         // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
         {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("DefaultConnection connection string is required for file import services");
-            }
-
             var limits = serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>();
             var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
             var logger = serviceProvider.GetRequiredService<ILogger<StreamingFileImportService>>();
-            var cloudStorage = serviceProvider.GetService<Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage>();
+            var cloudStorage = serviceProvider.GetService<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
+
             return new StreamingFileImportService(
-                connectionString,
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 performanceMonitor,
                 logger,
                 limits,
-                serviceProvider.GetService<ISchemaContext>(),
                 cloudStorage);
         });
 
-        // Register background import job service
-        // Note: This uses a scoped service provider to access the import service
+        // Register universal import job service using unified progress store
+        // This replaces the in-memory job service with one that uses centralized progress tracking
         services.AddScoped<IImportJobService>(serviceProvider =>
         {
             var importService = serviceProvider.GetRequiredService<IFileImportService>();
+            var progressStore = serviceProvider.GetRequiredService<IUniversalProgressStore>();
             var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
-            var logger = serviceProvider.GetRequiredService<ILogger<InMemoryImportJobService>>();
-            return new InMemoryImportJobService(importService, performanceMonitor, logger);
+            var logger = serviceProvider.GetRequiredService<ILogger<UniversalImportJobService>>();
+            return new UniversalImportJobService(importService, progressStore, performanceMonitor, logger);
         });
 
         // Register ArcGIS REST client for Esri service imports
@@ -247,6 +219,44 @@ internal static class ServiceCollectionExtensions
         // Register Esri import service
         services.AddScoped<IEsriImportService, EsriImportService>();
 
+        // Register secure connection management services
+        services.AddSecureConnectionServices(configuration);
+        services.UseSecureConnectionProvider(configuration);
+
         return services;
+    }
+
+    private static string ResolveConnectionString(IServiceProvider serviceProvider, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
+        }
+
+        var resolver = serviceProvider.GetService<IConnectionSecretResolver>();
+        if (resolver == null)
+        {
+            return connectionString;
+        }
+
+        try
+        {
+            var canResolve = resolver.CanResolveSecretAsync(connectionString, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (!canResolve)
+            {
+                return connectionString;
+            }
+
+            return resolver.ResolveConnectionStringAsync(connectionString, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Failed to resolve DefaultConnection via secret provider.", ex);
+        }
     }
 }

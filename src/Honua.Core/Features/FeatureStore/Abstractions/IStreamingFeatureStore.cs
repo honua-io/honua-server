@@ -62,3 +62,4 @@ public interface IStreamingFeatureStore
         FeatureQuery query,
         CancellationToken cancellationToken = default);
 }
+

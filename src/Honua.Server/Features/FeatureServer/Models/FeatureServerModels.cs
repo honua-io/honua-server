@@ -5,6 +5,8 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.FeatureServer.Models;
@@ -92,7 +94,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Object ID field name used across the service
     /// </summary>
-    public string ObjectIdField { get; init; } = "objectid";
+    public string ObjectIdField { get; init; } = "DatabaseSchema.ObjectIdColumn";
 
     /// <summary>
     /// Global ID field name (if used)
@@ -317,6 +319,68 @@ public sealed class LayerResponse
 }
 
 /// <summary>
+/// FeatureServer-specific spatial reference information
+/// </summary>
+public sealed class SpatialReferenceInfo
+{
+    /// <summary>
+    /// Well-Known ID (EPSG code)
+    /// </summary>
+    public required int Wkid { get; init; }
+
+    /// <summary>
+    /// Latest Well-Known ID (for newer EPSG codes)
+    /// </summary>
+    public int? LatestWkid { get; init; }
+
+    /// <summary>
+    /// Vertical coordinate system WKID
+    /// </summary>
+    public int? VcsWkid { get; init; }
+
+    /// <summary>
+    /// Latest vertical coordinate system WKID
+    /// </summary>
+    public int? LatestVcsWkid { get; init; }
+
+    /// <summary>
+    /// Well-Known Text representation
+    /// </summary>
+    public string? Wkt { get; init; }
+}
+
+/// <summary>
+/// GeoServices spatial reference for geometry objects
+/// </summary>
+public sealed class GeoServicesSpatialReference
+{
+    /// <summary>
+    /// Well-Known ID (EPSG code)
+    /// </summary>
+    public int? Wkid { get; init; }
+
+    /// <summary>
+    /// Latest Well-Known ID (for newer EPSG codes)
+    /// </summary>
+    public int? LatestWkid { get; init; }
+
+    /// <summary>
+    /// Vertical coordinate system WKID
+    /// </summary>
+    public int? VcsWkid { get; init; }
+
+    /// <summary>
+    /// Latest vertical coordinate system WKID
+    /// </summary>
+    public int? LatestVcsWkid { get; init; }
+
+    /// <summary>
+    /// Well-Known Text representation
+    /// </summary>
+    public string? Wkt { get; init; }
+}
+
+/// <summary>
 /// Basic layer info for service listing
 /// </summary>
 public sealed class LayerInfo
@@ -367,36 +431,6 @@ public sealed class LayerInfo
     public required string GeometryType { get; init; }
 }
 
-/// <summary>
-/// Spatial reference information in GeoServices format
-/// </summary>
-public sealed class SpatialReferenceInfo
-{
-    /// <summary>
-    /// Well-Known ID (EPSG code)
-    /// </summary>
-    public required int Wkid { get; init; }
-
-    /// <summary>
-    /// Latest Well-Known ID (for newer EPSG codes)
-    /// </summary>
-    public int? LatestWkid { get; init; }
-
-    /// <summary>
-    /// Vertical coordinate system WKID
-    /// </summary>
-    public int? VcsWkid { get; init; }
-
-    /// <summary>
-    /// Latest vertical coordinate system WKID
-    /// </summary>
-    public int? LatestVcsWkid { get; init; }
-
-    /// <summary>
-    /// Well-Known Text representation
-    /// </summary>
-    public string? Wkt { get; init; }
-}
 
 /// <summary>
 /// Spatial extent information
@@ -427,28 +461,38 @@ public sealed class ExtentInfo
     /// Spatial reference for the extent
     /// </summary>
     public required SpatialReferenceInfo SpatialReference { get; init; }
+
+    /// <summary>
+    /// Creates ExtentInfo from a unified BoundingBox
+    /// </summary>
+    /// <param name="boundingBox">Unified bounding box</param>
+    /// <param name="spatialReference">Spatial reference system</param>
+    /// <returns>ExtentInfo instance</returns>
+    public static ExtentInfo FromBoundingBox(BoundingBox boundingBox, SpatialReference? spatialReference = null)
+        => new()
+        {
+            Xmin = boundingBox.MinX,
+            Ymin = boundingBox.MinY,
+            Xmax = boundingBox.MaxX,
+            Ymax = boundingBox.MaxY,
+            SpatialReference = (spatialReference ?? (boundingBox.SpatialReferenceId.HasValue
+                ? Honua.Core.Features.Shared.Models.SpatialReference.Create(boundingBox.SpatialReferenceId.Value)
+                : Honua.Core.Features.Shared.Models.SpatialReference.WGS84)).ToSpatialReferenceInfo()
+        };
+
+    /// <summary>
+    /// Converts this ExtentInfo to a unified BoundingBox
+    /// </summary>
+    /// <returns>Unified BoundingBox</returns>
+    public BoundingBox ToBoundingBox()
+        => BoundingBox.Create(Xmin, Ymin, Xmax, Ymax, SpatialReference.Wkid);
 }
 
 /// <summary>
-/// Field definition in GeoServices format
+/// Field definition in GeoServices format, extending shared field metadata
 /// </summary>
-public sealed class GeoServicesFieldInfo
+public sealed record GeoServicesFieldInfo : FieldDefinitionBase
 {
-    /// <summary>
-    /// Field name
-    /// </summary>
-    public required string Name { get; init; }
-
-    /// <summary>
-    /// Field type in GeoServices format
-    /// </summary>
-    public required string Type { get; init; }
-
-    /// <summary>
-    /// Field alias (display name)
-    /// </summary>
-    public required string Alias { get; init; }
-
     /// <summary>
     /// SQL type name
     /// </summary>
@@ -458,21 +502,6 @@ public sealed class GeoServicesFieldInfo
     /// Field domain (for coded values)
     /// </summary>
     public object? Domain { get; init; }
-
-    /// <summary>
-    /// Default value
-    /// </summary>
-    public object? DefaultValue { get; init; }
-
-    /// <summary>
-    /// Field length (for string types)
-    /// </summary>
-    public int? Length { get; init; }
-
-    /// <summary>
-    /// Whether the field is nullable
-    /// </summary>
-    public bool Nullable { get; init; } = true;
 
     /// <summary>
     /// Whether the field is editable
@@ -488,12 +517,20 @@ public sealed class GeoServicesFieldInfo
     /// Whether the field can be used for display
     /// </summary>
     public bool CanSort { get; init; } = true;
+
+    /// <summary>
+    /// Determines if this field represents a string type based on GeoServices type
+    /// </summary>
+    protected override bool IsStringType()
+    {
+        return Type.Equals("esriFieldTypeString", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>
 /// Query response for FeatureServer query endpoint
 /// </summary>
-public sealed class QueryResponse
+public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
 {
     /// <summary>
     /// Geometry type for the features returned by the query
@@ -508,7 +545,7 @@ public sealed class QueryResponse
     /// <summary>
     /// Object ID field name for the layer
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = "objectid";
+    public string ObjectIdFieldName { get; init; } = "DatabaseSchema.ObjectIdColumn";
 
     /// <summary>
     /// Object IDs returned by the query (when returnIdsOnly=true)
@@ -545,6 +582,14 @@ public sealed class QueryResponse
     /// Whether the transfer limit was exceeded
     /// </summary>
     public bool ExceededTransferLimit { get; init; }
+
+    // ICollectionResponse implementation
+    ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items => Features.ToImmutableArray();
+    ImmutableArray<ILink>? ICollectionResponse<GeoServicesFeature>.Links => null; // FeatureServer doesn't use links
+    IPaginationMetadata? ICollectionResponse<GeoServicesFeature>.Pagination =>
+        Count.HasValue || Features.Length > 0
+            ? PaginationMetadata.Create(Count, Features.Length, ExceededTransferLimit)
+            : null;
 }
 
 /// <summary>
@@ -646,26 +691,6 @@ public sealed class GeoServicesGeometry
     public GeoServicesSpatialReference? SpatialReference { get; init; }
 }
 
-/// <summary>
-/// GeoServices spatial reference representation
-/// </summary>
-public sealed class GeoServicesSpatialReference
-{
-    /// <summary>
-    /// Well-known ID for the spatial reference
-    /// </summary>
-    public int Wkid { get; init; }
-
-    /// <summary>
-    /// Latest well-known ID for the spatial reference
-    /// </summary>
-    public int? LatestWkid { get; init; }
-
-    /// <summary>
-    /// Well-known text representation (optional)
-    /// </summary>
-    public string? Wkt { get; init; }
-}
 
 /// <summary>
 /// Query parameters for feature queries
@@ -793,6 +818,21 @@ public sealed class QueryParameters
     /// This parameter provides an alternative to using a WHERE clause for object ID filtering.
     /// </summary>
     public long[]? ObjectIds { get; init; }
+
+    /// <summary>
+    /// Time instant or time extent for temporal queries.
+    /// Supported formats:
+    /// - Single time instant: "1199145600000" (Unix timestamp in milliseconds)
+    /// - Time extent: "1199145600000,1230768000000" (start,end)
+    /// - ISO 8601: "2008-01-01T00:00:00Z" or "2008-01-01T00:00:00Z,2009-01-01T00:00:00Z"
+    /// </summary>
+    public string? Time { get; init; }
+
+    /// <summary>
+    /// Temporal relationship for time-based queries.
+    /// Supported values: esriTimeRelationIntersects (default), esriTimeRelationOverlaps
+    /// </summary>
+    public string? TimeRelation { get; init; }
 }
 
 internal sealed class RawJsonStringConverter : JsonConverter<string?>
@@ -882,7 +922,7 @@ public sealed class GeoJsonFeature
     public GeoJsonGeometry? Geometry { get; init; }
 
     /// <summary>
-    /// Feature ID (typically the objectid)
+    /// Feature ID (typically the DatabaseSchema.ObjectIdColumn)
     /// </summary>
     public object? Id { get; init; }
 }
@@ -1136,7 +1176,7 @@ public sealed class RelatedRecords
     /// <summary>
     /// Object ID field name
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = "objectid";
+    public string ObjectIdFieldName { get; init; } = "DatabaseSchema.ObjectIdColumn";
 
     /// <summary>
     /// Global ID field name (if used)
@@ -1283,13 +1323,13 @@ public class EditError
 [JsonSerializable(typeof(LayerResponse))]
 [JsonSerializable(typeof(LayerInfo))]
 [JsonSerializable(typeof(SpatialReferenceInfo))]
+[JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(ExtentInfo))]
 [JsonSerializable(typeof(GeoServicesFieldInfo))]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(GeoServicesFeature))]
 [JsonSerializable(typeof(GeoServicesFeature[]), TypeInfoPropertyName = "GeoServicesFeatureArray")]
 [JsonSerializable(typeof(GeoServicesGeometry))]
-[JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(QueryParameters))]
 [JsonSerializable(typeof(GeoJsonFeatureSet))]
 [JsonSerializable(typeof(GeoJsonFeature), TypeInfoPropertyName = "FeatureServerGeoJsonFeature")]
@@ -1331,32 +1371,16 @@ public class EditError
 [JsonSerializable(typeof(DateTimeOffset))]
 // ASP.NET Core types
 [JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
-// OGC API Features models
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.LandingPage))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.ConformanceDeclaration))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.Link))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.Collections))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.CollectionInfo))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.Extent))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.SpatialExtent))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.TemporalExtent))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.SimpleGeoJsonGeometry))]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.GeoJsonFeature), TypeInfoPropertyName = "OgcGeoJsonFeature")]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.GeoJsonFeature[]), TypeInfoPropertyName = "OgcGeoJsonFeatureArray")]
-[JsonSerializable(typeof(Honua.Server.Features.OgcFeatures.Models.FeatureCollection))]
-[JsonSerializable(typeof(ImmutableArray<Honua.Server.Features.OgcFeatures.Models.Link>))]
-[JsonSerializable(typeof(ImmutableArray<Honua.Server.Features.OgcFeatures.Models.CollectionInfo>))]
 [JsonSerializable(typeof(ImmutableArray<string>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<double>>))]
 [JsonSerializable(typeof(ImmutableArray<ImmutableArray<string?>>))]
 [JsonSerializable(typeof(ImmutableArray<string>?))]
 
 // Interface types for AOT compatibility
-[JsonSerializable(typeof(Honua.Core.Features.FeatureStore.Abstractions.IFeatureStore))]
 [JsonSerializable(typeof(Honua.Core.Features.Catalog.Abstractions.ILayerCatalog))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-public sealed partial class FeatureServerJsonContext : JsonSerializerContext
+internal sealed partial class FeatureServerJsonContext : JsonSerializerContext
 {
 }

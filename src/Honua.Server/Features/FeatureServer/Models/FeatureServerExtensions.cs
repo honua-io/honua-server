@@ -59,11 +59,27 @@ public static class FeatureServerExtensions
     /// <returns>Shared spatial reference</returns>
     public static SpatialReference ToSpatialReference(this GeoServicesSpatialReference geoServicesSpatialRef)
         => SpatialReference.Create(
-            geoServicesSpatialRef.Wkid,
+            geoServicesSpatialRef.Wkid ?? 0,
             geoServicesSpatialRef.LatestWkid,
             vcsWkid: null,
             latestVcsWkid: null,
             wkt: geoServicesSpatialRef.Wkt);
+
+    /// <summary>
+    /// Converts nullable FeatureServer GeoServicesSpatialReference to nullable shared SpatialReference
+    /// </summary>
+    /// <param name="geoServicesSpatialRef">FeatureServer GeoServices spatial reference</param>
+    /// <returns>Nullable shared spatial reference</returns>
+    public static SpatialReference? ToNullableSpatialReference(this GeoServicesSpatialReference? geoServicesSpatialRef)
+        => geoServicesSpatialRef?.ToSpatialReference();
+
+    /// <summary>
+    /// Converts nullable shared SpatialReference to nullable FeatureServer GeoServicesSpatialReference
+    /// </summary>
+    /// <param name="spatialRef">Nullable shared spatial reference</param>
+    /// <returns>Nullable FeatureServer GeoServices spatial reference</returns>
+    public static GeoServicesSpatialReference? ToNullableGeoServicesSpatialReference(this SpatialReference? spatialRef)
+        => spatialRef?.ToGeoServicesSpatialReference();
 
     /// <summary>
     /// Converts a FeatureExtent to FeatureServer ExtentInfo

@@ -98,7 +98,8 @@ The test environment includes:
 
 ```
 cite-tiles-results/
-├── cite-tiles-summary.md    # Human-readable summary
+├── cite-summary.md          # Human-readable summary
+├── conformance.json         # Captured conformance declaration
 ├── session-*/               # Test session results
 │   ├── test-results.xml     # Detailed test results
 │   ├── test-report.html     # HTML report
@@ -107,7 +108,7 @@ cite-tiles-results/
 
 ### Reading Test Results
 
-#### Summary Report (`cite-tiles-summary.md`)
+#### Summary Report (`cite-summary.md`)
 - Overall pass/fail status
 - Test count and success rate
 - Conformance class results

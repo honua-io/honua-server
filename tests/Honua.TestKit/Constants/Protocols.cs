@@ -45,6 +45,11 @@ public static class Protocols
     public const string Admin = "Admin";
 
     /// <summary>
+    /// Infrastructure and cross-cutting concerns.
+    /// </summary>
+    public const string Infrastructure = "Infrastructure";
+
+    /// <summary>
     /// Comprehensive end-to-end coverage suites.
     /// </summary>
     public const string Comprehensive = "Comprehensive";

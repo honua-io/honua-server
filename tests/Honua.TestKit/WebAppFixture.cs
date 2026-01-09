@@ -1,13 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Seeding;
@@ -19,6 +25,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Xunit;
+using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.TestKit;
 
@@ -43,6 +50,22 @@ public sealed class WebAppFixture : IAsyncLifetime
     private bool _useSharedServer;
     private string? _seedPath;
     private string? _seedProfile;
+    private IServiceScope? _serviceScope;
+
+    /// <summary>
+    /// Test service ID used for testing operations.
+    /// </summary>
+    public const string TestServiceId = "test";
+
+    /// <summary>
+    /// Test layer ID used for testing operations.
+    /// </summary>
+    public const int TestLayerId = 0;
+
+    private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long-for-security";
+    private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
+    private const string TestSecureConnectionName = "test";
+    private const string TestSecureConnectionCreatedBy = "test-fixture";
 
     public WebAppFixture()
     {
@@ -57,6 +80,17 @@ public sealed class WebAppFixture : IAsyncLifetime
     public PostgresFixture PostgresFixture => Postgres;
 
     public string? CurrentSchema => _currentSchema;
+
+    /// <summary>
+    /// Gets the database connection provider for test scenarios.
+    /// </summary>
+    public IDatabaseConnectionProvider DatabaseConnectionProvider => GetService<IDatabaseConnectionProvider>();
+
+    /// <summary>
+    /// Gets the service provider from the test server's DI container.
+    /// </summary>
+    public IServiceProvider Services => (_useSharedServer ? _sharedFactory : _factory)?.Services
+        ?? throw new InvalidOperationException("Web application factory not initialized.");
 
     private bool HasCustomConfiguration => _serviceConfigurations.Count > 0 || _configureWebHost != null;
 
@@ -88,11 +122,16 @@ public sealed class WebAppFixture : IAsyncLifetime
                 // Configure application configuration with test connection string BEFORE app startup
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
+                    var attachmentsPath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:honua"] = _postgres.ConnectionString,
                         ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
-                        ["HONUA_SKIP_MIGRATIONS"] = "true"
+                        ["HONUA_SKIP_MIGRATIONS"] = "true",
+                        ["FileStorage:Provider"] = "Local",
+                        ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
+                        ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
+                        ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
                     });
                 });
 
@@ -100,7 +139,11 @@ public sealed class WebAppFixture : IAsyncLifetime
                 {
                     // Remove and re-register all PostgreSQL services with test connection string
                     services.RemoveAll<NpgsqlDataSource>();
-                    services.RemoveAll<IFeatureStore>();
+                    services.RemoveAll<IFeatureReader>();
+                    services.RemoveAll<IFeatureWriter>();
+                    services.RemoveAll<ITileProvider>();
+                    services.RemoveAll<IRelationshipStore>();
+                    services.RemoveAll<IStreamingFeatureStore>();
                     services.RemoveAll<IAttachmentStore>();
                     services.RemoveAll<ILayerCatalog>();
                     services.RemoveAll<ITableDiscoveryService>();
@@ -114,7 +157,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                     var testConfiguration = new ConfigurationBuilder()
                         .AddInMemoryCollection(new Dictionary<string, string?>
                         {
-                            ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString
+                            ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
+                            ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
+                            ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
                         })
                         .Build();
 
@@ -152,12 +197,84 @@ public sealed class WebAppFixture : IAsyncLifetime
             });
 
         Client = _factory.CreateClient();
+        _serviceScope = _factory.Services.CreateScope();
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
             await SeedSchemaAsync(_currentSchema);
         }
+
+        await EnsureTestSecureConnectionAsync();
+    }
+
+    /// <summary>
+    /// Ensures a large test dataset exists for streaming performance tests
+    /// </summary>
+    public async Task EnsureLargeTestDatasetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            throw new InvalidOperationException("Test schema not initialized.");
+        }
+
+        await using var connection = await Postgres.GetConnectionAsync(_currentSchema);
+
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = @layerId;";
+        countCommand.Parameters.Add(new NpgsqlParameter { ParameterName = "@layerId", Value = TestLayerId });
+        var existingCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+
+        if (existingCount >= 2000)
+        {
+            return;
+        }
+
+        var additionalFeaturesNeeded = 2000 - existingCount;
+
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (@layerId, ST_GeomFromWKB(@geometry, 4326), @attributes::jsonb);
+            """;
+        insertCommand.Parameters.Add(new NpgsqlParameter { ParameterName = "@layerId", Value = TestLayerId });
+        var geometryParam = new NpgsqlParameter { ParameterName = "@geometry", Value = DBNull.Value };
+        var attributesParam = new NpgsqlParameter { ParameterName = "@attributes", Value = DBNull.Value };
+        insertCommand.Parameters.Add(geometryParam);
+        insertCommand.Parameters.Add(attributesParam);
+
+        for (var i = 0; i < additionalFeaturesNeeded; i++)
+        {
+            geometryParam.Value = CreateTestPointGeometry(-180 + (i % 360), -90 + ((i / 360) % 180));
+
+            var attributes = new Dictionary<string, object?>
+            {
+                ["Name"] = $"Streaming Test Feature {i}",
+                ["Category"] = "Performance Test",
+                ["Value"] = i % 100,
+                ["TestBatch"] = "LargeDataset"
+            };
+            attributesParam.Value = JsonSerializer.Serialize(attributes);
+
+            await insertCommand.ExecuteNonQueryAsync();
+        }
+
+        await transaction.CommitAsync();
+    }
+
+    /// <summary>
+    /// Creates a simple test point geometry as WKB
+    /// </summary>
+    private static byte[] CreateTestPointGeometry(double x, double y)
+    {
+        // Create a simple WKB point geometry
+        // This is a simplified implementation for testing purposes
+        var geometryFactory = new NetTopologySuite.Geometries.GeometryFactory();
+        var point = geometryFactory.CreatePoint(new NetTopologySuite.Geometries.Coordinate(x, y));
+        var writer = new NetTopologySuite.IO.WKBWriter();
+        return writer.Write(point);
     }
 
     private async Task InitializeSharedAsync()
@@ -191,7 +308,10 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 ["HONUA_SKIP_MIGRATIONS"] = "true",
                                 ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
                                 ["Database:QueryCache:EnableAutomaticCaching"] = "false",
-                                ["Attachments:StoragePath"] = attachmentsPath
+                                ["FileStorage:Provider"] = "Local",
+                                ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
+                                ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
+                                ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
                             });
                         });
                     });
@@ -214,10 +334,16 @@ public sealed class WebAppFixture : IAsyncLifetime
         await SeedSchemaAsync(_currentSchema);
 
         Client = CreateClient(_currentSchema);
+        _serviceScope = _sharedFactory?.Services.CreateScope();
+
+        await EnsureTestSecureConnectionAsync();
     }
 
     public async Task DisposeAsync()
     {
+        _serviceScope?.Dispose();
+        _serviceScope = null;
+
         if (_useSharedServer)
         {
             if (_currentSchema is not null)
@@ -340,10 +466,10 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public T GetService<T>() where T : notnull
     {
-        var factory = (_useSharedServer ? _sharedFactory : _factory)
-            ?? throw new InvalidOperationException("Web application factory not initialized.");
+        var provider = _serviceScope?.ServiceProvider
+            ?? throw new InvalidOperationException("Service scope not initialized.");
 
-        return factory.Services.GetRequiredService<T>();
+        return provider.GetRequiredService<T>();
     }
 
     /// <summary>
@@ -351,8 +477,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public T? GetOptionalService<T>() where T : class
     {
-        var factory = _useSharedServer ? _sharedFactory : _factory;
-        return factory?.Services.GetService<T>();
+        return _serviceScope?.ServiceProvider.GetService<T>();
     }
 
     /// <summary>
@@ -368,7 +493,85 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         _currentSchema = await Postgres.CreateIsolatedSchemaAsync(testClassName);
         await SeedSchemaAsync(_currentSchema);
+        await EnsureTestSecureConnectionAsync();
         return _currentSchema;
+    }
+
+    private async Task EnsureTestSecureConnectionAsync()
+    {
+        if (_serviceScope is null)
+        {
+            return;
+        }
+
+        var services = _serviceScope.ServiceProvider;
+        var connectionProvider = services.GetRequiredService<IDatabaseConnectionProvider>();
+
+        if (!await SecureConnectionTablesAvailableAsync(connectionProvider).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        var registry = services.GetRequiredService<ISecureConnectionRegistry>();
+        var encryptionService = services.GetRequiredService<IConnectionEncryptionService>();
+        var configuration = services.GetRequiredService<IConfiguration>();
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var existing = await registry.GetConnectionByNameAsync(TestSecureConnectionName);
+        if (existing != null)
+        {
+            return;
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        if (string.IsNullOrWhiteSpace(builder.Host) ||
+            string.IsNullOrWhiteSpace(builder.Database) ||
+            string.IsNullOrWhiteSpace(builder.Username) ||
+            builder.Port <= 0)
+        {
+            return;
+        }
+
+        var encrypted = await encryptionService.EncryptConnectionStringAsync(connectionString).ConfigureAwait(false);
+        var keyVersion = await encryptionService.GetCurrentKeyVersionAsync().ConfigureAwait(false);
+        var sslRequired = builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull;
+        var sslMode = Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true);
+
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: TestSecureConnectionName,
+            host: builder.Host,
+            port: builder.Port,
+            databaseName: builder.Database,
+            username: builder.Username,
+            encryptedConnectionString: encrypted,
+            encryptionKeyVersion: keyVersion,
+            createdBy: TestSecureConnectionCreatedBy,
+            description: "Test secure connection",
+            sslRequired: sslRequired,
+            sslMode: sslMode);
+
+        await registry.CreateConnectionAsync(connection).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> SecureConnectionTablesAvailableAsync(IDatabaseConnectionProvider connectionProvider)
+    {
+        const string sql = """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'honua'
+              AND table_name = 'data_connections'
+            LIMIT 1
+            """;
+
+        await using var connection = await connectionProvider.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
+        return result != null && result != DBNull.Value;
     }
 
     private Task SeedSchemaAsync(string schemaName)
@@ -436,6 +639,19 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
         configure?.Invoke(client);
         return client;
+    }
+
+    /// <summary>
+    /// Create a new HTTP client with admin authorization for testing admin endpoints.
+    /// </summary>
+    public HttpClient CreateAdminClient()
+    {
+        return CreateClient(client =>
+        {
+            // Admin clients should have appropriate authorization headers set
+            // In test environment with HONUA_DEV_AUTH=true, this bypasses actual auth
+            client.DefaultRequestHeaders.Add("X-Admin-Test", "true");
+        });
     }
 
     /// <summary>

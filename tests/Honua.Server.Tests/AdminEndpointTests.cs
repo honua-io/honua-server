@@ -64,10 +64,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/api/v1/admin/connections/nonexistent/tables");
 
         // Assert - Should return 404 for connections that don't exist
-        // Note: In current implementation, this will still return 200 with empty tables
-        // because we're using a default connection string. In a full implementation,
-        // this should return 404 for non-existent connection IDs.
-        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
+        response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -139,7 +136,6 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         sectionNames.Should().Contain("Database");
         sectionNames.Should().Contain("Cache");
         sectionNames.Should().Contain("Limits.Query");
-        sectionNames.Should().Contain("RateLimit");
         sectionNames.Should().Contain("Security");
     }
 

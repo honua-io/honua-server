@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns:dc="http://purl.org/dc/terms/" xmlns:math="http://exslt.org/math"
+     xmlns:testng="http://testng.org"
+     xmlns:xs="http://www.w3.org/2001/XMLSchema"
+     xmlns="http://www.w3.org/2000/svg"
+     height="160"
+     preserveAspectRatio="xMidYMid meet"
+     viewBox="0 0 900 300"
+     width="500">
+   <defs>
+      <style type="text/css">
+            
+				            .axistitle { font-weight:bold; font-size:24px; font-family:Arial; text-anchor:middle; }
+				            .xgrid, .ygrid, .legendtext { font-weight:normal; font-size:24px; font-family:Arial; }
+				            .xgrid {text-anchor:middle;}
+				            .ygrid {text-anchor:end;}
+				            .gridline { stroke:black; stroke-width:1; }
+				            .values { fill:black; stroke:none; text-anchor:middle; font-size:12px; font-weight:bold; }
+	   		            
+          </style>
+   </defs>
+   <svg id="graphzone" preserveAspectRatio="xMidYMid meet" x="0" y="0">
+      <rect height="20" style="fill:red;stroke-width:1;stroke:black;" width="20" x="10"
+            y="86"/>
+      <text class="legendtext" x="40" y="105">Failed (9%)
+          </text>
+      <rect height="20" style="fill:green;stroke-width:1;stroke:black;" width="20" x="10"
+            y="125"/>
+      <text class="legendtext" x="40" y="143">Passed (14%)
+          </text>
+      <rect height="20" style="fill:yellow;stroke-width:1;stroke:black;" width="20" x="10"
+            y="163"/>
+      <text class="legendtext" x="40" y="182">Skipped (77%)
+          </text>
+      <g style="stroke:black;stroke-width:1" transform="translate(450,150)">
+         <g style="fill:red" transform="rotate(-277.7142857142857) translate(16, -4)">
+            <path d="M 0 0 h 130 A 130,130 0,0,0 111.59835063898679,-66.67689355884657 z"/>
+         </g>
+         <g style="fill:green" transform="rotate(-308.57142857142856)">
+            <path d="M 0 0 h 130 A 130,130 0,0,0 81.05369322152538,-101.63807758488376 z"/>
+         </g>
+         <g style="fill:yellow" transform="rotate(360)">
+            <path d="M 0 0 h 130 A 130,130 0,1,0 17.450194651256567,128.82348662659794 z"/>
+         </g>
+      </g>
+   </svg>
+</svg>

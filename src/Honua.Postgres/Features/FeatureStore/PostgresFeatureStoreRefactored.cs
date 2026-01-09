@@ -6,6 +6,8 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Monitoring;
+using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore;
 
@@ -25,7 +27,7 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatureStore, IStreamingFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGmlFeatureStore, IStreamingFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -69,13 +71,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var isKnnQuery = query.SpatialFilter.HasValue &&
                          query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
 
         if (isKnnQuery)
         {
-            var knnSelectQuery = _queryBuilder.BuildSelectQuery(layerId, query);
+            var knnSelectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
             var knnFeatures = await _dataAccess.ExecuteSelectQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
             var knnTotalCount = knnFeatures.Length;
             return knnFeatures.Length == 0
@@ -87,11 +89,11 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
         // This reduces database round trips from 2 to 1, improving performance by 30-50%
         if (query.Limit.HasValue || query.Offset.HasValue)
         {
-            return await QueryOptimizedAsync(layerId, query, cancellationToken);
+            return await QueryOptimizedAsync(layerId, query, geometryStorageType, cancellationToken);
         }
 
         // Fallback to original pattern for unlimited queries where count optimization isn't beneficial
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query);
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
 
         if (totalCount == 0)
@@ -99,7 +101,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
             return QueryResult<Feature>.Empty();
         }
 
-        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query);
+        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
         var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken);
 
         return QueryResult<Feature>.Create(totalCount, features, false);
@@ -107,13 +109,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     public async Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var isKnnQuery = query.SpatialFilter.HasValue &&
                          query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
 
         if (isKnnQuery)
         {
-            var knnSelectQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query);
+            var knnSelectQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
             var knnFeatures = await _dataAccess.ExecuteSelectGmlQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
             var knnTotalCount = knnFeatures.Length;
             return knnFeatures.Length == 0
@@ -123,10 +125,10 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
         if (query.Limit.HasValue || query.Offset.HasValue)
         {
-            return await QueryOptimizedGmlAsync(layerId, query, cancellationToken);
+            return await QueryOptimizedGmlAsync(layerId, query, geometryStorageType, cancellationToken);
         }
 
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query);
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
 
         if (totalCount == 0)
@@ -134,7 +136,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
             return QueryResult<GmlFeature>.Empty();
         }
 
-        var selectQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query);
+        var selectQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
         var features = await _dataAccess.ExecuteSelectGmlQueryAsync(selectQuery, query, layerId, cancellationToken);
 
         return QueryResult<GmlFeature>.Create(totalCount, features, false);
@@ -142,7 +144,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
     }
 
@@ -153,13 +156,15 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var effectiveQuery = query ?? new FeatureQuery();
-        var extentQuery = _queryBuilder.BuildExtentQuery(layerId, effectiveQuery);
-        return await _dataAccess.GetExtentAsync(layerId, extentQuery, cancellationToken);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var extentQuery = _queryBuilder.BuildExtentQuery(layerId, effectiveQuery, geometryStorageType);
+        return await _dataAccess.GetExtentAsync(layerId, extentQuery, effectiveQuery, cancellationToken);
     }
 
     public async Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, geometryStorageType: geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
     }
 
@@ -173,7 +178,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
             tileBuffer = $"ST_Expand(ST_TileEnvelope({z}, {x}, {y}), {bufferPixels})";
         }
 
-        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileBuffer);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileBuffer, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
     }
 
@@ -192,8 +198,9 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var streamQuery = _queryBuilder.BuildSelectQuery(layerId, query);
-        await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, streamQuery, cancellationToken))
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var streamQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
+        await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, streamQuery, query, cancellationToken))
         {
             yield return feature;
         }
@@ -222,8 +229,9 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var streamQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query);
-        await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, streamQuery, cancellationToken))
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var streamQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
+        await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, streamQuery, query, cancellationToken))
         {
             yield return feature;
         }
@@ -235,16 +243,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
-        // For now, return empty result - this would need full implementation
-        // from the original complex related query logic
-        return QueryResult<Feature>.Empty();
+        return await _dataAccess.QueryRelatedAsync(layerId, query, cancellationToken);
     }
 
     #endregion
 
     #region Performance Metrics
 
-    public Dictionary<string, object> GetPerformanceStatistics()
+    public Dictionary<string, DatabaseOperationMetricsSnapshot> GetPerformanceStatistics()
     {
         return _cacheManager.GetPerformanceStatistics();
     }
@@ -253,15 +259,19 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
 
     #region Private Helper Methods
 
-    private async Task<QueryResult<Feature>> QueryOptimizedAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
+    private async Task<QueryResult<Feature>> QueryOptimizedAsync(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        CancellationToken cancellationToken)
     {
-        var optimizedQuery = _queryBuilder.BuildOptimizedSelectQuery(layerId, query);
+        var optimizedQuery = _queryBuilder.BuildOptimizedSelectQuery(layerId, query, geometryStorageType);
 
         var features = new List<Feature>();
         long totalCount = 0;
         var hasCountColumn = false;
 
-        await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, optimizedQuery, cancellationToken))
+        await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, optimizedQuery, query, cancellationToken))
         {
             features.Add(feature);
 
@@ -280,20 +290,29 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
             totalCount = features.Count;
         }
 
-        return features.Count == 0
-            ? QueryResult<Feature>.Empty()
-            : QueryResult<Feature>.Create(totalCount, features.ToImmutableArray(), false);
+        if (features.Count == 0)
+        {
+            return QueryResult<Feature>.Empty();
+        }
+
+        var offset = query.Offset ?? 0;
+        var hasMoreResults = totalCount > offset + features.Count;
+        return QueryResult<Feature>.Create(totalCount, features.ToImmutableArray(), hasMoreResults);
     }
 
-    private async Task<QueryResult<GmlFeature>> QueryOptimizedGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
+    private async Task<QueryResult<GmlFeature>> QueryOptimizedGmlAsync(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        CancellationToken cancellationToken)
     {
-        var optimizedQuery = _queryBuilder.BuildOptimizedSelectGmlQuery(layerId, query);
+        var optimizedQuery = _queryBuilder.BuildOptimizedSelectGmlQuery(layerId, query, geometryStorageType);
 
         var features = new List<GmlFeature>();
         long totalCount = 0;
         var hasCountColumn = false;
 
-        await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, optimizedQuery, cancellationToken))
+        await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, optimizedQuery, query, cancellationToken))
         {
             features.Add(feature);
 
@@ -312,9 +331,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureStore, IGmlFeatur
             totalCount = features.Count;
         }
 
-        return features.Count == 0
-            ? QueryResult<GmlFeature>.Empty()
-            : QueryResult<GmlFeature>.Create(totalCount, features.ToImmutableArray(), false);
+        if (features.Count == 0)
+        {
+            return QueryResult<GmlFeature>.Empty();
+        }
+
+        var offset = query.Offset ?? 0;
+        var hasMoreResults = totalCount > offset + features.Count;
+        return QueryResult<GmlFeature>.Create(totalCount, features.ToImmutableArray(), hasMoreResults);
     }
 
     #endregion

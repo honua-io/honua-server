@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Postgres.Features.Admin;
 
@@ -45,11 +48,12 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string description,
         SpatialReference spatialReference,
         int maxRecordCount = 1000,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default)
     {
         string sql = $"""
-            INSERT INTO {_servicesTable} (service_name, description, srid, max_record_count, supported_formats, capabilities)
-            VALUES (@name, @description, @srid, @maxRecordCount, @supportedFormats, @capabilities)
+            INSERT INTO {_servicesTable} (service_name, description, srid, max_record_count, supported_formats, capabilities, metadata)
+            VALUES (@name, @description, @srid, @maxRecordCount, @supportedFormats, @capabilities, @metadata)
             ON CONFLICT (service_name) DO UPDATE SET service_name = EXCLUDED.service_name
             RETURNING service_name
             """;
@@ -58,10 +62,14 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@name", name);
         _ = command.Parameters.AddWithValue("@description", description);
-        _ = command.Parameters.AddWithValue("@srid", spatialReference.Srid);
+        _ = command.Parameters.AddWithValue("@srid", spatialReference.Wkid);
         _ = command.Parameters.AddWithValue("@maxRecordCount", maxRecordCount);
         _ = command.Parameters.AddWithValue("@supportedFormats", _supportedFormats);
         _ = command.Parameters.AddWithValue("@capabilities", _supportedCapabilities);
+        _ = command.Parameters.Add(new NpgsqlParameter("@metadata", NpgsqlDbType.Jsonb)
+        {
+            Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
+        });
 
         _ = await command.ExecuteScalarAsync(cancellationToken);
 
@@ -70,7 +78,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             description,
             [],
             spatialReference,
-            maxRecordCount);
+            maxRecordCount,
+            Metadata: metadata);
     }
 
     /// <inheritdoc />
@@ -78,6 +87,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string name,
         string? description = null,
         int? maxRecordCount = null,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default)
     {
         var setClauses = new List<string>();
@@ -95,6 +105,15 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             parameters.Add(new NpgsqlParameter("@maxRecordCount", maxRecordCount.Value));
         }
 
+        if (metadata != null)
+        {
+            setClauses.Add("metadata = @metadata");
+            parameters.Add(new NpgsqlParameter("@metadata", NpgsqlDbType.Jsonb)
+            {
+                Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
+            });
+        }
+
         if (setClauses.Count == 0)
         {
             // Nothing to update, just return existing service
@@ -105,7 +124,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             UPDATE {_servicesTable}
             SET {string.Join(", ", setClauses)}
             WHERE LOWER(service_name) = LOWER(@name)
-            RETURNING service_name, description, srid, max_record_count
+            RETURNING service_name, description, srid, max_record_count, metadata
             """;
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -119,12 +138,15 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
+        var updatedMetadata = ReadMetadata(reader, 4);
+
         return new ServiceDefinition(
             reader.GetString(0),
             reader.GetString(1),
             [],
-            new SpatialReference(reader.GetInt32(2)),
-            reader.GetInt32(3));
+            SpatialReference.Create(reader.GetInt32(2)),
+            reader.GetInt32(3),
+            Metadata: updatedMetadata);
     }
 
     /// <inheritdoc />
@@ -204,6 +226,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string schemaName,
         string displayName,
         string? description = null,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default)
     {
         // Discover table metadata from PostGIS
@@ -224,8 +247,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
 
             // Insert layer
             string sql = $"""
-                INSERT INTO {_layersTable} (layer_id, layer_name, description, geometry_type, srid, table_schema, table_name, default_visibility)
-                VALUES (@layerId, @layerName, @description, @geometryType, @srid, @tableSchema, @tableName, true)
+                INSERT INTO {_layersTable} (layer_id, layer_name, description, geometry_type, srid, table_schema, table_name, default_visibility, metadata)
+                VALUES (@layerId, @layerName, @description, @geometryType, @srid, @tableSchema, @tableName, true, @metadata)
                 RETURNING layer_id
                 """;
 
@@ -237,6 +260,10 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             _ = command.Parameters.AddWithValue("@srid", tableInfo.Srid);
             _ = command.Parameters.AddWithValue("@tableSchema", schemaName);
             _ = command.Parameters.AddWithValue("@tableName", tableName);
+            _ = command.Parameters.Add(new NpgsqlParameter("@metadata", NpgsqlDbType.Jsonb)
+            {
+                Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
+            });
 
             _ = await command.ExecuteScalarAsync(cancellationToken);
 
@@ -248,8 +275,9 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
                 displayName,
                 description,
                 tableInfo.GeometryType,
-                new SpatialReference(tableInfo.Srid),
-                tableInfo.Fields);
+                SpatialReference.Create(tableInfo.Srid),
+                tableInfo.Fields,
+                Metadata: metadata);
 
             await transaction.CommitAsync(cancellationToken);
 
@@ -270,6 +298,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         double? minScale = null,
         double? maxScale = null,
         bool? defaultVisibility = null,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default)
     {
         var setClauses = new List<string>();
@@ -305,6 +334,15 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             parameters.Add(new NpgsqlParameter("@defaultVisibility", defaultVisibility.Value));
         }
 
+        if (metadata != null)
+        {
+            setClauses.Add("metadata = @metadata");
+            parameters.Add(new NpgsqlParameter("@metadata", NpgsqlDbType.Jsonb)
+            {
+                Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
+            });
+        }
+
         if (setClauses.Count == 0)
         {
             // Nothing to update, just return existing layer
@@ -315,7 +353,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             UPDATE {_layersTable}
             SET {string.Join(", ", setClauses)}
             WHERE layer_id = @layerId
-            RETURNING layer_id, layer_name, description, geometry_type, srid, min_scale, max_scale, default_visibility
+            RETURNING layer_id, layer_name, description, geometry_type, srid, min_scale, max_scale, default_visibility, metadata
             """;
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -330,17 +368,19 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             return null;
 
         var geometryType = Enum.Parse<GeometryType>(reader.GetString(3));
+        var updatedMetadata = ReadMetadata(reader, 8);
         var layer = new LayerDefinition(
             reader.GetInt32(0),
             reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2),
             geometryType,
-            new SpatialReference(reader.GetInt32(4)),
+            SpatialReference.Create(reader.GetInt32(4)),
             [],
             null,
             reader.IsDBNull(5) ? null : reader.GetDouble(5),
             reader.IsDBNull(6) ? null : reader.GetDouble(6),
-            reader.GetBoolean(7));
+            reader.GetBoolean(7),
+            Metadata: updatedMetadata);
 
         reader.Close();
 
@@ -445,7 +485,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             var refreshedLayer = existingLayer with
             {
                 GeometryType = tableInfo.GeometryType,
-                SpatialReference = new SpatialReference(tableInfo.Srid),
+                SpatialReference = SpatialReference.Create(tableInfo.Srid),
                 Fields = tableInfo.Fields
             };
 
@@ -534,7 +574,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     private async Task<ServiceDefinition?> GetServiceInternalAsync(string name, CancellationToken cancellationToken)
     {
         string sql = $"""
-            SELECT service_name, description, srid, max_record_count
+            SELECT service_name, description, srid, max_record_count, metadata
             FROM {_servicesTable}
             WHERE LOWER(service_name) = LOWER(@name)
             """;
@@ -547,18 +587,21 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
+        var metadata = ReadMetadata(reader, 4);
+
         return new ServiceDefinition(
             reader.GetString(0),
             reader.GetString(1),
             [],
-            new SpatialReference(reader.GetInt32(2)),
-            reader.GetInt32(3));
+            SpatialReference.Create(reader.GetInt32(2)),
+            reader.GetInt32(3),
+            Metadata: metadata);
     }
 
     private async Task<LayerDefinition?> GetLayerInternalAsync(int layerId, CancellationToken cancellationToken)
     {
         string sql = $"""
-            SELECT layer_id, layer_name, description, geometry_type, srid, min_scale, max_scale, default_visibility
+            SELECT layer_id, layer_name, description, geometry_type, srid, min_scale, max_scale, default_visibility, metadata
             FROM {_layersTable}
             WHERE layer_id = @layerId
             """;
@@ -572,17 +615,19 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             return null;
 
         var geometryType = Enum.Parse<GeometryType>(reader.GetString(3));
+        var metadata = ReadMetadata(reader, 8);
         var layer = new LayerDefinition(
             reader.GetInt32(0),
             reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2),
             geometryType,
-            new SpatialReference(reader.GetInt32(4)),
+            SpatialReference.Create(reader.GetInt32(4)),
             [],
             null,
             reader.IsDBNull(5) ? null : reader.GetDouble(5),
             reader.IsDBNull(6) ? null : reader.GetDouble(6),
-            reader.GetBoolean(7));
+            reader.GetBoolean(7),
+            Metadata: metadata);
 
         reader.Close();
 
@@ -730,6 +775,32 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             return null;
 
         return new TableInfo(geometryType, srid, [.. fields]);
+    }
+
+    private static string? SerializeMetadata(CatalogMetadata? metadata)
+    {
+        if (metadata == null)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(metadata, CatalogJsonContext.Default.CatalogMetadata);
+    }
+
+    private static CatalogMetadata? ReadMetadata(NpgsqlDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var json = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.CatalogMetadata);
     }
 
     private sealed record TableInfo(GeometryType GeometryType, int Srid, FieldDefinition[] Fields);

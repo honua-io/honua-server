@@ -197,6 +197,13 @@ fi
 mkdir -p "$CITE_RESULTS_DIR"
 rm -rf "$CITE_RESULTS_DIR"/*
 
+# Capture conformance declaration for CI gating
+echo -e "${YELLOW}Capturing conformance declaration...${NC}"
+if ! curl -s -f http://localhost:8080/ogc/features/conformance > "$CITE_RESULTS_DIR/conformance.json"; then
+    echo -e "${RED}❌ Failed to capture conformance declaration${NC}"
+    exit 1
+fi
+
 # Update test parameters with current profile
 if [[ "$PROFILE" != "default" ]]; then
     echo -e "${YELLOW}Using CITE profile: $PROFILE${NC}"
@@ -333,10 +340,21 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 
 ## Conformance Classes Tested
 
+**Part 1 - Core:**
 - Core (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core)
 - OpenAPI 3.0 (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30)
 - HTML (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html)
 - GeoJSON (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson)
+
+**Part 2 - Coordinate Reference Systems:**
+- CRS (http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs)
+
+**Part 3 - Filtering:**
+- Filter (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter)
+- Features Filter (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter)
+- Simple CQL (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/simple-cql)
+- CQL Text (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/cql-text)
+- Queryables (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables)
 
 ## Results
 

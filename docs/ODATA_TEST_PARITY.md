@@ -43,6 +43,15 @@ The OData test suite provides comprehensive coverage of OData v4 specification f
 | Contains | `contains(field, 'value')` | `ODataFilterMatrixTests.Filter_Contains_ReturnsPartialMatches` |
 | Starts With | `startswith(field, 'value')` | `ODataFilterMatrixTests.Filter_StartsWith_ReturnsPrefix` |
 | Ends With | `endswith(field, 'value')` | `ODataFilterMatrixTests.Filter_EndsWith_ReturnsSuffix` |
+| Substring | `substring(field, start, length)` | `ODataErrorHandlingTests.Filter_SubstringFunction_ReturnsMatches` |
+| To Lower | `tolower(field)` | `ODataErrorHandlingTests.Filter_ToLowerFunction_ReturnsMatches` |
+| Concat | `concat(field1, field2)` | `ODataErrorHandlingTests.Filter_ConcatFunction_ReturnsMatches` |
+
+### Date/Time Functions
+
+| Function | OData Syntax | Test Coverage |
+|----------|-------------|---------------|
+| Year | `year(datetime'2020-01-01T00:00:00Z')` | `ODataErrorHandlingTests.Filter_YearFunction_ReturnsMatches` |
 
 ### Field Type Handling
 
@@ -186,14 +195,14 @@ The OData test suite provides comprehensive coverage of OData v4 specification f
 | Non-numeric $top | `Top_NonNumericValue_ReturnsBadRequest` |
 | Invalid $orderby field | `OrderBy_InvalidField_ReturnsBadRequest` |
 
-### Unsupported Functions
+### Previously Unsupported Functions
 
 | Function | Test Coverage |
 |----------|---------------|
-| substring() | `Filter_UnsupportedStringFunction_ReturnsBadRequest` |
-| year() | `Filter_UnsupportedDateFunction_ReturnsBadRequest` |
-| tolower() | `Filter_UnsupportedCaseFunction_ReturnsBadRequest` |
-| concat() | `Filter_UnsupportedConcatFunction_ReturnsBadRequest` |
+| substring() | `Filter_SubstringFunction_ReturnsMatches` |
+| year() | `Filter_YearFunction_ReturnsMatches` |
+| tolower() | `Filter_ToLowerFunction_ReturnsMatches` |
+| concat() | `Filter_ConcatFunction_ReturnsMatches` |
 
 ### Malformed Geometry
 

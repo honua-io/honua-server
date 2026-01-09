@@ -18,11 +18,17 @@ public sealed class ProtocolAttribute : Attribute
     /// <param name="protocols">One or more protocol identifiers from <see cref="Constants.Protocols"/></param>
     public ProtocolAttribute(params string[] protocols)
     {
-        foreach (var protocol in protocols)
+        Protocols = protocols ?? [];
+
+        foreach (var protocol in Protocols)
         {
             Traits.Add(new TraitAttribute("Protocol", protocol));
         }
     }
+
+    public IReadOnlyList<string> Protocols { get; }
+
+    public string Protocol => Protocols.Count > 0 ? Protocols[0] : string.Empty;
 
     private List<TraitAttribute> Traits { get; } = [];
 }

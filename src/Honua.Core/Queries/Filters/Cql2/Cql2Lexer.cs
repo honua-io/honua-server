@@ -84,6 +84,7 @@ public sealed class Cql2Lexer
             { "BBOX", Cql2TokenType.Bbox }
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
+    /// <inheritdoc/>
     public Cql2Lexer(string input)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));

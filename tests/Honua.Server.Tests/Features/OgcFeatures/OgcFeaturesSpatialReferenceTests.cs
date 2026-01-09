@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.OgcFeatures;
 
 [Collection("Database")]
 [Protocol(Protocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
 public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -70,5 +71,49 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
             created.Id!.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         srid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task GetCollection_WithNon4326Layer_IncludesStorageCrs()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var collection = JsonSerializer.Deserialize(content, OgcJsonContext.Default.CollectionInfo);
+
+        collection.Should().NotBeNull();
+        collection!.Crs.Should().Contain(OgcFeaturesUtilities.Crs84Uri);
+        collection.Crs.Should().Contain("http://www.opengis.net/def/crs/EPSG/0/3857");
+        collection.StorageCrs.Should().Be("http://www.opengis.net/def/crs/EPSG/0/3857");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithProjectedBboxCrs_AllowsProjectedRange()
+    {
+        var bbox = "-20000000,-20000000,20000000,20000000";
+        var bboxCrs = "http://www.opengis.net/def/crs/EPSG/0/3857";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?bbox={Uri.EscapeDataString(bbox)}&bbox-crs={Uri.EscapeDataString(bboxCrs)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCrsParameter_SetsContentCrsHeader()
+    {
+        var crs = "EPSG:3857";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items?crs={Uri.EscapeDataString(crs)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
     }
 }

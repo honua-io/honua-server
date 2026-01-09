@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Npgsql;
 
 namespace Honua.Postgres.Features.Catalog;
@@ -46,6 +48,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 l.min_scale,
                 l.max_scale,
                 l.default_visibility,
+                l.metadata,
                 ST_XMin(l.extent) as xmin,
                 ST_YMin(l.extent) as ymin,
                 ST_XMax(l.extent) as xmax,
@@ -87,6 +90,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 l.min_scale,
                 l.max_scale,
                 l.default_visibility,
+                l.metadata,
                 ST_XMin(l.extent) as xmin,
                 ST_YMin(l.extent) as ymin,
                 ST_XMax(l.extent) as xmax,
@@ -135,6 +139,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.max_record_count,
                 s.supported_formats,
                 s.capabilities,
+                s.metadata,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
@@ -171,6 +176,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.max_record_count,
                 s.supported_formats,
                 s.capabilities,
+                s.metadata,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
@@ -257,7 +263,9 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, srid);
         }
 
-        var spatialReference = new SpatialReference(srid);
+        var spatialReference = SpatialReference.Create(srid);
+
+        var metadata = ReadMetadata(reader, "metadata");
 
         return new LayerDefinition(
             id,
@@ -269,7 +277,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             extent,
             minScale,
             maxScale,
-            defaultVisibility);
+            defaultVisibility,
+            Metadata: metadata);
     }
 
     private static ServiceDefinition ReadServiceDefinition(NpgsqlDataReader reader)
@@ -293,7 +302,9 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, srid);
         }
 
-        var spatialReference = new SpatialReference(srid);
+        var spatialReference = SpatialReference.Create(srid);
+
+        var metadata = ReadMetadata(reader, "metadata");
 
         return new ServiceDefinition(
             name,
@@ -303,7 +314,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             maxRecordCount,
             supportedFormats,
             capabilities,
-            extent);
+            extent,
+            Metadata: metadata);
     }
 
     private async Task<FieldDefinition[]> GetLayerFieldsAsync(int layerId, CancellationToken cancellationToken)
@@ -572,5 +584,22 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             originForeignKey,
             destinationForeignKey,
             description);
+    }
+
+    private static CatalogMetadata? ReadMetadata(NpgsqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var json = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.CatalogMetadata);
     }
 }

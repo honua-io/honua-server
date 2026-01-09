@@ -78,7 +78,7 @@ Invoke the script from a workflow job after the server is running. Use `--profil
 - **API metrics** (memory/DB/cache/health): `load-test-reports/run_*/metrics`
 - **CPU/memory samples** (docker or process): `load-test-reports/run_*/metrics/resources.csv`
 
-Private metrics endpoints (`/api/metrics/database`, `/api/metrics/memory`, etc.) require `HONUA_DEV_AUTH=true` or `X-API-Key`.
+Private metrics endpoints (`/api/v1/metrics/database`, `/api/v1/metrics/memory`, etc.) require `HONUA_DEV_AUTH=true` or `X-API-Key`.
 
 ## Failure Thresholds (initial)
 

@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Shared.Models;
 using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
@@ -95,7 +96,7 @@ public sealed class ValidSridAttribute : ValidationAttribute
         // Valid SRID ranges based on EPSG standards
         if (srid < 0 || srid > 999999)
         {
-            return new DataAnnotationsValidationResult("SRID must be between 0 and 999,999.");
+            return new DataAnnotationsValidationResult(ErrorMessages.RangeValidation.SridRange);
         }
 
         // Common invalid SRIDs
@@ -181,9 +182,9 @@ public sealed class ValidCoordinateAttribute : ValidationAttribute
         return CoordinateType switch
         {
             CoordinateType.Longitude when coordinate < -180.0 || coordinate > 180.0 =>
-                new DataAnnotationsValidationResult("Longitude must be between -180 and 180 degrees."),
+                new DataAnnotationsValidationResult(ErrorMessages.RangeValidation.LongitudeRange),
             CoordinateType.Latitude when coordinate < -90.0 || coordinate > 90.0 =>
-                new DataAnnotationsValidationResult("Latitude must be between -90 and 90 degrees."),
+                new DataAnnotationsValidationResult(ErrorMessages.RangeValidation.LatitudeRange),
             _ => DataAnnotationsValidationResult.Success!
         };
     }

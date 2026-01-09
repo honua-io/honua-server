@@ -31,7 +31,7 @@ public sealed record GeometryRepairResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
-    /// The original validation reason from PostGIS.
+    /// The original validation reason from the topology validator.
     /// </summary>
     public string? OriginalValidationReason { get; init; }
 

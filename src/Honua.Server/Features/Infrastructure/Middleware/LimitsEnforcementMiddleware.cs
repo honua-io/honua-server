@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
 
@@ -33,22 +34,30 @@ internal sealed class LimitsEnforcementMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // 1. Validate request payload size early
-        if (HasRequestBody(context) && !ValidatePayloadSize(context))
+        // 1. Apply request body size limits early (covers chunked uploads)
+        var hasBody = HasRequestBody(context);
+        var maxPayloadSize = ResolveMaxPayloadSize(context);
+        if (hasBody)
+        {
+            ApplyRequestBodyLimit(context, maxPayloadSize);
+        }
+
+        // 2. Validate request payload size early when Content-Length is present
+        if (hasBody && !ValidatePayloadSize(context, maxPayloadSize))
         {
             await WriteErrorResponseAsync(context, 413, "Request payload exceeds maximum allowed size",
-                $"Maximum payload size is {_limits.Edits.MaxPayloadSize:N0} bytes");
+                $"Maximum payload size is {maxPayloadSize:N0} bytes");
             return;
         }
 
-        // 2. Set up request timeout cancellation token
+        // 3. Set up request timeout cancellation token
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         timeoutCts.CancelAfter(_limits.Connections.RequestTimeout);
 
         // Make the timeout token available to downstream handlers
         context.Items["LimitsTimeoutToken"] = timeoutCts.Token;
 
-        // 3. Log request processing start with limits context
+        // 4. Log request processing start with limits context
         InfrastructureLog.RequestProcessingStarted(_logger, context.Request.Method, context.Request.Path,
             context.Request.ContentLength ?? 0, _limits.Connections.RequestTimeout.TotalSeconds);
 
@@ -95,7 +104,7 @@ internal sealed class LimitsEnforcementMiddleware(
     /// <summary>
     /// Validates that the request payload size doesn't exceed configured limits.
     /// </summary>
-    private bool ValidatePayloadSize(HttpContext context)
+    private bool ValidatePayloadSize(HttpContext context, long maxPayloadSize)
     {
         long? contentLength = context.Request.ContentLength;
 
@@ -107,14 +116,57 @@ internal sealed class LimitsEnforcementMiddleware(
             return true;
         }
 
-        if (contentLength.Value > _limits.Edits.MaxPayloadSize)
+        if (contentLength.Value > maxPayloadSize)
         {
-            InfrastructureLog.PayloadSizeExceeded(_logger, context.Request.Path, contentLength.Value, _limits.Edits.MaxPayloadSize);
+            InfrastructureLog.PayloadSizeExceeded(_logger, context.Request.Path, contentLength.Value, maxPayloadSize);
             return false;
         }
 
         return true;
     }
+
+    private long ResolveMaxPayloadSize(HttpContext context)
+    {
+        var path = context.Request.Path.Value ?? string.Empty;
+
+        if (IsImportPreview(path))
+        {
+            return _limits.Imports.MaxPreviewSize;
+        }
+
+        if (IsImportUpload(path))
+        {
+            return _limits.Imports.MaxImportSize;
+        }
+
+        if (IsAttachmentUpload(path))
+        {
+            return _limits.Attachments.MaxAttachmentSize;
+        }
+
+        return _limits.Edits.MaxPayloadSize;
+    }
+
+    private static void ApplyRequestBodyLimit(HttpContext context, long maxPayloadSize)
+    {
+        var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (feature == null || feature.IsReadOnly)
+        {
+            return;
+        }
+
+        feature.MaxRequestBodySize = maxPayloadSize;
+    }
+
+    private static bool IsImportPreview(string path)
+        => path.Contains("/admin/import/preview", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsImportUpload(string path)
+        => path.Contains("/admin/import/upload", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAttachmentUpload(string path)
+        => path.EndsWith("/addAttachment", StringComparison.OrdinalIgnoreCase) ||
+           path.EndsWith("/updateAttachment", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Writes a standardized error response for limit violations.

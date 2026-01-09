@@ -10,7 +10,6 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -18,6 +17,7 @@ using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
 using Coordinate = NetTopologySuite.Geometries.Coordinate;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -28,13 +28,12 @@ namespace Honua.Postgres.Features.Import;
 /// </summary>
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
-    private readonly string _connectionString;
+    private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ImportLimits _limits;
     private readonly StreamingGeoJsonReader _geoJsonReader;
-    private readonly ISchemaContext? _schemaContext;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<StreamingFileImportService> _logger;
-    private readonly Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? _cloudStorage;
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
@@ -54,19 +53,17 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     };
 
     public StreamingFileImportService(
-        string connectionString,
+        IDatabaseConnectionProvider connectionProvider,
         IPerformanceMonitor performanceMonitor,
         ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
-        ISchemaContext? schemaContext = null,
-        Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? cloudStorage = null)
+        Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
-        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _limits = limits ?? ImportLimits.Default;
         _geoJsonReader = new StreamingGeoJsonReader(_limits);
-        _schemaContext = schemaContext;
         _cloudStorage = cloudStorage;
     }
 
@@ -571,7 +568,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// Validates a geometry against configured limits.
     /// Returns null if valid, or an error message if invalid.
     /// </summary>
-    private string? ValidateGeometry(Geometry geometry)
+    private string? ValidateGeometry(NtsGeometry geometry)
     {
         // Count vertices
         var vertexCount = CountVertices(geometry);
@@ -599,7 +596,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Counts the total number of vertices in a geometry.
     /// </summary>
-    private static int CountVertices(Geometry geometry)
+    private static int CountVertices(NtsGeometry geometry)
     {
         return geometry.NumPoints;
     }
@@ -607,7 +604,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Counts the total number of rings in polygon geometries.
     /// </summary>
-    private static int CountRings(Geometry geometry)
+    private static int CountRings(NtsGeometry geometry)
     {
         return geometry switch
         {
@@ -624,7 +621,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Validates that all coordinates in the geometry are finite numbers.
     /// </summary>
-    private static bool ValidateCoordinates(Geometry geometry)
+    private static bool ValidateCoordinates(NtsGeometry geometry)
     {
         foreach (var coord in geometry.Coordinates)
         {
@@ -866,7 +863,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         CancellationToken cancellationToken)
     {
         var attributes = new AttributesTable();
-        Geometry? geometry = null;
+        NtsGeometry? geometry = null;
         var depth = reader.Depth;
 
         while (await reader.ReadAsync())
@@ -904,7 +901,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return new Feature(geometry, attributes);
     }
 
-    private static async Task<Geometry?> ParseKmlPointAsync(
+    private static async Task<NtsGeometry?> ParseKmlPointAsync(
         XmlReader reader,
         GeometryFactory factory,
         CancellationToken cancellationToken)
@@ -931,7 +928,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return null;
     }
 
-    private static async Task<Geometry?> ParseKmlLineStringAsync(
+    private static async Task<NtsGeometry?> ParseKmlLineStringAsync(
         XmlReader reader,
         GeometryFactory factory,
         CancellationToken cancellationToken)
@@ -954,7 +951,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return null;
     }
 
-    private static async Task<Geometry?> ParseKmlPolygonAsync(
+    private static async Task<NtsGeometry?> ParseKmlPolygonAsync(
         XmlReader reader,
         GeometryFactory factory,
         CancellationToken cancellationToken)
@@ -1274,10 +1271,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
     private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
-        var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
-        return connection;
+        var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        if (connection is NpgsqlConnection npgsqlConnection)
+        {
+            return npgsqlConnection;
+        }
+
+        await connection.DisposeAsync().ConfigureAwait(false);
+        throw new InvalidOperationException("Expected NpgsqlConnection for streaming import.");
     }
 
     private static void ValidateTableName(string tableName)

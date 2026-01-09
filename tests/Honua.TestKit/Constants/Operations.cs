@@ -37,6 +37,9 @@ public static class Operations
     public const string Configuration = "Configuration";
     public const string Cache = "Cache";
 
+    // Import Operations
+    public const string Import = "Import";
+
     // Health Operations
     public const string HealthCheck = "HealthCheck";
     public const string LivenessCheck = "LivenessCheck";

@@ -293,4 +293,14 @@ public sealed class TokenValidationOptions
     /// Gets or sets additional valid audiences.
     /// </summary>
     public string[] ValidAudiences { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets whether to enable token replay protection.
+    /// </summary>
+    public bool EnableTokenReplayProtection { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum replay cache duration (0 uses token expiry).
+    /// </summary>
+    public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.Zero;
 }

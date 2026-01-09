@@ -232,6 +232,7 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
         ObjectDisposedException.ThrowIf(_disposed, typeof(SystemMetricsCollector));
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)

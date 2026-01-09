@@ -6,7 +6,7 @@
 -- Dependencies: Requires honua.layers table from 001_CreateHonuaSchema.sql
 
 -- Create relationships table
-CREATE TABLE honua.relationships (
+CREATE TABLE IF NOT EXISTS honua.relationships (
     id SERIAL PRIMARY KEY,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
     relationship_id INT NOT NULL,
@@ -32,9 +32,9 @@ CREATE TABLE honua.relationships (
 );
 
 -- Create indexes for efficient relationship queries
-CREATE INDEX idx_relationships_layer_id ON honua.relationships(layer_id);
-CREATE INDEX idx_relationships_related_layer_id ON honua.relationships(related_layer_id);
-CREATE INDEX idx_relationships_lookup ON honua.relationships(layer_id, relationship_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_layer_id ON honua.relationships(layer_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_related_layer_id ON honua.relationships(related_layer_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_lookup ON honua.relationships(layer_id, relationship_id);
 
 -- Create trigger to update the updated_at timestamp
 CREATE OR REPLACE FUNCTION honua.update_relationships_updated_at()
@@ -45,6 +45,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_relationships_updated_at ON honua.relationships;
 CREATE TRIGGER trigger_update_relationships_updated_at
     BEFORE UPDATE ON honua.relationships
     FOR EACH ROW

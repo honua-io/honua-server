@@ -6,8 +6,10 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Caching;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -17,7 +19,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// <summary>
 /// Tests for CachingLayerCatalog - validates caching decorator behavior.
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.TestQuality)]
 public sealed class CachingLayerCatalogTests : IDisposable
 {
     private readonly MockLayerCatalog _innerCatalog;
@@ -35,6 +37,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
             DefaultTtlSeconds = 300,
             LayerTtlSeconds = 60,
             ServiceTtlSeconds = 60,
+            NegativeTtlSeconds = 30,
             EnableFallback = true,
             FallbackMaxEntries = 100,
             KeyPrefix = "test:"
@@ -59,7 +62,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetLayerAsync_FirstCall_QueriesInnerCatalog()
     {
         // Arrange
@@ -75,7 +78,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetLayerAsync_SecondCall_UsesCachedValue()
     {
         // Arrange
@@ -90,7 +93,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task ListLayersAsync_FirstCall_QueriesInnerCatalog()
     {
         // Arrange
@@ -105,7 +108,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task ListLayersAsync_SecondCall_UsesCachedValue()
     {
         // Arrange
@@ -120,7 +123,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetServiceAsync_FirstCall_QueriesInnerCatalog()
     {
         // Arrange
@@ -136,7 +139,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetServiceAsync_SecondCall_UsesCachedValue()
     {
         // Arrange
@@ -151,7 +154,43 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
+    public async Task GetLayerAsync_MissingLayer_UsesNegativeCache()
+    {
+        // Arrange
+        _innerCatalog.MissingLayerIds.Add(9);
+        _innerCatalog.GetLayerCallCount = 0;
+
+        // Act
+        var first = await _cachingCatalog.GetLayerAsync(9);
+        var second = await _cachingCatalog.GetLayerAsync(9);
+
+        // Assert
+        first.Should().BeNull();
+        second.Should().BeNull();
+        _innerCatalog.GetLayerCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task ServiceExistsAsync_MissingService_UsesNegativeCache()
+    {
+        // Arrange
+        _innerCatalog.MissingServiceNames.Add("MissingService");
+        _innerCatalog.ServiceExistsCallCount = 0;
+
+        // Act
+        var first = await _cachingCatalog.ServiceExistsAsync("MissingService");
+        var second = await _cachingCatalog.ServiceExistsAsync("MissingService");
+
+        // Assert
+        first.Should().BeFalse();
+        second.Should().BeFalse();
+        _innerCatalog.ServiceExistsCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task InvalidateLayerAsync_ClearsLayerCache()
     {
         // Arrange
@@ -167,7 +206,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task InvalidateServiceAsync_ClearsServiceCache()
     {
         // Arrange
@@ -183,7 +222,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task LayerExistsAsync_WhenCached_ReturnsTrueWithoutQuery()
     {
         // Arrange
@@ -199,7 +238,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task ServiceExistsAsync_WhenCached_ReturnsTrueWithoutQuery()
     {
         // Arrange
@@ -215,7 +254,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetRelationshipAsync_FirstCall_QueriesInnerCatalog()
     {
         // Arrange
@@ -230,7 +269,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task InvalidateAllAsync_ClearsAllCaches()
     {
         // Arrange
@@ -263,6 +302,8 @@ public sealed class CachingLayerCatalogTests : IDisposable
         [
             Relationship.Create(1, "TestRelationship", 2, "esriRelCardinalityOneToMany", "id", "layer_id")
         ];
+        public HashSet<int> MissingLayerIds { get; } = new();
+        public HashSet<string> MissingServiceNames { get; } = new(StringComparer.OrdinalIgnoreCase);
         public int GetLayerCallCount { get; set; }
         public int ListLayersCallCount { get; set; }
         public int GetServiceCallCount { get; set; }
@@ -275,6 +316,10 @@ public sealed class CachingLayerCatalogTests : IDisposable
         public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
         {
             GetLayerCallCount++;
+            if (MissingLayerIds.Contains(layerId))
+            {
+                return Task.FromResult<LayerDefinition?>(null);
+            }
             return Task.FromResult<LayerDefinition?>(CreateTestLayer(layerId));
         }
 
@@ -287,6 +332,10 @@ public sealed class CachingLayerCatalogTests : IDisposable
         public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             GetServiceCallCount++;
+            if (MissingServiceNames.Contains(serviceName))
+            {
+                return Task.FromResult<ServiceDefinition?>(null);
+            }
             return Task.FromResult<ServiceDefinition?>(CreateTestService(serviceName));
         }
 
@@ -299,12 +348,20 @@ public sealed class CachingLayerCatalogTests : IDisposable
         public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
         {
             LayerExistsCallCount++;
+            if (MissingLayerIds.Contains(layerId))
+            {
+                return Task.FromResult(false);
+            }
             return Task.FromResult(layerId > 0 && layerId <= 2);
         }
 
         public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             ServiceExistsCallCount++;
+            if (MissingServiceNames.Contains(serviceName))
+            {
+                return Task.FromResult(false);
+            }
             return Task.FromResult(!string.IsNullOrEmpty(serviceName));
         }
 

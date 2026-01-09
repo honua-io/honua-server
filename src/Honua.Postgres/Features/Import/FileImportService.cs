@@ -24,10 +24,10 @@ internal sealed class FileImportService : IFileImportService
     private readonly string _connectionString;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ISchemaContext? _schemaContext;
-    private readonly Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? _cloudStorage;
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
 
     public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null,
-        Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? cloudStorage = null)
+        Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));

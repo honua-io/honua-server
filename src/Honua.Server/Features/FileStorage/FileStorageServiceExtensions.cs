@@ -1,8 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.FileStorage.Abstractions;
-using Honua.Core.Features.FileStorage.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Features.FileStorage;
 
@@ -21,9 +25,13 @@ public static class FileStorageServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        // Register upload progress store
+        services.AddSingleton<IUploadProgressStore, InMemoryUploadProgressStore>();
+
         // Bind configuration
         var section = configuration.GetSection("FileStorage");
         services.Configure<CloudStorageOptions>(section);
+        services.PostConfigure<CloudStorageOptions>(ResolveCloudStorageSecrets);
 
         // Bind provider-specific options
         var localSection = section.GetSection("LocalStorage");
@@ -61,25 +69,16 @@ public static class FileStorageServiceExtensions
                 break;
 
             case CloudStorageProvider.AwsS3:
-                // Planned for Phase 1 - Cloud Storage Integration
-                // See docs/MVP_PLAN.md for implementation roadmap
-                throw new NotSupportedException(
-                    "AWS S3 storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development.");
+                services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
+                break;
 
             case CloudStorageProvider.AzureBlob:
-                // Planned for Phase 1 - Cloud Storage Integration
-                // See docs/MVP_PLAN.md for implementation roadmap
-                throw new NotSupportedException(
-                    "Azure Blob storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development.");
+                services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
+                break;
 
             case CloudStorageProvider.GoogleCloudStorage:
-                // Planned for Phase 1 - Cloud Storage Integration
-                // See docs/MVP_PLAN.md for implementation roadmap
-                throw new NotSupportedException(
-                    "Google Cloud Storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development.");
+                services.AddSingleton<ICloudFileStorage, GoogleCloudStorageFileStorage>();
+                break;
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {providerName}");
@@ -105,8 +104,12 @@ public static class FileStorageServiceExtensions
         this IServiceCollection services,
         Action<CloudStorageOptions> configure)
     {
+        // Register upload progress store
+        services.AddSingleton<IUploadProgressStore, InMemoryUploadProgressStore>();
+
         var options = new CloudStorageOptions();
         configure(options);
+        ResolveCloudStorageSecrets(options);
 
         services.AddSingleton(Microsoft.Extensions.Options.Options.Create(options));
 
@@ -131,11 +134,16 @@ public static class FileStorageServiceExtensions
                 break;
 
             case CloudStorageProvider.AwsS3:
+                services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
+                break;
+
             case CloudStorageProvider.AzureBlob:
+                services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
+                break;
+
             case CloudStorageProvider.GoogleCloudStorage:
-                throw new NotSupportedException(
-                    $"{options.Provider} storage provider is not yet implemented. " +
-                    "Use 'Local' provider for development.");
+                services.AddSingleton<ICloudFileStorage, GoogleCloudStorageFileStorage>();
+                break;
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {options.Provider}");
@@ -147,5 +155,32 @@ public static class FileStorageServiceExtensions
         }
 
         return services;
+    }
+
+    private static void ResolveCloudStorageSecrets(CloudStorageOptions options)
+    {
+        if (options.AwsS3 != null)
+        {
+            options.AwsS3.AccessKeyId = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.AwsS3.AccessKeyId,
+                "FileStorage:AwsS3:AccessKeyId");
+            options.AwsS3.SecretAccessKey = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.AwsS3.SecretAccessKey,
+                "FileStorage:AwsS3:SecretAccessKey");
+        }
+
+        if (options.AzureBlob is { } azureBlob)
+        {
+            azureBlob.ConnectionString = SecretReferenceResolver.ResolveEnvironmentReference(
+                azureBlob.ConnectionString,
+                "FileStorage:AzureBlob:ConnectionString") ?? string.Empty;
+        }
+
+        if (options.GoogleCloudStorage is { } googleCloudStorage)
+        {
+            googleCloudStorage.CredentialsPath = SecretReferenceResolver.ResolveEnvironmentReference(
+                googleCloudStorage.CredentialsPath,
+                "FileStorage:GoogleCloudStorage:CredentialsPath");
+        }
     }
 }

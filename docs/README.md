@@ -33,7 +33,9 @@ New to Honua Server? Start here:
 ### 🎯 Operational Excellence
 - **[Performance Monitoring](performance-monitoring.md)** - Monitoring setup and metrics
 - **[Caching Strategy](CACHING_STRATEGY.md)** - Redis and in-memory caching
-- **[Rate Limiting](RATE_LIMITING.md)** - API protection and throttling
+- **[Backup and Restore](backup-restore.md)** - Recovery procedures and RTO/RPO targets
+- **[Zero-Downtime Migrations](zero-downtime-migrations.md)** - Safe schema evolution strategy
+- **[Credential Rotation](credential-rotation.md)** - Rotation procedures for secrets and keys
 - **[Operational Excellence](OPERATIONAL_EXCELLENCE.md)** - Production best practices
 
 ### 🧪 Testing and Quality
@@ -50,6 +52,8 @@ New to Honua Server? Start here:
 ### 🔒 Security
 - **[Container Security](CONTAINER_SECURITY.md)** - Docker security best practices
 - **[CSP Enhancement](CSP_ENHANCEMENT.md)** - Content Security Policy configuration
+- **[Authorization Matrix](AUTHORIZATION_MATRIX.md)** - Endpoint access requirements
+- **[Security Configuration](SECURITY_CONFIGURATION.md)** - Secrets, OIDC hardening, and proxy settings
 
 ### 📖 API Documentation
 - **[API Examples](API_EXAMPLES.md)** - Sample requests for all protocols
@@ -67,7 +71,9 @@ New to Honua Server? Start here:
 1. [Performance Monitoring](performance-monitoring.md)
 2. [Troubleshooting Guides](troubleshooting/)
 3. [Operational Excellence](OPERATIONAL_EXCELLENCE.md)
-4. [Container Security](CONTAINER_SECURITY.md)
+4. [Backup and Restore](backup-restore.md)
+5. [Zero-Downtime Migrations](zero-downtime-migrations.md)
+6. [Credential Rotation](credential-rotation.md)
 
 ### For System Architects
 1. [Architecture Decision Records](adr/)

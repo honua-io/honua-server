@@ -107,7 +107,7 @@ public class SharedModelTests
         var extent = FeatureExtent.Create(-180.0, -90.0, 180.0, 90.0, 4326);
 
         // Act
-        var bbox = extent.ToBoundingBox();
+        var bbox = ExtentExtensions.ToBoundingBox(extent);
 
         // Assert
         bbox.Should().BeEquivalentTo(_expectedBbox);

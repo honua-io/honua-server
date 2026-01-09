@@ -9,6 +9,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Memory;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -270,7 +271,7 @@ internal sealed class StreamingGeoJsonReader
             }
 
             // Parse geometry
-            Geometry? geometry = null;
+            NtsGeometry? geometry = null;
             if (root.TryGetProperty("geometry", out var geometryElement) &&
                 geometryElement.ValueKind != JsonValueKind.Null)
             {
@@ -311,7 +312,7 @@ internal sealed class StreamingGeoJsonReader
     /// <summary>
     /// Parse a GeoJSON geometry element into a NetTopologySuite Geometry.
     /// </summary>
-    private Geometry? ParseGeometry(JsonElement geometryElement)
+    private NtsGeometry? ParseGeometry(JsonElement geometryElement)
     {
         if (geometryElement.ValueKind == JsonValueKind.Null)
             return null;
@@ -329,7 +330,7 @@ internal sealed class StreamingGeoJsonReader
             if (geometryType == "GeometryCollection" &&
                 geometryElement.TryGetProperty("geometries", out var geometriesElement))
             {
-                var geometries = new List<Geometry>();
+                var geometries = new List<NtsGeometry>();
                 foreach (var geomElement in geometriesElement.EnumerateArray())
                 {
                     var geom = ParseGeometry(geomElement);

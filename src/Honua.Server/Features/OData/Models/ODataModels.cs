@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.OData.Models;
 
@@ -42,9 +44,43 @@ public sealed class EntitySet
 }
 
 /// <summary>
+/// OData-specific link implementation for ILink compatibility
+/// </summary>
+public sealed record ODataLink : ILink
+{
+    /// <summary>
+    /// The URI of the linked resource
+    /// </summary>
+    public required string Href { get; init; }
+
+    /// <summary>
+    /// Relation type (always "next" for OData pagination)
+    /// </summary>
+    public string? Rel { get; init; } = "next";
+
+    /// <summary>
+    /// MIME type (always JSON for OData)
+    /// </summary>
+    public string? Type { get; init; } = "application/json";
+
+    /// <summary>
+    /// Human-readable title for the link
+    /// </summary>
+    public string? Title { get; init; } = "Next Page";
+
+    /// <summary>
+    /// Creates an OData pagination link
+    /// </summary>
+    /// <param name="href">URL to the next page</param>
+    /// <returns>New OData link instance</returns>
+    public static ODataLink CreateNextLink(string href)
+        => new() { Href = href };
+}
+
+/// <summary>
 /// Generic OData collection response
 /// </summary>
-public sealed class ODataResponse
+public sealed class ODataResponse : ICollectionResponse<object>
 {
     /// <summary>
     /// OData context URL
@@ -69,6 +105,17 @@ public sealed class ODataResponse
     /// </summary>
     [JsonPropertyName("value")]
     public required object[] Value { get; init; }
+
+    // ICollectionResponse implementation
+    ImmutableArray<object> ICollectionResponse<object>.Items => Value.ToImmutableArray();
+    ImmutableArray<ILink>? ICollectionResponse<object>.Links =>
+        NextLink != null
+            ? ImmutableArray.Create<ILink>(ODataLink.CreateNextLink(NextLink))
+            : null;
+    IPaginationMetadata? ICollectionResponse<object>.Pagination =>
+        Count.HasValue || Value.Length > 0
+            ? PaginationMetadata.Create(Count, Value.Length, NextLink != null)
+            : null;
 }
 
 /// <summary>

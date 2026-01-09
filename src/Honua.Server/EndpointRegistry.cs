@@ -22,6 +22,16 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
 
+        // v1 admin secure connection endpoints
+        new("GET", "/api/v1/admin/connections"),
+        new("GET", "/api/v1/admin/connections/{id}"),
+        new("POST", "/api/v1/admin/connections"),
+        new("PUT", "/api/v1/admin/connections/{id}"),
+        new("DELETE", "/api/v1/admin/connections/{id}"),
+        new("POST", "/api/v1/admin/connections/{id}/test"),
+        new("POST", "/api/v1/admin/connections/encryption/validate"),
+        new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
+
         // v1 admin metadata endpoints
         new("GET", "/api/v1/admin/metadata/services"),
         new("GET", "/api/v1/admin/metadata/services/{name}"),
@@ -58,6 +68,16 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/esri/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/esri/jobs"),
 
+        new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
+
+        new("GET", "/api/v1/metrics/health"),
+        new("GET", "/api/v1/metrics/performance"),
+        new("GET", "/api/v1/metrics/database"),
+        new("GET", "/api/v1/metrics/cache"),
+        new("GET", "/api/v1/metrics/memory"),
+
+        new("POST", "/csp-violation-report"),
+
         new("GET", "/rest/services/{serviceId}/FeatureServer"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
@@ -65,6 +85,7 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"),
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
@@ -82,12 +103,16 @@ public static class EndpointRegistry
         new("GET", "/odata/Features({layerId},{objectId})"),
         new("PATCH", "/odata/Features({layerId},{objectId})"),
         new("DELETE", "/odata/Features({layerId},{objectId})"),
+        new("POST", "/odata/$batch"),
+        new("GET", "/odata/Features({layerId})/$apply"),
+        new("GET", "/odata/Features({layerId})/$search"),
 
         new("GET", "/ogc/features"),
         new("GET", "/ogc/features/conformance"),
         new("GET", "/openapi.json"),
         new("GET", "/ogc/features/collections"),
         new("GET", "/ogc/features/collections/{collectionId}"),
+        new("GET", "/ogc/features/collections/{collectionId}/queryables"),
         new("GET", "/ogc/features/collections/{collectionId}/items"),
         new("GET", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("POST", "/ogc/features/collections/{collectionId}/items"),

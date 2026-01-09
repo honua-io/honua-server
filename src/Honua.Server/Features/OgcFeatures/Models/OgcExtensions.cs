@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.OgcFeatures.Models;
 
@@ -20,7 +22,7 @@ public static class OgcExtensions
     public static SpatialExtent ToSpatialExtent(this FeatureExtent extent)
         => new()
         {
-            BoundingBox = [extent.ToBoundingBox().ToImmutableArray()],
+            BoundingBox = [ImmutableArray.Create(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY)],
             Crs = ExtentExtensions.ToOgcCrsUri(extent.SpatialReference)
         };
 
@@ -125,35 +127,4 @@ public static class OgcExtensions
     public static PagedResponseBase ToPagedResponseBase(long? numberMatched, int numberReturned)
         => PagedResponseBase.Create(numberReturned, numberMatched);
 
-    /// <summary>
-    /// Creates SRID from OGC CRS string
-    /// </summary>
-    /// <param name="crs">OGC CRS string</param>
-    /// <returns>SRID integer</returns>
-    public static int ToSrid(this string crs)
-        => ExtentExtensions.ExtractSridFromCrs(crs);
-
-    /// <summary>
-    /// Converts SRID to OGC CRS URI
-    /// </summary>
-    /// <param name="srid">Spatial Reference System ID</param>
-    /// <returns>OGC CRS URI</returns>
-    public static string ToOgcCrs(this int srid)
-        => ExtentExtensions.ToOgcCrsUri(srid);
-
-    /// <summary>
-    /// Converts a shared SpatialReference to OGC CRS string
-    /// </summary>
-    /// <param name="spatialRef">Shared spatial reference</param>
-    /// <returns>OGC CRS URI string</returns>
-    public static string ToOgcCrs(this SpatialReference spatialRef)
-        => ExtentExtensions.ToOgcCrsUri(spatialRef.ToSrid());
-
-    /// <summary>
-    /// Creates a shared SpatialReference from OGC CRS string
-    /// </summary>
-    /// <param name="crs">OGC CRS string</param>
-    /// <returns>Shared spatial reference</returns>
-    public static SpatialReference ToSpatialReference(this string crs)
-        => SpatialReference.Create(ExtentExtensions.ExtractSridFromCrs(crs));
 }

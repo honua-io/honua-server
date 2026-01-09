@@ -1,0 +1,214 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.FeatureServer.Models;
+
+namespace Honua.Server.Features.FeatureServer.Services;
+
+/// <summary>
+/// Service responsible for processing related records queries for FeatureServer operations.
+/// Handles query building, execution, and result grouping for relationship-based queries.
+/// </summary>
+internal interface IRelatedRecordsService
+{
+    /// <summary>
+    /// Builds a RelatedQuery from query parameters.
+    /// </summary>
+    /// <param name="queryParams">Query parameters for related records</param>
+    /// <param name="objectIds">Object IDs to find related records for</param>
+    /// <param name="relationship">Relationship definition</param>
+    /// <returns>Configured RelatedQuery</returns>
+    RelatedQuery BuildRelatedQuery(
+        QueryRelatedRecordsParameters queryParams,
+        long[] objectIds,
+        Relationship relationship);
+
+    /// <summary>
+    /// Executes a related records query with validation error handling.
+    /// </summary>
+    /// <param name="layerId">Layer identifier</param>
+    /// <param name="query">Related query to execute</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Query result with related features</returns>
+    Task<QueryResult<Feature>> ExecuteRelatedQueryAsync(
+        int layerId,
+        RelatedQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Groups related records by their origin object IDs for API response.
+    /// </summary>
+    /// <param name="result">Query result containing related features</param>
+    /// <param name="objectIds">Original object IDs</param>
+    /// <param name="relationship">Relationship definition</param>
+    /// <param name="returnGeometry">Whether to include geometry in response</param>
+    /// <param name="outputSrid">Output spatial reference identifier</param>
+    /// <param name="outFields">Fields to include in response</param>
+    /// <returns>Grouped related record results</returns>
+    RelatedRecordGroup[] GroupRelatedRecords(
+        QueryResult<Feature> result,
+        long[] objectIds,
+        Relationship relationship,
+        bool returnGeometry,
+        int? outputSrid,
+        ImmutableArray<string>? outFields);
+}
+
+/// <summary>
+/// Implementation of related records processing for FeatureServer operations.
+/// </summary>
+internal sealed class RelatedRecordsService : IRelatedRecordsService
+{
+    private readonly IRelationshipStore _relationshipStore;
+
+    public RelatedRecordsService(IRelationshipStore relationshipStore)
+    {
+        _relationshipStore = relationshipStore ?? throw new ArgumentNullException(nameof(relationshipStore));
+    }
+
+    /// <summary>
+    /// Builds a RelatedQuery from query parameters.
+    /// </summary>
+    public RelatedQuery BuildRelatedQuery(
+        QueryRelatedRecordsParameters queryParams,
+        long[] objectIds,
+        Relationship relationship)
+    {
+        var query = new RelatedQuery
+        {
+            ObjectIds = objectIds,
+            Relationship = relationship,
+            Where = queryParams.Where,
+            Limit = queryParams.ResultRecordCount
+        };
+
+        // Parse outFields if specified
+        if (!string.IsNullOrEmpty(queryParams.OutFields))
+        {
+            if (queryParams.OutFields == "*")
+            {
+                // Return all fields - let the query run without field filtering
+                query = query with { OutFields = null };
+            }
+            else
+            {
+                var fields = queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(f => f.Trim())
+                    .ToImmutableArray();
+                query = query with { OutFields = fields };
+            }
+        }
+
+        return query;
+    }
+
+    /// <summary>
+    /// Executes a related records query with validation error handling.
+    /// </summary>
+    public async Task<QueryResult<Feature>> ExecuteRelatedQueryAsync(
+        int layerId,
+        RelatedQuery query,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _relationshipStore.QueryRelatedAsync(layerId, query, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException($"Invalid related query: {ex.Message}");
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException($"Invalid related query format: {ex.Message}");
+        }
+        catch (Exception ex) when (ex.Message.Contains("syntax") || ex.Message.Contains("SQL") || ex.Message.Contains("parse"))
+        {
+            throw new InvalidOperationException($"Invalid related query syntax: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Groups related records by their origin object IDs for API response.
+    /// </summary>
+    public RelatedRecordGroup[] GroupRelatedRecords(
+        QueryResult<Feature> result,
+        long[] objectIds,
+        Relationship relationship,
+        bool returnGeometry,
+        int? outputSrid,
+        ImmutableArray<string>? outFields)
+    {
+        HashSet<string>? outFieldSet = null;
+        if (outFields.HasValue && outFields.Value.Length > 0)
+        {
+            outFieldSet = new HashSet<string>(outFields.Value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var featuresByOriginId = new Dictionary<long, List<Feature>>();
+
+        foreach (var feature in result.Items)
+        {
+            if (feature.Attributes?.TryGetValue(relationship.DestinationForeignKeyField, out object? fkValue) == true &&
+                FeatureServerValueParser.TryConvertToLong(fkValue, out var originId))
+            {
+                if (!featuresByOriginId.TryGetValue(originId, out var bucket))
+                {
+                    bucket = [];
+                    featuresByOriginId[originId] = bucket;
+                }
+
+                bucket.Add(feature);
+            }
+        }
+
+        // Create a related record group for each requested object ID
+        return [.. objectIds.Select(objectId =>
+        {
+            bool hasRelatedFeatures = featuresByOriginId.TryGetValue(objectId, out List<Feature>? relatedFeatures);
+            var spatialReference = outputSrid.HasValue && outputSrid.Value > 0
+                ? new GeoServicesSpatialReference { Wkid = outputSrid.Value, LatestWkid = outputSrid.Value }
+                : null;
+
+            return new RelatedRecordGroup
+            {
+                ObjectId = objectId,
+                RelatedRecords = hasRelatedFeatures && relatedFeatures!.Count > 0
+                    ? new RelatedRecords
+                    {
+                        SpatialReference = spatialReference,
+                        Features = [.. relatedFeatures!.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFieldSet))]
+                    }
+                    : null
+            };
+        })];
+    }
+
+    /// <summary>
+    /// Converts a Feature to GeoServicesFeature for API responses.
+    /// </summary>
+    private static GeoServicesFeature ConvertToGeoServicesFeature(
+        Feature feature,
+        bool returnGeometry,
+        int? outputSrid,
+        HashSet<string>? outFields)
+    {
+        var attributes = outFields == null
+            ? feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+            : feature.Attributes
+                .Where(kvp => outFields.Contains(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        return new GeoServicesFeature
+        {
+            Attributes = attributes,
+            Geometry = returnGeometry ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid) : null
+        };
+    }
+}

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
@@ -17,15 +18,20 @@ namespace Honua.Server.Features.OData.Services;
 /// </summary>
 internal sealed class ODataAggregationHandler
 {
-    private readonly IFeatureStore _featureStore;
+    private readonly IFeatureReader _featureReader;
+    private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly ODataQueryService _queryService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataAggregationHandler"/> class.
     /// </summary>
-    public ODataAggregationHandler(IFeatureStore featureStore, ODataQueryService queryService)
+    public ODataAggregationHandler(
+        IFeatureReader featureReader,
+        IStreamingFeatureStore streamingFeatureStore,
+        ODataQueryService queryService)
     {
-        _featureStore = featureStore;
+        _featureReader = featureReader;
+        _streamingFeatureStore = streamingFeatureStore;
         _queryService = queryService;
     }
 
@@ -34,6 +40,7 @@ internal sealed class ODataAggregationHandler
     /// </summary>
     public async Task<ODataAggregationResult> ProcessAggregationAsync(
         int layerId,
+        LayerDefinition layer,
         string applyExpression,
         string? filter,
         string baseUrl,
@@ -44,24 +51,23 @@ internal sealed class ODataAggregationHandler
 
         // Build the query
         var query = new FeatureQuery();
-        query = ApplyODataFilter(query, filter);
+        query = ApplyODataFilter(query, filter, layer);
 
         if (aggregation.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(aggregation.FilterExpression))
         {
-            query = ApplyODataFilter(query, aggregation.FilterExpression);
+            query = ApplyODataFilter(query, aggregation.FilterExpression, layer);
         }
 
         object[] aggregatedValues;
-        if (_featureStore is IStreamingFeatureStore streamingStore &&
-            aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
+        if (aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
         {
-            var stream = streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken);
+            var stream = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
             aggregatedValues = await ApplyAggregationStreamingAsync(stream, aggregation);
         }
         else
         {
             // Fallback to in-memory aggregation for non-aggregate/groupby operations
-            var result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
+            var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
             aggregatedValues = ApplyAggregation(result.Items, aggregation);
         }
 
@@ -627,24 +633,19 @@ internal sealed class ODataAggregationHandler
         return dict;
     }
 
-    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression)
+    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, LayerDefinition layer)
     {
         if (string.IsNullOrWhiteSpace(filterExpression))
         {
             return query;
         }
 
-        var (sqlFragment, whereClause) = _queryService.ConvertODataFilterToSqlFragment(filterExpression);
-        return MergeFilters(query, sqlFragment, whereClause);
+        var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, layer);
+        return MergeFilters(query, sqlFragment);
     }
 
-    private static FeatureQuery MergeFilters(FeatureQuery query, SqlFragment? sqlFragment, string? whereClause)
+    private static FeatureQuery MergeFilters(FeatureQuery query, SqlFragment? sqlFragment)
     {
-        if (sqlFragment == null && string.IsNullOrWhiteSpace(whereClause))
-        {
-            return query;
-        }
-
         if (query.SqlFilter != null)
         {
             if (sqlFragment != null)
@@ -656,32 +657,12 @@ internal sealed class ODataAggregationHandler
                 return query with { SqlFilter = new SqlFragment(combinedSql, combinedParameters), Where = null };
             }
 
-            if (!string.IsNullOrWhiteSpace(whereClause))
-            {
-                var combinedSql = $"({query.SqlFilter.Sql}) AND ({whereClause})";
-                return query with { SqlFilter = new SqlFragment(combinedSql, query.SqlFilter.Parameters), Where = null };
-            }
+            return query;
         }
 
         if (sqlFragment != null)
         {
-            if (!string.IsNullOrWhiteSpace(query.Where))
-            {
-                var combinedSql = $"({query.Where}) AND ({sqlFragment.Sql})";
-                return query with { SqlFilter = new SqlFragment(combinedSql, sqlFragment.Parameters), Where = null };
-            }
-
             return query with { SqlFilter = sqlFragment, Where = null };
-        }
-
-        if (!string.IsNullOrWhiteSpace(whereClause))
-        {
-            if (!string.IsNullOrWhiteSpace(query.Where))
-            {
-                return query with { Where = $"({query.Where}) AND ({whereClause})" };
-            }
-
-            return query with { Where = whereClause };
         }
 
         return query;

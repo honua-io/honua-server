@@ -5,7 +5,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 
 namespace Honua.Server.Features.OgcTiles;

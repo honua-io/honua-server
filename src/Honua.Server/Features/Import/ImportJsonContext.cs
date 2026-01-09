@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Models;
@@ -18,9 +19,18 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(ImportLimits))]
 [JsonSerializable(typeof(ImportStatus))]
 [JsonSerializable(typeof(BackgroundImportResponse))]
-[JsonSerializable(typeof(CancelJobResponse))]
-[JsonSerializable(typeof(ActiveJobsResponse))]
 [JsonSerializable(typeof(ImportProgress[]))]
+[JsonSerializable(typeof(CancelUploadResponse))]
+[JsonSerializable(typeof(CancelImportJobResponse))]
+[JsonSerializable(typeof(ActiveUploadsResponse))]
+[JsonSerializable(typeof(ActiveImportJobsResponse))]
+[JsonSerializable(typeof(UploadProgress[]))]
+// New unified progress types
+[JsonSerializable(typeof(IOperationProgress))]
+[JsonSerializable(typeof(UploadProgress))]
+[JsonSerializable(typeof(IngestProgress))]
+[JsonSerializable(typeof(OperationType))]
+[JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ApiErrorResponse))]
 [JsonSerializable(typeof(GeoServicesError))]
 [JsonSerializable(typeof(Dictionary<string, string>))]

@@ -2,9 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Server.Features.FeatureServer.Models;
-using Honua.Server.Features.FeatureServer.Services;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Core.Features.Validation;
+using Honua.Core.Features.Validation.Abstractions;
 
 namespace Honua.Server.Features.OData.Services;
 
@@ -14,42 +13,24 @@ namespace Honua.Server.Features.OData.Services;
 /// </summary>
 internal sealed class ODataValidationService
 {
-    private readonly IFeatureQueryValidator _featureQueryValidator;
     private readonly ICommonQueryValidator _commonQueryValidator;
+    private static readonly PaginationValidationOptions _odataPagination =
+        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "$skip", LimitParameterName: "$top");
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataValidationService"/> class.
     /// </summary>
-    public ODataValidationService(
-        IFeatureQueryValidator featureQueryValidator,
-        ICommonQueryValidator commonQueryValidator)
+    public ODataValidationService(ICommonQueryValidator commonQueryValidator)
     {
-        _featureQueryValidator = featureQueryValidator;
         _commonQueryValidator = commonQueryValidator;
-    }
-
-    /// <summary>
-    /// Validates and applies query limits to the provided parameters.
-    /// </summary>
-    public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
-    {
-        return _featureQueryValidator.ValidateQueryLimits(queryParams);
-    }
-
-    /// <summary>
-    /// Validates and applies related records query limits to the provided parameters.
-    /// </summary>
-    public RelatedRecordsValidationResult ValidateRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams)
-    {
-        return _featureQueryValidator.ValidateRelatedRecordsLimits(queryParams);
     }
 
     /// <summary>
     /// Validates query parameters against allowed parameter list.
     /// </summary>
-    public ValidationResult ValidateAllowedParameters(IQueryCollection queryParameters, IReadOnlySet<string> allowedParameters)
+    public ValidationResult ValidateAllowedParameters(IReadOnlyCollection<string> queryParameterNames, IReadOnlySet<string> allowedParameters)
     {
-        return _commonQueryValidator.ValidateAllowedParameters(queryParameters, allowedParameters);
+        return _commonQueryValidator.ValidateAllowedParameters(queryParameterNames, allowedParameters);
     }
 
     /// <summary>
@@ -97,17 +78,7 @@ internal sealed class ODataValidationService
     /// </summary>
     public ValidationResult<PaginationValues> ValidateAndNormalizePagination(int? offset, int? limit)
     {
-        if (limit.HasValue && limit.Value <= 0)
-        {
-            return ValidationResult<PaginationValues>.Failure("$top must be a positive integer.");
-        }
-
-        if (offset.HasValue && offset.Value < 0)
-        {
-            return ValidationResult<PaginationValues>.Failure("$skip must be a non-negative integer.");
-        }
-
-        return _commonQueryValidator.ValidateAndNormalizePagination(offset, limit);
+        return _commonQueryValidator.ValidateAndNormalizePagination(offset, limit, _odataPagination);
     }
 
     /// <summary>

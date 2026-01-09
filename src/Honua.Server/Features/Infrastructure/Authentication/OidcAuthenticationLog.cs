@@ -106,4 +106,13 @@ internal static partial class OidcAuthenticationLog
         Level = LogLevel.Information,
         Message = "Admin access granted to OIDC user {UserId} via role {Role}")]
     public static partial void AdminAccessGranted(ILogger logger, string userId, string role);
+
+    /// <summary>
+    /// Logs when a token replay is detected.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4211,
+        Level = LogLevel.Warning,
+        Message = "OIDC token replay detected for user {UserId}")]
+    public static partial void TokenReplayDetected(ILogger logger, string userId);
 }

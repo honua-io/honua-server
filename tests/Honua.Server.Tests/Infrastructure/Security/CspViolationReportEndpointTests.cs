@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -16,6 +17,8 @@ namespace Honua.Server.Tests.Infrastructure.Security;
 [Trait("Category", "Integration")]
 [Trait("Component", "Security")]
 [Trait("Feature", "CspViolationReporting")]
+[Protocol(Protocols.Comprehensive)]
+[Operation(Operations.Security)]
 public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
@@ -29,6 +32,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         _client = factory.CreateClient();
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithValidReport_Returns204NoContent()
     {
         // Arrange
@@ -58,6 +62,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(0, response.Content.Headers.ContentLength);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithEmptyBody_Returns204NoContent()
     {
         // Arrange
@@ -70,6 +75,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithInvalidJson_Returns204NoContent()
     {
         // Arrange - Invalid JSON should not crash the endpoint
@@ -82,6 +88,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithMalformedReport_Returns204NoContent()
     {
         // Arrange
@@ -96,6 +103,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithSuspiciousViolation_Returns204NoContent()
     {
         // Arrange - Violation that appears to be from a malicious source
@@ -125,6 +133,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         // Note: In a production scenario, this would trigger additional security logging
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithCompleteViolationData_Returns204NoContent()
     {
         // Arrange - Complete violation report with all fields
@@ -156,6 +165,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithXForwardedForHeader_HandlesProxiedRequests()
     {
         // Arrange
@@ -216,6 +226,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         // These URIs should trigger suspicious activity logging in production
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithoutAuthentication_AcceptsAnonymousRequests()
     {
         // Arrange - CSP reports come from browsers without authentication
@@ -241,6 +252,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithLargeReport_Returns204NoContent()
     {
         // Arrange - Large violation report to test size handling
@@ -267,6 +279,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
     public async Task CspViolationReport_WithIncorrectContentType_Returns204NoContent()
     {
         // Arrange - Browsers might send with different content types

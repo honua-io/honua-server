@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -35,7 +36,7 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
             new FieldDefinition("type", FieldType.String, 100, true, null, "Type field")
         };
 
-        var spatialRef = new SpatialReference(4326);
+        var spatialRef = SpatialReference.Create(4326);
         var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
 
         // Create related layer 1

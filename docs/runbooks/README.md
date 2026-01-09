@@ -140,7 +140,7 @@ curl -f https://api.honua.example.com/healthz/live
 curl -f https://api.honua.example.com/healthz/ready
 
 # Metrics
-curl https://api.honua.example.com/api/metrics/health
+curl https://api.honua.example.com/api/v1/metrics/health
 
 # API test
 curl https://api.honua.example.com/rest/services

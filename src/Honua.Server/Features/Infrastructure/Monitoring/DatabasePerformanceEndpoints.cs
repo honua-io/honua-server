@@ -18,12 +18,14 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 internal static class DatabasePerformanceEndpoints
 {
     /// <summary>
-    /// Registers database performance monitoring endpoints
+    /// Registers database performance monitoring endpoints with formal API versioning
     /// </summary>
     /// <param name="app">Web application builder</param>
     public static void MapDatabasePerformanceEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/v1/admin/performance/database")
+        var group = app.MapGroup("/api/v{version:apiVersion}/admin/performance/database")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
             .WithTags("Database Performance")
             .RequireAdminAuthorization();
 

@@ -5,9 +5,11 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.FeatureStore.Internal;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
@@ -24,7 +26,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private readonly string? _tableSchema;
 
     private readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
-    private GeometryStorageType? _geometryStorageType;
+    private CoreGeometryStorageType? _geometryStorageType;
     private bool? _hasLayerCatalog;
 
     /// <summary>
@@ -49,24 +51,21 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             }
         }
 
-        public static Dictionary<string, object> GetStatistics()
+        public static Dictionary<string, DatabaseOperationMetricsSnapshot> GetStatistics()
         {
-            var stats = new Dictionary<string, object>();
+            var stats = new Dictionary<string, DatabaseOperationMetricsSnapshot>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var (operationType, count) in _executionCounts)
             {
                 var totalTime = _totalExecutionTimeMs.GetValueOrDefault(operationType, 0);
                 var maxTime = _maxExecutionTimeMs.GetValueOrDefault(operationType, 0);
-                var totalResults = _totalResultCounts.GetValueOrDefault(operationType, 0);
 
-                stats[operationType] = new
+                stats[operationType] = new DatabaseOperationMetricsSnapshot
                 {
-                    ExecutionCount = count,
-                    TotalExecutionTimeMs = totalTime,
-                    AverageExecutionTimeMs = count > 0 ? totalTime / (double)count : 0,
-                    MaxExecutionTimeMs = maxTime,
-                    TotalResults = totalResults,
-                    AverageResultsPerQuery = count > 0 ? totalResults / (double)count : 0
+                    Count = count,
+                    TotalTimeMs = totalTime,
+                    AvgTimeMs = count > 0 ? totalTime / (double)count : 0,
+                    MaxTimeMs = maxTime
                 };
             }
 
@@ -83,9 +82,11 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     public async Task<int?> GetLayerSridAsync(int layerId, CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
+
         // Check cache first
         if (_layerSridCache.TryGetValue(layerId, out var cachedEntry) &&
-            !IsLayerSridCacheExpired(cachedEntry, DateTimeOffset.UtcNow))
+            !IsLayerSridCacheExpired(cachedEntry, now))
         {
             return cachedEntry.Srid;
         }
@@ -94,12 +95,19 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        if (!await IsLayerCatalogAvailableAsync(connection, cancellationToken).ConfigureAwait(false))
+        {
+            _layerSridCache[layerId] = new LayerSridCacheEntry(null, now);
+            CleanupCacheIfNeeded();
+            return null;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         try
         {
             const string sql = """
                 SELECT srid
-                FROM layer_catalog
+                FROM honua.layers
                 WHERE layer_id = $1
                 """;
 
@@ -110,7 +118,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             var srid = result is int sridValue ? sridValue : (int?)null;
 
             // Update cache
-            _layerSridCache[layerId] = new LayerSridCacheEntry(srid, DateTimeOffset.UtcNow);
+            _layerSridCache[layerId] = new LayerSridCacheEntry(srid, now);
 
             stopwatch.Stop();
             PerformanceMetrics.RecordQueryExecution("srid_lookup", stopwatch.ElapsedMilliseconds);
@@ -129,7 +137,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
     }
 
-    public async Task<GeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
+    public async Task<CoreGeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
     {
         if (_geometryStorageType.HasValue)
         {
@@ -165,7 +173,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
         else
         {
-            _geometryStorageType = GeometryStorageType.Bytea; // Default fallback
+            _geometryStorageType = CoreGeometryStorageType.Bytea; // Default fallback
         }
 
         return _geometryStorageType.Value;
@@ -182,19 +190,28 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        return await IsLayerCatalogAvailableAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> IsLayerCatalogAvailableAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (_hasLayerCatalog.HasValue)
+        {
+            return _hasLayerCatalog.Value;
+        }
+
         try
         {
             const string sql = """
                 SELECT EXISTS (
                     SELECT 1
                     FROM information_schema.tables
-                    WHERE table_schema = COALESCE(@schema, current_schema())
-                      AND table_name = 'layer_catalog'
+                    WHERE table_schema = 'honua'
+                      AND table_name = 'layers'
                 )
                 """;
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("schema", (object?)_tableSchema ?? DBNull.Value);
 
             var result = await command.ExecuteScalarAsync(cancellationToken);
             _hasLayerCatalog = (bool)result!;
@@ -213,7 +230,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         PerformanceMetrics.RecordQueryExecution(operationType, executionTimeMs, resultCount);
     }
 
-    public Dictionary<string, object> GetPerformanceStatistics()
+    public Dictionary<string, DatabaseOperationMetricsSnapshot> GetPerformanceStatistics()
     {
         return PerformanceMetrics.GetStatistics();
     }
@@ -223,7 +240,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         CleanupCacheIfNeeded();
     }
 
-    private static bool IsLayerSridCacheExpired(LayerSridCacheEntry entry, DateTimeOffset now)
+    private static bool IsLayerSridCacheExpired(Internal.LayerSridCacheEntry entry, DateTimeOffset now)
     {
         return now - entry.CreatedAt > _layerSridCacheRetention;
     }
@@ -250,21 +267,21 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
                 .Take(overflow)
                 .ToArray();
 
-            foreach (var (layerId, _) in oldestEntries)
+            foreach (var kvp in oldestEntries)
             {
-                _layerSridCache.TryRemove(layerId, out _);
+                _layerSridCache.TryRemove(kvp.Key, out _);
             }
         }
     }
 
-    private static GeometryStorageType ResolveGeometryStorageType(string dataType, string udtName)
+    private static CoreGeometryStorageType ResolveGeometryStorageType(string dataType, string udtName)
     {
         return dataType.ToLowerInvariant() switch
         {
-            "user-defined" when udtName.Equals("geometry", StringComparison.OrdinalIgnoreCase) => GeometryStorageType.Geometry,
-            "user-defined" when udtName.Equals("geography", StringComparison.OrdinalIgnoreCase) => GeometryStorageType.Geography,
-            "bytea" => GeometryStorageType.Bytea,
-            _ => GeometryStorageType.Bytea
+            "user-defined" when udtName.Equals("geometry", StringComparison.OrdinalIgnoreCase) => CoreGeometryStorageType.Geometry,
+            "user-defined" when udtName.Equals("geography", StringComparison.OrdinalIgnoreCase) => CoreGeometryStorageType.Geography,
+            "bytea" => CoreGeometryStorageType.Bytea,
+            _ => CoreGeometryStorageType.Bytea
         };
     }
 }

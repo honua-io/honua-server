@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Configuration;
 
@@ -29,7 +30,7 @@ public sealed class AdaptiveSamplingOptions
     /// Range: 0.001-1.0 (0.1% to 100%). Default: 10%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__BASESAMPLRATE
     /// </summary>
-    [Range(0.001, 1.0, ErrorMessage = "BaseSamplingRate must be between 0.001 and 1.0")]
+    [Range(0.001, 1.0, ErrorMessage = ErrorMessages.RangeValidation.BaseSamplingRate)]
     public double BaseSamplingRate { get; init; } = 0.1;
 
     /// <summary>
@@ -38,7 +39,7 @@ public sealed class AdaptiveSamplingOptions
     /// Range: 0.001-0.5 (0.1% to 50%). Default: 1%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__MINSAMPLRATE
     /// </summary>
-    [Range(0.001, 0.5, ErrorMessage = "MinSamplingRate must be between 0.001 and 0.5")]
+    [Range(0.001, 0.5, ErrorMessage = ErrorMessages.RangeValidation.MinSamplingRate)]
     public double MinSamplingRate { get; init; } = 0.01;
 
     /// <summary>
@@ -46,7 +47,7 @@ public sealed class AdaptiveSamplingOptions
     /// Range: 0.1-1.0 (10% to 100%). Default: 50%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE
     /// </summary>
-    [Range(0.1, 1.0, ErrorMessage = "MaxSamplingRate must be between 0.1 and 1.0")]
+    [Range(0.1, 1.0, ErrorMessage = ErrorMessages.RangeValidation.MaxSamplingRate)]
     public double MaxSamplingRate { get; init; } = 0.5;
 
     /// <summary>
@@ -83,7 +84,7 @@ public sealed class LoadThresholds
     /// Range: 30-95%. Default: 70%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__CPUTHRESHOLD
     /// </summary>
-    [Range(30, 95, ErrorMessage = "CpuThreshold must be between 30 and 95")]
+    [Range(30, 95, ErrorMessage = ErrorMessages.RangeValidation.CpuThreshold)]
     public double CpuThreshold { get; init; } = 70.0;
 
     /// <summary>
@@ -91,7 +92,7 @@ public sealed class LoadThresholds
     /// Range: 30-95%. Default: 80%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__MEMORYTHRESHOLD
     /// </summary>
-    [Range(30, 95, ErrorMessage = "MemoryThreshold must be between 30 and 95")]
+    [Range(30, 95, ErrorMessage = ErrorMessages.RangeValidation.MemoryThreshold)]
     public double MemoryThreshold { get; init; } = 80.0;
 
     /// <summary>
@@ -99,7 +100,7 @@ public sealed class LoadThresholds
     /// Range: 10-1000. Default: 50.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__ACTIVEREQUESTTHRESHOLD
     /// </summary>
-    [Range(10, 1000, ErrorMessage = "ActiveRequestThreshold must be between 10 and 1000")]
+    [Range(10, 1000, ErrorMessage = ErrorMessages.RangeValidation.ActiveRequestThreshold)]
     public int ActiveRequestThreshold { get; init; } = 50;
 
     /// <summary>
@@ -107,7 +108,7 @@ public sealed class LoadThresholds
     /// Range: 100-10000ms. Default: 1000ms (1 second).
     /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__RESPONSETIMETHRESHOLDMS
     /// </summary>
-    [Range(100, 10000, ErrorMessage = "ResponseTimeThresholdMs must be between 100 and 10000")]
+    [Range(100, 10000, ErrorMessage = ErrorMessages.RangeValidation.ResponseTimeThresholdMs)]
     public int ResponseTimeThresholdMs { get; init; } = 1000;
 }
 
@@ -122,7 +123,7 @@ public sealed class ErrorThresholds
     /// Range: 0.1-50%. Default: 5%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__ERROR__ERRORRATETHRESHOLD
     /// </summary>
-    [Range(0.1, 50.0, ErrorMessage = "ErrorRateThreshold must be between 0.1 and 50")]
+    [Range(0.1, 50.0, ErrorMessage = ErrorMessages.RangeValidation.ErrorRateThreshold)]
     public double ErrorRateThreshold { get; init; } = 5.0;
 
     /// <summary>
@@ -130,7 +131,7 @@ public sealed class ErrorThresholds
     /// Range: 1.5-10.0. Default: 3.0 (triple the sampling rate).
     /// Environment variable: HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER
     /// </summary>
-    [Range(1.5, 10.0, ErrorMessage = "ErrorMultiplier must be between 1.5 and 10")]
+    [Range(1.5, 10.0, ErrorMessage = ErrorMessages.RangeValidation.ErrorMultiplier)]
     public double ErrorMultiplier { get; init; } = 3.0;
 
     /// <summary>
@@ -138,7 +139,7 @@ public sealed class ErrorThresholds
     /// Range: 1-30 minutes. Default: 5 minutes.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__ERROR__ERRORWINDOWMINUTES
     /// </summary>
-    [Range(1, 30, ErrorMessage = "ErrorWindowMinutes must be between 1 and 30")]
+    [Range(1, 30, ErrorMessage = ErrorMessages.RangeValidation.ErrorWindowMinutes)]
     public int ErrorWindowMinutes { get; init; } = 5;
 }
 
@@ -153,7 +154,7 @@ public sealed class OperationSampling
     /// Range: 0.1-1.0. Default: 100% (always sample).
     /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE
     /// </summary>
-    [Range(0.1, 1.0, ErrorMessage = "CriticalRate must be between 0.1 and 1.0")]
+    [Range(0.1, 1.0, ErrorMessage = ErrorMessages.RangeValidation.CriticalRate)]
     public double CriticalRate { get; init; } = 1.0;
 
     /// <summary>
@@ -161,7 +162,7 @@ public sealed class OperationSampling
     /// Range: 0.05-1.0. Default: 50%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__IMPORTANTRATE
     /// </summary>
-    [Range(0.05, 1.0, ErrorMessage = "ImportantRate must be between 0.05 and 1.0")]
+    [Range(0.05, 1.0, ErrorMessage = ErrorMessages.RangeValidation.ImportantRate)]
     public double ImportantRate { get; init; } = 0.5;
 
     /// <summary>
@@ -169,7 +170,7 @@ public sealed class OperationSampling
     /// Range: 0.01-1.0. Default: 10%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE
     /// </summary>
-    [Range(0.01, 1.0, ErrorMessage = "NormalRate must be between 0.01 and 1.0")]
+    [Range(0.01, 1.0, ErrorMessage = ErrorMessages.RangeValidation.NormalRate)]
     public double NormalRate { get; init; } = 0.1;
 
     /// <summary>
@@ -177,7 +178,7 @@ public sealed class OperationSampling
     /// Range: 0.001-0.1. Default: 1%.
     /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__BACKGROUNDRATE
     /// </summary>
-    [Range(0.001, 0.1, ErrorMessage = "BackgroundRate must be between 0.001 and 0.1")]
+    [Range(0.001, 0.1, ErrorMessage = ErrorMessages.RangeValidation.BackgroundRate)]
     public double BackgroundRate { get; init; } = 0.01;
 
     /// <summary>

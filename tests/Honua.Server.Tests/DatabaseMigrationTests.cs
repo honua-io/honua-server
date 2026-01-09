@@ -6,13 +6,15 @@ using DbUp;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 /// <summary>
 /// Tests for database migration functionality using DbUp
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.TestQuality)]
+[Collection("Database")]
 public sealed class DatabaseMigrationTests : IAsyncLifetime
 {
     private readonly PostgresFixture _postgres = new();
@@ -32,7 +34,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await _postgres.DisposeAsync();
     }
 
-    [Fact(Skip = "Temporarily disabled - migration tests failing but core functionality verified working")]
+    [Fact]
     public async Task DbUpMigrations_OnFreshDatabase_CreatesSchemaAndTables()
     {
         // Arrange
@@ -43,7 +45,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         };
 
         var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString())
+            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
+            .JournalToPostgresqlTable(_schemaName, "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
             .WithTransaction()
             .Build();
@@ -56,7 +59,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         {
             Console.WriteLine($"Migration failed. Error: {result.Error}");
         }
-        result.Successful.Should().BeTrue("migrations should complete successfully");
+        result.Successful.Should().BeTrue($"migrations should complete successfully. Error: {result.Error}");
         result.Scripts.Should().HaveCountGreaterThan(0, "at least one migration script should exist");
 
         // Verify schema was created
@@ -79,10 +82,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         tablesCmd.CommandText = """
             SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = 'honua'
-            AND table_name IN ('services', 'layers', 'layer_fields', 'relationships_test')
+            AND table_name IN ('services', 'layers', 'service_layers', 'layer_fields', 'relationships', 'attachments')
             """;
         var tablesExist = (int)(long)(await tablesCmd.ExecuteScalarAsync())!;
-        tablesExist.Should().Be(4, "all four core tables should exist");
+        tablesExist.Should().Be(6, "core metadata tables should exist");
 
         // Verify foreign key constraints
         await using var constraintsCmd = connection.CreateCommand();
@@ -99,13 +102,23 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         indexesCmd.CommandText = """
             SELECT COUNT(*) FROM pg_indexes
             WHERE schemaname = 'honua'
-            AND indexname IN ('idx_layers_service_id', 'idx_layer_fields_layer_id', 'idx_relationships_layer_id', 'idx_relationships_related_layer_id', 'idx_relationships_lookup')
+            AND indexname IN (
+                'idx_service_layers_service_name',
+                'idx_service_layers_layer_id',
+                'idx_layer_fields_layer_id',
+                'idx_relationships_layer_id',
+                'idx_relationships_related_layer_id',
+                'idx_relationships_lookup',
+                'idx_attachments_feature_layer',
+                'idx_attachments_created_at',
+                'idx_attachments_layer_id'
+            )
             """;
         var indexesExist = (int)(long)(await indexesCmd.ExecuteScalarAsync())!;
-        indexesExist.Should().Be(5, "performance indexes should exist");
+        indexesExist.Should().Be(9, "performance indexes should exist");
     }
 
-    [Fact(Skip = "Temporarily disabled - migration tests failing but core functionality verified working")]
+    [Fact]
     public async Task DbUpMigrations_OnExistingDatabase_IsIdempotent()
     {
         // Arrange
@@ -116,7 +129,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         };
 
         var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString())
+            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
+            .JournalToPostgresqlTable(_schemaName, "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
             .WithTransaction()
             .Build();
@@ -126,14 +140,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var secondResult = upgrader.PerformUpgrade();
 
         // Assert
-        firstResult.Successful.Should().BeTrue("first migration should succeed");
-        secondResult.Successful.Should().BeTrue("second migration should succeed");
+        firstResult.Successful.Should().BeTrue($"first migration should succeed. Error: {firstResult.Error}");
+        secondResult.Successful.Should().BeTrue($"second migration should succeed. Error: {secondResult.Error}");
 
         firstResult.Scripts.Should().HaveCountGreaterThan(0, "first run should apply scripts");
         secondResult.Scripts.Should().BeEmpty("second run should apply no scripts");
     }
 
-    [Fact(Skip = "Temporarily disabled - migration tests failing but core functionality verified working")]
+    [Fact]
     public async Task DbUpMigrations_WithInvalidConnectionString_FailsGracefully()
     {
         // Arrange

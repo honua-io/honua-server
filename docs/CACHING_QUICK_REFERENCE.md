@@ -67,6 +67,10 @@ $"spatial:reference:{srid}"
 
 // User-specific data
 $"user:{userId}:preferences"
+
+// Existence checks
+$"layer:exists:{layerId}"
+$"service:exists:{serviceName}"
 ```
 
 ## Cache Expiration Guidelines
@@ -178,6 +182,16 @@ services.Configure<MemoryCacheOptions>(options =>
       "DefaultTTL": "00:05:00",
       "MaxSize": 50000
     }
+  }
+}
+```
+
+### Metadata Cache Options
+```json
+{
+  "Cache": {
+    "NegativeTtlSeconds": 30,
+    "JitterPercentage": 0.2
   }
 }
 ```

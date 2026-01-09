@@ -1,11 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data.Common;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -19,12 +18,14 @@ namespace Honua.Server.Features.Admin;
 internal static class AdminEndpoints
 {
     /// <summary>
-    /// Configure admin endpoints using AOT-compatible routing
+    /// Configure admin endpoints using AOT-compatible routing with formal API versioning
     /// </summary>
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Create admin group with authorization requirement
-        RouteGroupBuilder adminGroup = endpoints.MapGroup("/api/v1/admin")
+        // Create admin group with authorization requirement and formal versioning
+        var adminGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
             .WithTags("Admin")
             .RequireAdminAuthorization();
 
@@ -36,6 +37,10 @@ internal static class AdminEndpoints
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
         _ = adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        _ = adminGroup.Map("/connections/tables", HandleGetConnectionTablesWithCatchAll)
+            .WithDisplayName("Get Connection Tables - Missing ID")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Use catch-all parameter to handle edge cases like empty segments
@@ -81,7 +86,8 @@ internal static class AdminEndpoints
         string path = context.GetRouteValue("path")?.ToString() ?? "";
 
         // Check if this is the tables endpoint with empty or invalid connection ID
-        if (path.Equals("/tables", StringComparison.OrdinalIgnoreCase) ||
+        if (string.IsNullOrWhiteSpace(path) ||
+            path.Equals("/tables", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("tables", StringComparison.OrdinalIgnoreCase))
         {
             await ProblemDetailsHelpers.CreateAdminProblem(
@@ -135,16 +141,51 @@ internal static class AdminEndpoints
 
         try
         {
-            // For this initial implementation, use the default database connection for all connection IDs
-            // In a full implementation, this would look up the connection by ID and validate it exists
-            IDatabaseConnectionProvider connectionProvider = context.RequestServices.GetRequiredService<IDatabaseConnectionProvider>();
+            var resolver = context.RequestServices.GetRequiredService<ISecureConnectionResolver>();
             ITableDiscoveryService tableDiscoveryService = context.RequestServices.GetRequiredService<ITableDiscoveryService>();
 
-            await using DbConnection connection = await connectionProvider.OpenConnectionAsync(context.RequestAborted);
+            string connectionString;
+            try
+            {
+                if (Guid.TryParse(id, out var connectionId))
+                {
+                    connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
+                }
+                else
+                {
+                    connectionString = await resolver.ResolveConnectionStringAsync(id, context.RequestAborted);
+                }
+            }
+            catch (ArgumentException)
+            {
+                await ProblemDetailsHelpers.CreateAdminProblem(
+                        context,
+                        StatusCodes.Status400BadRequest,
+                        "Invalid connection identifier")
+                    .ExecuteAsync(context);
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                await ProblemDetailsHelpers.CreateAdminProblem(
+                        context,
+                        StatusCodes.Status404NotFound,
+                        "Connection not found")
+                    .ExecuteAsync(context);
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await ProblemDetailsHelpers.CreateAdminProblem(
+                        context,
+                        StatusCodes.Status403Forbidden,
+                        "Connection access denied")
+                    .ExecuteAsync(context);
+                return;
+            }
 
-            // Pass the opened connection directly to avoid password extraction issues
             List<TableInfo> tables = await tableDiscoveryService.DiscoverPostGisTablesAsync(
-                connection,
+                connectionString,
                 context.RequestAborted);
 
             var response = new TableDiscoveryResponse

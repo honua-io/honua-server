@@ -14,15 +14,18 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 {
     private readonly IDatabaseHealthChecker _databaseHealthChecker;
     private readonly ICacheHealthChecker? _cacheHealthChecker;
+    private readonly MigrationState _migrationState;
     private readonly ILogger<ReadinessCheckService> _logger;
 
     public ReadinessCheckService(
         IDatabaseHealthChecker databaseHealthChecker,
+        MigrationState migrationState,
         ILogger<ReadinessCheckService> logger,
         ICacheHealthChecker? cacheHealthChecker = null)
     {
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
+        _migrationState = migrationState ?? throw new ArgumentNullException(nameof(migrationState));
         _logger = logger;
     }
 
@@ -35,6 +38,16 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     {
         try
         {
+            if (_migrationState.IsFailed)
+            {
+                return ReadinessResult.NotReady("Database migrations failed");
+            }
+
+            if (!_migrationState.IsReady)
+            {
+                return ReadinessResult.NotReady("Database migrations not completed");
+            }
+
             // Check database health
             bool isDatabaseHealthy = await _databaseHealthChecker.IsDatabaseHealthyAsync(cancellationToken);
 

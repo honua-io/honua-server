@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
@@ -13,6 +14,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Uses real PostgreSQL database to test connection retry behavior
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.TestQuality)]
 public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
@@ -36,7 +38,7 @@ public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenConnectionWithRetryAsync_WithValidConnectionString_OpensConnection()
     {
         // Act
@@ -51,7 +53,7 @@ public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime
     // and doesn't need separate testing in the extension method
 
     [IntegrationTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenConnectionWithRetryAsync_CallsOnRetryCallback()
     {
         // This test requires a way to simulate connection failures
@@ -72,7 +74,7 @@ public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenConnectionWithRetryAsync_WorksWithoutCallback()
     {
         // Act
@@ -84,7 +86,7 @@ public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task OpenConnectionWithRetryAsync_CanExecuteQueriesAfterConnection()
     {
         // Act

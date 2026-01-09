@@ -1,13 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Caching;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.OutputCaching;
@@ -26,13 +28,21 @@ internal static partial class MetadataEndpoints
     private const string ServiceCacheKeyPrefix = "service:";
     private const string ServiceListCacheKey = "services:all";
     private const string RelationshipCacheKeyPrefix = "relationship:";
+    private static readonly HashSet<string> _relationshipTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "esriRelRoleOrigin",
+        "esriRelRoleDestination",
+        "esriRelRoleAny"
+    };
 
     /// <summary>
-    /// Map admin metadata endpoints to the web application
+    /// Map admin metadata endpoints to the web application with formal API versioning
     /// </summary>
     public static void MapMetadataEndpoints(this WebApplication app)
     {
-        RouteGroupBuilder group = app.MapGroup("/api/v1/admin/metadata")
+        var group = app.MapGroup("/api/v{version:apiVersion}/admin/metadata")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
             .WithTags("Admin Metadata")
             .RequireAdminAuthorization();
 
@@ -226,12 +236,16 @@ internal static partial class MetadataEndpoints
 
         try
         {
-            var spatialReference = new SpatialReference(request.SpatialReferenceSrid);
+            var spatialReference = SpatialReference.Create(request.SpatialReferenceSrid);
+            var metadata = request.AccessPolicy == null
+                ? null
+                : new CatalogMetadata { AccessPolicy = request.AccessPolicy };
             var service = await adminCatalog.CreateServiceAsync(
                 request.Name,
                 request.Description,
                 spatialReference,
                 request.MaxRecordCount,
+                metadata,
                 context.RequestAborted);
 
             await InvalidateServiceCache(context, request.Name);
@@ -289,10 +303,14 @@ internal static partial class MetadataEndpoints
             return;
         }
 
+        var metadata = request.AccessPolicy == null
+            ? null
+            : new CatalogMetadata { AccessPolicy = request.AccessPolicy };
         var service = await adminCatalog.UpdateServiceAsync(
             name,
             request.Description,
             request.MaxRecordCount,
+            metadata,
             context.RequestAborted);
 
         if (service == null)
@@ -547,11 +565,15 @@ internal static partial class MetadataEndpoints
 
         try
         {
+            var metadata = request.AccessPolicy == null
+                ? null
+                : new CatalogMetadata { AccessPolicy = request.AccessPolicy };
             var layer = await adminCatalog.CreateLayerAsync(
                 request.TableName,
                 request.SchemaName,
                 request.DisplayName,
                 request.Description,
+                metadata,
                 context.RequestAborted);
 
             await InvalidateLayerCache(context, layer.Id);
@@ -609,6 +631,9 @@ internal static partial class MetadataEndpoints
             return;
         }
 
+        var metadata = request.AccessPolicy == null
+            ? null
+            : new CatalogMetadata { AccessPolicy = request.AccessPolicy };
         var layer = await adminCatalog.UpdateLayerAsync(
             layerId,
             request.DisplayName,
@@ -616,6 +641,7 @@ internal static partial class MetadataEndpoints
             request.MinScale,
             request.MaxScale,
             request.DefaultVisibility,
+            metadata,
             context.RequestAborted);
 
         if (layer == null)
@@ -800,6 +826,10 @@ internal static partial class MetadataEndpoints
             // Use safe error message to avoid leaking internal details
             await WriteError(context, StatusCodes.Status400BadRequest, "Failed to create relationship. The relationship may already exist or the request is invalid.");
         }
+        catch (DbException)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Failed to create relationship. The request is invalid.");
+        }
     }
 
     private static async Task HandleDeleteRelationship(HttpContext context)
@@ -950,10 +980,11 @@ internal static partial class MetadataEndpoints
     {
         Name = service.Name,
         Description = service.Description,
-        SpatialReferenceSrid = service.SpatialReference.Srid,
+        SpatialReferenceSrid = service.SpatialReference.ToSrid(),
         MaxRecordCount = service.MaxRecordCount,
         LayerCount = service.Layers.Length,
-        LayerIds = service.Layers.Select(l => l.Id).ToArray()
+        LayerIds = service.Layers.Select(l => l.Id).ToArray(),
+        AccessPolicy = service.Metadata?.AccessPolicy
     };
 
     private static LayerResponse MapToLayerResponse(LayerDefinition layer) => new()
@@ -962,14 +993,15 @@ internal static partial class MetadataEndpoints
         Name = layer.Name,
         Description = layer.Description,
         GeometryType = layer.GeometryType.ToString(),
-        SpatialReferenceSrid = layer.SpatialReference.Srid,
+        SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
         FieldCount = layer.Fields.Length,
         FieldNames = layer.Fields.Select(f => f.Name).ToArray(),
         MinScale = layer.MinScale,
         MaxScale = layer.MaxScale,
         DefaultVisibility = layer.DefaultVisibility,
         SupportsAttachments = layer.SupportsAttachments,
-        RelationshipCount = layer.LayerRelationships.Length
+        RelationshipCount = layer.LayerRelationships.Length,
+        AccessPolicy = layer.Metadata?.AccessPolicy
     };
 
     private static RelationshipResponse MapToRelationshipResponse(Relationship relationship) => new()

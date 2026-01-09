@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -27,6 +28,8 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// Integration tests for OIDC authentication with JWT Bearer support.
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Admin, Protocols.Health, Protocols.FeatureServer)]
+[Operation(Operations.Security)]
 public class OidcAuthenticationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
@@ -55,7 +58,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Action<IWebHostBuilder>? configure = null,
         Dictionary<string, string?>? oidcSettings = null)
     {
-        return new WebApplicationFactory<Program>()
+        return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 configure?.Invoke(builder);
@@ -87,7 +90,12 @@ public class OidcAuthenticationTests : IAsyncLifetime
 
                     // Add mock implementations
                     services.AddScoped<ILayerCatalog>(provider => new TestLayerCatalog());
-                    services.AddScoped<IFeatureStore>(provider => new TestFeatureStore());
+                    services.AddScoped<TestFeatureStore>();
+                    services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
+                    services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
+                    services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
+                    services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                    services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
                 });
             });
     }
@@ -290,6 +298,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
     #region OIDC Disabled Tests
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_OidcDisabled_ApiKeyStillWorks()
     {
         // Arrange - OIDC disabled, API key enabled
@@ -320,6 +329,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_OidcDisabled_BearerTokenIgnored()
     {
         // Arrange - OIDC disabled
@@ -660,6 +670,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
     #region Public Endpoints with OIDC Tests
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task HealthEndpoint_OidcEnabled_StillAccessible()
     {
         // Arrange - OIDC enabled but health should still work
@@ -688,9 +699,10 @@ public class OidcAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task FeatureServerEndpoint_OidcEnabled_StillAccessible()
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task FeatureServerEndpoint_OidcEnabled_RequiresAuthByDefault()
     {
-        // Arrange - OIDC enabled but FeatureServer should still work without auth
+        // Arrange - OIDC enabled with default public read behavior
         var settings = new Dictionary<string, string?>
         {
             ["Oidc:Enabled"] = "true",
@@ -709,11 +721,11 @@ public class OidcAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Access FeatureServer endpoint without auth
-        var response = await client.GetAsync("/rest/services/1/FeatureServer");
+        var response = await client.GetAsync("/rest/services/test/FeatureServer");
 
-        // Assert - Should not return 401
-        Assert.NotEqual(401, (int)response.StatusCode);
-        _output.WriteLine($"FeatureServer response: {response.StatusCode}");
+        // Assert - Should require authentication by default
+        Assert.Equal(401, (int)response.StatusCode);
+        _output.WriteLine($"FeatureServer response requires auth: {response.StatusCode}");
     }
 
     #endregion

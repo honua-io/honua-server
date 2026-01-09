@@ -21,6 +21,7 @@ public static class PerformanceMonitoringServiceCollectionExtensions
         services.AddSingleton<DefaultPerformanceMonitor>();
         services.AddSingleton<IPerformanceMonitor>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
         services.AddSingleton<ICacheMetricsSnapshotProvider>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
+        services.AddSingleton<IHttpRequestMetricsSnapshotProvider>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
         services.TryAddSingleton<IDatabasePerformanceMetricsProvider, NullDatabasePerformanceMetricsProvider>();
         return services;
     }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -33,6 +34,11 @@ public sealed record CreateServiceRequest
     /// Maximum records returned per query (default: 1000)
     /// </summary>
     public int MaxRecordCount { get; init; } = 1000;
+
+    /// <summary>
+    /// Optional access policy for the service.
+    /// </summary>
+    public AccessPolicy? AccessPolicy { get; init; }
 }
 
 /// <summary>
@@ -49,6 +55,11 @@ public sealed record UpdateServiceRequest
     /// New max record count (optional)
     /// </summary>
     public int? MaxRecordCount { get; init; }
+
+    /// <summary>
+    /// Updated access policy for the service (optional).
+    /// </summary>
+    public AccessPolicy? AccessPolicy { get; init; }
 }
 
 /// <summary>
@@ -85,6 +96,11 @@ public sealed record ServiceResponse
     /// Layer IDs bound to this service
     /// </summary>
     public required int[] LayerIds { get; init; }
+
+    /// <summary>
+    /// Access policy for the service.
+    /// </summary>
+    public AccessPolicy? AccessPolicy { get; init; }
 }
 
 /// <summary>
@@ -126,6 +142,11 @@ public sealed record CreateLayerRequest
     /// Layer description
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Optional access policy for the layer.
+    /// </summary>
+    public AccessPolicy? AccessPolicy { get; init; }
 }
 
 /// <summary>
@@ -157,6 +178,11 @@ public sealed record UpdateLayerRequest
     /// Default visibility
     /// </summary>
     public bool? DefaultVisibility { get; init; }
+
+    /// <summary>
+    /// Updated access policy for the layer (optional).
+    /// </summary>
+    public AccessPolicy? AccessPolicy { get; init; }
 }
 
 /// <summary>
@@ -223,6 +249,11 @@ public sealed record LayerResponse
     /// Number of relationships
     /// </summary>
     public required int RelationshipCount { get; init; }
+
+    /// <summary>
+    /// Access policy for the layer.
+    /// </summary>
+    public AccessPolicy? AccessPolicy { get; init; }
 }
 
 /// <summary>
@@ -287,7 +318,7 @@ public sealed record CreateRelationshipRequest
     public required string Name { get; init; }
 
     /// <summary>
-    /// Relationship type (OneToMany, ManyToMany, etc.)
+    /// Relationship type (esriRelRoleOrigin, esriRelRoleDestination, esriRelRoleAny)
     /// </summary>
     public required string RelationshipType { get; init; }
 

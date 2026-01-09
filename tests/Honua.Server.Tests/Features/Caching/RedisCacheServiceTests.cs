@@ -5,8 +5,9 @@ using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Caching;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -16,7 +17,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// <summary>
 /// Tests for RedisCacheService - validates caching with fallback behavior.
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.TestQuality)]
 public sealed class RedisCacheServiceTests : IDisposable
 {
     private readonly RedisCacheService _cacheService;
@@ -48,7 +49,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetAsync_WhenKeyNotFound_ReturnsNull()
     {
         // Act
@@ -59,7 +60,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task SetAsync_ThenGetAsync_ReturnsCachedValue()
     {
         // Arrange
@@ -76,7 +77,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task SetAsync_WithTtl_ExpiresAfterTtl()
     {
         // Arrange
@@ -96,7 +97,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task RemoveAsync_RemovesCachedValue()
     {
         // Arrange
@@ -112,7 +113,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetOrSetAsync_WhenNotCached_CallsFactory()
     {
         // Arrange
@@ -132,7 +133,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task GetOrSetAsync_WhenCached_DoesNotCallFactory()
     {
         // Arrange
@@ -154,7 +155,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task RemoveByPatternAsync_RemovesMatchingKeys()
     {
         // Arrange
@@ -176,7 +177,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public void IsUsingFallback_WithNoRedis_ReturnsTrue()
     {
         // Assert
@@ -184,7 +185,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task IsCacheHealthyAsync_WithFallbackEnabled_ReturnsTrue()
     {
         // Act
@@ -195,7 +196,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task SetAsync_EnforcesMaxEntries()
     {
         // Arrange - Create cache with small limit
@@ -234,7 +235,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     [UnitTest]
-    [Operation("Cache")]
+    [Operation(Operations.Cache)]
     public async Task CacheDisabled_ReturnsNullAndDoesNotStore()
     {
         // Arrange

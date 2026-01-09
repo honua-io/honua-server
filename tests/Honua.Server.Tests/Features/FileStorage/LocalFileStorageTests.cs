@@ -4,11 +4,13 @@
 using System.Collections.Immutable;
 using System.Text;
 using FluentAssertions;
-using Honua.Core.Features.FileStorage.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.FileStorage;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
@@ -30,7 +32,8 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             BasePath = _testBasePath,
             CreateDirectoryIfNotExists = true
         });
-        _storage = new LocalFileStorage(options, NullLogger<LocalFileStorage>.Instance);
+        var progressStore = Substitute.For<IUploadProgressStore>();
+        _storage = new LocalFileStorage(options, NullLogger<LocalFileStorage>.Instance, progressStore);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -41,14 +44,14 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         return Task.CompletedTask;
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public void Provider_ShouldReturnLocal()
     {
         // Assert
         _storage.Provider.Should().Be(CloudStorageProvider.Local);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadAsync_WithStreamContent_ShouldCreateFile()
     {
         // Arrange
@@ -75,7 +78,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.File.Provider.Should().Be(CloudStorageProvider.Local);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadAsync_WithTraversalFolder_ShouldFail()
     {
         // Arrange
@@ -98,7 +101,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.ErrorMessage.Should().Contain("Folder");
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadAsync_WithAbsoluteFolder_ShouldFail()
     {
         // Arrange
@@ -121,7 +124,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.ErrorMessage.Should().Contain("Folder");
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadAsync_WithByteArray_ShouldCreateFile()
     {
         // Arrange
@@ -142,7 +145,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.File!.FileName.Should().Be("test.geojson");
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task DownloadAsync_ExistingFile_ShouldReturnContent()
     {
         // Arrange
@@ -159,7 +162,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         downloadedContent.Should().Be(originalContent);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task DownloadAsync_NonExistingFile_ShouldReturnNull()
     {
         // Act
@@ -169,7 +172,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         stream.Should().BeNull();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task DownloadBytesAsync_ExistingFile_ShouldReturnBytes()
     {
         // Arrange
@@ -184,7 +187,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         Encoding.UTF8.GetString(bytes!).Should().Be(originalContent);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task DeleteAsync_ExistingFile_ShouldRemoveFile()
     {
         // Arrange
@@ -200,7 +203,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         exists.Should().BeFalse();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task DeleteAsync_NonExistingFile_ShouldReturnFalse()
     {
         // Act
@@ -210,7 +213,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         deleted.Should().BeFalse();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadBatchAsync_MultipleFiles_ShouldUploadAll()
     {
         // Arrange
@@ -237,7 +240,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.TotalFiles.Should().Be(3);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task DeleteBatchAsync_ExistingBatch_ShouldDeleteAllFiles()
     {
         // Arrange
@@ -263,7 +266,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         }
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task GetMetadataAsync_ExistingFile_ShouldReturnMetadata()
     {
         // Arrange
@@ -293,7 +296,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         fileMetadata.Metadata["source"].Should().Be("test");
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ExistsAsync_ExistingFile_ShouldReturnTrue()
     {
         // Arrange
@@ -306,7 +309,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         exists.Should().BeTrue();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ExistsAsync_NonExistingFile_ShouldReturnFalse()
     {
         // Act
@@ -316,7 +319,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         exists.Should().BeFalse();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task ListFilesAsync_WithFiles_ShouldReturnFilesList()
     {
         // Arrange
@@ -333,7 +336,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         folder1Files.Should().HaveCount(2);
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task GetPresignedUrlAsync_ExistingFile_ShouldReturnUrl()
     {
         // Arrange
@@ -347,7 +350,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         url.Should().StartWith("file:///");
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task GetPresignedUploadUrlAsync_ShouldReturnUrlAndFileId()
     {
         // Act
@@ -361,7 +364,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.Value.FileId.Should().NotBeNullOrEmpty();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadAsync_WithTimeToLive_ShouldSetExpiration()
     {
         // Arrange
@@ -388,7 +391,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             TimeSpan.FromMinutes(1));
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task CleanupExpiredFilesAsync_WithExpiredFiles_ShouldRemoveThem()
     {
         // Arrange - Create a file with very short TTL
@@ -416,7 +419,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         exists.Should().BeFalse();
     }
 
-    [IntegrationTest]
+    [UnitTest]
     public async Task UploadAsync_WithFolder_ShouldOrganizeCorrectly()
     {
         // Arrange

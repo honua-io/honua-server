@@ -26,7 +26,8 @@ internal sealed class ODataBatchLog;
 internal sealed partial class ODataBatchHandler
 {
     private readonly ILayerCatalog _layerCatalog;
-    private readonly IFeatureStore _featureStore;
+    private readonly IFeatureReader _featureReader;
+    private readonly IFeatureWriter _featureWriter;
     private readonly EditLimits _editLimits;
     private readonly ILogger _logger;
 
@@ -34,15 +35,15 @@ internal sealed partial class ODataBatchHandler
     /// Initializes a new instance of the <see cref="ODataBatchHandler"/> class.
     /// </summary>
     public ODataBatchHandler(
-        ILayerCatalog layerCatalog,
-        IFeatureStore featureStore,
-        EditLimits editLimits,
+        ODataBatchDependencies dependencies,
         ILogger logger)
     {
-        _layerCatalog = layerCatalog;
-        _featureStore = featureStore;
-        _editLimits = editLimits;
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(dependencies);
+        _layerCatalog = dependencies.LayerCatalog;
+        _featureReader = dependencies.FeatureReader;
+        _featureWriter = dependencies.FeatureWriter;
+        _editLimits = dependencies.EditLimits;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -261,7 +262,7 @@ internal sealed partial class ODataBatchHandler
             {
                 if (objectId.HasValue)
                 {
-                    var feature = await _featureStore.GetAsync(layerId, objectId.Value, cancellationToken);
+                    var feature = await _featureReader.GetAsync(layerId, objectId.Value, cancellationToken);
                     if (feature.HasValue)
                     {
                         responses.Add(CreateSuccessResponse(requestId, 200, FeatureToBody(feature.Value, layerId)));
@@ -315,7 +316,7 @@ internal sealed partial class ODataBatchHandler
                     continue;
                 }
 
-                var result = await _featureStore.ApplyEditsAsync(layerId, batch, cancellationToken);
+                var result = await _featureWriter.ApplyEditsAsync(layerId, batch, cancellationToken);
 
                 if (layerCreates != null)
                 {
@@ -326,7 +327,7 @@ internal sealed partial class ODataBatchHandler
 
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
-                            var createdFeature = await _featureStore.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);
+                            var createdFeature = await _featureReader.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);
                             responses.Add(CreateSuccessResponse(
                                 requestId,
                                 201,
@@ -353,7 +354,7 @@ internal sealed partial class ODataBatchHandler
 
                         if (updateResult.IsSuccess)
                         {
-                            var updatedFeature = await _featureStore.GetAsync(layerId, objectId, cancellationToken);
+                            var updatedFeature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
                             responses.Add(CreateSuccessResponse(
                                 requestId,
                                 200,
@@ -478,7 +479,7 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", "Collection queries are not supported in batch. Specify an object ID.");
         }
 
-        var feature = await _featureStore.GetAsync(layerId, objectId.Value, cancellationToken);
+        var feature = await _featureReader.GetAsync(layerId, objectId.Value, cancellationToken);
         if (!feature.HasValue)
         {
             return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}.");
@@ -509,7 +510,7 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", ex.Message);
         }
 
-        var created = await _featureStore.CreateAsync(layer.Id, feature, cancellationToken);
+        var created = await _featureWriter.CreateAsync(layer.Id, feature, cancellationToken);
 
         return CreateSuccessResponse(
             requestId,
@@ -540,7 +541,7 @@ internal sealed partial class ODataBatchHandler
         }
 
         // Get existing feature
-        var existing = await _featureStore.GetAsync(layer.Id, objectId.Value, cancellationToken);
+        var existing = await _featureReader.GetAsync(layer.Id, objectId.Value, cancellationToken);
         if (!existing.HasValue)
         {
             return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layer.Id}.");
@@ -557,7 +558,7 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", ex.Message);
         }
 
-        var result = await _featureStore.UpdateAsync(layer.Id, updatedFeature, cancellationToken);
+        var result = await _featureWriter.UpdateAsync(layer.Id, updatedFeature, cancellationToken);
 
         return CreateSuccessResponse(requestId, 200, FeatureToBody(result, layer.Id));
     }
@@ -573,7 +574,7 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", "Object ID is required for DELETE.");
         }
 
-        var deleted = await _featureStore.DeleteAsync(layerId, objectId.Value, cancellationToken);
+        var deleted = await _featureWriter.DeleteAsync(layerId, objectId.Value, cancellationToken);
         if (!deleted)
         {
             return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}.");

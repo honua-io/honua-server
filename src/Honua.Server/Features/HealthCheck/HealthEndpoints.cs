@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -16,8 +17,6 @@ internal static class HealthEndpoints
     /// </summary>
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var environment = endpoints.ServiceProvider.GetRequiredService<IHostEnvironment>();
-
         // Use Map with explicit HTTP method to avoid MapGet reflection
         _ = endpoints.Map("/healthz/live", HandleLivenessProbe)
             .WithDisplayName("Liveness Probe")
@@ -32,10 +31,7 @@ internal static class HealthEndpoints
             .WithDisplayName("Performance Metrics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
-        {
-            metricsEndpoint.RequireAuthorization();
-        }
+        metricsEndpoint.RequireAdminAuthorization();
     }
 
     /// <summary>

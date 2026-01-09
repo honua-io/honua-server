@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Import;
 
@@ -14,6 +15,8 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for Esri service import endpoints
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Admin)]
+[Operation(Operations.Import)]
 public class EsriImportEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

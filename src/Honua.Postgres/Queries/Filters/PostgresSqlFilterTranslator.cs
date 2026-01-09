@@ -4,8 +4,10 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
+using Honua.Postgres.Features.Infrastructure;
 
 namespace Honua.Postgres.Queries.Filters;
 
@@ -23,9 +25,9 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     public PostgresSqlFilterTranslator(
         bool useJsonAttributes = false,
-        string attributesColumn = "attributes",
-        string geometryColumn = "geometry",
-        string primaryKeyColumn = "objectid")
+        string attributesColumn = DatabaseSchema.AttributesColumn,
+        string geometryColumn = DatabaseSchema.GeometryColumn,
+        string primaryKeyColumn = DatabaseSchema.ObjectIdColumn)
     {
         _useJsonAttributes = useJsonAttributes;
         _attributesColumn = attributesColumn;
@@ -138,21 +140,14 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateProperty(PropertyReference property, LayerDefinition layer)
     {
+        if (_useJsonAttributes && TryMapCoreField(property.PropertyName, layer, out var coreExpression))
+        {
+            return coreExpression;
+        }
+
         // Validate field exists in layer
-        var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-
-        if (field == null &&
-            _useJsonAttributes &&
-            layer.PrimaryKeyField != null &&
-            property.PropertyName.Equals("id", StringComparison.OrdinalIgnoreCase))
-        {
-            return QuoteIdentifier(_primaryKeyColumn);
-        }
-
-        if (field == null)
-        {
-            throw new ArgumentException($"Field '{property.PropertyName}' not found in layer '{layer.Name}'");
-        }
+        var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase)) ??
+            throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, layer.Name));
 
         if (!_useJsonAttributes)
         {
@@ -239,9 +234,9 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
                 _parameters.Add(geometry.Srid);
 
                 var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
-                if (geometry.Srid != layer.SpatialReference.Srid)
+                if (geometry.Srid != layer.SpatialReference.Wkid)
                 {
-                    geometryExpression = $"ST_Transform({geometryExpression}, {layer.SpatialReference.Srid})";
+                    geometryExpression = $"ST_Transform({geometryExpression}, {layer.SpatialReference.Wkid})";
                 }
 
                 return geometryExpression;
@@ -249,7 +244,17 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             case PropertyReference property:
             {
                 var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-                if (field == null || !field.IsGeometry)
+                if (field == null)
+                {
+                    if (IsGeometryAlias(property.PropertyName))
+                    {
+                        return GetGeometryColumnExpression(layer);
+                    }
+
+                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                }
+
+                if (!field.IsGeometry)
                 {
                     throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                 }
@@ -321,6 +326,11 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateFunction(FunctionCall function, LayerDefinition layer)
     {
+        if (string.Equals(function.FunctionName, "GEODISTANCE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateGeoDistance(function, layer);
+        }
+
         var args = function.Arguments.Select(arg => TranslateExpression(arg, layer)).ToArray();
         var argString = string.Join(", ", args);
 
@@ -334,8 +344,8 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             "TRIM" => $"TRIM({argString})",
             "LTRIM" => $"LTRIM({argString})",
             "RTRIM" => $"RTRIM({argString})",
-            "SUBSTRING" => $"SUBSTRING({argString})",
-            "SUBSTR" => $"SUBSTRING({argString})",
+            "SUBSTRING" => TranslateSubstring(args, function.FunctionName),
+            "SUBSTR" => TranslateSubstring(args, function.FunctionName),
             "REPLACE" => $"REPLACE({argString})",
             "CONCAT" => $"CONCAT({argString})",
             "POSITION" => args.Length == 2
@@ -346,6 +356,27 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             "CEILING" => $"CEILING({argString})",
             "FLOOR" => $"FLOOR({argString})",
             "ROUND" => $"ROUND({argString})",
+            "NOW" => args.Length == 0
+                ? "NOW()"
+                : throw new ArgumentException("NOW does not accept arguments"),
+            "YEAR" => args.Length == 1
+                ? $"EXTRACT(YEAR FROM {args[0]})"
+                : throw new ArgumentException("YEAR requires one argument"),
+            "MONTH" => args.Length == 1
+                ? $"EXTRACT(MONTH FROM {args[0]})"
+                : throw new ArgumentException("MONTH requires one argument"),
+            "DAY" => args.Length == 1
+                ? $"EXTRACT(DAY FROM {args[0]})"
+                : throw new ArgumentException("DAY requires one argument"),
+            "HOUR" => args.Length == 1
+                ? $"EXTRACT(HOUR FROM {args[0]})"
+                : throw new ArgumentException("HOUR requires one argument"),
+            "MINUTE" => args.Length == 1
+                ? $"EXTRACT(MINUTE FROM {args[0]})"
+                : throw new ArgumentException("MINUTE requires one argument"),
+            "SECOND" => args.Length == 1
+                ? $"EXTRACT(SECOND FROM {args[0]})"
+                : throw new ArgumentException("SECOND requires one argument"),
             "COALESCE" => $"COALESCE({argString})",
             "NULLIF" => $"NULLIF({argString})",
             "POWER" => $"POWER({argString})",
@@ -356,6 +387,82 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             "ACCENTI" => $"UNACCENT(LOWER({argString}))",
             _ => throw new NotSupportedException($"Function {function.FunctionName}")
         };
+    }
+
+    private static string TranslateSubstring(string[] args, string functionName)
+    {
+        if (args.Length is < 2 or > 3)
+        {
+            throw new ArgumentException($"{functionName} requires 2 or 3 arguments.");
+        }
+
+        var start = CastInteger(args[1]);
+        if (args.Length == 2)
+        {
+            return $"SUBSTRING({args[0]}, {start})";
+        }
+
+        var length = CastInteger(args[2]);
+        return $"SUBSTRING({args[0]}, {start}, {length})";
+    }
+
+    private string TranslateGeoDistance(FunctionCall function, LayerDefinition layer)
+    {
+        if (function.Arguments.Count != 2)
+        {
+            throw new ArgumentException("GEODISTANCE requires two arguments");
+        }
+
+        var left = TranslateGeographyExpression(function.Arguments[0], layer);
+        var right = TranslateGeographyExpression(function.Arguments[1], layer);
+        return $"ST_Distance({left}, {right})";
+    }
+
+    private string TranslateGeographyExpression(FilterExpression expression, LayerDefinition layer)
+    {
+        switch (expression)
+        {
+            case GeometryLiteral geometry:
+            {
+                var wkbParam = $"@p{_paramIndex++}";
+                var sridParam = $"@p{_paramIndex++}";
+                _parameters.Add(geometry.Wkb);
+                _parameters.Add(geometry.Srid);
+
+                var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
+                var wgs84Srid = SpatialReference.WGS84.Wkid;
+                if (geometry.Srid != wgs84Srid)
+                {
+                    geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
+                }
+
+                return $"{geometryExpression}::geography";
+            }
+            case PropertyReference property:
+            {
+                var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                if (field == null && !IsGeometryAlias(property.PropertyName))
+                {
+                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                }
+
+                if (field != null && !field.IsGeometry)
+                {
+                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                }
+
+                var geometryExpression = GetGeometryColumnExpression(layer);
+                var wgs84Srid = SpatialReference.WGS84.Wkid;
+                if (layer.SpatialReference.Wkid != wgs84Srid)
+                {
+                    geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
+                }
+
+                return $"{geometryExpression}::geography";
+            }
+            default:
+                throw new NotSupportedException($"Unsupported geography expression: {expression.GetType()}");
+        }
     }
 
     private string TranslateIntervalLiteral(IntervalLiteral interval)
@@ -455,12 +562,59 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     private static string CastNumeric(string sql)
         => $"({sql})::numeric";
 
+    private static string CastInteger(string sql)
+        => $"({sql})::int";
+
     private string GetGeometryColumnExpression(LayerDefinition layer)
     {
         var geomColumnName = _useJsonAttributes ? _geometryColumn : layer.GeometryField?.Name ?? _geometryColumn;
         var quoted = QuoteIdentifier(geomColumnName);
         return $"{quoted}::geometry";
     }
+
+    private bool TryMapCoreField(string propertyName, LayerDefinition layer, out string expression)
+    {
+        if (propertyName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
+            layer.PrimaryKeyField != null)
+        {
+            expression = QuoteIdentifier(_primaryKeyColumn);
+            return true;
+        }
+
+        if (propertyName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase))
+        {
+            expression = QuoteIdentifier(_primaryKeyColumn);
+            return true;
+        }
+
+        if (propertyName.Equals(DatabaseSchema.LayerIdColumnAlt, StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals(DatabaseSchema.LayerIdColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            expression = QuoteIdentifier(DatabaseSchema.LayerIdColumn);
+            return true;
+        }
+
+        if (IsGeometryAlias(propertyName))
+        {
+            expression = GetGeometryColumnExpression(layer);
+            return true;
+        }
+
+        if (propertyName.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals("updated_at", StringComparison.OrdinalIgnoreCase))
+        {
+            expression = QuoteIdentifier(propertyName.ToLowerInvariant());
+            return true;
+        }
+
+        expression = string.Empty;
+        return false;
+    }
+
+    private static bool IsGeometryAlias(string propertyName)
+        => propertyName.Equals(DatabaseSchema.GeometryColumn, StringComparison.OrdinalIgnoreCase) ||
+           propertyName.Equals("shape", StringComparison.OrdinalIgnoreCase);
 
     private string TranslateArrayExpression(FilterExpression expression, LayerDefinition layer)
     {

@@ -6,6 +6,13 @@
 
 Honua Server is a greenfield implementation of a geospatial feature server supporting multiple protocols (GeoServices REST, OGC API Features, OData v4, MVT). This is a **clean rewrite** — the legacy codebase exists as reference only.
 
+## MVP Deferrals (Operational Simplicity)
+
+The MVP intentionally defers enterprise/operational features to reduce complexity:
+- No app-level rate limiting; enforce at the edge (nginx/ALB/WAF).
+- No secure-connection allowlist or connection audit trail; secure connections are encrypted or secret references only.
+- No security compliance framework, audit log storage, or compliance dashboards/monitoring.
+
 ## Critical Rules
 
 ### Legacy Code Reference Policy
@@ -122,7 +129,7 @@ public class FeaturesController : ControllerBase  // BLOCKING - No controllers a
 public static void MapFeatureServerEndpoints(this WebApplication app)
 {
     app.MapGet("/rest/services/{id}/FeatureServer/{layerId}/query",
-        async (int id, int layerId, IFeatureStore store) => { });
+        async (int id, int layerId, IFeatureReader reader) => { });
 }
 ```
 
@@ -134,7 +141,7 @@ public class PostgresConnection { }       // BLOCKING - Should be internal
 
 // CORRECT: Proper encapsulation
 internal class FeatureRepository { }      // OK - Implementation details are internal
-public interface IFeatureStore { }        // OK - Abstractions can be public
+public interface IFeatureReader { }       // OK - Abstractions can be public
 ```
 
 **4. Missing documentation**
@@ -180,7 +187,7 @@ src/Honua.Server/Features/
 ```csharp
 // WARNING: Too many dependencies (endpoint limit: 5, handler limit: 4)
 public class QueryHandler(
-    IFeatureStore store,        // 1
+    IFeatureReader reader,      // 1
     ILayerCatalog catalog,      // 2
     ILogger<QueryHandler> log,  // 3
     IValidator validator,       // 4
@@ -204,13 +211,13 @@ class A : B : C : D { }  // WARNING: >3 levels, consider composition
 ```csharp
 // GOOD: Proper dependency direction
 // Honua.Core defines interface
-public interface IFeatureStore { }
+public interface IFeatureReader { }
 
 // Honua.Postgres implements interface
-internal class PostgresFeatureStore : IFeatureStore { }
+internal class PostgresFeatureStore : IFeatureReader { }
 
 // Honua.Server uses interface
-public static async Task<IResult> QueryFeatures(IFeatureStore store) { }
+public static async Task<IResult> QueryFeatures(IFeatureReader reader) { }
 ```
 
 **2. Vertical slice organization**

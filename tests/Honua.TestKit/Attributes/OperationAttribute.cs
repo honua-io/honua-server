@@ -18,11 +18,17 @@ public sealed class OperationAttribute : Attribute
     /// <param name="operations">One or more operation identifiers from <see cref="Constants.Operations"/></param>
     public OperationAttribute(params string[] operations)
     {
-        foreach (var operation in operations)
+        Operations = operations ?? [];
+
+        foreach (var operation in Operations)
         {
             Traits.Add(new TraitAttribute("Operation", operation));
         }
     }
+
+    public IReadOnlyList<string> Operations { get; }
+
+    public string Operation => Operations.Count > 0 ? Operations[0] : string.Empty;
 
     private List<TraitAttribute> Traits { get; } = [];
 }

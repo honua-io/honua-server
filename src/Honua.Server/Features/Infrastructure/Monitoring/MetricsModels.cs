@@ -55,6 +55,11 @@ public sealed class PerformanceMetricsResponse
     /// System information.
     /// </summary>
     public required SystemInfo SystemInfo { get; init; }
+
+    /// <summary>
+    /// HTTP request performance metrics.
+    /// </summary>
+    public required HttpRequestMetrics Http { get; init; }
 }
 
 /// <summary>
@@ -112,6 +117,62 @@ public sealed class DatabaseMetrics
     /// Performance metrics for different database operations.
     /// </summary>
     public required Dictionary<string, DatabaseOperationMetrics> Operations { get; init; }
+}
+
+/// <summary>
+/// HTTP request performance metrics.
+/// </summary>
+public sealed class HttpRequestMetrics
+{
+    /// <summary>
+    /// Total number of HTTP requests processed.
+    /// </summary>
+    public required long TotalRequests { get; init; }
+
+    /// <summary>
+    /// Total number of server error responses (5xx).
+    /// </summary>
+    public required long TotalServerErrors { get; init; }
+
+    /// <summary>
+    /// Total number of client error responses (4xx).
+    /// </summary>
+    public required long TotalClientErrors { get; init; }
+
+    /// <summary>
+    /// Current number of active HTTP requests.
+    /// </summary>
+    public required int ActiveRequests { get; init; }
+
+    /// <summary>
+    /// Average request duration in milliseconds.
+    /// </summary>
+    public required double AvgDurationMs { get; init; }
+
+    /// <summary>
+    /// Maximum request duration in milliseconds.
+    /// </summary>
+    public required double MaxDurationMs { get; init; }
+
+    /// <summary>
+    /// Estimated 95th percentile request duration in milliseconds.
+    /// </summary>
+    public required double P95DurationMs { get; init; }
+
+    /// <summary>
+    /// Total number of slow requests.
+    /// </summary>
+    public required long SlowRequests { get; init; }
+
+    /// <summary>
+    /// Threshold used for slow request classification in milliseconds.
+    /// </summary>
+    public required double SlowRequestThresholdMs { get; init; }
+
+    /// <summary>
+    /// Server error rate as a decimal (0.0 to 1.0).
+    /// </summary>
+    public required double ServerErrorRate { get; init; }
 }
 
 /// <summary>

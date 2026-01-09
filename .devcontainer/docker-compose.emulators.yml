@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:3.6.0
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.31.0
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data --loose"
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
+
+volumes:
+  localstack_data:
+  azurite_data:

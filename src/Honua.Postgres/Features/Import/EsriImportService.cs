@@ -8,7 +8,9 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -21,16 +23,16 @@ namespace Honua.Postgres.Features.Import;
 internal sealed partial class EsriImportService : IEsriImportService
 {
     private readonly ArcGisRestClient _restClient;
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<EsriImportService> _logger;
 
     public EsriImportService(
         ArcGisRestClient restClient,
-        NpgsqlDataSource dataSource,
+        IDatabaseConnectionProvider connectionProvider,
         ILogger<EsriImportService> logger)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -199,7 +201,7 @@ internal sealed partial class EsriImportService : IEsriImportService
         bool overwriteExisting,
         CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
 
         if (overwriteExisting)
         {
@@ -230,7 +232,7 @@ internal sealed partial class EsriImportService : IEsriImportService
 
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
             var nullable = field.Nullable ? "" : " NOT NULL";
-            sb.AppendLine(CultureInfo.InvariantCulture, $"    \"{SanitizeIdentifier(field.Name)}\" {pgType}{nullable},");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    \"{field.Name.SanitizeFieldName()}\" {pgType}{nullable},");
         }
 
         // Add geometry column if the layer has geometry
@@ -252,18 +254,7 @@ internal sealed partial class EsriImportService : IEsriImportService
 
     private static string MapEsriTypeToPgType(string esriType, int? length)
     {
-        return esriType.ToUpperInvariant() switch
-        {
-            "ESRIFIELDTYPEOID" => "INTEGER",
-            "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" => "INTEGER",
-            "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" => "DOUBLE PRECISION",
-            "ESRIFIELDTYPESTRING" => length.HasValue && length > 0 ? $"VARCHAR({length})" : "TEXT",
-            "ESRIFIELDTYPEDATE" => "TIMESTAMP WITH TIME ZONE",
-            "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" => "UUID",
-            "ESRIFIELDTYPEBLOB" => "BYTEA",
-            "ESRIFIELDTYPEXML" => "XML",
-            _ => "TEXT"
-        };
+        return esriType.ToPostgresType(length);
     }
 
     private static string MapEsriGeometryType(string esriGeometryType)
@@ -279,16 +270,6 @@ internal sealed partial class EsriImportService : IEsriImportService
         };
     }
 
-    private static string SanitizeIdentifier(string identifier)
-    {
-        // Remove or replace characters that aren't valid in PostgreSQL identifiers
-        return identifier
-            .Replace("\"", "")
-            .Replace("'", "")
-            .Replace(";", "")
-            .Replace("\\", "")
-            .Replace("\0", "");
-    }
 
     private async Task<(int inserted, int failed)> InsertFeaturesAsync(
         string tableName,
@@ -300,13 +281,13 @@ internal sealed partial class EsriImportService : IEsriImportService
         var inserted = 0;
         var failed = 0;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
 
         // Build insert statement
         var fields = layerInfo.Fields.Where(f => !f.IsObjectId).ToArray();
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
 
-        var columnNames = string.Join(", ", fields.Select(f => $"\"{SanitizeIdentifier(f.Name)}\""));
+        var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
         if (hasGeometry)
         {
             columnNames += ", geom";
@@ -539,12 +520,24 @@ internal sealed partial class EsriImportService : IEsriImportService
 
     private async Task CreateSpatialIndexAsync(string tableName, CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"CREATE INDEX IF NOT EXISTS \"{tableName}_geom_idx\" ON \"{tableName}\" USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
+    }
+
+    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    {
+        var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        if (connection is NpgsqlConnection npgsqlConnection)
+        {
+            return npgsqlConnection;
+        }
+
+        await connection.DisposeAsync().ConfigureAwait(false);
+        throw new InvalidOperationException("Expected NpgsqlConnection for Esri import.");
     }
 
     private static void ReportProgress(

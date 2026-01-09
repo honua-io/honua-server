@@ -5,8 +5,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Honua.Core.Features.FileStorage.Abstractions;
-using Honua.Core.Features.FileStorage.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FileStorage;
@@ -18,33 +18,34 @@ internal sealed class LocalFileStorage : ICloudFileStorage
 {
     private readonly LocalStorageOptions _options;
     private readonly ILogger<LocalFileStorage> _logger;
+    private readonly IUploadProgressStore _progressStore;
     private readonly ConcurrentDictionary<string, CloudFile> _fileIndex;
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _batchIndex;
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _uploadCancellationTokens;
     private readonly string _basePath;
     private readonly string _metadataPath;
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     /// <summary>
     /// Creates a new local file storage instance
     /// </summary>
     /// <param name="options">Local storage options</param>
     /// <param name="logger">Logger instance</param>
+    /// <param name="progressStore">Upload progress store</param>
     public LocalFileStorage(
         IOptions<LocalStorageOptions> options,
-        ILogger<LocalFileStorage> logger)
+        ILogger<LocalFileStorage> logger,
+        IUploadProgressStore progressStore)
     {
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
             ? Directory.GetCurrentDirectory()
             : Path.TrimEndingDirectorySeparator(_options.BasePath);
         _metadataPath = Path.Combine(_basePath, ".metadata");
         _fileIndex = new ConcurrentDictionary<string, CloudFile>();
         _batchIndex = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
+        _uploadCancellationTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
 
         InitializeStorage();
     }
@@ -58,9 +59,23 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         ArgumentNullException.ThrowIfNull(request);
 
         var stopwatch = Stopwatch.StartNew();
+        var uploadId = request.UploadId;
+        var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        // Store cancellation token for potential cancellation
+        _uploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         try
         {
+            var totalBytes = request.SizeBytes ?? request.Content.Length;
+            var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
+
+            // Store initial progress
+            await _progressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+
+            // Report initial progress if callback provided
+            request.Progress?.Report(initialProgress);
+
             var fileId = GenerateFileId();
             var storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
             var fullPath = Path.Combine(_basePath, storagePath);
@@ -72,16 +87,34 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 Directory.CreateDirectory(directory);
             }
 
-            // Write file content
+            // Write file content with progress tracking
             string? contentHash;
             long sizeBytes;
+
             await using (var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
             {
                 using var hashAlgorithm = SHA256.Create();
                 await using var cryptoStream = new CryptoStream(fileStream, hashAlgorithm, CryptoStreamMode.Write, leaveOpen: true);
 
-                await request.Content.CopyToAsync(cryptoStream, cancellationToken);
-                await cryptoStream.FlushFinalBlockAsync(cancellationToken);
+                // Wrap the source stream with progress tracking if progress callback provided
+                Stream sourceStream = request.Content;
+                if (request.Progress != null)
+                {
+                    var progressTracker = new Progress<UploadProgress>(async progress =>
+                    {
+                        await _progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                        request.Progress.Report(progress);
+                    });
+                    sourceStream = new ProgressTrackingStream(request.Content, progressTracker, uploadId, request.FileName, totalBytes);
+                }
+
+                await sourceStream.CopyToAsync(cryptoStream, linkedCancellationSource.Token);
+                await cryptoStream.FlushFinalBlockAsync(linkedCancellationSource.Token);
+
+                if (sourceStream != request.Content)
+                {
+                    await sourceStream.DisposeAsync();
+                }
 
                 contentHash = Convert.ToHexString(hashAlgorithm.Hash ?? []);
                 sizeBytes = fileStream.Length;
@@ -102,12 +135,29 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
-                Metadata = request.Metadata,
+                Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };
 
             _fileIndex[fileId] = cloudFile;
             await SaveMetadataAsync(cloudFile, cancellationToken);
+
+            // Report completion
+            var completedProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Completed,
+                BytesUploaded = sizeBytes,
+                TotalBytes = totalBytes,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                CloudFileId = fileId,
+                StartedAt = initialProgress.StartedAt,
+                CompletedAt = uploadedAt,
+                CurrentPhase = "Upload completed"
+            };
+            await _progressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            request.Progress?.Report(completedProgress);
 
             stopwatch.Stop();
             FileStorageLog.FileUploaded(
@@ -119,17 +169,73 @@ internal sealed class LocalFileStorage : ICloudFileStorage
 
             return UploadResult.CreateSuccess(cloudFile, stopwatch.Elapsed);
         }
+        catch (OperationCanceledException) when (linkedCancellationSource.Token.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            var cancelledProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Cancelled,
+                BytesUploaded = 0,
+                TotalBytes = request.SizeBytes ?? 0,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                StartedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Upload was cancelled",
+                CurrentPhase = "Cancelled"
+            };
+            await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            request.Progress?.Report(cancelledProgress);
+            throw;
+        }
         catch (ArgumentException ex) when (string.Equals(ex.ParamName, "folder", StringComparison.Ordinal))
         {
             stopwatch.Stop();
+            var failedProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Failed,
+                BytesUploaded = 0,
+                TotalBytes = request.SizeBytes ?? 0,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                StartedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = ex.Message,
+                CurrentPhase = "Failed"
+            };
+            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            request.Progress?.Report(failedProgress);
             FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
             return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
+            var failedProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Failed,
+                BytesUploaded = 0,
+                TotalBytes = request.SizeBytes ?? 0,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                StartedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "File upload failed",
+                CurrentPhase = "Failed"
+            };
+            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            request.Progress?.Report(failedProgress);
             FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
             return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
+        }
+        finally
+        {
+            // Clean up cancellation token
+            _uploadCancellationTokens.TryRemove(uploadId, out _);
+            linkedCancellationSource.Dispose();
         }
     }
 
@@ -147,8 +253,51 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             SizeBytes = request.Content.Length,
             TimeToLive = request.TimeToLive,
             Metadata = request.Metadata,
-            Folder = request.Folder
+            Folder = request.Folder,
+            UploadId = Guid.NewGuid().ToString() // Generate new upload ID for byte array uploads
         }, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<UploadProgress?> GetUploadProgressAsync(string uploadId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
+        return _progressStore.GetProgressAsync(uploadId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
+
+        if (_uploadCancellationTokens.TryRemove(uploadId, out var cancellationSource))
+        {
+            await cancellationSource.CancelAsync();
+            cancellationSource.Dispose();
+
+            // Update progress to cancelled status
+            var currentProgress = await _progressStore.GetProgressAsync(uploadId, cancellationToken);
+            if (currentProgress != null && currentProgress.Status == OperationStatus.Processing)
+            {
+                var cancelledProgress = currentProgress with
+                {
+                    Status = OperationStatus.Cancelled,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Cancelled"
+                };
+                await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
+    {
+        return _progressStore.GetActiveUploadsAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -217,6 +366,12 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 _ = batch.Value.TryRemove(fileId, out _);
             }
 
+            // Clean up upload progress if exists
+            if (cloudFile.Metadata.TryGetValue("UploadId", out var uploadId))
+            {
+                await _progressStore.DeleteProgressAsync(uploadId, cancellationToken);
+            }
+
             FileStorageLog.FileDeleted(_logger, fileId);
             return true;
         }
@@ -254,7 +409,8 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 SizeBytes = file.SizeBytes,
                 TimeToLive = request.TimeToLive,
                 Metadata = metadata,
-                Folder = request.Folder ?? batchId
+                Folder = request.Folder ?? batchId,
+                UploadId = Guid.NewGuid().ToString()
             }, cancellationToken);
 
             if (result.Success && result.File is not null)
@@ -448,7 +604,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             try
             {
                 var json = File.ReadAllText(file);
-                var cloudFile = JsonSerializer.Deserialize<CloudFile>(json, _jsonOptions);
+                var cloudFile = JsonSerializer.Deserialize(json, FileStorageJsonContext.Default.CloudFile);
                 if (cloudFile is not null)
                 {
                     _fileIndex[cloudFile.FileId] = cloudFile;
@@ -473,7 +629,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
     private async Task SaveMetadataAsync(CloudFile cloudFile, CancellationToken cancellationToken)
     {
         var metadataFile = GetMetadataFilePath(cloudFile.FileId);
-        var json = JsonSerializer.Serialize(cloudFile, _jsonOptions);
+        var json = JsonSerializer.Serialize(cloudFile, FileStorageJsonContext.Default.CloudFile);
         await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
     }
 

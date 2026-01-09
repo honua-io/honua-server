@@ -44,8 +44,8 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         // Add correlation ID to response headers
         context.Response.Headers[CorrelationIdHeader] = correlationId;
 
-        // Enrich current Activity with correlation ID and request metadata
-        EnrichCurrentActivity(context, correlationId);
+        // Enrich current Activity with correlation ID early for tracing/log correlation.
+        EnrichActivityWithCorrelationId(correlationId);
 
         // Push correlation ID to Serilog LogContext for all log entries in this request
         using (LogContext.PushProperty(CorrelationIdLogProperty, correlationId))
@@ -53,15 +53,23 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
             // Log correlation ID establishment for debugging (verbose level)
             InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, context.Request.Path);
 
-            // Continue to next middleware
-            await _next(context);
+            try
+            {
+                // Continue to next middleware
+                await _next(context);
+            }
+            finally
+            {
+                // Populate standardized tags once routing has resolved route values.
+                EnrichActivityWithRequestContext(context);
+            }
         }
     }
 
     /// <summary>
-    /// Enriches the current Activity with correlation ID and request metadata for distributed tracing.
+    /// Enriches the current Activity with correlation ID and baggage for distributed tracing.
     /// </summary>
-    private static void EnrichCurrentActivity(HttpContext context, string correlationId)
+    private static void EnrichActivityWithCorrelationId(string correlationId)
     {
         var activity = Activity.Current;
         if (activity == null)
@@ -71,6 +79,31 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
 
         // Set correlation ID as a tag for trace correlation
         activity.SetTag(HonuaTelemetry.Tags.CorrelationId, correlationId);
+        activity.SetBaggage("correlation.id", correlationId);
+    }
+
+    /// <summary>
+    /// Enriches the current Activity with request metadata for distributed tracing.
+    /// </summary>
+    private static void EnrichActivityWithRequestContext(HttpContext context)
+    {
+        var activity = Activity.Current;
+        if (activity == null)
+        {
+            return;
+        }
+
+        var protocol = ResolveProtocol(context.Request.Path);
+        if (!string.IsNullOrWhiteSpace(protocol))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.Protocol, protocol);
+        }
+
+        var operation = ResolveOperation(context);
+        if (!string.IsNullOrWhiteSpace(operation))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
+        }
 
         // Extract and set protocol-specific tags from route values
         var routeValues = context.Request.RouteValues;
@@ -79,10 +112,6 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         if (routeValues.TryGetValue("serviceId", out var serviceId) && serviceId != null)
         {
             activity.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId.ToString());
-        }
-        else if (routeValues.TryGetValue("id", out var id) && id != null)
-        {
-            activity.SetTag(HonuaTelemetry.Tags.ServiceId, id.ToString());
         }
 
         // Layer ID from route
@@ -110,9 +139,195 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         {
             activity.SetTag(HonuaTelemetry.Tags.TileY, y.ToString());
         }
+    }
 
-        // Add baggage for downstream propagation
-        activity.SetBaggage("correlation.id", correlationId);
+    private static string? ResolveProtocol(PathString path)
+    {
+        var value = path.Value ?? string.Empty;
+
+        if (value.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("/tiles", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.FeatureServer;
+        }
+
+        if (value.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("/collections", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.OgcFeatures;
+        }
+
+        if (value.StartsWith("/odata", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.OData;
+        }
+
+        if (value.StartsWith("/import", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Import;
+        }
+
+        if (value.Contains("/admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Admin;
+        }
+
+        if (value.StartsWith("/health", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("/alive", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Health;
+        }
+
+        if (value.Contains("/metrics", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Monitoring;
+        }
+
+        return null;
+    }
+
+    private static string? ResolveOperation(HttpContext context)
+    {
+        var path = context.Request.Path.Value ?? string.Empty;
+        var method = context.Request.Method;
+
+        if (path.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase))
+        {
+            if (path.Contains("/queryRelatedRecords", StringComparison.OrdinalIgnoreCase))
+            {
+                return "related";
+            }
+
+            if (path.Contains("/applyEdits", StringComparison.OrdinalIgnoreCase))
+            {
+                return "edit";
+            }
+
+            if (path.Contains("/generateRenderer", StringComparison.OrdinalIgnoreCase))
+            {
+                return "renderer";
+            }
+
+            if (path.Contains("/query", StringComparison.OrdinalIgnoreCase))
+            {
+                return "query";
+            }
+
+            return "metadata";
+        }
+
+        if (path.StartsWith("/tiles", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tile";
+        }
+
+        if (path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(path, "/odata", StringComparison.OrdinalIgnoreCase))
+            {
+                return "service_document";
+            }
+
+            if (path.EndsWith("/$metadata", StringComparison.OrdinalIgnoreCase))
+            {
+                return "metadata";
+            }
+
+            if (path.Contains("/$batch", StringComparison.OrdinalIgnoreCase))
+            {
+                return "batch";
+            }
+
+            if (path.Contains("/$apply", StringComparison.OrdinalIgnoreCase))
+            {
+                return "aggregate";
+            }
+
+            if (path.Contains("/$search", StringComparison.OrdinalIgnoreCase))
+            {
+                return "search";
+            }
+
+            if (path.Contains("/Layers", StringComparison.OrdinalIgnoreCase))
+            {
+                return "layers";
+            }
+
+            if (path.Contains("/Features", StringComparison.OrdinalIgnoreCase))
+            {
+                return method.ToUpperInvariant() switch
+                {
+                    "POST" => "create",
+                    "PATCH" => "update",
+                    "PUT" => "update",
+                    "DELETE" => "delete",
+                    _ => "query"
+                };
+            }
+        }
+
+        if (path.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase))
+        {
+            if (path.EndsWith("/conformance", StringComparison.OrdinalIgnoreCase))
+            {
+                return "conformance";
+            }
+
+            if (string.Equals(path, "/ogc/features", StringComparison.OrdinalIgnoreCase))
+            {
+                return "landing";
+            }
+
+            if (path.EndsWith("/collections", StringComparison.OrdinalIgnoreCase))
+            {
+                return "collections";
+            }
+
+            if (path.Contains("/queryables", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryables";
+            }
+
+            if (path.Contains("/items/batch", StringComparison.OrdinalIgnoreCase))
+            {
+                return "batch";
+            }
+
+            if (path.Contains("/items/", StringComparison.OrdinalIgnoreCase))
+            {
+                return method.Equals("GET", StringComparison.OrdinalIgnoreCase)
+                    ? "feature"
+                    : method.ToUpperInvariant() switch
+                    {
+                        "POST" => "create",
+                        "PUT" => "update",
+                        "PATCH" => "update",
+                        "DELETE" => "delete",
+                        _ => "feature"
+                    };
+            }
+
+            if (path.Contains("/items", StringComparison.OrdinalIgnoreCase))
+            {
+                return method.Equals("GET", StringComparison.OrdinalIgnoreCase)
+                    ? "query"
+                    : method.ToUpperInvariant() switch
+                    {
+                        "POST" => "create",
+                        "PUT" => "update",
+                        "PATCH" => "update",
+                        "DELETE" => "delete",
+                        _ => "query"
+                    };
+            }
+        }
+
+        if (path.StartsWith("/ogc/tiles", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tiles";
+        }
+
+        return null;
     }
 
     /// <summary>

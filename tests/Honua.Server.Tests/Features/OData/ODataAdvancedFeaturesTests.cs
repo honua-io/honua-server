@@ -518,7 +518,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
+        error.GetProperty("code").GetString().Should().Be("BadRequest");
     }
 
     [IntegrationTest]
@@ -535,7 +535,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
+        error.GetProperty("code").GetString().Should().Be("BadRequest");
     }
 
     [IntegrationTest]
@@ -712,7 +712,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
+        error.GetProperty("code").GetString().Should().Be("BadRequest");
     }
 
     [IntegrationTest]

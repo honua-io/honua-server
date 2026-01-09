@@ -39,8 +39,9 @@ public class MvtTileErrorHandlingTests : IAsyncLifetime
 
         error.Should().NotBeNull();
         error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Contain("Zoom level -1 is outside supported range");
+        error.Error.Message.Should().Be("Bad Request");
         error.Error.Details.Should().NotBeNull();
+        error.Error.Details.Should().Contain("Zoom level -1 is outside supported range");
     }
 
     [Fact]
@@ -58,7 +59,9 @@ public class MvtTileErrorHandlingTests : IAsyncLifetime
 
         error.Should().NotBeNull();
         error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Contain("Zoom level 25 is outside supported range");
+        error.Error.Message.Should().Be("Bad Request");
+        error.Error.Details.Should().NotBeNull();
+        error.Error.Details.Should().Contain("Zoom level 25 is outside supported range");
     }
 
     [Fact]
@@ -76,7 +79,9 @@ public class MvtTileErrorHandlingTests : IAsyncLifetime
 
         error.Should().NotBeNull();
         error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Contain("Invalid tile coordinates: x=-1, y=0, z=1");
+        error.Error.Message.Should().Be("Bad Request");
+        error.Error.Details.Should().NotBeNull();
+        error.Error.Details.Should().Contain("Invalid tile coordinates: x=-1, y=0, z=1");
     }
 
     [Fact]
@@ -93,7 +98,9 @@ public class MvtTileErrorHandlingTests : IAsyncLifetime
 
         error.Should().NotBeNull();
         error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Contain("Invalid tile coordinates: x=0, y=-1, z=1");
+        error.Error.Message.Should().Be("Bad Request");
+        error.Error.Details.Should().NotBeNull();
+        error.Error.Details.Should().Contain("Invalid tile coordinates: x=0, y=-1, z=1");
     }
 
     [Fact]
@@ -111,7 +118,9 @@ public class MvtTileErrorHandlingTests : IAsyncLifetime
 
         error.Should().NotBeNull();
         error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Contain("Invalid tile coordinates: x=2, y=0, z=1");
+        error.Error.Message.Should().Be("Bad Request");
+        error.Error.Details.Should().NotBeNull();
+        error.Error.Details.Should().Contain("Invalid tile coordinates: x=2, y=0, z=1");
     }
 
     [Fact]
@@ -128,7 +137,9 @@ public class MvtTileErrorHandlingTests : IAsyncLifetime
 
         error.Should().NotBeNull();
         error!.Error.Code.Should().Be(404);
-        error.Error.Message.Should().Contain("Layer 99999 not found");
+        error.Error.Message.Should().Be("Not Found");
+        error.Error.Details.Should().NotBeNull();
+        error.Error.Details.Should().Contain(detail => detail.Contains("Layer 99999 not found"));
     }
 
     [Fact]

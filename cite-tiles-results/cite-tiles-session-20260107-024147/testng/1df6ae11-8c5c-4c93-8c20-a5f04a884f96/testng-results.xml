@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testng-results ignored="0" total="16" passed="16" failed="0" skipped="0">
+  <reporter-output>
+  </reporter-output>
+  <suite started-at="2026-01-07T02:41:49 UTC" name="ogcapi-tiles-1.0-1.2" finished-at="2026-01-07T02:41:53 UTC" duration-ms="3517">
+    <groups>
+      <group name="tilesetsLists">
+        <method signature="TilesetLlinks.validateTilesetsListResponse(org.testng.ITestContext,org.opengis.cite.ogcapitiles10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks@11ee02f8]" name="validateTilesetsListResponse" class="org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks"/>
+      </group> <!-- tilesetsLists -->
+      <group name="conformance">
+        <method signature="Conformance.validateConformanceOperationAndResponse(org.opengis.cite.ogcapitiles10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Conformance@619bd14c]" name="validateConformanceOperationAndResponse" class="org.opengis.cite.ogcapitiles10.conformance.Conformance"/>
+      </group> <!-- conformance -->
+      <group name="landingpage">
+        <method signature="LandingPage.landingPageRetrieval(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage@77b325b3]" name="landingPageRetrieval" class="org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage"/>
+      </group> <!-- landingpage -->
+      <group name="apidefinition">
+        <method signature="ApiDefinition.apiDefinitionOperationIdValidation(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" name="apiDefinitionOperationIdValidation" class="org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition"/>
+        <method signature="ApiDefinition.apiDefinitionValidation(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" name="apiDefinitionValidation" class="org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition"/>
+      </group> <!-- apidefinition -->
+      <group name="geodata">
+        <method signature="GeospatialDataResource.geospatialResourceTilesetsLinksCheck(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" name="geospatialResourceTilesetsLinksCheck" class="org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource"/>
+        <method signature="GeospatialDataResource.geospatialResourceTilesetsRetrieval(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" name="geospatialResourceTilesetsRetrieval" class="org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource"/>
+      </group> <!-- geodata -->
+    </groups>
+    <test started-at="2026-01-07T02:41:49 UTC" name="Core" finished-at="2026-01-07T02:41:50 UTC" duration-ms="455">
+      <class name="org.opengis.cite.ogcapitiles10.core.MandatoryCore">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:49 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:50 UTC" duration-ms="390" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@527fc8e]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:50 UTC" name="clearMessages" finished-at="2026-01-07T02:41:50 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateSuccessfulTilesExecution(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:50 UTC" name="validateSuccessfulTilesExecution" description="Implements Abstract test A.6, Requirement 5: /req/core/tc-success" finished-at="2026-01-07T02:41:50 UTC" duration-ms="22" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@527fc8e]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateSuccessfulTilesExecution -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:50 UTC" name="clearMessages" finished-at="2026-01-07T02:41:50 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="verifyErrorResponses(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:50 UTC" name="verifyErrorResponses" description="Implements Abstract test A.7, Requirement 6: /req/core/tc-error" finished-at="2026-01-07T02:41:50 UTC" duration-ms="4" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@527fc8e]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- verifyErrorResponses -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:50 UTC" name="clearMessages" finished-at="2026-01-07T02:41:50 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="verifyMinimalConformance(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.core.MandatoryCore@251f7d26]" started-at="2026-01-07T02:41:50 UTC" name="verifyMinimalConformance" description="Implements Abstract test A.2, Requirement 1: /req/core/tc-op" finished-at="2026-01-07T02:41:50 UTC" duration-ms="4" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@527fc8e]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- verifyMinimalConformance -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.core.MandatoryCore -->
+    </test> <!-- Core -->
+    <test started-at="2026-01-07T02:41:50 UTC" name="Conditional Core" finished-at="2026-01-07T02:41:52 UTC" duration-ms="2266">
+      <class name="org.opengis.cite.ogcapitiles10.conformance.Tile">
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:51 UTC" name="clearMessages" finished-at="2026-01-07T02:41:51 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:51 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:51 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5de243bb]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method signature="validateSuccessfulTilesExecutionFollowingLinks()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:51 UTC" name="validateSuccessfulTilesExecutionFollowingLinks" description="Implements Abstract test A.6, Requirement 5: /req/core/tc-success" finished-at="2026-01-07T02:41:52 UTC" duration-ms="237" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateSuccessfulTilesExecutionFollowingLinks -->
+        <test-method signature="validateTileColDefinitionIsAvailable()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="validateTileColDefinitionIsAvailable" description="Implements Abstract test A.5, Requirement 4: /req/core/tc-tilecol-definition" finished-at="2026-01-07T02:41:52 UTC" duration-ms="83" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateTileColDefinitionIsAvailable -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateTileMatrixDefinitionIsAvailable()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="validateTileMatrixDefinitionIsAvailable" description="Implements Abstract test A.3, Requirement 2: /req/core/tc-tilematrix-definition" finished-at="2026-01-07T02:41:52 UTC" duration-ms="75" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateTileMatrixDefinitionIsAvailable -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateTileRowDefinitionIsAvailable()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="validateTileRowDefinitionIsAvailable" description="Implements Abstract test A.4, Requirement 3: /req/core/tc-tilerow-definition" finished-at="2026-01-07T02:41:52 UTC" duration-ms="77" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateTileRowDefinitionIsAvailable -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateTilesAreAvailable()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="validateTilesAreAvailable" description="Implements Abstract test A.2, Requirement 1: /req/core/tc-op" finished-at="2026-01-07T02:41:52 UTC" duration-ms="70" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateTilesAreAvailable -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateTilesErrorConditions()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Tile@323e8306]" started-at="2026-01-07T02:41:52 UTC" name="validateTilesErrorConditions" description="Implements Abstract test A.7: /conf/core/tc-error, Requirement 6: /req/core/tc-error" finished-at="2026-01-07T02:41:52 UTC" duration-ms="71" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateTilesErrorConditions -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.conformance.Tile -->
+      <class name="org.opengis.cite.ogcapitiles10.conformance.Conformance">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Conformance@619bd14c]" started-at="2026-01-07T02:41:50 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:50 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5de243bb]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Conformance@619bd14c]" started-at="2026-01-07T02:41:50 UTC" name="clearMessages" finished-at="2026-01-07T02:41:50 UTC" duration-ms="3" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateConformanceOperationAndResponse(org.opengis.cite.ogcapitiles10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Conformance@619bd14c]" started-at="2026-01-07T02:41:50 UTC" name="validateConformanceOperationAndResponse" description="Implements Abstract test A.1, Requirement 7: /req/core/conformance-success" data-provider="conformanceUris" finished-at="2026-01-07T02:41:51 UTC" duration-ms="1627" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/tiles , Path: /conformance, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateConformanceOperationAndResponse -->
+        <test-method is-config="true" signature="storeRequirementClassesInTestContext(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.conformance.Conformance@619bd14c]" started-at="2026-01-07T02:41:51 UTC" name="storeRequirementClassesInTestContext" finished-at="2026-01-07T02:41:51 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@5de243bb]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- storeRequirementClassesInTestContext -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.conformance.Conformance -->
+    </test> <!-- Conditional Core -->
+    <test started-at="2026-01-07T02:41:52 UTC" name="OpenAPI Specification 3.0" finished-at="2026-01-07T02:41:52 UTC" duration-ms="436">
+      <class name="org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:52 UTC" duration-ms="0" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@7614378d]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="retrieveApiUrl()[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="retrieveApiUrl" finished-at="2026-01-07T02:41:52 UTC" depends-on-methods="org.opengis.cite.ogcapitiles10.CommonFixture.initCommonFixture" duration-ms="43" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- retrieveApiUrl -->
+        <test-method is-config="true" signature="openapiDocumentRetrieval()[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="openapiDocumentRetrieval" finished-at="2026-01-07T02:41:52 UTC" depends-on-methods="org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition.retrieveApiUrl" duration-ms="32" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- openapiDocumentRetrieval -->
+        <test-method signature="apiDefinitionOperationIdValidation(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="apiDefinitionOperationIdValidation" description="Implements Abstract test A.24, Requirement 23: /req/oas30/operation-id" finished-at="2026-01-07T02:41:52 UTC" duration-ms="292" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@7614378d]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- apiDefinitionOperationIdValidation -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="apiDefinitionValidation(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition@41de5768]" started-at="2026-01-07T02:41:52 UTC" name="apiDefinitionValidation" description="Implements Abstract test A.23, Requirement 22: /req/oas30/completeness" finished-at="2026-01-07T02:41:52 UTC" duration-ms="60" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@7614378d]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- apiDefinitionValidation -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.apidefinition.ApiDefinition -->
+    </test> <!-- OpenAPI Specification 3.0 -->
+    <test started-at="2026-01-07T02:41:52 UTC" name="Tilesets List" finished-at="2026-01-07T02:41:52 UTC" duration-ms="111">
+      <class name="org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks@11ee02f8]" started-at="2026-01-07T02:41:52 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@14d1032a]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks@11ee02f8]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="validateTilesetsListResponse(org.testng.ITestContext,org.opengis.cite.ogcapitiles10.openapi3.TestPoint)[pri:0, instance:org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks@11ee02f8]" started-at="2026-01-07T02:41:52 UTC" name="validateTilesetsListResponse" description="Implements Abstract test A.9, addresses Requirement 10 (/req/tilesets-list/tileset-links)" data-provider="tilesetListsURIs" finished-at="2026-01-07T02:41:52 UTC" duration-ms="108" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@14d1032a]]>
+              </value>
+            </param>
+            <param index="1">
+              <value>
+                <![CDATA[Server URL: http://honua-server:8080/ogc/tiles , Path: /collections, Replacements: {}]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- validateTilesetsListResponse -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.tilesetslist.TilesetLlinks -->
+    </test> <!-- Tilesets List -->
+    <test started-at="2026-01-07T02:41:52 UTC" name="Dataset Tilesets" finished-at="2026-01-07T02:41:52 UTC" duration-ms="30">
+      <class name="org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage@77b325b3]" started-at="2026-01-07T02:41:52 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:52 UTC" duration-ms="1" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@2586e878]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method signature="landingPageRetrieval(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage@77b325b3]" started-at="2026-01-07T02:41:52 UTC" name="landingPageRetrieval" description="Implements Abstract test A.10, addresses Requirement 11" finished-at="2026-01-07T02:41:52 UTC" duration-ms="27" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@2586e878]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- landingPageRetrieval -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage@77b325b3]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.datasettilesets.LandingPage -->
+    </test> <!-- Dataset Tilesets -->
+    <test started-at="2026-01-07T02:41:52 UTC" name="GeoData Tilesets" finished-at="2026-01-07T02:41:53 UTC" duration-ms="185">
+      <class name="org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource">
+        <test-method is-config="true" signature="initCommonFixture(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" started-at="2026-01-07T02:41:52 UTC" name="initCommonFixture" finished-at="2026-01-07T02:41:52 UTC" duration-ms="3" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@745cf754]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- initCommonFixture -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" started-at="2026-01-07T02:41:52 UTC" name="clearMessages" finished-at="2026-01-07T02:41:52 UTC" duration-ms="0" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="geospatialResourceTilesetsLinksCheck(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" started-at="2026-01-07T02:41:52 UTC" name="geospatialResourceTilesetsLinksCheck" description="Implements Abstract test A.12, addresses Requirement 13" finished-at="2026-01-07T02:41:53 UTC" duration-ms="93" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@745cf754]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- geospatialResourceTilesetsLinksCheck -->
+        <test-method is-config="true" signature="clearMessages()[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" started-at="2026-01-07T02:41:53 UTC" name="clearMessages" finished-at="2026-01-07T02:41:53 UTC" duration-ms="1" status="PASS">
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- clearMessages -->
+        <test-method signature="geospatialResourceTilesetsRetrieval(org.testng.ITestContext)[pri:0, instance:org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource@eadb475]" started-at="2026-01-07T02:41:53 UTC" name="geospatialResourceTilesetsRetrieval" description="Implements Abstract test A.13, addresses Requirement 14" finished-at="2026-01-07T02:41:53 UTC" duration-ms="80" status="PASS">
+          <params>
+            <param index="0">
+              <value>
+                <![CDATA[org.testng.TestRunner@745cf754]]>
+              </value>
+            </param>
+          </params>
+          <reporter-output>
+          </reporter-output>
+        </test-method> <!-- geospatialResourceTilesetsRetrieval -->
+      </class> <!-- org.opengis.cite.ogcapitiles10.geodatatilesets.GeospatialDataResource -->
+    </test> <!-- GeoData Tilesets -->
+  </suite> <!-- ogcapi-tiles-1.0-1.2 -->
+</testng-results>

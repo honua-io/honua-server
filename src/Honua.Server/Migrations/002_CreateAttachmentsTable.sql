@@ -5,7 +5,7 @@
 -- Creates attachments table for file attachments associated with geographic features
 
 -- Attachments table - stores metadata for feature attachments
-CREATE TABLE honua.attachments (
+CREATE TABLE IF NOT EXISTS honua.attachments (
     id BIGSERIAL PRIMARY KEY,
     feature_id BIGINT NOT NULL,
     layer_id INT NOT NULL,
@@ -18,9 +18,9 @@ CREATE TABLE honua.attachments (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_attachments_feature_layer ON honua.attachments(layer_id, feature_id);
-CREATE INDEX idx_attachments_created_at ON honua.attachments(created_at);
-CREATE INDEX idx_attachments_layer_id ON honua.attachments(layer_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_feature_layer ON honua.attachments(layer_id, feature_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_created_at ON honua.attachments(created_at);
+CREATE INDEX IF NOT EXISTS idx_attachments_layer_id ON honua.attachments(layer_id);
 
 -- Comments for documentation
 COMMENT ON TABLE honua.attachments IS 'File attachments associated with geographic features';
@@ -31,5 +31,5 @@ COMMENT ON COLUMN honua.attachments.filename IS 'Original filename of the upload
 COMMENT ON COLUMN honua.attachments.content_type IS 'MIME content type of the file (e.g., image/jpeg, application/pdf)';
 COMMENT ON COLUMN honua.attachments.size IS 'File size in bytes';
 COMMENT ON COLUMN honua.attachments.created_at IS 'Timestamp when the attachment was uploaded';
-COMMENT ON COLUMN honua.attachments.storage_path IS 'Relative path to the stored file on the filesystem';
+COMMENT ON COLUMN honua.attachments.storage_path IS 'Storage key or file identifier within the configured file storage provider';
 COMMENT ON COLUMN honua.attachments.keywords IS 'Optional keywords or tags for the attachment';

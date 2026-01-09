@@ -5546,22 +5546,6 @@ X-RateLimit-Remaining: 0
 X-RateLimit-Reset: 1639123456
 ```
 
-#### Future: Application-Level Rate Limiting
-
-For Beta, consider `Microsoft.AspNetCore.RateLimiting` if per-user or per-API-key limits are needed:
-
-```csharp
-// Post-MVP: Application-level rate limiting
-builder.Services.AddRateLimiter(options =>
-{
-    options.AddFixedWindowLimiter("general", opt =>
-    {
-        opt.Window = TimeSpan.FromSeconds(1);
-        opt.PermitLimit = 100;
-    });
-});
-```
-
 ---
 
 ### Input Validation
@@ -6217,7 +6201,7 @@ Keep `appsettings.json` for defaults and structure only. All secrets via environ
 |----------|-----|
 | DataSources dictionary | Single connection string |
 | Layers/Services blocks | Database-driven metadata |
-| RateLimit | Deferred |
+| RateLimit (app-level) | Externalized to edge |
 | Resilience (hedging/bulkhead) | Keep only circuit breaker |
 | Features (GeoETL, etc.) | All enterprise features |
 | Cloud (AWS/Azure/GCP) | Deferred |

@@ -3,7 +3,7 @@
 
 using System.Net.Http.Json;
 using FluentAssertions;
-using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

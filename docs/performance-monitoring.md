@@ -98,7 +98,7 @@ builder.Services.Configure<PerformanceMonitoringOptions>(options =>
 
 ### Health Metrics (Public)
 
-**Endpoint:** `GET /api/metrics/health`
+**Endpoint:** `GET /api/v1/metrics/health`
 
 Returns basic health information without authentication:
 
@@ -114,7 +114,7 @@ Returns basic health information without authentication:
 
 ### Detailed Performance Metrics (Authenticated)
 
-**Endpoint:** `GET /api/metrics/performance`
+**Endpoint:** `GET /api/v1/metrics/performance`
 
 Returns comprehensive performance data:
 
@@ -134,13 +134,25 @@ Returns comprehensive performance data:
     "machineName": "server-01",
     "workingSet": 158720000,
     "frameworkVersion": "8.0.0"
+  },
+  "http": {
+    "totalRequests": 12034,
+    "totalServerErrors": 12,
+    "totalClientErrors": 84,
+    "activeRequests": 2,
+    "avgDurationMs": 34.2,
+    "maxDurationMs": 982.4,
+    "p95DurationMs": 120.7,
+    "slowRequests": 41,
+    "slowRequestThresholdMs": 1000.0,
+    "serverErrorRate": 0.001
   }
 }
 ```
 
 ### Database Metrics (Authenticated)
 
-**Endpoint:** `GET /api/metrics/database`
+**Endpoint:** `GET /api/v1/metrics/database`
 
 Returns database performance statistics:
 
@@ -187,9 +199,24 @@ Key metrics to monitor:
 - Cache operation latencies
 - Eviction rates
 
+Sample dashboard provisioning is included for the scale-test stack:
+
+- Grafana dashboard: `docker/grafana/dashboards/honua-overview.json`
+- Grafana datasource: `docker/grafana/datasources/datasource.yml`
+- Grafana provisioning: `docker/grafana/dashboards/dashboards.yml`
+
+To start the stack locally:
+
+```bash
+docker-compose -f docker-compose.scale-test.yml --profile monitoring up
+```
+
 ### Alerting
 
 Configure alerting in your telemetry backend to match your SLOs and operational thresholds.
+
+Sample Prometheus alert rules are available at `docker/prometheus/alerts.yml` and are wired into
+`docker-compose.scale-test.yml` for the monitoring profile.
 
 ## Performance Thresholds
 
@@ -274,7 +301,7 @@ var result = await SomeExpensiveOperation();
 
 ## Security Considerations
 
-- Health endpoint (`/api/metrics/health`) is public
+- Health endpoint (`/api/v1/metrics/health`) is public
 - Detailed metrics endpoints require authentication in production
 - Metrics may contain sensitive information (response times, cache keys)
 - Consider network-level restrictions for metrics endpoints

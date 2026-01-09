@@ -13,9 +13,9 @@ using Honua.Core.Queries.Filters;
 namespace Honua.TestKit.Infrastructure;
 
 /// <summary>
-/// Test implementation of IFeatureStore for unit and integration tests
+/// Test implementation of feature store interfaces for unit and integration tests
 /// </summary>
-public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, IDisposable
+public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IStreamingFeatureStore, IDisposable
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
@@ -1032,7 +1032,7 @@ public sealed class TestFeatureStore : IFeatureStore, IStreamingFeatureStore, ID
 
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
     {
-        // Basic implementation returns empty result - tests that need related features should use TestFeatureStoreWithRelationships
+        // Basic implementation returns empty result for related records.
         return Task.FromResult(QueryResult<Feature>.Empty());
     }
 

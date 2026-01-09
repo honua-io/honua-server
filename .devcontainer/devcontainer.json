@@ -1,9 +1,18 @@
 {
   "name": "Honua Server Development",
-  "dockerComposeFile": "../docker-compose.yml",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.emulators.yml"
+  ],
   "service": "honua",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
+  "runServices": [
+    "honua",
+    "postgres",
+    "localstack",
+    "azurite"
+  ],
 
   // Configure properties specific to VS Code
   "customizations": {
@@ -60,13 +69,23 @@
     "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
     "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
     "DOTNET_NOLOGO": "1",
-    "DOTNET_RUNNING_IN_CONTAINER": "true"
+    "DOTNET_RUNNING_IN_CONTAINER": "true",
+    "HONUA_TEST_S3_BUCKET": "honua-dev-storage",
+    "HONUA_TEST_S3_REGION": "us-east-1",
+    "HONUA_TEST_S3_ACCESS_KEY": "test",
+    "HONUA_TEST_S3_SECRET_KEY": "test",
+    "HONUA_TEST_S3_SERVICE_URL": "http://localstack:4566",
+    "HONUA_TEST_S3_FORCE_PATH_STYLE": "true",
+    "HONUA_TEST_AZURE_BLOB_CONTAINER": "honua-dev-storage",
+    "HONUA_TEST_AZURE_BLOB_CONNECTION_STRING": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNoGV2qg3Xg0P/hy0p2w1szG+S0mJr+vX2eWq2A==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
   },
 
   // Port forwarding
   "forwardPorts": [
     8080,  // Honua Server
     5432,  // PostgreSQL
+    4566,  // Localstack
+    10000, // Azurite Blob
     3000,  // Grafana
     9090,  // Prometheus
     3100   // Loki
@@ -79,6 +98,12 @@
     },
     "5432": {
       "label": "PostgreSQL"
+    },
+    "4566": {
+      "label": "Localstack (S3)"
+    },
+    "10000": {
+      "label": "Azurite Blob"
     },
     "3000": {
       "label": "Grafana"

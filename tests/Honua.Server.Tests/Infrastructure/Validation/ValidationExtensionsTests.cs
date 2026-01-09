@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
@@ -32,7 +34,7 @@ public class ValidationExtensionsTests
             Name: "Test Layer",
             Description: "Test Layer",
             GeometryType: GeometryType.Point,
-            SpatialReference: new SpatialReference(4326),
+            SpatialReference: SpatialReference.Create(4326),
             Fields: fields);
     }
 

@@ -265,7 +265,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         // OData v4 error format
         document.RootElement.TryGetProperty("error", out var errorProperty).Should().BeTrue();
-        errorProperty.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
+        errorProperty.GetProperty("code").GetString().Should().Be("BadRequest");
     }
 
     [IntegrationTest]
@@ -280,7 +280,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.TryGetProperty("error", out var errorProperty).Should().BeTrue();
-        errorProperty.GetProperty("code").GetString().Should().Be("InvalidQuery");
+        errorProperty.GetProperty("code").GetString().Should().Be("BadRequest");
     }
 
     [IntegrationTest]

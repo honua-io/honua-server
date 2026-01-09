@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -11,40 +12,39 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 public static class MetricsEndpoints
 {
     /// <summary>
-    /// Maps metrics endpoints to the application.
+    /// Maps metrics endpoints to the application with formal API versioning.
     /// </summary>
     /// <param name="app">The web application</param>
     /// <returns>The web application for chaining</returns>
     public static WebApplication MapMetricsEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/metrics")
-            .WithTags("Metrics");
+        var group = app.MapGroup("/api/v{version:apiVersion}/metrics")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Metrics")
+            .RequireAdminAuthorization();
 
-        // Public health metrics (no auth required)
         group.MapGet("/health", GetHealthMetrics)
             .WithName("GetHealthMetrics")
             .WithSummary("Get basic health metrics")
             .Produces<HealthMetrics>();
 
-        // Detailed metrics (auth required in production)
-        var detailedGroup = group.RequireAuthorization();
-
-        detailedGroup.MapGet("/performance", GetPerformanceMetrics)
+        group.MapGet("/performance", GetPerformanceMetrics)
             .WithName("GetPerformanceMetrics")
             .WithSummary("Get detailed performance metrics")
             .Produces<PerformanceMetricsResponse>();
 
-        detailedGroup.MapGet("/database", GetDatabaseMetrics)
+        group.MapGet("/database", GetDatabaseMetrics)
             .WithName("GetDatabaseMetrics")
             .WithSummary("Get database performance metrics")
             .Produces<DatabaseMetrics>();
 
-        detailedGroup.MapGet("/cache", GetCacheMetrics)
+        group.MapGet("/cache", GetCacheMetrics)
             .WithName("GetCacheMetrics")
             .WithSummary("Get cache performance metrics")
             .Produces<CacheMetrics>();
 
-        detailedGroup.MapGet("/memory", GetMemoryMetrics)
+        group.MapGet("/memory", GetMemoryMetrics)
             .WithName("GetMemoryMetrics")
             .WithSummary("Get memory usage metrics")
             .Produces<MemoryUsage>();
@@ -53,7 +53,7 @@ public static class MetricsEndpoints
     }
 
     /// <summary>
-    /// Gets basic health metrics without authentication.
+    /// Gets basic health metrics.
     /// </summary>
     private static IResult GetHealthMetrics()
     {
@@ -84,11 +84,15 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets comprehensive performance metrics.
     /// </summary>
-    private static IResult GetPerformanceMetrics()
+    private static IResult GetPerformanceMetrics(IHttpRequestMetricsSnapshotProvider httpMetricsProvider)
     {
         try
         {
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
+            var httpSnapshot = httpMetricsProvider.GetHttpRequestMetricsSnapshot();
+            var serverErrorRate = httpSnapshot.TotalRequests > 0
+                ? (double)httpSnapshot.TotalServerErrors / httpSnapshot.TotalRequests
+                : 0.0;
 
             var response = new PerformanceMetricsResponse
             {
@@ -100,6 +104,19 @@ public static class MetricsEndpoints
                     MachineName = Environment.MachineName,
                     WorkingSet = Environment.WorkingSet,
                     FrameworkVersion = Environment.Version.ToString()
+                },
+                Http = new HttpRequestMetrics
+                {
+                    TotalRequests = httpSnapshot.TotalRequests,
+                    TotalServerErrors = httpSnapshot.TotalServerErrors,
+                    TotalClientErrors = httpSnapshot.TotalClientErrors,
+                    ActiveRequests = httpSnapshot.ActiveRequests,
+                    AvgDurationMs = httpSnapshot.AvgDurationMs,
+                    MaxDurationMs = httpSnapshot.MaxDurationMs,
+                    P95DurationMs = httpSnapshot.P95DurationMs,
+                    SlowRequests = httpSnapshot.SlowRequestCount,
+                    SlowRequestThresholdMs = httpSnapshot.SlowRequestThresholdMs,
+                    ServerErrorRate = serverErrorRate
                 }
             };
 
