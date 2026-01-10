@@ -261,38 +261,6 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, FieldType fieldType)
-    {
-        if (!IsValidFieldName(fieldName))
-        {
-            throw new ArgumentException($"Invalid field name for temporal extent: {fieldName}", nameof(fieldName));
-        }
-
-        var attributeValue = DatabaseSchema.BuildJsonPath(fieldName);
-        var fieldExpression = fieldType switch
-        {
-            FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
-            FieldType.Date => $"NULLIF({attributeValue}, '')::date",
-            _ => attributeValue
-        };
-
-        var sql = _stringBuilderPool.Get();
-        try
-        {
-            sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT MIN({fieldExpression}) AS min_value, MAX({fieldExpression}) AS max_value
-            FROM {_tableName}
-            WHERE {DatabaseSchema.LayerIdColumn} = $1
-              AND {fieldExpression} IS NOT NULL");
-
-            return new CoreParameterizedQuery(sql.ToString(), new List<object>());
-        }
-        finally
-        {
-            _stringBuilderPool.Return(sql);
-        }
-    }
-
     public CoreParameterizedQuery BuildMvtTileQuery(
         int layerId,
         int x,
@@ -377,7 +345,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }
 
-            sql.Append(@"
+            sql.Append(CultureInfo.InvariantCulture, @"
                 ) AS tile");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -792,7 +760,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         return Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant);
     }
 
-    internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
+    private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
         var startingParamIndex = paramIndex;
 

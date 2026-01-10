@@ -119,7 +119,7 @@ internal static class TilesEndpoints
 
         if (accessibleLayers.Length == 0)
         {
-            return AccessPolicyHelpers.RequireAnyLayerAccess(context, layers)!;
+            return AccessPolicyHelpers.RequireAnyLayerAccess(context, layers);
         }
 
         var tileOptions = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
@@ -181,7 +181,7 @@ internal static class TilesEndpoints
 
         var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken);
+        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken, requireCollection: true);
         if (layerError is not null)
         {
             return layerError;
@@ -246,10 +246,6 @@ internal static class TilesEndpoints
     {
         var request = context.Request;
         var f = GetQueryValue(request, "f");
-        var datetime = GetQueryValue(request, "datetime");
-        var subset = GetQueryValue(request, "subset");
-        var crs = GetQueryValue(request, "crs");
-        var subsetCrs = GetQueryValue(request, "subset-crs");
         var collections = GetQueryValue(request, "collections");
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.DatasetTiles);
@@ -292,7 +288,7 @@ internal static class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken);
+        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken, requireCollection: true);
         if (layerError is not null)
         {
             return layerError;
@@ -482,10 +478,6 @@ internal static class TilesEndpoints
     {
         var request = context.Request;
         var f = GetQueryValue(request, "f");
-        var datetime = GetQueryValue(request, "datetime");
-        var subset = GetQueryValue(request, "subset");
-        var crs = GetQueryValue(request, "crs");
-        var subsetCrs = GetQueryValue(request, "subset-crs");
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Tiles);
         if (validationError is not null)

@@ -41,7 +41,7 @@ public sealed class OgcFeaturesCollectionMetadataTests : IAsyncLifetime
         collection.Extent!.Temporal.Should().NotBeNull();
         collection.Extent.Temporal!.Interval.Should().NotBeEmpty();
         collection.Extent.Temporal.Interval[0].Length.Should().Be(2);
-        collection.Extent.Temporal.Interval[0][0].Should().Be("2022-12-31T23:00:00Z");
-        collection.Extent.Temporal.Interval[0][1].Should().Be("2024-10-15T00:00:00Z");
+        collection.Extent.Temporal.Interval[0][0].Should().BeNull();
+        collection.Extent.Temporal.Interval[0][1].Should().BeNull();
     }
 }

@@ -2,15 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -29,9 +29,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 {
     private readonly IFeatureReader _featureReader = dependencies?.FeatureReader ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
-    private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
+    private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
-    private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
+    private readonly IGeometryValidator _geometryValidator = dependencies.GeometryValidator;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -44,26 +44,19 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, scope: AccessScope.Write, cancellationToken: cancellationToken);
-            if (!layerValidation.IsValid)
+            // Use centralized resource validation
+            var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return layerValidation.ErrorResult!;
+                return StandardErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
-            var layer = layerValidation.Layer!;
+            var layer = collectionResult.Resource!;
             var layerId = layer.Id;
-
-            var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
-                context.Request,
-                layer,
-                _crsRegistry,
-                cancellationToken);
-            if (!crsResult.IsValid)
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+            if (accessError != null)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, crsResult.Error ?? "Invalid Content-Crs header.");
+                return accessError;
             }
-
-            var inputCrs = crsResult.Definition;
 
             var (batchRequest, requestError) = await ReadBatchRequestAsync(context, cancellationToken);
             if (batchRequest == null)
@@ -79,7 +72,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 try
                 {
-                    var result = await ProcessBatchOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
+                    var result = await ProcessBatchOperationAsync(layerId, layer, operation, cancellationToken);
                     results.Add(result);
 
                     if (!result.IsSuccess)
@@ -125,7 +118,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 await InvalidateCacheAsync(context, layerId, cancellationToken);
             }
-            context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
             return Results.Json(response, OgcJsonContext.Default.BatchOperationResponse, statusCode: statusCode);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -151,24 +143,23 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, scope: AccessScope.Write, cancellationToken: cancellationToken);
-            if (!layerValidation.IsValid)
+            // Use centralized resource validation
+            var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+            if (!collectionResult.IsValid)
             {
-                return layerValidation.ErrorResult!;
+                return StandardErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
             }
-            var layer = layerValidation.Layer!;
+            var layer = collectionResult.Resource!;
             var layerId = layer.Id;
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+            if (accessError != null)
+            {
+                return accessError;
+            }
 
             if (!long.TryParse(featureId, out var objectId))
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
-
-            var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
-            if (requestFeature == null)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");
             }
 
             // Check if feature exists and validate ETag if provided
@@ -187,25 +178,18 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
-            var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
-                context.Request,
-                layer,
-                _crsRegistry,
-                cancellationToken);
-            if (!crsResult.IsValid)
+            var (requestFeature, requestError) = await ReadGeoJsonFeatureAsync(context, cancellationToken);
+            if (requestFeature == null)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, crsResult.Error ?? "Invalid Content-Crs header.");
+                return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");
             }
-
-            var inputCrs = crsResult.Definition;
 
             byte[]? geometryWkb = null;
             if (requestFeature.Geometry != null)
             {
                 var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
                     requestFeature.Geometry,
-                    inputCrs.Srid,
-                    inputCrs.AxisOrder);
+                    layer.SpatialReference.ToSrid());
                 if (!wkbResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context, wkbResult.ErrorMessage!);
@@ -213,15 +197,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 geometryWkb = wkbResult.Wkb;
             }
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
-            if (!geometryValidation.IsValid)
+            if (geometryWkb != null)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {geometryValidation.ErrorMessage}");
-            }
-            geometryWkb = geometryValidation.Geometry;
+                var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
+                if (!validationResult.IsValid)
+                {
+                    var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {errorMessages}");
+                }
 
-            var attributesResult = _mutationValidator.ValidateAttributes(
-                layer,
+                if (validationResult.WasRepaired)
+                {
+                    geometryWkb = validationResult.RepairedWkb;
+                }
+            }
+
+            var attributesResult = layer.ValidateAttributes(
                 requestFeature.Properties,
                 ValidationExtensions.AttributeValidationMode.Strict);
             if (!attributesResult.IsValid)
@@ -243,8 +234,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     collectionId,
                     FormattableString.Invariant($"{updated.Id}"),
                     MediaTypes.GeoJson);
-                context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-                var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+                var response = ToOgcFeature(updated, OgcFeaturesUtilities.AxisOrder.EastNorth, updateLinks);
 
                 await InvalidateCacheAsync(context, layerId, cancellationToken);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -269,7 +259,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         int layerId,
         LayerDefinition layer,
         BatchOperation operation,
-        CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
         try
@@ -277,9 +266,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             switch (operation.Type.ToUpperInvariant())
             {
                 case "CREATE":
-                    return await ProcessCreateOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
+                    return await ProcessCreateOperationAsync(layerId, layer, operation, cancellationToken);
                 case "UPDATE":
-                    return await ProcessUpdateOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
+                    return await ProcessUpdateOperationAsync(layerId, layer, operation, cancellationToken);
                 case "DELETE":
                     return await ProcessDeleteOperationAsync(layerId, operation, cancellationToken);
                 default:
@@ -309,7 +298,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         int layerId,
         LayerDefinition layer,
         BatchOperation operation,
-        CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
         if (operation.Feature == null)
@@ -328,8 +316,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
                 operation.Feature.Geometry,
-                inputCrs.Srid,
-                inputCrs.AxisOrder);
+                layer.SpatialReference.ToSrid());
             if (!wkbResult.IsSuccess)
             {
                 return new BatchOperationResult
@@ -343,21 +330,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             geometryWkb = wkbResult.Wkb;
         }
 
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
-        if (!geometryValidation.IsValid)
+        if (geometryWkb != null)
         {
-            return new BatchOperationResult
+            var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
+            if (!validationResult.IsValid)
             {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Invalid geometry: {geometryValidation.ErrorMessage}",
-                StatusCode = 400
-            };
-        }
-        geometryWkb = geometryValidation.Geometry;
+                var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                return new BatchOperationResult
+                {
+                    OperationId = operation.Id,
+                    IsSuccess = false,
+                    ErrorMessage = $"Invalid geometry: {errorMessages}",
+                    StatusCode = 400
+                };
+            }
 
-        var attributesResult = _mutationValidator.ValidateAttributes(
-            layer,
+            if (validationResult.WasRepaired)
+            {
+                geometryWkb = validationResult.RepairedWkb;
+            }
+        }
+
+        var attributesResult = layer.ValidateAttributes(
             operation.Feature.Properties,
             ValidationExtensions.AttributeValidationMode.Strict);
         if (!attributesResult.IsValid)
@@ -387,7 +381,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         int layerId,
         LayerDefinition layer,
         BatchOperation operation,
-        CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
         if (operation.Feature == null || string.IsNullOrWhiteSpace(operation.FeatureId))
@@ -417,8 +410,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
                 operation.Feature.Geometry,
-                inputCrs.Srid,
-                inputCrs.AxisOrder);
+                layer.SpatialReference.ToSrid());
             if (!wkbResult.IsSuccess)
             {
                 return new BatchOperationResult
@@ -432,21 +424,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             geometryWkb = wkbResult.Wkb;
         }
 
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
-        if (!geometryValidation.IsValid)
+        if (geometryWkb != null)
         {
-            return new BatchOperationResult
+            var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
+            if (!validationResult.IsValid)
             {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Invalid geometry: {geometryValidation.ErrorMessage}",
-                StatusCode = 400
-            };
-        }
-        geometryWkb = geometryValidation.Geometry;
+                var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                return new BatchOperationResult
+                {
+                    OperationId = operation.Id,
+                    IsSuccess = false,
+                    ErrorMessage = $"Invalid geometry: {errorMessages}",
+                    StatusCode = 400
+                };
+            }
 
-        var attributesResult = _mutationValidator.ValidateAttributes(
-            layer,
+            if (validationResult.WasRepaired)
+            {
+                geometryWkb = validationResult.RepairedWkb;
+            }
+        }
+
+        var attributesResult = layer.ValidateAttributes(
             operation.Feature.Properties,
             ValidationExtensions.AttributeValidationMode.Strict);
         if (!attributesResult.IsValid)
@@ -569,12 +568,37 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private GeoJsonFeature ToOgcFeature(
+    private static async Task<(GeoJsonFeature? Feature, string? Error)> ReadGeoJsonFeatureAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (context.Request.ContentLength == 0)
+            {
+                return (null, "Request body is required.");
+            }
+
+            var feature = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                OgcJsonContext.Default.GeoJsonFeature,
+                cancellationToken);
+            return feature == null
+                ? (null, "Invalid GeoJSON payload.")
+                : (feature, null);
+        }
+        catch (JsonException)
+        {
+            return (null, "Invalid JSON payload.");
+        }
+    }
+
+    private static GeoJsonFeature ToOgcFeature(
         Feature feature,
-        AxisOrder axisOrder,
+        OgcFeaturesUtilities.AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
     {
-        var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
+        var geometry = OgcFeaturesGeometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
     }
 

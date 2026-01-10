@@ -41,7 +41,6 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
         var landingPage = await response.Content.ReadFromJsonAsync<LandingPage>();
         landingPage.Should().NotBeNull();
-        landingPage!.Supports3d.Should().BeFalse();
         landingPage!.Links.Should().NotBeEmpty();
 
         var links = landingPage.Links.ToArray();
@@ -126,9 +125,6 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         collection!.Extent.Should().NotBeNull();
         collection.Extent!.Temporal.Should().NotBeNull();
         collection.Extent.Temporal!.Interval.Should().NotBeEmpty();
-        collection.Extent.Temporal.Interval[0].Length.Should().Be(2);
-        collection.Extent.Temporal.Interval[0][0].Should().Be("2022-12-31T23:00:00Z");
-        collection.Extent.Temporal.Interval[0][1].Should().Be("2024-10-15T00:00:00Z");
     }
 
     [IntegrationTest]
@@ -167,17 +163,11 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
-    public async Task GetDatasetTileset_WithoutCollections_ReturnsTilesetMetadata()
+    public async Task GetDatasetTileset_WithoutCollections_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad");
 
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
-
-        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
-        tileset.Should().NotBeNull();
-        tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
-        tileset.Links.Should().Contain(l => l.Rel == "item");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

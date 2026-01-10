@@ -4,10 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Ogc.Common;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
@@ -40,14 +37,14 @@ internal sealed class OgcFilterProcessor
         public SqlFragment? SqlFilter { get; init; }
         public SpatialFilter? SpatialFilter { get; init; }
         public TemporalFilter? TemporalFilter { get; init; }
-        public CrsDefinition CrsDefinition { get; init; }
+        public OgcFeaturesUtilities.CrsDefinition CrsDefinition { get; init; }
 
         public static FilterProcessingResult Success(
             string? combinedFilter,
             SqlFragment? sqlFilter,
             SpatialFilter? spatialFilter,
             TemporalFilter? temporalFilter,
-            CrsDefinition crsDefinition)
+            OgcFeaturesUtilities.CrsDefinition crsDefinition)
             => new()
             {
                 IsSuccess = true,
@@ -67,14 +64,10 @@ internal sealed class OgcFilterProcessor
     }
 
     private readonly IFilterExpressionService _filterExpressionService;
-    private readonly ICrsRegistry _crsRegistry;
 
-    public OgcFilterProcessor(
-        IFilterExpressionService filterExpressionService,
-        ICrsRegistry crsRegistry)
+    public OgcFilterProcessor(IFilterExpressionService filterExpressionService)
     {
         _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
-        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
     }
 
     /// <summary>
@@ -86,8 +79,7 @@ internal sealed class OgcFilterProcessor
         string? filter,
         string? bbox,
         string? datetime,
-        string? crs,
-        CancellationToken cancellationToken)
+        string? crs)
     {
         try
         {
@@ -101,13 +93,10 @@ internal sealed class OgcFilterProcessor
                 return FilterProcessingResult.Failure(filterLangResult.ErrorMessage!);
             }
 
-            var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
-                layer,
-                _crsRegistry,
-                cancellationToken).ConfigureAwait(false);
-            if (!OgcFeaturesUtilities.TryResolveCrs(crs, supportedCrs, out var crsDefinition, out var crsError))
+            var crsResult = OgcCrsResolver.TryResolveCrs(crs);
+            if (!crsResult.IsSuccess)
             {
-                return FilterProcessingResult.Failure(crsError!);
+                return FilterProcessingResult.Failure(crsResult.ErrorMessage!);
             }
 
             if (!string.IsNullOrWhiteSpace(filterCrs) && string.IsNullOrWhiteSpace(filter))
@@ -115,22 +104,16 @@ internal sealed class OgcFilterProcessor
                 return FilterProcessingResult.Failure("filter-crs requires a filter parameter.");
             }
 
-            var filterCrsDefinition = crsDefinition;
-            if (!string.IsNullOrWhiteSpace(filterCrs))
+            var filterCrsResult = OgcCrsResolver.TryResolveCrs(filterCrs);
+            if (!filterCrsResult.IsSuccess)
             {
-                if (!OgcFeaturesUtilities.TryResolveCrs(filterCrs, supportedCrs, out filterCrsDefinition, out var filterCrsError))
-                {
-                    return FilterProcessingResult.Failure(filterCrsError!);
-                }
+                return FilterProcessingResult.Failure(filterCrsResult.ErrorMessage!);
             }
 
-            var bboxCrsDefinition = crsDefinition;
-            if (!string.IsNullOrWhiteSpace(bboxCrs))
+            var bboxCrsResult = OgcCrsResolver.TryResolveCrs(bboxCrs);
+            if (!bboxCrsResult.IsSuccess)
             {
-                if (!OgcFeaturesUtilities.TryResolveCrs(bboxCrs, supportedCrs, out bboxCrsDefinition, out var bboxCrsError))
-                {
-                    return FilterProcessingResult.Failure(bboxCrsError!);
-                }
+                return FilterProcessingResult.Failure(bboxCrsResult.ErrorMessage!);
             }
 
             // Process CQL filters
@@ -160,12 +143,12 @@ internal sealed class OgcFilterProcessor
 
             if (filterExpression != null && !string.IsNullOrWhiteSpace(filterCrs))
             {
-                filterExpression = ApplyFilterCrs(filterExpression, filterCrsDefinition);
+                filterExpression = ApplyFilterCrs(filterExpression, filterCrsResult.CrsDefinition);
             }
 
             if (filterExpression != null)
             {
-                filterExpression = NormalizeFilterAxisOrder(filterExpression, filterCrsDefinition.AxisOrder);
+                filterExpression = NormalizeFilterAxisOrder(filterExpression, filterCrsResult.CrsDefinition.AxisOrder);
             }
 
             // Translate to SQL
@@ -183,7 +166,7 @@ internal sealed class OgcFilterProcessor
             }
 
             // Process spatial filter (bbox)
-            var bboxResult = ProcessBboxFilter(bbox, bboxCrsDefinition);
+            var bboxResult = ProcessBboxFilter(bbox, bboxCrsResult.CrsDefinition);
             if (!bboxResult.IsSuccess)
             {
                 return FilterProcessingResult.Failure(bboxResult.ErrorMessage!);
@@ -201,7 +184,7 @@ internal sealed class OgcFilterProcessor
                 sqlFilter,
                 bboxResult.SpatialFilter,
                 temporalResult.TemporalFilter,
-                crsDefinition);
+                crsResult.CrsDefinition);
         }
         catch (Exception ex)
         {
@@ -336,7 +319,7 @@ internal sealed class OgcFilterProcessor
         return CombinedFilterResult.Success(combinedFilter);
     }
 
-    private BboxFilterResult ProcessBboxFilter(string? bboxValue, CrsDefinition crsDefinition)
+    private BboxFilterResult ProcessBboxFilter(string? bboxValue, OgcFeaturesUtilities.CrsDefinition crsDefinition)
     {
         var bboxResult = TryParseBbox(bboxValue, crsDefinition);
         if (!bboxResult.IsSuccess)
@@ -392,9 +375,9 @@ internal sealed class OgcFilterProcessor
 
     private static FilterExpression NormalizeFilterAxisOrder(
         FilterExpression filterExpression,
-        AxisOrder axisOrder)
+        OgcFeaturesUtilities.AxisOrder axisOrder)
     {
-        if (axisOrder == AxisOrder.EastNorth)
+        if (axisOrder == OgcFeaturesUtilities.AxisOrder.EastNorth)
         {
             return filterExpression;
         }
@@ -404,7 +387,7 @@ internal sealed class OgcFilterProcessor
 
     private static FilterExpression ApplyFilterCrs(
         FilterExpression filterExpression,
-        CrsDefinition crsDefinition)
+        OgcFeaturesUtilities.CrsDefinition crsDefinition)
     {
         return filterExpression switch
         {
@@ -454,7 +437,7 @@ internal sealed class OgcFilterProcessor
 
     private static GeometryLiteral ApplyGeometryCrs(
         GeometryLiteral geometry,
-        CrsDefinition crsDefinition)
+        OgcFeaturesUtilities.CrsDefinition crsDefinition)
     {
         if (HasExplicitCrs(geometry))
         {
@@ -594,37 +577,30 @@ internal sealed class OgcFilterProcessor
         }
     }
 
-    private BboxParseResult TryParseBbox(string? bboxValue, CrsDefinition crsDefinition)
+    private BboxParseResult TryParseBbox(string? bboxValue, OgcFeaturesUtilities.CrsDefinition crsDefinition)
     {
         if (string.IsNullOrWhiteSpace(bboxValue))
         {
             return BboxParseResult.Success(null);
         }
 
-        Span<double> parts = stackalloc double[6];
-        if (!bboxValue.AsSpan().TryParseDoubles(parts, ",".AsSpan(), out var partCount, out var parseError))
+        var parts = bboxValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 4 && parts.Length != 6)
         {
-            if (partCount == 0 && parseError == "Value list is empty.")
-            {
-                return BboxParseResult.Failure("Bounding box must contain 4 comma-separated values.");
-            }
+            return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
+        }
 
+        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
+            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second) ||
+            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var third) ||
+            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var fourth))
+        {
             return BboxParseResult.Failure("Bounding box coordinates must be valid numbers.");
         }
 
-        if (partCount == 6)
-        {
-            return BboxParseResult.Failure("3D bounding boxes are not supported.");
-        }
-
-        if (partCount != 4)
-        {
-            return BboxParseResult.Failure("Bounding box must contain 4 comma-separated values.");
-        }
-
-        var (minX, minY, maxX, maxY) = crsDefinition.AxisOrder == AxisOrder.NorthEast
-            ? (parts[1], parts[0], parts[3], parts[2])
-            : (parts[0], parts[1], parts[2], parts[3]);
+        var (minX, minY, maxX, maxY) = crsDefinition.AxisOrder == OgcFeaturesUtilities.AxisOrder.NorthEast
+            ? (second, first, fourth, third)
+            : (first, second, third, fourth);
 
         if (minY > maxY)
         {

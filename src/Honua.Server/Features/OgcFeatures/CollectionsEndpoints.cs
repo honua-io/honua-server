@@ -4,8 +4,6 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -13,7 +11,6 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -70,8 +67,6 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
-        [FromServices] ICrsRegistry crsRegistry,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
@@ -92,10 +87,8 @@ internal static class CollectionsEndpoints
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var visibleLayers = layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer)).ToList();
-            var collectionTasks = visibleLayers
-                .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
-            var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
+            var visibleLayers = layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer));
+            var collections = visibleLayers.Select(layer => CreateCollection(layer, baseUrl)).ToImmutableArray();
 
             var links = OgcCommonUtilities.BuildFormatLinks(
                     request,
@@ -153,8 +146,6 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
-        [FromServices] ICrsRegistry crsRegistry,
         ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
@@ -190,7 +181,7 @@ internal static class CollectionsEndpoints
                 return accessError;
             }
 
-            var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken);
+            var collection = CreateCollection(layer, baseUrl);
             var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}";
             var selfHref = $"{basePath}{request.QueryString}";
             var updatedLinks = collection.Links.Select(link =>
@@ -304,12 +295,7 @@ internal static class CollectionsEndpoints
     /// <summary>
     /// Converts a layer definition to OGC API Features collection
     /// </summary>
-    private static async Task<CollectionInfo> CreateCollectionAsync(
-        LayerDefinition layer,
-        string baseUrl,
-        IFeatureReader featureReader,
-        ICrsRegistry crsRegistry,
-        CancellationToken cancellationToken)
+    private static CollectionInfo CreateCollection(LayerDefinition layer, string baseUrl)
     {
         // Use layer ID as collection ID (string representation)
         var collectionId = layer.Id.ToString();
@@ -367,11 +353,9 @@ internal static class CollectionsEndpoints
         if (layer.Extent != null)
         {
             var extentSrid = layer.SpatialReference.ToSrid();
-            var extentCrsIdentifier = extentSrid == 4326
+            var extentCrs = extentSrid == 4326
                 ? OgcFeaturesUtilities.Crs84Uri
                 : extentSrid.ToOgcCrs();
-            var extentDefinition = await crsRegistry.ResolveAsync(extentCrsIdentifier, cancellationToken);
-            var extentCrs = extentDefinition?.Uri ?? extentCrsIdentifier;
 
             spatialExtent = new SpatialExtent
             {
@@ -384,7 +368,7 @@ internal static class CollectionsEndpoints
             };
         }
 
-        var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);
+        var temporalExtent = OgcFeaturesUtilities.BuildTemporalExtent(layer);
         var extent = spatialExtent == null && temporalExtent == null
             ? null
             : new Extent
@@ -393,14 +377,6 @@ internal static class CollectionsEndpoints
                 Temporal = temporalExtent
             };
 
-        var storageCrsDefinition = await crsRegistry.ResolveAsync(
-            layer.SpatialReference.ToOgcCrs(),
-            cancellationToken);
-        var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsUrisAsync(
-            layer,
-            crsRegistry,
-            cancellationToken);
-
         return new CollectionInfo
         {
             Id = collectionId,
@@ -408,8 +384,8 @@ internal static class CollectionsEndpoints
             Description = layer.Description,
             Links = collectionLinks,
             Extent = extent,
-            Crs = supportedCrs,
-            StorageCrs = storageCrsDefinition?.Uri
+            Crs = OgcFeaturesUtilities.GetSupportedCrsUris(layer),
+            StorageCrs = layer.SpatialReference.ToOgcCrs()
         };
     }
 
