@@ -106,6 +106,45 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithFilterCrs_UsesFilterSrid()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[0, 0]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Filter CRS Feature"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        var content = new StringContent(json, Encoding.UTF8, "application/geo+json");
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items",
+            content);
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var filter = "INTERSECTS(geometry, POINT(0 0))";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?filter={Uri.EscapeDataString(filter)}&filter-crs=EPSG:3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
+        collection.Should().NotBeNull();
+        collection!.Features.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCrsParameter_SetsContentCrsHeader()
     {
         var crs = "EPSG:3857";

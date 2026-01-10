@@ -215,28 +215,37 @@ internal static class CollectionsEndpoints
             )
         );
 
+        SpatialExtent? spatialExtent = null;
+        if (layer.Extent != null)
+        {
+            spatialExtent = new SpatialExtent
+            {
+                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                    layer.Extent.Value.MinX,
+                    layer.Extent.Value.MinY,
+                    layer.Extent.Value.MaxX,
+                    layer.Extent.Value.MaxY)),
+                Crs = layer.SpatialReference.ToOgcCrs()
+            };
+        }
+
+        var temporalExtent = OgcFeaturesUtilities.BuildTemporalExtent(layer);
+        var extent = spatialExtent == null && temporalExtent == null
+            ? null
+            : new Extent
+            {
+                Spatial = spatialExtent,
+                Temporal = temporalExtent
+            };
+
         return new CollectionInfo
         {
             Id = collectionId,
             Title = layer.Name,
             Description = layer.Description,
             Links = collectionLinks,
-            Extent = layer.Extent != null ? new Extent
-            {
-                Spatial = new SpatialExtent
-                {
-                    BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                        layer.Extent.Value.MinX,
-                        layer.Extent.Value.MinY,
-                        layer.Extent.Value.MaxX,
-                        layer.Extent.Value.MaxY)),
-                    Crs = layer.SpatialReference.ToOgcCrs()
-                }
-            } : null,
-            Crs = ImmutableArray.Create(
-                OgcFeaturesUtilities.Crs84Uri,
-                OgcFeaturesUtilities.Epsg4326Uri
-            ),
+            Extent = extent,
+            Crs = OgcFeaturesUtilities.GetSupportedCrsUris(layer),
             StorageCrs = layer.SpatialReference.ToOgcCrs()
         };
     }

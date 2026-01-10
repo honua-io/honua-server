@@ -161,15 +161,17 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
                 "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
         }
 
-        if (coords[0] >= coords[2] || coords[1] >= coords[3])
+        var isGeographic = IsGeographicSrid(targetSrid);
+        if (coords[1] > coords[3] || (!isGeographic && coords[0] > coords[2]))
         {
             return ValidationResult<BoundingBox>.Failure(
                 "Bounding box minimum coordinates must be less than maximum coordinates");
         }
 
-        if (targetSrid == 4326)
+        if (isGeographic)
         {
-            if (coords[0] < -180 || coords[2] > 180 || coords[1] < -90 || coords[3] > 90)
+            if (coords[0] < -180 || coords[0] > 180 || coords[2] < -180 || coords[2] > 180 ||
+                coords[1] < -90 || coords[3] > 90)
             {
                 return ValidationResult<BoundingBox>.Failure(
                     "Geographic coordinates must be within valid ranges (longitude: -180 to 180, latitude: -90 to 90)");
@@ -288,6 +290,16 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
 
         return false;
     }
+
+    private static bool IsGeographicSrid(int srid)
+        => srid switch
+        {
+            4326 => true,
+            4269 => true,
+            4267 => true,
+            >= 4000 and <= 4999 => true,
+            _ => false
+        };
 }
 
 /// <summary>

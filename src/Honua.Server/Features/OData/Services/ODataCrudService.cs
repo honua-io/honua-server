@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 
@@ -27,6 +27,7 @@ internal sealed partial class ODataCrudService
     private readonly IResourceValidator _resourceValidator;
     private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
+    private readonly IGeometryValidator _geometryValidator;
     private readonly ILogger<ODataCrudLog> _logger;
 
     /// <summary>
@@ -36,11 +37,13 @@ internal sealed partial class ODataCrudService
         IResourceValidator resourceValidator,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
+        IGeometryValidator geometryValidator,
         ILogger<ODataCrudLog> logger)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
         _featureWriter = featureWriter;
+        _geometryValidator = geometryValidator;
         _logger = logger;
     }
 
@@ -110,7 +113,7 @@ internal sealed partial class ODataCrudService
             var layer = layerResult.Resource!;
 
             // Parse and validate geometry if provided
-            var geometryResult = ProcessGeometry(request.Geometry);
+            var geometryResult = await ProcessGeometryAsync(request.Geometry, cancellationToken);
             if (!geometryResult.IsValid)
             {
                 return ODataCrudResult<ODataFeatureResponse>.BadRequest(geometryResult.ErrorMessage!);
@@ -189,7 +192,7 @@ internal sealed partial class ODataCrudService
             byte[]? geometry = existingFeatureValue.Geometry;
             if (!string.IsNullOrWhiteSpace(request.Geometry))
             {
-                var geometryResult = ProcessGeometry(request.Geometry);
+                var geometryResult = await ProcessGeometryAsync(request.Geometry, cancellationToken);
                 if (!geometryResult.IsValid)
                 {
                     return ODataCrudResult<ODataFeatureResponse>.BadRequest(geometryResult.ErrorMessage!);
@@ -297,7 +300,9 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Processes and validates geometry data from Base64 WKB string.
     /// </summary>
-    private static GeometryProcessingResult ProcessGeometry(string? geometryBase64)
+    private async Task<GeometryProcessingResult> ProcessGeometryAsync(
+        string? geometryBase64,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(geometryBase64))
         {
@@ -308,14 +313,15 @@ internal sealed partial class ODataCrudService
         {
             var geometry = Convert.FromBase64String(geometryBase64);
 
-            // Validate WKB geometry
-            var validationResult = WkbValidation.Validate(geometry);
+            var validationResult = await _geometryValidator.ValidateCompleteAsync(geometry, cancellationToken);
             if (!validationResult.IsValid)
             {
-                return GeometryProcessingResult.Invalid($"Invalid geometry: {validationResult.ErrorMessage}");
+                var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                return GeometryProcessingResult.Invalid($"Invalid geometry: {errorMessages}");
             }
 
-            return GeometryProcessingResult.Valid(geometry);
+            var finalGeometry = validationResult.WasRepaired ? validationResult.RepairedWkb : geometry;
+            return GeometryProcessingResult.Valid(finalGeometry);
         }
         catch (FormatException)
         {

@@ -88,6 +88,10 @@ internal static class TilesEndpoints
     {
         var request = context.Request;
         var f = GetQueryValue(request, "f");
+        var datetime = GetQueryValue(request, "datetime");
+        var subset = GetQueryValue(request, "subset");
+        var crs = GetQueryValue(request, "crs");
+        var subsetCrs = GetQueryValue(request, "subset-crs");
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
@@ -102,14 +106,26 @@ internal static class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (_, layerError) = await ResolveDatasetLayerAsync(null, layerCatalog, context, cancellationToken);
-        if (layerError is not null)
+        var layers = await layerCatalog.ListLayersAsync(cancellationToken);
+        if (layers.Length == 0)
         {
-            return layerError;
+            return StandardErrorHelpers.CreateNotFound(context, "No collections are available.");
+        }
+
+        var accessibleLayers = layers
+            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+            .OrderBy(layer => layer.Id)
+            .ToArray();
+
+        if (accessibleLayers.Length == 0)
+        {
+            return AccessPolicyHelpers.RequireAnyLayerAccess(context, layers);
         }
 
         var tileOptions = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
-        var tilesets = ImmutableArray.Create(BuildDatasetTileSetItem(baseUrl, tileOptions));
+        var tilesets = accessibleLayers
+            .Select(layer => BuildDatasetTileSetItem(layer, baseUrl, tileOptions))
+            .ToImmutableArray();
 
         var links = OgcCommonUtilities.BuildFormatLinks(
                 request,
@@ -141,6 +157,10 @@ internal static class TilesEndpoints
         var request = context.Request;
         var f = GetQueryValue(request, "f");
         var collections = GetQueryValue(request, "collections");
+        var datetime = GetQueryValue(request, "datetime");
+        var subset = GetQueryValue(request, "subset");
+        var crs = GetQueryValue(request, "crs");
+        var subsetCrs = GetQueryValue(request, "subset-crs");
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.DatasetTilesetMetadata);
@@ -161,20 +181,19 @@ internal static class TilesEndpoints
 
         var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken);
+        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken, requireCollection: true);
         if (layerError is not null)
         {
             return layerError;
         }
 
         var tileOptions = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
-        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}";
-        var tileTemplate = $"{tilesetHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}";
+        var collectionParam = $"collections={Uri.EscapeDataString(layer!.Id.ToString(CultureInfo.InvariantCulture))}";
+        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}?{collectionParam}";
+        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}";
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}";
-        var geodataHref = string.IsNullOrWhiteSpace(collections)
-            ? $"{baseUrl}/ogc/features/collections"
-            : $"{baseUrl}/ogc/features/collections/{layer!.Id}";
-        var titleBase = string.IsNullOrWhiteSpace(collections) ? "Dataset" : layer!.Name;
+        var geodataHref = $"{baseUrl}/ogc/features/collections/{layer!.Id}";
+        var titleBase = string.IsNullOrWhiteSpace(layer!.Name) ? $"Layer {layer.Id}" : layer.Name;
 
         var links = ImmutableArray.Create(
             Link.Create(
@@ -269,13 +288,23 @@ internal static class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken);
+        var (layer, layerError) = await ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken, requireCollection: true);
         if (layerError is not null)
         {
             return layerError;
         }
 
-        var query = new FeatureQuery { SpatialReferenceSrid = layer!.SpatialReference.Wkid };
+        var validationResult = ValidateTileQueryParameters(context, layer!, datetime, subset, crs, subsetCrs, out var temporalFilter);
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = layer!.SpatialReference.Wkid,
+            TemporalFilter = temporalFilter
+        };
         var tileData = await tileProvider.GetMvtTileAsync(layer.Id, tileCol, tileRow, zoomLevel, query, options, cancellationToken);
         if (tileData == null || tileData.Length == 0)
         {
@@ -507,7 +536,17 @@ internal static class TilesEndpoints
             return accessError;
         }
 
-        var query = new FeatureQuery { SpatialReferenceSrid = layer.SpatialReference.ToSrid() };
+        var validationResult = ValidateTileQueryParameters(context, layer, datetime, subset, crs, subsetCrs, out var temporalFilter);
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+            TemporalFilter = temporalFilter
+        };
         var tileData = await tileProvider.GetMvtTileAsync(layerId, tileCol, tileRow, zoomLevel, query, options, cancellationToken);
         if (tileData == null || tileData.Length == 0)
         {
@@ -517,11 +556,13 @@ internal static class TilesEndpoints
         return CreateTileResult(tileData, options.CacheMaxAge);
     }
 
-    private static TileSetItem BuildDatasetTileSetItem(string baseUrl, TileOptions tileOptions)
+    private static TileSetItem BuildDatasetTileSetItem(LayerDefinition layer, string baseUrl, TileOptions tileOptions)
     {
-        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}";
+        var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
+        var collectionParam = $"collections={Uri.EscapeDataString(collectionId)}";
+        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}?{collectionParam}";
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}";
-        var tileTemplate = $"{tilesetHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}";
+        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}";
 
         var links = ImmutableArray.Create(
             Link.Create(
@@ -545,7 +586,9 @@ internal static class TilesEndpoints
 
         return new TileSetItem
         {
-            Title = $"Dataset ({OgcTilesUtilities.WebMercatorQuadId})",
+            Title = string.IsNullOrWhiteSpace(layer.Name)
+                ? $"Layer {collectionId} ({OgcTilesUtilities.WebMercatorQuadId})"
+                : $"{layer.Name} ({OgcTilesUtilities.WebMercatorQuadId})",
             DataType = "vector",
             Crs = OgcTilesUtilities.WebMercatorCrs,
             TileMatrixSetId = OgcTilesUtilities.WebMercatorQuadId,
@@ -596,28 +639,44 @@ internal static class TilesEndpoints
 
     private static ImmutableArray<TileMatrixSetLimit> BuildTileMatrixSetLimits(TileOptions options)
     {
-        var zoom = Math.Clamp(options.MinZoom, 0, 30);
-        var matrixSize = 1 << zoom;
-        var maxIndex = matrixSize - 1;
+        var minZoom = Math.Max(0, options.MinZoom);
+        var maxZoom = Math.Max(minZoom, options.MaxZoom);
+        var limits = new List<TileMatrixSetLimit>();
 
-        return ImmutableArray.Create(new TileMatrixSetLimit
+        for (var zoom = minZoom; zoom <= maxZoom; zoom++)
         {
-            TileMatrix = zoom.ToString(CultureInfo.InvariantCulture),
-            MinTileRow = 0,
-            MaxTileRow = maxIndex,
-            MinTileCol = 0,
-            MaxTileCol = maxIndex
-        });
+            var matrixSize = 1 << zoom;
+            var maxIndex = matrixSize - 1;
+
+            limits.Add(new TileMatrixSetLimit
+            {
+                TileMatrix = zoom.ToString(CultureInfo.InvariantCulture),
+                MinTileRow = 0,
+                MaxTileRow = maxIndex,
+                MinTileCol = 0,
+                MaxTileCol = maxIndex
+            });
+        }
+
+        return limits.ToImmutableArray();
     }
 
     private static async Task<(LayerDefinition? Layer, IResult? Error)> ResolveDatasetLayerAsync(
         string? collections,
         ILayerCatalog layerCatalog,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireCollection = false)
     {
         if (string.IsNullOrWhiteSpace(collections))
         {
+            if (requireCollection)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "The collections parameter is required for dataset tiles."));
+            }
+
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
             if (layers.Length == 0)
             {
@@ -708,6 +767,62 @@ internal static class TilesEndpoints
 
         trimmed = trimmed.TrimEnd('/');
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static IResult? ValidateTileQueryParameters(
+        HttpContext context,
+        LayerDefinition layer,
+        string? datetime,
+        string? subset,
+        string? crs,
+        string? subsetCrs,
+        out TemporalFilter? temporalFilter)
+    {
+        temporalFilter = null;
+
+        if (!string.IsNullOrWhiteSpace(subset))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "The subset parameter is not supported.");
+        }
+
+        if (!IsWebMercatorCrs(crs))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Unsupported crs '{crs}'. Only EPSG:3857 is supported for tiles.");
+        }
+
+        if (!IsWebMercatorCrs(subsetCrs))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Unsupported subset-crs '{subsetCrs}'. Only EPSG:3857 is supported for tiles.");
+        }
+
+        if (!OgcTemporalFilterParser.TryParse(datetime, layer, out temporalFilter, out var errorMessage))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, errorMessage ?? "Invalid datetime parameter.");
+        }
+
+        return null;
+    }
+
+    private static bool IsWebMercatorCrs(string? crs)
+    {
+        if (string.IsNullOrWhiteSpace(crs))
+        {
+            return true;
+        }
+
+        var trimmed = crs.Trim();
+        var normalized = OgcFeaturesUtilities.NormalizeCrsUri(trimmed);
+
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg))
+        {
+            normalized = $"http://www.opengis.net/def/crs/EPSG/0/{epsg}";
+        }
+
+        return string.Equals(normalized, OgcTilesUtilities.WebMercatorCrs, StringComparison.OrdinalIgnoreCase);
     }
 
     private static IResult CreateFormatError(HttpContext context, string? formatParameter)

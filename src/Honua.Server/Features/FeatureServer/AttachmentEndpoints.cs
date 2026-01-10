@@ -130,8 +130,10 @@ internal static class AttachmentEndpoints
             ? queryObjectId.ToString()
             : null;
 
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
         if (string.IsNullOrWhiteSpace(objectIdValue) &&
-            context.Request.Form.TryGetValue("objectId", out var formObjectId))
+            form.TryGetValue("objectId", out var formObjectId))
         {
             objectIdValue = formObjectId.ToString();
         }
@@ -143,14 +145,14 @@ internal static class AttachmentEndpoints
             return;
         }
 
-        if (context.Request.Form.Files.Count == 0)
+        if (form.Files.Count == 0)
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "At least one file must be uploaded");
             return;
         }
 
-        var file = context.Request.Form.Files[0];
-        var keywords = context.Request.Form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
+        var file = form.Files[0];
+        var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted);
@@ -191,21 +193,23 @@ internal static class AttachmentEndpoints
 
         var layerId = resource.Value.Layer.Id;
 
-        if (!context.Request.Form.TryGetValue("objectId", out var objectIdValue) ||
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
+        if (!form.TryGetValue("objectId", out var objectIdValue) ||
             !long.TryParse(objectIdValue, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
         }
 
-        if (!context.Request.Form.TryGetValue("attachmentId", out var attachmentIdValue) ||
+        if (!form.TryGetValue("attachmentId", out var attachmentIdValue) ||
             !long.TryParse(attachmentIdValue, out var attachmentId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "attachmentId parameter is required");
             return;
         }
 
-        var keywords = context.Request.Form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
+        var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
@@ -234,14 +238,16 @@ internal static class AttachmentEndpoints
 
         var layerId = resource.Value.Layer.Id;
 
-        if (!context.Request.Form.TryGetValue("objectId", out var objectIdValue) ||
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
+        if (!form.TryGetValue("objectId", out var objectIdValue) ||
             !long.TryParse(objectIdValue, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
         }
 
-        if (!context.Request.Form.TryGetValue("attachmentIds", out var attachmentIdsValue))
+        if (!form.TryGetValue("attachmentIds", out var attachmentIdsValue))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "attachmentIds parameter is required");
             return;

@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Ogc.Common;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -138,6 +139,11 @@ internal sealed class OgcFilterProcessor
                 }
                 filterExpression = textResult.FilterExpression;
                 combinedFilter = textResult.CombinedFilter;
+            }
+
+            if (filterExpression != null && !string.IsNullOrWhiteSpace(filterCrs))
+            {
+                filterExpression = ApplyFilterCrs(filterExpression, filterCrsResult.CrsDefinition);
             }
 
             if (filterExpression != null)
@@ -379,6 +385,85 @@ internal sealed class OgcFilterProcessor
         return SwapAxisOrder(filterExpression);
     }
 
+    private static FilterExpression ApplyFilterCrs(
+        FilterExpression filterExpression,
+        OgcFeaturesUtilities.CrsDefinition crsDefinition)
+    {
+        return filterExpression switch
+        {
+            GeometryLiteral geometry => ApplyGeometryCrs(geometry, crsDefinition),
+            BinaryExpression binary => binary with
+            {
+                Left = ApplyFilterCrs(binary.Left, crsDefinition),
+                Right = ApplyFilterCrs(binary.Right, crsDefinition)
+            },
+            UnaryExpression unary => unary with { Operand = ApplyFilterCrs(unary.Operand, crsDefinition) },
+            SpatialPredicate spatial => spatial with
+            {
+                Left = ApplyFilterCrs(spatial.Left, crsDefinition),
+                Right = ApplyFilterCrs(spatial.Right, crsDefinition)
+            },
+            SpatialDistancePredicate spatialDistance => spatialDistance with
+            {
+                Left = ApplyFilterCrs(spatialDistance.Left, crsDefinition),
+                Right = ApplyFilterCrs(spatialDistance.Right, crsDefinition),
+                Distance = ApplyFilterCrs(spatialDistance.Distance, crsDefinition)
+            },
+            TemporalPredicate temporal => temporal with
+            {
+                Left = ApplyFilterCrs(temporal.Left, crsDefinition),
+                Right = ApplyFilterCrs(temporal.Right, crsDefinition)
+            },
+            ArrayPredicate array => array with
+            {
+                Left = ApplyFilterCrs(array.Left, crsDefinition),
+                Right = ApplyFilterCrs(array.Right, crsDefinition)
+            },
+            FunctionCall functionCall => functionCall with
+            {
+                Arguments = functionCall.Arguments.Select(argument => ApplyFilterCrs(argument, crsDefinition)).ToArray()
+            },
+            ArrayLiteral arrayLiteral => arrayLiteral with
+            {
+                Elements = arrayLiteral.Elements.Select(element => ApplyFilterCrs(element, crsDefinition)).ToArray()
+            },
+            ValueList valueList => valueList with
+            {
+                Values = valueList.Values.Select(value => ApplyFilterCrs(value, crsDefinition)).ToArray()
+            },
+            _ => filterExpression
+        };
+    }
+
+    private static GeometryLiteral ApplyGeometryCrs(
+        GeometryLiteral geometry,
+        OgcFeaturesUtilities.CrsDefinition crsDefinition)
+    {
+        if (HasExplicitCrs(geometry))
+        {
+            return geometry;
+        }
+
+        return geometry with { Srid = crsDefinition.Srid };
+    }
+
+    private static bool HasExplicitCrs(GeometryLiteral geometry)
+    {
+        if (string.IsNullOrWhiteSpace(geometry.OriginalFormat))
+        {
+            return false;
+        }
+
+        if (geometry.OriginalFormat.Contains("SRID=", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var trimmed = geometry.OriginalFormat.TrimStart();
+        return trimmed.StartsWith('{') &&
+               geometry.OriginalFormat.Contains("\"crs\"", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static FilterExpression SwapAxisOrder(FilterExpression filterExpression)
     {
         return filterExpression switch
@@ -572,74 +657,13 @@ internal sealed class OgcFilterProcessor
 
     private TemporalParseResult TryParseTemporalFilter(string? datetime, LayerDefinition layer)
     {
-        if (string.IsNullOrWhiteSpace(datetime))
+        if (OgcTemporalFilterParser.TryParse(datetime, layer, out var temporalFilter, out var errorMessage))
         {
-            return TemporalParseResult.Success(null);
+            return TemporalParseResult.Success(temporalFilter);
         }
 
-        var temporalField = layer.AttributeFields.FirstOrDefault(field =>
-            field.Type is FieldType.DateTime or FieldType.Date);
-
-        if (temporalField == null)
-        {
-            return TemporalParseResult.Failure("No temporal field is available for filtering.");
-        }
-
-        var parts = datetime.Split('/', StringSplitOptions.TrimEntries);
-        DateTimeOffset? start = null;
-        DateTimeOffset? end = null;
-
-        if (parts.Length == 1)
-        {
-            if (!TryParseDateTimeOffset(parts[0], out var instant))
-            {
-                return TemporalParseResult.Failure("Invalid datetime parameter.");
-            }
-            start = instant;
-            end = instant;
-        }
-        else if (parts.Length == 2)
-        {
-            if (!string.IsNullOrWhiteSpace(parts[0]) && parts[0] != "..")
-            {
-                if (!TryParseDateTimeOffset(parts[0], out var parsedStart))
-                {
-                    return TemporalParseResult.Failure("Invalid datetime parameter.");
-                }
-                start = parsedStart;
-            }
-
-            if (!string.IsNullOrWhiteSpace(parts[1]) && parts[1] != "..")
-            {
-                if (!TryParseDateTimeOffset(parts[1], out var parsedEnd))
-                {
-                    return TemporalParseResult.Failure("Invalid datetime parameter.");
-                }
-                end = parsedEnd;
-            }
-        }
-        else
-        {
-            return TemporalParseResult.Failure("Invalid datetime parameter.");
-        }
-
-        var temporalFilter = new TemporalFilter
-        {
-            PropertyName = temporalField.Name,
-            PropertyType = temporalField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
-            Start = start,
-            End = end
-        };
-
-        return TemporalParseResult.Success(temporalFilter);
+        return TemporalParseResult.Failure(errorMessage ?? "Invalid datetime parameter.");
     }
-
-    private static bool TryParseDateTimeOffset(string value, out DateTimeOffset parsed)
-        => DateTimeOffset.TryParse(
-            value,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-            out parsed);
 
     private static string SanitizeCqlErrorMessage(string exceptionMessage)
     {

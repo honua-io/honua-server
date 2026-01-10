@@ -349,10 +349,33 @@ internal static class CollectionsEndpoints
             )
         );
 
-        var extentSrid = layer.SpatialReference.ToSrid();
-        var extentCrs = extentSrid == 4326
-            ? OgcFeaturesUtilities.Crs84Uri
-            : extentSrid.ToOgcCrs();
+        SpatialExtent? spatialExtent = null;
+        if (layer.Extent != null)
+        {
+            var extentSrid = layer.SpatialReference.ToSrid();
+            var extentCrs = extentSrid == 4326
+                ? OgcFeaturesUtilities.Crs84Uri
+                : extentSrid.ToOgcCrs();
+
+            spatialExtent = new SpatialExtent
+            {
+                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                    layer.Extent.Value.MinX,
+                    layer.Extent.Value.MinY,
+                    layer.Extent.Value.MaxX,
+                    layer.Extent.Value.MaxY)),
+                Crs = extentCrs
+            };
+        }
+
+        var temporalExtent = OgcFeaturesUtilities.BuildTemporalExtent(layer);
+        var extent = spatialExtent == null && temporalExtent == null
+            ? null
+            : new Extent
+            {
+                Spatial = spatialExtent,
+                Temporal = temporalExtent
+            };
 
         return new CollectionInfo
         {
@@ -360,18 +383,7 @@ internal static class CollectionsEndpoints
             Title = layer.Name,
             Description = layer.Description,
             Links = collectionLinks,
-            Extent = layer.Extent != null ? new Extent
-            {
-                Spatial = new SpatialExtent
-                {
-                    BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                        layer.Extent.Value.MinX,
-                        layer.Extent.Value.MinY,
-                        layer.Extent.Value.MaxX,
-                        layer.Extent.Value.MaxY)),
-                    Crs = extentCrs
-                }
-            } : null,
+            Extent = extent,
             Crs = OgcFeaturesUtilities.GetSupportedCrsUris(layer),
             StorageCrs = layer.SpatialReference.ToOgcCrs()
         };

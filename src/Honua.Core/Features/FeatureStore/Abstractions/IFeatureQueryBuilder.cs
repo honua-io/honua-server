@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Tiles;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
@@ -67,6 +68,6 @@ internal interface IFeatureQueryBuilder
         int y,
         int z,
         FeatureQuery? query,
-        string? tileBuffer = null,
+        TileOptions tileOptions,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 }

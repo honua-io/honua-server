@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -266,7 +267,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         int y,
         int z,
         FeatureQuery? query,
-        string? tileBuffer = null,
+        TileOptions tileOptions,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
@@ -274,8 +275,6 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             var paramIndex = 1;
             var parameters = new List<object>();
-            var buffer = string.IsNullOrEmpty(tileBuffer) ? "ST_TileEnvelope($2, $3, $4)" : tileBuffer;
-
             var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
             if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue &&
                 query.Value.SpatialReferenceSrid.Value != 3857)
@@ -283,24 +282,51 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
                 geometryOperand = $"ST_Transform({geometryOperand}, 3857)";
             }
 
-            sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT ST_AsMVT(tile, 'layer', 4096, 'geom') AS mvt
-            FROM (
-                SELECT
-                    {DatabaseSchema.ObjectIdColumn},
-                    {DatabaseSchema.AttributesColumn},
-                    ST_AsMVTGeom(
-                        {geometryOperand},
-                        {buffer}
-                    ) AS geom
-                FROM {_tableName} f
-                WHERE {DatabaseSchema.LayerIdColumn} = ${paramIndex++}");
+            var tileBounds = TileMath.GetTileBounds(x, y, z);
+            var tileWidth = tileBounds.XMax - tileBounds.XMin;
+            var tileExtent = tileOptions.TileExtent > 0 ? tileOptions.TileExtent : 4096;
+            var bufferMapUnits = tileOptions.TileBuffer > 0
+                ? (tileOptions.TileBuffer / (double)tileExtent) * tileWidth
+                : 0d;
+
+            var tileEnvelope = "ST_TileEnvelope($2, $3, $4)";
+            var tileEnvelopeWithBuffer = "ST_Expand(ST_TileEnvelope($2, $3, $4), $5)";
 
             parameters.Add(layerId);
             parameters.Add(z);
             parameters.Add(x);
             parameters.Add(y);
-            paramIndex = 5;
+            parameters.Add(bufferMapUnits);
+            parameters.Add(tileExtent);
+            parameters.Add(tileOptions.TileBuffer);
+            paramIndex = 8;
+
+            var geometryForTile = geometryOperand;
+            if (z <= tileOptions.SimplifyZoom)
+            {
+                var simplifyTolerance = TileMath.GetSimplificationTolerance(z);
+                if (simplifyTolerance > 0)
+                {
+                    var simplifyParam = $"${paramIndex++}";
+                    parameters.Add(simplifyTolerance);
+                    geometryForTile = $"ST_SimplifyPreserveTopology({geometryForTile}, {simplifyParam})";
+                }
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT ST_AsMVT(tile, 'layer', $6, 'geom') AS mvt
+            FROM (
+                SELECT
+                    {DatabaseSchema.ObjectIdColumn},
+                    {DatabaseSchema.AttributesColumn},
+                    ST_AsMVTGeom(
+                        {geometryForTile},
+                        {tileEnvelope},
+                        $6,
+                        $7
+                    ) AS geom
+                FROM {_tableName} f
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             if (query != null)
             {
@@ -310,7 +336,16 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             }
 
             sql.Append(CultureInfo.InvariantCulture, $@"
-                    AND ST_Intersects({geometryOperand}, ST_TileEnvelope($2, $3, $4))
+                    AND ST_Intersects({geometryOperand}, {tileEnvelopeWithBuffer})");
+
+            if (tileOptions.MaxFeaturesPerTile > 0)
+            {
+                var limitParam = $"${paramIndex++}";
+                parameters.Add(tileOptions.MaxFeaturesPerTile);
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, @"
                 ) AS tile");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);

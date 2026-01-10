@@ -3,10 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
-using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -14,7 +13,6 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -31,8 +29,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
 {
     private readonly IFeatureWriter _featureWriter = dependencies?.FeatureWriter ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
-    private readonly LimitsOptions _limitsOptions = dependencies.LimitsOptions;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IGeometryValidator _geometryValidator = dependencies.GeometryValidator;
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -75,11 +73,16 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             if (geometryWkb != null)
             {
-                // Use centralized geometry validation limits
-                var validationResult = WkbValidation.Validate(geometryWkb, _limitsOptions.Validation);
+                var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
                 if (!validationResult.IsValid)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
+                    var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {errorMessages}");
+                }
+
+                if (validationResult.WasRepaired)
+                {
+                    geometryWkb = validationResult.RepairedWkb;
                 }
             }
 
@@ -165,11 +168,16 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             if (geometryWkb != null)
             {
-                // Use centralized geometry validation limits
-                var validationResult = WkbValidation.Validate(geometryWkb, _limitsOptions.Validation);
+                var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
                 if (!validationResult.IsValid)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
+                    var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {errorMessages}");
+                }
+
+                if (validationResult.WasRepaired)
+                {
+                    geometryWkb = validationResult.RepairedWkb;
                 }
             }
 
@@ -272,14 +280,12 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
-            using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
-            var body = await reader.ReadToEndAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(body))
+            if (context.Request.ContentLength == 0)
             {
                 return (null, "Request body is required.");
             }
 
-            using var document = JsonDocument.Parse(body);
+            using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: cancellationToken);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return (null, "GeoJSON payload must be an object.");
@@ -297,7 +303,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             try
             {
-                var feature = JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+                var feature = JsonSerializer.Deserialize<GeoJsonFeature>(document.RootElement, OgcJsonContext.Default.Options);
                 return feature == null
                     ? (null, "Invalid GeoJSON payload.")
                     : (feature, null);

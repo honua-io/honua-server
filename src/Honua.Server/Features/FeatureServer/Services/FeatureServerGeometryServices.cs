@@ -16,4 +16,7 @@ internal sealed class FeatureServerGeometryServices(IGeometryValidator geometryV
 
     public GeometryValidationResult ValidateWkb(byte[]? wkb)
         => _geometryValidator.ValidateWkb(wkb);
+
+    public Task<GeometryValidationResult> ValidateCompleteAsync(byte[] wkb, CancellationToken cancellationToken = default)
+        => _geometryValidator.ValidateCompleteAsync(wkb, cancellationToken);
 }

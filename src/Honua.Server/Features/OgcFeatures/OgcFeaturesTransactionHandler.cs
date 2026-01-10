@@ -2,9 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text;
 using System.Text.Json;
-using Honua.Core.Configuration;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -14,7 +13,6 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -32,8 +30,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly IFeatureReader _featureReader = dependencies?.FeatureReader ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
-    private readonly LimitsOptions _limitsOptions = dependencies.LimitsOptions;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IGeometryValidator _geometryValidator = dependencies.GeometryValidator;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -201,11 +199,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             if (geometryWkb != null)
             {
-                // Use centralized geometry validation limits
-                var validationResult = WkbValidation.Validate(geometryWkb, _limitsOptions.Validation);
+                var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
                 if (!validationResult.IsValid)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {validationResult.ErrorMessage}");
+                    var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                    return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {errorMessages}");
+                }
+
+                if (validationResult.WasRepaired)
+                {
+                    geometryWkb = validationResult.RepairedWkb;
                 }
             }
 
@@ -329,16 +332,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
         if (geometryWkb != null)
         {
-            var validationResult = WkbValidation.Validate(geometryWkb, _limitsOptions.Validation);
+            var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
             if (!validationResult.IsValid)
             {
+                var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
                 return new BatchOperationResult
                 {
                     OperationId = operation.Id,
                     IsSuccess = false,
-                    ErrorMessage = $"Invalid geometry: {validationResult.ErrorMessage}",
+                    ErrorMessage = $"Invalid geometry: {errorMessages}",
                     StatusCode = 400
                 };
+            }
+
+            if (validationResult.WasRepaired)
+            {
+                geometryWkb = validationResult.RepairedWkb;
             }
         }
 
@@ -417,16 +426,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
         if (geometryWkb != null)
         {
-            var validationResult = WkbValidation.Validate(geometryWkb, _limitsOptions.Validation);
+            var validationResult = await _geometryValidator.ValidateCompleteAsync(geometryWkb, cancellationToken);
             if (!validationResult.IsValid)
             {
+                var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
                 return new BatchOperationResult
                 {
                     OperationId = operation.Id,
                     IsSuccess = false,
-                    ErrorMessage = $"Invalid geometry: {validationResult.ErrorMessage}",
+                    ErrorMessage = $"Invalid geometry: {errorMessages}",
                     StatusCode = 400
                 };
+            }
+
+            if (validationResult.WasRepaired)
+            {
+                geometryWkb = validationResult.RepairedWkb;
             }
         }
 
@@ -534,14 +549,15 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
-            using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
-            var body = await reader.ReadToEndAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(body))
+            if (context.Request.ContentLength == 0)
             {
                 return (null, "Request body is required.");
             }
 
-            var request = JsonSerializer.Deserialize(body, OgcJsonContext.Default.BatchRequest);
+            var request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                OgcJsonContext.Default.BatchRequest,
+                cancellationToken);
             return request == null
                 ? (null, "Invalid batch request payload.")
                 : (request, null);
@@ -558,14 +574,15 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
-            using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
-            var body = await reader.ReadToEndAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(body))
+            if (context.Request.ContentLength == 0)
             {
                 return (null, "Request body is required.");
             }
 
-            var feature = JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+            var feature = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                OgcJsonContext.Default.GeoJsonFeature,
+                cancellationToken);
             return feature == null
                 ? (null, "Invalid GeoJSON payload.")
                 : (feature, null);

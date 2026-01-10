@@ -7,9 +7,9 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 
@@ -28,6 +28,7 @@ internal sealed partial class ODataBatchHandler
     private readonly ILayerCatalog _layerCatalog;
     private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
+    private readonly IGeometryValidator _geometryValidator;
     private readonly EditLimits _editLimits;
     private readonly ILogger _logger;
 
@@ -42,6 +43,7 @@ internal sealed partial class ODataBatchHandler
         _layerCatalog = dependencies.LayerCatalog;
         _featureReader = dependencies.FeatureReader;
         _featureWriter = dependencies.FeatureWriter;
+        _geometryValidator = dependencies.GeometryValidator;
         _editLimits = dependencies.EditLimits;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -146,7 +148,7 @@ internal sealed partial class ODataBatchHandler
                     case "POST":
                         if (request.Body != null)
                         {
-                            var feature = CreateFeatureFromBody(request.Body, layer);
+                            var feature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
                             if (!createRequests.TryGetValue(layerId, out var createList))
                             {
                                 createList = new List<(string requestId, Feature feature)>();
@@ -162,7 +164,7 @@ internal sealed partial class ODataBatchHandler
                     case "PUT":
                         if (objectId.HasValue && request.Body != null)
                         {
-                            var feature = CreateFeatureFromBody(request.Body, layer, objectId.Value);
+                            var feature = await CreateFeatureFromBodyAsync(request.Body, layer, objectId.Value, cancellationToken: cancellationToken);
                             if (!updateRequests.TryGetValue(layerId, out var updateList))
                             {
                                 updateList = new List<(string requestId, long objectId, Feature feature)>();
@@ -503,7 +505,7 @@ internal sealed partial class ODataBatchHandler
         Feature feature;
         try
         {
-            feature = CreateFeatureFromBody(body, layer);
+            feature = await CreateFeatureFromBodyAsync(body, layer, cancellationToken: cancellationToken);
         }
         catch (ArgumentException ex)
         {
@@ -551,7 +553,7 @@ internal sealed partial class ODataBatchHandler
         Feature updatedFeature;
         try
         {
-            updatedFeature = CreateFeatureFromBody(body, layer, objectId.Value, existing.Value);
+            updatedFeature = await CreateFeatureFromBodyAsync(body, layer, objectId.Value, existing.Value, cancellationToken);
         }
         catch (ArgumentException ex)
         {
@@ -620,11 +622,12 @@ internal sealed partial class ODataBatchHandler
         return (layerId, objectId);
     }
 
-    private static Feature CreateFeatureFromBody(
+    private async Task<Feature> CreateFeatureFromBodyAsync(
         Dictionary<string, object?> body,
         LayerDefinition layer,
         long? objectId = null,
-        Feature? existing = null)
+        Feature? existing = null,
+        CancellationToken cancellationToken = default)
     {
         byte[]? geometry = existing.HasValue ? existing.Value.Geometry : null;
         if (body.TryGetValue("Geometry", out var geomValue))
@@ -649,10 +652,16 @@ internal sealed partial class ODataBatchHandler
                     throw new ArgumentException("Geometry must be a valid Base64-encoded WKB string.");
                 }
 
-                var validationResult = WkbValidation.Validate(geometry);
+                var validationResult = await _geometryValidator.ValidateCompleteAsync(geometry, cancellationToken);
                 if (!validationResult.IsValid)
                 {
-                    throw new ArgumentException($"Invalid geometry: {validationResult.ErrorMessage}");
+                    var errorMessages = string.Join("; ", validationResult.Errors.Select(error => error.Message));
+                    throw new ArgumentException($"Invalid geometry: {errorMessages}");
+                }
+
+                if (validationResult.WasRepaired)
+                {
+                    geometry = validationResult.RepairedWkb;
                 }
             }
             else if (!existing.HasValue)

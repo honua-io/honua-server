@@ -160,6 +160,7 @@ public class CommonQueryValidatorTests
     [InlineData("", true)] // Empty bbox is allowed
     [InlineData("0,0,1,1", true)] // Valid bbox
     [InlineData("-180,-90,180,90", true)] // Geographic bounds for WGS84
+    [InlineData("170,-10,-170,10", true)] // Antimeridian crossing for WGS84
     [InlineData("0,0,1", false)] // Too few coordinates
     [InlineData("0,0,1,1,1", false)] // Too many coordinates
     [InlineData("a,b,c,d", false)] // Invalid numbers
@@ -177,6 +178,15 @@ public class CommonQueryValidatorTests
         {
             result.ErrorMessage.Should().NotBeNullOrEmpty();
         }
+    }
+
+    [Fact]
+    public void ValidateBbox_WithProjectedCrs_DisallowsAntimeridian()
+    {
+        var result = _validator.ValidateBbox("170,-10,-170,10", 3857);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().NotBeNullOrEmpty();
     }
 
     [Theory]

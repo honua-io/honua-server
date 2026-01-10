@@ -96,7 +96,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         _logServiceInitialized(_logger, _currentKeyVersion, null);
     }
 
-    public async Task<byte[]> EncryptConnectionStringAsync(string connectionString)
+    public Task<byte[]> EncryptConnectionStringAsync(string connectionString)
     {
         ThrowIfDisposed();
 
@@ -106,10 +106,10 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         try
         {
             var plaintext = Encoding.UTF8.GetBytes(connectionString);
-            var encryptedData = await Task.Run(() => EncryptWithEnvelope(plaintext, _currentKeyVersion));
+            var encryptedData = EncryptWithEnvelope(plaintext, _currentKeyVersion);
 
             _logEncryptionSuccess(_logger, _currentKeyVersion, null);
-            return encryptedData;
+            return Task.FromResult(encryptedData);
         }
         catch (Exception ex)
         {
@@ -118,7 +118,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
     }
 
-    public async Task<string> DecryptConnectionStringAsync(byte[] encryptedData, int keyVersion)
+    public Task<string> DecryptConnectionStringAsync(byte[] encryptedData, int keyVersion)
     {
         ThrowIfDisposed();
 
@@ -132,11 +132,11 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
 
         try
         {
-            var decryptedData = await Task.Run(() => DecryptWithEnvelope(encryptedData, keyVersion));
+            var decryptedData = DecryptWithEnvelope(encryptedData, keyVersion);
             var connectionString = Encoding.UTF8.GetString(decryptedData);
 
             _logDecryptionSuccess(_logger, keyVersion, null);
-            return connectionString;
+            return Task.FromResult(connectionString);
         }
         catch (CryptographicException ex)
         {

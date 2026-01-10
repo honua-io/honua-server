@@ -94,7 +94,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Process edit operations
-            var editContext = ProcessEditOperations(request, layer);
+            var editContext = await ProcessEditOperationsAsync(request, layer, cancellationToken);
 
             // Handle validation errors with rollback if needed
             if (editContext.HasValidationErrors && request.RollbackOnFailure)
@@ -158,7 +158,10 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes add, update, and delete operations from the request
     /// </summary>
-    private EditOperationContext ProcessEditOperations(ApplyEditsRequest request, LayerDefinition layer)
+    private async Task<EditOperationContext> ProcessEditOperationsAsync(
+        ApplyEditsRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
         {
@@ -167,8 +170,8 @@ internal sealed class FeatureServerEditsHandler(
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
         };
 
-        ProcessAddOperations(request, context, layer);
-        ProcessUpdateOperations(request, context, layer);
+        await ProcessAddOperationsAsync(request, context, layer, cancellationToken);
+        await ProcessUpdateOperationsAsync(request, context, layer, cancellationToken);
         ProcessDeleteOperations(request, context);
 
         return context;
@@ -177,7 +180,11 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes add operations and tracks features to create
     /// </summary>
-    private void ProcessAddOperations(ApplyEditsRequest request, EditOperationContext context, LayerDefinition layer)
+    private async Task ProcessAddOperationsAsync(
+        ApplyEditsRequest request,
+        EditOperationContext context,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
     {
         if (request.Adds == null)
             return;
@@ -186,7 +193,7 @@ internal sealed class FeatureServerEditsHandler(
         {
             try
             {
-                var newFeature = BuildFeatureFromGeoServices(request.Adds[i], 0, layer);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, layer, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
             }
@@ -210,7 +217,11 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes update operations and tracks features to update
     /// </summary>
-    private void ProcessUpdateOperations(ApplyEditsRequest request, EditOperationContext context, LayerDefinition layer)
+    private async Task ProcessUpdateOperationsAsync(
+        ApplyEditsRequest request,
+        EditOperationContext context,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
     {
         if (request.Updates == null)
             return;
@@ -229,7 +240,7 @@ internal sealed class FeatureServerEditsHandler(
 
             try
             {
-                var updateFeature = BuildFeatureFromGeoServices(update, objectId, layer);
+                var updateFeature = await BuildFeatureFromGeoServicesAsync(update, objectId, layer, cancellationToken);
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
@@ -395,7 +406,11 @@ internal sealed class FeatureServerEditsHandler(
         public bool HasValidationErrors { get; set; }
     }
 
-    private Feature BuildFeatureFromGeoServices(GeoServicesFeature feature, long objectId, LayerDefinition layer)
+    private async Task<Feature> BuildFeatureFromGeoServicesAsync(
+        GeoServicesFeature feature,
+        long objectId,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
     {
         byte[]? geometry = null;
         if (feature.Geometry != null)
@@ -413,12 +428,17 @@ internal sealed class FeatureServerEditsHandler(
                 ?? layer.SpatialReference.Wkid;
             geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
 
-            // Layer 2: Validate WKB structure and size limits
-            var wkbValidation = _geometryServices.ValidateWkb(geometry);
-            if (!wkbValidation.IsValid)
+            // Layer 2+3: Validate WKB structure and topology, with optional repair
+            var validationResult = await _geometryServices.ValidateCompleteAsync(geometry, cancellationToken);
+            if (!validationResult.IsValid)
             {
-                var errorMessages = string.Join("; ", wkbValidation.Errors.Select(e => e.Message));
-                throw new ArgumentException($"WKB validation failed: {errorMessages}");
+                var errorMessages = string.Join("; ", validationResult.Errors.Select(e => e.Message));
+                throw new ArgumentException($"Geometry validation failed: {errorMessages}");
+            }
+
+            if (validationResult.WasRepaired)
+            {
+                geometry = validationResult.RepairedWkb;
             }
         }
 

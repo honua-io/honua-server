@@ -11,17 +11,20 @@ internal sealed class OgcFeaturesQueryDependencies
 {
     public OgcFeaturesQueryDependencies(
         IFeatureReader featureReader,
+        IStreamingFeatureStore streamingFeatureStore,
         IResourceValidator resourceValidator,
         ICommonQueryValidator queryValidator,
         OgcFilterProcessor filterProcessor)
     {
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
+        StreamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
         ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         QueryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
         FilterProcessor = filterProcessor ?? throw new ArgumentNullException(nameof(filterProcessor));
     }
 
     public IFeatureReader FeatureReader { get; }
+    public IStreamingFeatureStore StreamingFeatureStore { get; }
     public IResourceValidator ResourceValidator { get; }
     public ICommonQueryValidator QueryValidator { get; }
     public OgcFilterProcessor FilterProcessor { get; }

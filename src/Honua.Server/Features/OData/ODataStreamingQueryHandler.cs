@@ -171,7 +171,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         long? totalCount,
         CancellationToken cancellationToken)
     {
-        using var writer = new Utf8JsonWriter(context.Response.Body, new JsonWriterOptions
+        using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
             SkipValidation = false

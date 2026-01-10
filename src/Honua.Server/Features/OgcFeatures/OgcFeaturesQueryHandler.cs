@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -29,10 +30,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
 {
     private readonly IFeatureReader _featureReader = dependencies?.FeatureReader
         ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly IStreamingFeatureStore _streamingFeatureStore = dependencies.StreamingFeatureStore;
     private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
     private readonly ICommonQueryValidator _queryValidator = dependencies.QueryValidator;
     private readonly OgcFilterProcessor _filterProcessor = dependencies.FilterProcessor;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private const int StreamingThreshold = 1000;
 
     /// <summary>
     /// Handles GetItems request with comprehensive filtering and pagination.
@@ -106,6 +109,31 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 SpatialFilter = filterResult.SpatialFilter,
                 TemporalFilter = filterResult.TemporalFilter
             };
+
+            var useStreaming = effectiveLimit > StreamingThreshold &&
+                               !string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
+                               !string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase);
+
+            if (useStreaming)
+            {
+                var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
+                var hasMoreResults = totalCount > (effectiveOffset + effectiveLimit);
+
+                var baseUrl = $"{request.Scheme}://{request.Host}";
+                var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
+                var links = BuildItemsLinks(request, basePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
+
+                return new StreamingItemsResult(
+                    _streamingFeatureStore,
+                    layer,
+                    query,
+                    collectionId,
+                    filterResult.CrsDefinition.AxisOrder,
+                    outputFormat,
+                    links,
+                    totalCount,
+                    filterResult.CrsDefinition.Uri);
+            }
 
             var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
             var features = result.Items
@@ -402,6 +430,118 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private static string BuildGmlSingleFeature(GeoJsonFeature feature)
     {
         return OgcResponseFormatter.BuildGmlSingleFeature(feature);
+    }
+
+    private static async Task StreamFeatureCollectionAsync(
+        HttpContext context,
+        IAsyncEnumerable<Feature> features,
+        string collectionId,
+        OgcFeaturesUtilities.AxisOrder axisOrder,
+        string outputFormat,
+        ImmutableArray<Link> links,
+        long numberMatched,
+        CancellationToken cancellationToken)
+    {
+        using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
+        {
+            Indented = false,
+            SkipValidation = false
+        });
+
+        writer.WriteStartObject();
+        writer.WriteString("type", "FeatureCollection");
+        writer.WriteStartArray("features");
+
+        var numberReturned = 0;
+        await foreach (var feature in features.WithCancellation(cancellationToken))
+        {
+            var featureLinks = BuildFeatureLinks(
+                context.Request,
+                collectionId,
+                FormattableString.Invariant($"{feature.Id}"),
+                outputFormat);
+            var ogcFeature = ToOgcFeature(feature, axisOrder, featureLinks);
+            JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
+
+            numberReturned++;
+            await writer.FlushAsync(cancellationToken);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteNumber("numberMatched", numberMatched);
+        writer.WriteNumber("numberReturned", numberReturned);
+        writer.WritePropertyName("links");
+
+        var linksTypeInfo = OgcJsonContext.Default.GetTypeInfo(typeof(ImmutableArray<Link>));
+        if (linksTypeInfo is not null)
+        {
+            JsonSerializer.Serialize(writer, links, linksTypeInfo);
+        }
+        else
+        {
+            JsonSerializer.Serialize(writer, links);
+        }
+
+        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteEndObject();
+
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    private sealed class StreamingItemsResult : IResult
+    {
+        private readonly IStreamingFeatureStore _streamingFeatureStore;
+        private readonly LayerDefinition _layer;
+        private readonly FeatureQuery _query;
+        private readonly string _collectionId;
+        private readonly OgcFeaturesUtilities.AxisOrder _axisOrder;
+        private readonly string _outputFormat;
+        private readonly ImmutableArray<Link> _links;
+        private readonly long _numberMatched;
+        private readonly string _crsUri;
+
+        public StreamingItemsResult(
+            IStreamingFeatureStore streamingFeatureStore,
+            LayerDefinition layer,
+            FeatureQuery query,
+            string collectionId,
+            OgcFeaturesUtilities.AxisOrder axisOrder,
+            string outputFormat,
+            ImmutableArray<Link> links,
+            long numberMatched,
+            string crsUri)
+        {
+            _streamingFeatureStore = streamingFeatureStore;
+            _layer = layer;
+            _query = query;
+            _collectionId = collectionId;
+            _axisOrder = axisOrder;
+            _outputFormat = outputFormat;
+            _links = links;
+            _numberMatched = numberMatched;
+            _crsUri = crsUri;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.ContentType = _outputFormat;
+            httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
+
+            var stream = _streamingFeatureStore.StreamFeaturesAsync(
+                _layer.Id,
+                _query,
+                httpContext.RequestAborted);
+
+            await StreamFeatureCollectionAsync(
+                httpContext,
+                stream,
+                _collectionId,
+                _axisOrder,
+                _outputFormat,
+                _links,
+                _numberMatched,
+                httpContext.RequestAborted);
+        }
     }
 
     private static partial class Log

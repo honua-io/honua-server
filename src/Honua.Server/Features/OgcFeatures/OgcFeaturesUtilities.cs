@@ -8,6 +8,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.OgcFeatures.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -91,19 +92,15 @@ internal static class OgcFeaturesUtilities
     /// </summary>
     public static ImmutableArray<string> GetSupportedCrsUris(LayerDefinition layer)
     {
-        var supported = new List<string>
-        {
-            Crs84Uri,
-            Epsg4326Uri
-        };
+        var supported = OgcCrsResolver.GetSupportedCrsUris().ToBuilder();
 
         var storageCrs = layer.SpatialReference.ToOgcCrs();
-        if (!supported.Contains(storageCrs, StringComparer.OrdinalIgnoreCase))
+        if (!supported.Any(uri => string.Equals(uri, storageCrs, StringComparison.OrdinalIgnoreCase)))
         {
             supported.Add(storageCrs);
         }
 
-        return supported.ToImmutableArray();
+        return supported.ToImmutable();
     }
 
     /// <summary>
@@ -114,7 +111,8 @@ internal static class OgcFeaturesUtilities
         var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
         foreach (var crsUri in GetSupportedCrsUris(layer))
         {
-            var definition = CreateCrsDefinition(crsUri);
+            var result = OgcCrsResolver.TryResolveCrs(crsUri);
+            var definition = result.IsSuccess ? result.CrsDefinition : CreateCrsDefinition(crsUri);
             definitions[definition.Uri] = definition;
         }
 
@@ -229,4 +227,18 @@ internal static class OgcFeaturesUtilities
             or FieldType.Date
             or FieldType.Time
             or FieldType.Uuid;
+
+    public static TemporalExtent? BuildTemporalExtent(LayerDefinition layer)
+    {
+        var hasTemporal = layer.AttributeFields.Any(field => field.Type is FieldType.Date or FieldType.DateTime);
+        if (!hasTemporal)
+        {
+            return null;
+        }
+
+        return new TemporalExtent
+        {
+            Interval = ImmutableArray.Create(ImmutableArray.Create<string?>(null, null))
+        };
+    }
 }

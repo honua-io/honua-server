@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Collections.Immutable;
+using System.Globalization;
 
 namespace Honua.Server.Features.OgcFeatures.Services;
 
@@ -104,6 +106,26 @@ internal static class OgcCrsResolver
     public static IReadOnlyDictionary<string, OgcFeaturesUtilities.CrsDefinition> GetSupportedCrs()
     {
         return _supportedCrs;
+    }
+
+    /// <summary>
+    /// Gets the supported CRS URIs for metadata advertisement.
+    /// </summary>
+    public static ImmutableArray<string> GetSupportedCrsUris()
+    {
+        var uris = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var uri in _supportedCrs.Keys)
+        {
+            uris.Add(uri);
+        }
+
+        foreach (var epsgCode in EnumerateSupportedEpsgCodes())
+        {
+            uris.Add(ConvertEpsgToUri(epsgCode.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        return uris.OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase).ToImmutableArray();
     }
 
     /// <summary>
@@ -226,6 +248,25 @@ internal static class OgcCrsResolver
             25833 => true, // ETRS89 / UTM zone 33N
             _ => false
         };
+    }
+
+    private static IEnumerable<int> EnumerateSupportedEpsgCodes()
+    {
+        yield return 4326;
+        yield return 3857;
+        yield return 2154;
+        yield return 25832;
+        yield return 25833;
+
+        for (var code = 32601; code <= 32660; code++)
+        {
+            yield return code;
+        }
+
+        for (var code = 32701; code <= 32760; code++)
+        {
+            yield return code;
+        }
     }
 
     private static OgcFeaturesUtilities.AxisOrder DetermineAxisOrder(int epsgCode)
