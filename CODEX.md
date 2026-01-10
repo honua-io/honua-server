@@ -95,6 +95,12 @@ Query_WithWhereClause_ReturnsFilteredFeatures()
 Query_InvalidSyntax_Returns400WithErrorDetails()
 ```
 
+**Scale Tests (Multi-Node + Redis)**:
+- Start the scale stack: `docker compose -f docker-compose.scale-test.yml up --build --scale honua=3`
+- Set env vars (inside the devcontainer): `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`
+- Run scale tests only: `dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`
+- Scale tests expect `docker/nginx/scale-test.conf` to emit `X-Instance-ID` for `/rest/`, `/ogc/`, and `/odata/`
+
 ### Architecture Enforcement
 
 #### BLOCKING VIOLATIONS (must fix before merge)
