@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -12,6 +14,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
@@ -55,6 +58,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        Activity? featureActivity = null;
         try
         {
             var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Features);
@@ -187,6 +191,10 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return accessError;
             }
 
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
+
             // Build feature query using query service
             var featureQuery = _querySearchService.BuildFeatureQuery(
                 filter, orderby, pagination.Limit,
@@ -207,6 +215,13 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return await queryHandler.HandleGetFeaturesNonStreamingAsync(
                     context, layerId.Value, filter, select, orderby, topValue, skipValue, countValue, expand, cancellationToken);
             }
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                HonuaTelemetry.Protocols.OData,
+                layerId.Value.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+            featureActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
 
             // Get total count if requested
             long? totalCount = null;
@@ -240,6 +255,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                 _geometryService,
                 cancellationToken);
 
+            if (totalCount.HasValue)
+            {
+                var safeCount = (int)Math.Min(totalCount.Value, int.MaxValue);
+                HonuaTelemetry.SetSuccess(featureActivity, safeCount);
+            }
+            else
+            {
+                HonuaTelemetry.SetSuccess(featureActivity);
+            }
+
             return Results.Empty;
         }
         catch (OperationCanceledException)
@@ -250,14 +275,20 @@ internal sealed partial class ODataStreamingQueryHandler(
         catch (ArgumentException ex)
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the OData request", 500);
+        }
+        finally
+        {
+            featureActivity?.Dispose();
         }
     }
 

@@ -4,8 +4,10 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
+using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -32,6 +34,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     private readonly IConfiguration _configuration;
     private readonly ILogger<SecureConnectionAwareDatabaseProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
+    private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
     private readonly string? _namedConnectionToUse;
 
     // Logger message delegates for performance
@@ -64,13 +67,15 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         ISecureConnectionResolver secureResolver,
         IConfiguration configuration,
         ILogger<SecureConnectionAwareDatabaseProvider> logger,
-        ISchemaContext? schemaContext = null)
+        ISchemaContext? schemaContext = null,
+        IActiveDbConnectionTracker? activeDbConnectionTracker = null)
     {
         _defaultProvider = defaultProvider ?? throw new ArgumentNullException(nameof(defaultProvider));
         _secureResolver = secureResolver ?? throw new ArgumentNullException(nameof(secureResolver));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaContext = schemaContext;
+        _activeDbConnectionTracker = activeDbConnectionTracker;
 
         // Check if a specific named connection should be used
         _namedConnectionToUse = _configuration["Database:SecureConnection:Name"];
@@ -102,6 +107,8 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
             var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+
+            DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);
 

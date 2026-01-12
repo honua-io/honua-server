@@ -21,17 +21,20 @@ internal sealed partial class PerformanceMonitoringMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<PerformanceMonitoringMiddleware> _logger;
     private readonly IPerformanceMonitor _performanceMonitor;
+    private readonly ISystemMetricsCollector _systemMetricsCollector;
     private readonly PerformanceMonitoringOptions _options;
 
     public PerformanceMonitoringMiddleware(
         RequestDelegate next,
         ILogger<PerformanceMonitoringMiddleware> logger,
         IPerformanceMonitor performanceMonitor,
+        ISystemMetricsCollector systemMetricsCollector,
         IOptions<PerformanceMonitoringOptions> options)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
+        _systemMetricsCollector = systemMetricsCollector ?? throw new ArgumentNullException(nameof(systemMetricsCollector));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
@@ -40,6 +43,9 @@ internal sealed partial class PerformanceMonitoringMiddleware
         var stopwatch = Stopwatch.StartNew();
         var endpoint = GetNormalizedEndpoint(context);
         IOperationScope? operationScope = null;
+        var requestErrored = false;
+
+        using var systemMetricsScope = _systemMetricsCollector.TrackRequest();
 
         if (_options.EnableDetailedRequestTracking)
         {
@@ -65,6 +71,13 @@ internal sealed partial class PerformanceMonitoringMiddleware
         }
         catch (Exception ex)
         {
+            if (ex is OperationCanceledException && context.RequestAborted.IsCancellationRequested)
+            {
+                operationScope?.WithTag("error", "client_abort");
+                throw;
+            }
+
+            requestErrored = true;
             operationScope?.WithTag("error", ex.GetType().Name);
             if (!context.Response.HasStarted)
             {
@@ -88,6 +101,8 @@ internal sealed partial class PerformanceMonitoringMiddleware
 
             // Record request metrics
             RecordRequestMetrics(context, endpoint, stopwatch.Elapsed);
+            var isError = requestErrored || context.Response.StatusCode >= StatusCodes.Status500InternalServerError;
+            _systemMetricsCollector.RecordRequest(stopwatch.Elapsed, isError);
 
             if (operationScope is not null)
             {

@@ -23,6 +23,7 @@ public static class PerformanceMonitoringServiceCollectionExtensions
         services.AddSingleton<ICacheMetricsSnapshotProvider>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
         services.AddSingleton<IHttpRequestMetricsSnapshotProvider>(sp => sp.GetRequiredService<DefaultPerformanceMonitor>());
         services.TryAddSingleton<IDatabasePerformanceMetricsProvider, NullDatabasePerformanceMetricsProvider>();
+        services.TryAddSingleton<IActiveDbConnectionTracker, ActiveDbConnectionTracker>();
         return services;
     }
 }

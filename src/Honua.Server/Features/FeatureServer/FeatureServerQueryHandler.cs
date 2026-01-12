@@ -22,6 +22,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -54,6 +55,7 @@ internal sealed class FeatureServerQueryHandler(
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
+        Activity? featureActivity = null;
         try
         {
             FeatureServerLog.QueryRequested(_logger, serviceId, layerId, queryParams.Where);
@@ -82,15 +84,22 @@ internal sealed class FeatureServerQueryHandler(
 
             ServiceDefinition service = resourceResult.Resource!.Service;
             LayerDefinition layer = resourceResult.Resource.Layer;
-            var activity = Activity.Current;
-            activity?.SetTag("honua.protocol", "featureserver");
-            activity?.SetTag("honua.service_id", serviceId);
-            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
             if (accessError != null)
             {
                 return accessError;
             }
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                HonuaTelemetry.Protocols.FeatureServer,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+            featureActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             var whereValidation = queryValidator.ValidateWhereClause(queryParams.Where);
@@ -284,6 +293,8 @@ internal sealed class FeatureServerQueryHandler(
                 var count = await _queryExecutor.CountAsync(layerId, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+                var safeCount = (int)Math.Min(count, int.MaxValue);
+                HonuaTelemetry.SetSuccess(featureActivity, safeCount);
                 var response = new QueryResponse
                 {
                     ObjectIdFieldName = objectIdFieldName,
@@ -305,6 +316,7 @@ internal sealed class FeatureServerQueryHandler(
                 var extent = await _queryExecutor.GetExtentAsync(layerId, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+                HonuaTelemetry.SetSuccess(featureActivity);
                 var response = new QueryResponse
                 {
                     ObjectIdFieldName = objectIdFieldName,
@@ -342,6 +354,7 @@ internal sealed class FeatureServerQueryHandler(
 
                 var objectIds = result.Items.Select(feature => feature.Id).ToArray();
                 var hasMoreResults = query.Limit.HasValue && result.TotalCount > query.Limit.Value;
+                HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 var response = new QueryResponse
                 {
@@ -395,6 +408,7 @@ internal sealed class FeatureServerQueryHandler(
                     outFields);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
+                HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
 
                 return format.ToLowerInvariant() switch
                 {
@@ -418,6 +432,7 @@ internal sealed class FeatureServerQueryHandler(
                 context,
                 cancellationToken);
 
+            HonuaTelemetry.SetSuccess(featureActivity);
             return _streamingResult;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -427,6 +442,7 @@ internal sealed class FeatureServerQueryHandler(
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
 
             if (context.Response.HasStarted)
             {
@@ -439,6 +455,7 @@ internal sealed class FeatureServerQueryHandler(
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
 
             if (context.Response.HasStarted)
             {
@@ -446,6 +463,10 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
+        }
+        finally
+        {
+            featureActivity?.Dispose();
         }
     }
 

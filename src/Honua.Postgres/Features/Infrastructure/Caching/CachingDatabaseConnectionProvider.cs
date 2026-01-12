@@ -6,6 +6,8 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -38,6 +40,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
+    private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
 
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -45,11 +48,13 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     public CachingDatabaseConnectionProvider(
         NpgsqlDataSource dataSource,
         ILogger<CachingDatabaseConnectionProvider> logger,
-        ISchemaContext? schemaContext = null)
+        ISchemaContext? schemaContext = null,
+        IActiveDbConnectionTracker? activeDbConnectionTracker = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaContext = schemaContext;
+        _activeDbConnectionTracker = activeDbConnectionTracker;
     }
 
     /// <summary>
@@ -65,6 +70,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
         return connection;
     }
 

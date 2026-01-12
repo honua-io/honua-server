@@ -268,6 +268,12 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
+var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
+if (activeDbConnectionTracker != null)
+{
+    EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
+}
+
 if (forwardedHeadersEnabled)
 {
     app.UseForwardedHeaders();

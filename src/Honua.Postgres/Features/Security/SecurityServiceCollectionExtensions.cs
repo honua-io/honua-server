@@ -4,6 +4,7 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
@@ -134,13 +135,15 @@ internal static class SecurityServiceCollectionExtensions
                 var secureResolver = serviceProvider.GetRequiredService<ISecureConnectionResolver>();
                 var logger = serviceProvider.GetRequiredService<ILogger<SecureConnectionAwareDatabaseProvider>>();
                 var schemaContext = serviceProvider.GetService<ISchemaContext>();
+                var activeDbConnectionTracker = serviceProvider.GetService<IActiveDbConnectionTracker>();
 
                 return new SecureConnectionAwareDatabaseProvider(
                     originalProvider,
                     secureResolver,
                     configuration,
                     logger,
-                    schemaContext);
+                    schemaContext,
+                    activeDbConnectionTracker);
             },
             existingDescriptor.Lifetime));
 

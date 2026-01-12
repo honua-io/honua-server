@@ -51,11 +51,11 @@ internal sealed class LimitsEnforcementMiddleware(
         }
 
         // 3. Set up request timeout cancellation token
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        timeoutCts.CancelAfter(_limits.Connections.RequestTimeout);
+        using var timeoutCts = new CancellationTokenSource(_limits.Connections.RequestTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, timeoutCts.Token);
 
         // Make the timeout token available to downstream handlers
-        context.Items["LimitsTimeoutToken"] = timeoutCts.Token;
+        context.Items["LimitsTimeoutToken"] = linkedCts.Token;
 
         // 4. Log request processing start with limits context
         InfrastructureLog.RequestProcessingStarted(_logger, context.Request.Method, context.Request.Path,
@@ -66,7 +66,7 @@ internal sealed class LimitsEnforcementMiddleware(
             // Continue to next middleware
             await _next(context);
         }
-        catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             // Request timed out
             InfrastructureLog.RequestTimedOut(_logger, context.Request.Path, _limits.Connections.RequestTimeout.TotalSeconds);
@@ -77,6 +77,10 @@ internal sealed class LimitsEnforcementMiddleware(
                     $"Request exceeded maximum allowed time of {_limits.Connections.RequestTimeout.TotalSeconds} seconds");
             }
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Client disconnected; no response to write.
+        }
         catch (Exception ex)
         {
             // Log unexpected errors (but don't handle them - let other middleware handle)
@@ -86,6 +90,7 @@ internal sealed class LimitsEnforcementMiddleware(
         finally
         {
             // Dispose timeout token source
+            linkedCts.Dispose();
             timeoutCts.Dispose();
         }
     }
@@ -173,7 +178,9 @@ internal sealed class LimitsEnforcementMiddleware(
     /// </summary>
     private static Task WriteErrorResponseAsync(HttpContext context, int statusCode, string error, string details)
     {
-        return ProtocolErrorWriter.WriteErrorAsync(context, statusCode, error, details);
+        var errorResponse = new StandardErrorResponse(statusCode, error, details);
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        return result.ExecuteAsync(context);
     }
 }
 

@@ -23,6 +23,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.OgcFeatures;
@@ -63,6 +64,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         CancellationToken cancellationToken)
     {
         var request = context.Request;
+        Activity? featureActivity = null;
 
         try
         {
@@ -74,15 +76,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
             var layer = collectionResult.Resource!;
             var layerId = layer.Id;
-            var activity = Activity.Current;
-            activity?.SetTag("honua.protocol", "ogc-features");
-            activity?.SetTag("honua.collection_id", collectionId);
-            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
             if (accessError != null)
             {
                 return accessError;
             }
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                HonuaTelemetry.Protocols.OgcFeatures,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+            featureActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
 
             var validationError = OgcFeaturesUtilities.ValidateItemsQueryParameters(request, layer);
             if (validationError is not null)
@@ -147,6 +156,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 if (cached != null)
                 {
                     context.Response.Headers["Content-Crs"] = FormatContentCrs(filterResult.CrsDefinition.Uri);
+                    HonuaTelemetry.SetSuccess(featureActivity);
                     return Results.Bytes(cached.Payload, cached.ContentType);
                 }
             }
@@ -154,6 +164,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
             if (useStreaming)
             {
                 var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
+                var safeCount = (int)Math.Min(totalCount, int.MaxValue);
+                HonuaTelemetry.SetSuccess(featureActivity, safeCount);
                 var hasMoreResults = totalCount > (effectiveOffset + effectiveLimit);
 
                 var streamBaseUrl = $"{request.Scheme}://{request.Host}";
@@ -201,6 +213,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             };
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(filterResult.CrsDefinition.Uri);
+            HonuaTelemetry.SetSuccess(featureActivity, features.Length);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -227,7 +240,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
         catch (Exception ex)
         {
             Log.ItemsQueryFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while retrieving features.");
+        }
+        finally
+        {
+            featureActivity?.Dispose();
         }
     }
 
@@ -243,6 +261,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         CancellationToken cancellationToken)
     {
         var request = context.Request;
+        Activity? featureActivity = null;
 
         try
         {
@@ -254,15 +273,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
             var layer = collectionResult.Resource!;
             var layerId = layer.Id;
-            var activity = Activity.Current;
-            activity?.SetTag("honua.protocol", "ogc-features");
-            activity?.SetTag("honua.collection_id", collectionId);
-            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
             if (accessError != null)
             {
                 return accessError;
             }
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                HonuaTelemetry.Protocols.OgcFeatures,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+            featureActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
@@ -302,6 +328,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 if (cached != null)
                 {
                     context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
+                    HonuaTelemetry.SetSuccess(featureActivity);
                     return Results.Bytes(cached.Payload, cached.ContentType);
                 }
             }
@@ -316,6 +343,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var ogcFeature = ToOgcFeature(feature.Value, crsDefinition.AxisOrder, _geometryServices, featureLinks);
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
+            HonuaTelemetry.SetSuccess(featureActivity, 1);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -342,7 +370,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
         catch (Exception ex)
         {
             Log.ItemQueryFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while retrieving the feature.");
+        }
+        finally
+        {
+            featureActivity?.Dispose();
         }
     }
 

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -72,10 +73,9 @@ internal static class DatabasePerformanceEndpoints
         }
         catch (Exception)
         {
-            return Results.Problem(
-                title: "Query Cache Statistics Error",
-                detail: "See server logs for details.",
-                statusCode: 500);
+            return StandardErrorHelpers.CreateInternalServerError(
+                httpContext,
+                "Query cache statistics error. See server logs for details.");
         }
     }
 }
