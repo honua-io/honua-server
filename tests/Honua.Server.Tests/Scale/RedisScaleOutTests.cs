@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net.Http;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -94,7 +93,7 @@ public sealed class RedisScaleOutTests
         await database.KeyDeleteAsync(keys);
     }
 
-    private static IServer GetServer(IConnectionMultiplexer multiplexer)
+    private static IServer GetServer(ConnectionMultiplexer multiplexer)
     {
         var endpoints = multiplexer.GetEndPoints();
         if (endpoints.Length == 0)

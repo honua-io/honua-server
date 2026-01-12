@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.OgcFeatures;
+using Honua.Core.Features.Shared.Models;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;

@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.OgcFeatures;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.OgcFeatures.Services;

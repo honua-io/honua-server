@@ -20,6 +20,7 @@ using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.Geometry;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;

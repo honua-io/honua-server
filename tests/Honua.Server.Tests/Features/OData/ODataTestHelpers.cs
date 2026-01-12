@@ -7,7 +7,7 @@ namespace Honua.Server.Tests.Features.OData;
 
 internal static class ODataTestHelpers
 {
-    private static readonly HashSet<string> _reservedProperties = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ReservedProperties = new(StringComparer.OrdinalIgnoreCase)
     {
         "ObjectId",
         "LayerId",
@@ -64,7 +64,7 @@ internal static class ODataTestHelpers
             return true;
         }
 
-        return _reservedProperties.Contains(propertyName);
+        return ReservedProperties.Contains(propertyName);
     }
 
     private static JsonElement EmptyObject()

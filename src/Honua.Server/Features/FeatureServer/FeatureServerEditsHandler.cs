@@ -26,6 +26,7 @@ internal sealed class FeatureServerEditsHandler(
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly IFeatureServerGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -72,7 +73,7 @@ internal sealed class FeatureServerEditsHandler(
 
             var service = resourceResult.Resource!.Service;
             var layer = resourceResult.Resource.Layer;
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(httpContext, layer, service);
+            var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(httpContext, layer, service);
             if (accessError != null)
             {
                 return accessError;
@@ -423,26 +424,28 @@ internal sealed class FeatureServerEditsHandler(
                 throw new ArgumentException($"Geometry validation failed: {errorMessages}");
             }
 
+            var layerSrid = layer.SpatialReference.Wkid;
             var geometrySrid = feature.Geometry.SpatialReference?.Wkid
-                ?? feature.Geometry.SpatialReference?.LatestWkid
-                ?? layer.SpatialReference.Wkid;
+                ?? feature.Geometry.SpatialReference?.LatestWkid;
+            if (geometrySrid.HasValue && geometrySrid.Value != layerSrid)
+            {
+                throw new ArgumentException($"Geometry spatial reference {geometrySrid.Value} does not match layer SRID {layerSrid}.");
+            }
+
+            geometrySrid ??= layerSrid;
             geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
 
-            // Layer 2+3: Validate WKB structure and topology, with optional repair
-            var validationResult = await _geometryServices.ValidateCompleteAsync(geometry, cancellationToken);
-            if (!validationResult.IsValid)
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometry, cancellationToken);
+            if (!geometryValidation.IsValid)
             {
-                var errorMessages = string.Join("; ", validationResult.Errors.Select(e => e.Message));
-                throw new ArgumentException($"Geometry validation failed: {errorMessages}");
+                throw new ArgumentException($"Geometry validation failed: {geometryValidation.ErrorMessage}");
             }
 
-            if (validationResult.WasRepaired)
-            {
-                geometry = validationResult.RepairedWkb;
-            }
+            geometry = geometryValidation.Geometry;
         }
 
-        var attributesResult = layer.ValidateAttributes(
+        var attributesResult = _mutationValidator.ValidateAttributes(
+            layer,
             feature.Attributes,
             ValidationExtensions.AttributeValidationMode.GeoServices);
         if (!attributesResult.IsValid)

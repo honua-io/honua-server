@@ -23,13 +23,12 @@ internal static class OgcTemporalFilterParser
             return true;
         }
 
-        var temporalField = layer.AttributeFields.FirstOrDefault(field =>
-            field.Type is FieldType.DateTime or FieldType.Date);
-        if (temporalField == null)
+        if (!TryResolveTemporalField(layer, out var temporalField))
         {
             errorMessage = "No temporal field is available for filtering.";
             return false;
         }
+        var resolvedField = temporalField!;
 
         var parts = datetime.Split('/', StringSplitOptions.TrimEntries);
         DateTimeOffset? start = null;
@@ -78,8 +77,8 @@ internal static class OgcTemporalFilterParser
 
         temporalFilter = new TemporalFilter
         {
-            PropertyName = temporalField.Name,
-            PropertyType = temporalField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
+            PropertyName = resolvedField.Name,
+            PropertyType = resolvedField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
             Start = start,
             End = end
         };
@@ -93,4 +92,23 @@ internal static class OgcTemporalFilterParser
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out parsed);
+
+    private static bool TryResolveTemporalField(LayerDefinition layer, out FieldDefinition? temporalField)
+    {
+        temporalField = null;
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        var startFieldName = timeInfo?.StartTimeField;
+        if (!string.IsNullOrWhiteSpace(startFieldName))
+        {
+            temporalField = layer.AttributeFields.FirstOrDefault(field =>
+                field.Name.Equals(startFieldName, StringComparison.OrdinalIgnoreCase) &&
+                field.Type is FieldType.DateTime or FieldType.Date);
+            return temporalField != null;
+        }
+
+        temporalField = layer.AttributeFields.FirstOrDefault(field =>
+            field.Type is FieldType.DateTime or FieldType.Date);
+        return temporalField != null;
+    }
 }

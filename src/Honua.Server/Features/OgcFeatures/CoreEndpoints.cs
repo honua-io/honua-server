@@ -17,8 +17,8 @@ internal static class CoreEndpoints
 {
     private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _openApiCache =
         new(StringComparer.OrdinalIgnoreCase);
-    private static readonly TimeSpan _landingPageCacheDuration = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan _conformanceCacheDuration = TimeSpan.FromHours(1);
+    private static readonly TimeSpan LandingPageCacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan ConformanceCacheDuration = TimeSpan.FromHours(1);
 
     /// <summary>
     /// Maps core metadata endpoints for OGC API Features
@@ -79,7 +79,7 @@ internal static class CoreEndpoints
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/features";
-        EnsureCacheControl(context, _landingPageCacheDuration);
+        EnsureCacheControl(context, LandingPageCacheDuration);
 
         var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
             .ToBuilder();
@@ -139,7 +139,7 @@ internal static class CoreEndpoints
             return CreateFormatError(context, formatError);
         }
 
-        EnsureCacheControl(context, _conformanceCacheDuration);
+        EnsureCacheControl(context, ConformanceCacheDuration);
 
         var conformance = new ConformanceDeclaration
         {

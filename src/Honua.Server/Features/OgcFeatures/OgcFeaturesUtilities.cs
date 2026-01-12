@@ -3,12 +3,15 @@
 
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
-using Honua.Server.Features.OgcFeatures.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -57,20 +60,6 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
-    /// CRS definition with URI, SRID, and axis order
-    /// </summary>
-    public readonly record struct CrsDefinition(string Uri, int Srid, AxisOrder AxisOrder, bool IsGeographic);
-
-    /// <summary>
-    /// Axis order enumeration
-    /// </summary>
-    public enum AxisOrder
-    {
-        EastNorth,
-        NorthEast
-    }
-
-    /// <summary>
     /// Supported feature formats
     /// </summary>
     public static readonly ImmutableArray<FormatOption> FeatureFormats = ImmutableArray.Create(
@@ -82,38 +71,52 @@ internal static class OgcFeaturesUtilities
     // CRS constants
     public const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     public const string Epsg4326Uri = "http://www.opengis.net/def/crs/EPSG/0/4326";
+    public const string Epsg3857Uri = "http://www.opengis.net/def/crs/EPSG/0/3857";
     public const string WfsNamespace = "http://www.opengis.net/wfs/2.0";
     public const string GmlNamespace = "http://www.opengis.net/gml/3.2";
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     public const string AtomNamespace = "http://www.w3.org/2005/Atom";
 
+    private static readonly ImmutableArray<string> DefaultCrsIdentifiers =
+        ImmutableArray.Create(Crs84Uri, Epsg4326Uri, Epsg3857Uri);
+
     /// <summary>
     /// Returns the supported CRS URIs for a collection.
     /// </summary>
-    public static ImmutableArray<string> GetSupportedCrsUris(LayerDefinition layer)
+    public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
+        LayerDefinition layer,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
     {
-        var supported = OgcCrsResolver.GetSupportedCrsUris().ToBuilder();
-
-        var storageCrs = layer.SpatialReference.ToOgcCrs();
-        if (!supported.Any(uri => string.Equals(uri, storageCrs, StringComparison.OrdinalIgnoreCase)))
-        {
-            supported.Add(storageCrs);
-        }
-
-        return supported.ToImmutable();
+        var definitions = await GetSupportedCrsDefinitionsAsync(layer, crsRegistry, cancellationToken).ConfigureAwait(false);
+        return definitions.Keys
+            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
     }
 
     /// <summary>
     /// Builds CRS definitions for a collection.
     /// </summary>
-    public static IReadOnlyDictionary<string, CrsDefinition> GetSupportedCrsDefinitions(LayerDefinition layer)
+    public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
+        LayerDefinition layer,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
     {
         var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
-        foreach (var crsUri in GetSupportedCrsUris(layer))
+        foreach (var crsIdentifier in DefaultCrsIdentifiers)
         {
-            var result = OgcCrsResolver.TryResolveCrs(crsUri);
-            var definition = result.IsSuccess ? result.CrsDefinition : CreateCrsDefinition(crsUri);
-            definitions[definition.Uri] = definition;
+            var definition = await crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
+            if (definition.HasValue)
+            {
+                definitions[definition.Value.Uri] = definition.Value;
+            }
+        }
+
+        var storageCrs = layer.SpatialReference.ToOgcCrs();
+        var storageDefinition = await crsRegistry.ResolveAsync(storageCrs, cancellationToken).ConfigureAwait(false);
+        if (storageDefinition.HasValue)
+        {
+            definitions[storageDefinition.Value.Uri] = storageDefinition.Value;
         }
 
         return definitions;
@@ -176,19 +179,6 @@ internal static class OgcFeaturesUtilities
         return false;
     }
 
-    private static CrsDefinition CreateCrsDefinition(string crsUri)
-    {
-        var normalized = NormalizeCrsUri(crsUri);
-        var srid = ExtentExtensions.ExtractSridFromCrs(normalized);
-        var axisOrder = string.Equals(normalized, Epsg4326Uri, StringComparison.OrdinalIgnoreCase)
-            ? AxisOrder.NorthEast
-            : AxisOrder.EastNorth;
-        var isGeographic = string.Equals(normalized, Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
-                           string.Equals(normalized, Epsg4326Uri, StringComparison.OrdinalIgnoreCase);
-
-        return new CrsDefinition(normalized, srid, axisOrder, isGeographic);
-    }
-
     /// <summary>
     /// Validates query parameters for items requests including queryable fields
     /// </summary>
@@ -228,17 +218,117 @@ internal static class OgcFeaturesUtilities
             or FieldType.Time
             or FieldType.Uuid;
 
-    public static TemporalExtent? BuildTemporalExtent(LayerDefinition layer)
+    public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
+        LayerDefinition layer,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
     {
-        var hasTemporal = layer.AttributeFields.Any(field => field.Type is FieldType.Date or FieldType.DateTime);
-        if (!hasTemporal)
+        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
         {
             return null;
         }
 
+        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
+            layer.Id,
+            startField!.Name,
+            startField.Type,
+            cancellationToken).ConfigureAwait(false);
+
+        TemporalExtentResult? endExtent = null;
+        if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            endExtent = await featureReader.GetTemporalExtentAsync(
+                layer.Id,
+                endField.Name,
+                endField.Type,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (startExtent == null)
+        {
+            return null;
+        }
+
+        var min = startExtent?.Start;
+        var max = endField == null
+            ? startExtent?.End
+            : endExtent?.End ?? endExtent?.Start;
+
         return new TemporalExtent
         {
-            Interval = ImmutableArray.Create(ImmutableArray.Create<string?>(null, null))
+            Interval = ImmutableArray.Create(ImmutableArray.Create(
+                FormatTemporalValue(min),
+                FormatTemporalValue(max)))
         };
+    }
+
+    private static bool TryResolveTemporalFields(
+        LayerDefinition layer,
+        out FieldDefinition? startField,
+        out FieldDefinition? endField)
+    {
+        startField = null;
+        endField = null;
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo != null)
+        {
+            if (string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            {
+                return false;
+            }
+
+            startField = FindTemporalField(layer, timeInfo.StartTimeField);
+            if (startField == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
+            {
+                endField = FindTemporalField(layer, timeInfo.EndTimeField);
+                if (endField == null)
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
+        }
+
+        if (startField == null)
+        {
+            return false;
+        }
+
+        if (endField != null && endField.Type != startField.Type)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
+    {
+        return layer.AttributeFields.FirstOrDefault(field =>
+            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            field.Type is FieldType.DateTime or FieldType.Date);
+    }
+
+    private static string? FormatTemporalValue(DateTimeOffset? value)
+    {
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        var utc = value.Value.ToUniversalTime();
+        var format = utc.Ticks % TimeSpan.TicksPerSecond == 0
+            ? "yyyy-MM-ddTHH:mm:ss'Z'"
+            : "yyyy-MM-ddTHH:mm:ss.fffffff'Z'";
+        return utc.ToString(format, CultureInfo.InvariantCulture);
     }
 }
