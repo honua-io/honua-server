@@ -99,6 +99,7 @@ internal static class CoreEndpoints
         {
             Title = "Honua OGC API Tiles",
             Description = "OGC API Tiles implementation for vector tiles",
+            Supports3d = false,
             Links = links.ToImmutable()
         };
 

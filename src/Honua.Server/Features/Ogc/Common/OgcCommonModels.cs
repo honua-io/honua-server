@@ -25,6 +25,12 @@ public sealed record LandingPage
     public string? Description { get; init; }
 
     /// <summary>
+    /// Indicates whether 3D coordinates are supported.
+    /// </summary>
+    [JsonPropertyName("x-honua-3d-supported")]
+    public bool? Supports3d { get; init; }
+
+    /// <summary>
     /// Links to related resources.
     /// </summary>
     [JsonPropertyName("links")]

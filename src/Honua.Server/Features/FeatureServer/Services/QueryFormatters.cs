@@ -4,9 +4,12 @@
 using System.Collections.Immutable;
 using System.IO.Pipelines;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Services;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NtsGeometryType = NetTopologySuite.IO.GeometryType;
@@ -26,6 +29,10 @@ internal interface IQueryFormatter
     /// <param name="format">Output format (json, geojson)</param>
     /// <param name="returnGeometry">Whether to include geometry</param>
     /// <param name="outputSrid">Output SRID for geometry</param>
+    /// <param name="returnZ">Whether to include Z values</param>
+    /// <param name="returnM">Whether to include M values</param>
+    /// <param name="geometryPrecision">Coordinate precision override</param>
+    /// <param name="maxAllowableOffset">Generalization tolerance override</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <returns>Formatted result and content type</returns>
     (object response, string contentType) FormatQueryResult(
@@ -34,6 +41,10 @@ internal interface IQueryFormatter
         string format,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields = null);
 }
 
@@ -42,6 +53,13 @@ internal interface IQueryFormatter
 /// </summary>
 internal sealed class QueryFormatter : IQueryFormatter
 {
+    private readonly GeometryLimits _geometryLimits;
+
+    public QueryFormatter(IOptions<LimitsOptions> limitsOptions)
+    {
+        _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+    }
+
     /// <summary>
     /// Formats query result into the specified format
     /// </summary>
@@ -51,28 +69,41 @@ internal sealed class QueryFormatter : IQueryFormatter
         string format,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields = null)
     {
+        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
+            _geometryLimits,
+            geometryPrecision,
+            maxAllowableOffset,
+            forceSimplify: maxAllowableOffset is > 0);
+
         return format.ToLowerInvariant() switch
         {
-            "geojson" => FormatAsGeoJson(result, layer, returnGeometry, outFields),
-            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, outFields)
+            "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
+            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
         };
     }
 
     /// <summary>
     /// Formats result as GeoServices JSON
     /// </summary>
-    private static (object response, string contentType) FormatAsGeoServicesJson(
+    private (object response, string contentType) FormatAsGeoServicesJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
         string[]? outFields)
     {
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
         GeoServicesFeature[] features = result.Items
-            .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName))
+            .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
 
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
@@ -95,15 +126,18 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as GeoJSON
     /// </summary>
-    private static (object response, string contentType) FormatAsGeoJson(
+    private (object response, string contentType) FormatAsGeoJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
         string[]? outFields)
     {
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
         GeoJsonFeature[] features = result.Items
-            .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName))
+            .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
 
         var response = new GeoJsonFeatureSet
@@ -123,29 +157,42 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Converts a Feature to GeoServices feature format
     /// </summary>
-    private static GeoServicesFeature ConvertToGeoServicesFeature(
+    private GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
         bool returnGeometry,
         string[]? outFields,
-        string objectIdFieldName)
+        string objectIdFieldName,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits)
     {
         Dictionary<string, object?> attributes = FilterAttributes(feature.Attributes, outFields, objectIdFieldName, feature.Id);
 
         return new GeoServicesFeature
         {
             Attributes = attributes,
-            Geometry = returnGeometry ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry) : null
+            Geometry = returnGeometry
+                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                    feature.Geometry,
+                    null,
+                    geometryLimits,
+                    returnZ,
+                    returnM)
+                : null
         };
     }
 
     /// <summary>
     /// Converts a Feature to GeoJSON feature format
     /// </summary>
-    private static GeoJsonFeature ConvertToGeoJsonFeature(
+    private GeoJsonFeature ConvertToGeoJsonFeature(
         Feature feature,
         bool returnGeometry,
         string[]? outFields,
-        string objectIdFieldName)
+        string objectIdFieldName,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits)
     {
         Dictionary<string, object?> properties = FilterAttributes(feature.Attributes, outFields, objectIdFieldName, feature.Id);
 
@@ -180,7 +227,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return new GeoJsonFeature
         {
             Properties = properties,
-            Geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry) : null,
+            Geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry, geometryLimits, returnZ, returnM) : null,
             Id = id
         };
     }
@@ -247,7 +294,11 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Converts WKB geometry to GeoJSON format
     /// </summary>
-    private static GeoJsonGeometry? ConvertGeometryToGeoJsonFormat(byte[]? wkbGeometry)
+    internal static GeoJsonGeometry? ConvertGeometryToGeoJsonFormat(
+        byte[]? wkbGeometry,
+        GeometryLimits geometryLimits,
+        bool returnZ,
+        bool returnM)
     {
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
@@ -269,6 +320,11 @@ internal sealed class QueryFormatter : IQueryFormatter
             return null;
         }
 
+        geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits) ?? geometry;
+        if (!returnZ || !returnM)
+        {
+            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
+        }
         return ConvertGeometryToGeoJsonGeometry(geometry);
     }
 
@@ -424,7 +480,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => "esriGeometryMultipoint",
             Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => "esriGeometryPolyline",
             Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "esriGeometryPolygon",
-            Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "esriGeometryPolygon",
+            Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "esriGeometryNull",
             Honua.Core.Features.Catalog.Domain.GeometryType.None => "esriGeometryNull",
             _ => "esriGeometryPolygon"
         };
@@ -434,9 +490,16 @@ internal sealed class QueryFormatter : IQueryFormatter
 /// <summary>
 /// Streaming query formatter that writes JSON responses incrementally to reduce memory pressure
 /// </summary>
-internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> logger)
+internal sealed class StreamingQueryFormatter
 {
-    private readonly ILogger<StreamingQueryFormatter> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ILogger<StreamingQueryFormatter> _logger;
+    private readonly GeometryLimits _geometryLimits;
+
+    public StreamingQueryFormatter(ILogger<StreamingQueryFormatter> logger, IOptions<LimitsOptions> limitsOptions)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+    }
 
     /// <summary>
     /// Streams query result as GeoServices JSON format using Utf8JsonWriter
@@ -446,6 +509,10 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
         LayerDefinition layer,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields,
         long totalCount,
         bool hasMoreResults,
@@ -476,12 +543,27 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
             writer.WriteEndObject();
         }
 
+        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
+            _geometryLimits,
+            geometryPrecision,
+            maxAllowableOffset,
+            forceSimplify: maxAllowableOffset is > 0);
+
         // Start features array
         writer.WriteStartArray("features");
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            await WriteGeoServicesFeatureAsync(writer, feature, returnGeometry, outFields, objectIdFieldName, cancellationToken);
+            await WriteGeoServicesFeatureAsync(
+                writer,
+                feature,
+                returnGeometry,
+                outFields,
+                objectIdFieldName,
+                returnZ,
+                returnM,
+                effectiveLimits,
+                cancellationToken);
 
             // Flush periodically to improve streaming performance
             await writer.FlushAsync(cancellationToken);
@@ -506,6 +588,10 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
         IAsyncEnumerable<Feature> features,
         LayerDefinition layer,
         bool returnGeometry,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields,
         long totalCount,
         bool hasMoreResults,
@@ -527,9 +613,24 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
         // Start features array
         writer.WriteStartArray("features");
 
+        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
+            _geometryLimits,
+            geometryPrecision,
+            maxAllowableOffset,
+            forceSimplify: maxAllowableOffset is > 0);
+
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            await WriteGeoJsonFeatureAsync(writer, feature, returnGeometry, outFields, objectIdFieldName, cancellationToken);
+            await WriteGeoJsonFeatureAsync(
+                writer,
+                feature,
+                returnGeometry,
+                outFields,
+                objectIdFieldName,
+                returnZ,
+                returnM,
+                effectiveLimits,
+                cancellationToken);
 
             // Flush periodically to improve streaming performance
             await writer.FlushAsync(cancellationToken);
@@ -554,12 +655,15 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
     /// <summary>
     /// Writes a single feature in GeoServices format
     /// </summary>
-    private static async Task WriteGeoServicesFeatureAsync(
+    private async Task WriteGeoServicesFeatureAsync(
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
         string[]? outFields,
         string objectIdFieldName,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
         CancellationToken cancellationToken)
     {
         writer.WriteStartObject();
@@ -589,7 +693,12 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
         if (returnGeometry && feature.Geometry != null)
         {
             writer.WritePropertyName("geometry");
-            var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, null);
+            var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                feature.Geometry,
+                null,
+                geometryLimits,
+                returnZ,
+                returnM);
             JsonSerializer.Serialize(writer, geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
         }
 
@@ -599,12 +708,15 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
     /// <summary>
     /// Writes a single feature in GeoJSON format
     /// </summary>
-    private static async Task WriteGeoJsonFeatureAsync(
+    private async Task WriteGeoJsonFeatureAsync(
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
         string[]? outFields,
         string objectIdFieldName,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
         CancellationToken cancellationToken)
     {
         writer.WriteStartObject();
@@ -614,8 +726,19 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
         if (returnGeometry && feature.Geometry != null)
         {
             writer.WritePropertyName("geometry");
-            var geoJsonGeometry = ConvertGeometryToGeoJsonGeometry(feature.Geometry);
-            JsonSerializer.Serialize(writer, geoJsonGeometry, FeatureServerJsonContext.Default.GeoJsonGeometry);
+            var geoJsonGeometry = QueryFormatter.ConvertGeometryToGeoJsonFormat(
+                feature.Geometry,
+                geometryLimits,
+                returnZ,
+                returnM);
+            if (geoJsonGeometry == null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                JsonSerializer.Serialize(writer, geoJsonGeometry, FeatureServerJsonContext.Default.GeoJsonGeometry);
+            }
         }
         else
         {
@@ -711,20 +834,8 @@ internal sealed class StreamingQueryFormatter(ILogger<StreamingQueryFormatter> l
         Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => "esriGeometryMultipoint",
         Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => "esriGeometryPolyline",
         Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "esriGeometryPolygon",
+        Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "esriGeometryNull",
         _ => "esriGeometryNull"
     };
 
-    /// <summary>
-    /// Converts WKB geometry to GeoJSON geometry representation
-    /// </summary>
-    private static GeoJsonGeometry ConvertGeometryToGeoJsonGeometry(byte[] wkbGeometry)
-    {
-        // This is a simplified version - in practice you'd use the existing geometry conversion logic
-        // For now, return a placeholder that maintains the interface
-        return new GeoJsonGeometry
-        {
-            Type = "Point",
-            Coordinates = new object[] { 0.0, 0.0 }
-        };
-    }
 }

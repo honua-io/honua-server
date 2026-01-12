@@ -5,6 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -120,7 +121,7 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleAddAttachment(HttpContext context)
     {
-        var resource = await TryValidateLayerAccessAsync(context);
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
         if (resource == null)
             return;
 
@@ -187,7 +188,7 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleUpdateAttachment(HttpContext context)
     {
-        var resource = await TryValidateLayerAccessAsync(context);
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
         if (resource == null)
             return;
 
@@ -232,7 +233,7 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleDeleteAttachments(HttpContext context)
     {
-        var resource = await TryValidateLayerAccessAsync(context);
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
         if (resource == null)
             return;
 
@@ -326,7 +327,9 @@ internal static class AttachmentEndpoints
         await result.ExecuteAsync(context);
     }
 
-    private static async Task<(ServiceDefinition Service, LayerDefinition Layer)?> TryValidateLayerAccessAsync(HttpContext context)
+    private static async Task<(ServiceDefinition Service, LayerDefinition Layer)?> TryValidateLayerAccessAsync(
+        HttpContext context,
+        AccessScope scope = AccessScope.Read)
     {
         if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
         {
@@ -358,7 +361,7 @@ internal static class AttachmentEndpoints
         }
 
         var resource = resourceResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, resource.Layer, resource.Service);
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, resource.Layer, resource.Service, scope);
         if (accessError != null)
         {
             await accessError.ExecuteAsync(context);

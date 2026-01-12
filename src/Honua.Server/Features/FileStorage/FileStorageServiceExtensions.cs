@@ -76,10 +76,6 @@ public static class FileStorageServiceExtensions
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
                 break;
 
-            case CloudStorageProvider.GoogleCloudStorage:
-                services.AddSingleton<ICloudFileStorage, GoogleCloudStorageFileStorage>();
-                break;
-
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {providerName}");
         }
@@ -141,10 +137,6 @@ public static class FileStorageServiceExtensions
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
                 break;
 
-            case CloudStorageProvider.GoogleCloudStorage:
-                services.AddSingleton<ICloudFileStorage, GoogleCloudStorageFileStorage>();
-                break;
-
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {options.Provider}");
         }
@@ -176,11 +168,5 @@ public static class FileStorageServiceExtensions
                 "FileStorage:AzureBlob:ConnectionString") ?? string.Empty;
         }
 
-        if (options.GoogleCloudStorage is { } googleCloudStorage)
-        {
-            googleCloudStorage.CredentialsPath = SecretReferenceResolver.ResolveEnvironmentReference(
-                googleCloudStorage.CredentialsPath,
-                "FileStorage:GoogleCloudStorage:CredentialsPath");
-        }
     }
 }

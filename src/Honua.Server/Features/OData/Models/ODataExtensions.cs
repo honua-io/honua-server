@@ -72,7 +72,7 @@ public static class ODataExtensions
     public static ODataFeatureResponse ToODataFeatureResponse(this GeoJsonFeatureBase featureBase,
         string context,
         int layerId,
-        object? geometry = null)
+        ODataSpatialGeometry? geometry = null)
     {
         // Convert ID to ObjectId (long)
         long objectId = featureBase.Id switch
@@ -89,13 +89,7 @@ public static class ODataExtensions
             LayerId = layerId,
             ObjectId = objectId,
             Attributes = ODataAttributeSerializer.Serialize(featureBase.Properties),
-            Geometry = geometry switch
-            {
-                null => null,
-                string text => text,
-                byte[] bytes => Convert.ToBase64String(bytes),
-                _ => geometry.ToString()
-            }
+            Geometry = geometry
         };
     }
 

@@ -83,17 +83,75 @@ public static class PooledGeometryProcessor
         // For large geometries, use pooled buffer to avoid allocation overhead
         if (estimatedSize > 1024) // Use pooling for geometries > 1KB estimated WKB
         {
-            using var bufferRental = GeometryMemoryManager.RentWkbBuffer(estimatedSize);
             var writer = new WKBWriter();
+            var bufferSize = estimatedSize + (estimatedSize / 4) + 64;
+            using var bufferRental = GeometryMemoryManager.RentWkbBuffer(estimatedSize, bufferSize);
 
-            // Note: WKBWriter doesn't currently support writing to a pre-allocated buffer
-            // This is a placeholder for potential future optimization when NTS supports it
-            // For now, fall back to standard allocation
-            return writer.Write(geometry);
+            try
+            {
+                using var innerStream = new MemoryStream(bufferRental.Buffer, 0, bufferRental.Buffer.Length, writable: true, publiclyVisible: false);
+                using var stream = new NonClosingStream(innerStream);
+                writer.Write(geometry, stream);
+
+                var length = (int)innerStream.Position;
+                if (length == 0)
+                {
+                    return Array.Empty<byte>();
+                }
+
+                var result = new byte[length];
+                Buffer.BlockCopy(bufferRental.Buffer, 0, result, 0, length);
+                return result;
+            }
+            catch (Exception ex) when (ex is NotSupportedException or ArgumentException)
+            {
+                return writer.Write(geometry);
+            }
         }
 
         // For smaller geometries, standard allocation is fine
         return new WKBWriter().Write(geometry);
+    }
+
+    private sealed class NonClosingStream : Stream
+    {
+        private readonly Stream _inner;
+
+        public NonClosingStream(Stream inner)
+        {
+            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => _inner.CanWrite;
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => _inner.Read(buffer, offset, count);
+
+        public override long Seek(long offset, SeekOrigin origin)
+            => _inner.Seek(offset, origin);
+
+        public override void SetLength(long value)
+            => _inner.SetLength(value);
+
+        public override void Write(byte[] buffer, int offset, int count)
+            => _inner.Write(buffer, offset, count);
+
+        protected override void Dispose(bool disposing)
+        {
+            // Suppress disposing the inner stream; base.Dispose is a no-op.
+            base.Dispose(disposing);
+        }
     }
 
     /// <summary>

@@ -3143,9 +3143,8 @@
         </member>
         <member name="T:Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage">
             <summary>
-            Abstract cloud file storage provider supporting AWS S3, Azure Blob Storage,
-            and Google Cloud Storage for temporary file storage during geospatial data
-            upload and import processing.
+            Abstract cloud file storage provider supporting AWS S3 and Azure Blob Storage
+            for temporary file storage during geospatial data upload and import processing.
             </summary>
         </member>
         <member name="P:Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage.Provider">
@@ -3424,11 +3423,6 @@
             Options specific to Azure Blob storage
             </summary>
         </member>
-        <member name="P:Honua.Core.Features.FileStorage.Domain.CloudStorageOptions.GoogleCloudStorage">
-            <summary>
-            Options specific to Google Cloud Storage
-            </summary>
-        </member>
         <member name="P:Honua.Core.Features.FileStorage.Domain.CloudStorageOptions.EnableAutomaticCleanup">
             <summary>
             Whether to enable automatic cleanup of expired files
@@ -3509,31 +3503,6 @@
             Optional blob prefix for all stored files
             </summary>
         </member>
-        <member name="T:Honua.Core.Features.FileStorage.Domain.GoogleCloudStorageOptions">
-            <summary>
-            Configuration options for Google Cloud Storage
-            </summary>
-        </member>
-        <member name="P:Honua.Core.Features.FileStorage.Domain.GoogleCloudStorageOptions.BucketName">
-            <summary>
-            GCS bucket name
-            </summary>
-        </member>
-        <member name="P:Honua.Core.Features.FileStorage.Domain.GoogleCloudStorageOptions.ProjectId">
-            <summary>
-            GCP project ID
-            </summary>
-        </member>
-        <member name="P:Honua.Core.Features.FileStorage.Domain.GoogleCloudStorageOptions.ObjectPrefix">
-            <summary>
-            Optional object prefix for all stored files
-            </summary>
-        </member>
-        <member name="P:Honua.Core.Features.FileStorage.Domain.GoogleCloudStorageOptions.CredentialsPath">
-            <summary>
-            Path to service account credentials JSON file (if not using default credentials)
-            </summary>
-        </member>
         <member name="T:Honua.Core.Features.FileStorage.Domain.CloudStorageProvider">
             <summary>
             Supported cloud storage providers for file storage operations
@@ -3552,11 +3521,6 @@
         <member name="F:Honua.Core.Features.FileStorage.Domain.CloudStorageProvider.AzureBlob">
             <summary>
             Microsoft Azure Blob Storage
-            </summary>
-        </member>
-        <member name="F:Honua.Core.Features.FileStorage.Domain.CloudStorageProvider.GoogleCloudStorage">
-            <summary>
-            Google Cloud Storage
             </summary>
         </member>
         <member name="T:Honua.Core.Features.FileStorage.Domain.FileUploadRequest">

@@ -71,7 +71,10 @@ public sealed class AzureBlobFileStorageTests
             }
         };
 
-        return new AzureBlobFileStorage(Options.Create(options), NullLogger<AzureBlobFileStorage>.Instance);
+        return new AzureBlobFileStorage(
+            Options.Create(options),
+            NullLogger<AzureBlobFileStorage>.Instance,
+            new InMemoryUploadProgressStore());
     }
 
     private static string GetRequiredEnv(string name)

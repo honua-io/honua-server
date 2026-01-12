@@ -633,16 +633,18 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
-    public async Task GenerateRenderer_WithClassificationDef_ReturnsNotImplemented()
+    public async Task GenerateRenderer_WithClassificationDef_ReturnsRenderer()
     {
         var classificationDef = Uri.EscapeDataString("""{"type":"uniqueValue"}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
-        response.Be400BadRequest();
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("generateRenderer is not implemented");
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.GetProperty("type").GetString().Should().Be("simple");
+        jsonDoc.RootElement.TryGetProperty("symbol", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

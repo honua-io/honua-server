@@ -73,6 +73,48 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})/$count")]
+    public async Task FeaturesCount_ReturnsNumericCount()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$count");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrWhiteSpace();
+        long.TryParse(content.Trim(), out var count).Should().BeTrue();
+        count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features/$count")]
+    public async Task LayerFeaturesCount_ReturnsNumericCount()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features/$count");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrWhiteSpace();
+        long.TryParse(content.Trim(), out var count).Should().BeTrue();
+        count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features/$count")]
+    public async Task FeaturesCount_AllLayers_ReturnsNumericCount()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features/$count?$filter=LayerId eq {TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrWhiteSpace();
+        long.TryParse(content.Trim(), out var count).Should().BeTrue();
+        count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ReturnsXmlDocument()
@@ -100,6 +142,34 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers/$count")]
+    public async Task LayersCount_ReturnsNumericCount()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Layers/$count");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrWhiteSpace();
+        long.TryParse(content.Trim(), out var count).Should().BeTrue();
+        count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})")]
+    public async Task Layer_ById_ReturnsLayer()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("Id").GetInt32().Should().Be(TestLayerId);
     }
 
     [IntegrationTest]
@@ -151,10 +221,54 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task LayerFeatures_ReturnsCollection()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId},{objectId})")]
     public async Task Feature_WithObjectId_ReturnsFeature()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId},1)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("ObjectId").GetInt64().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    public async Task Feature_WithNamedKeys_ReturnsFeature()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("ObjectId").GetInt64().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features({objectId})")]
+    public async Task LayerFeature_WithObjectId_ReturnsFeature()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features(1)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -233,6 +347,51 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$select=ObjectId,LayerId")]
+    public async Task Features_WithSelect_ReturnsOnlySelectedFields()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$select=ObjectId,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var items = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        items.Should().NotBeEmpty();
+
+        var first = items[0];
+        first.TryGetProperty("ObjectId", out _).Should().BeTrue();
+        first.TryGetProperty("LayerId", out _).Should().BeTrue();
+        first.TryGetProperty("Geometry", out _).Should().BeFalse();
+        first.TryGetProperty("name", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,LayerId")]
+    public async Task Features_WithLargeTop_UsesStreamingResponse()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=2000&$select=ObjectId,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.True(response.Headers.TransferEncodingChunked ?? false, "Expected chunked transfer encoding for streaming responses");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("@odata.context", out _).Should().BeTrue();
+        var items = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        items.Should().NotBeEmpty();
+
+        var first = items[0];
+        first.TryGetProperty("Geometry", out _).Should().BeFalse();
+        first.TryGetProperty("name", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

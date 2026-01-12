@@ -37,6 +37,16 @@ internal sealed class FeatureQueryValidationService
             errors.Add($"{nameof(QueryParameters.ResultOffset)} must be 0 or greater");
         }
 
+        if (queryParams.GeometryPrecision is < 0)
+        {
+            errors.Add($"{nameof(QueryParameters.GeometryPrecision)} must be 0 or greater");
+        }
+
+        if (queryParams.MaxAllowableOffset is < 0)
+        {
+            errors.Add($"{nameof(QueryParameters.MaxAllowableOffset)} must be 0 or greater");
+        }
+
         if (errors.Count > 0)
         {
             return QueryValidationResult.Invalid(string.Join("; ", errors));

@@ -31,6 +31,7 @@ public static class ValidationServiceExtensions
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddScoped<IFilterExpressionTranslator, FilterExpressionTranslator>();
         services.AddScoped<IFilterExpressionService, FilterExpressionService>();
+        services.AddScoped<FeatureMutationValidator>();
 
         // Register unified resource validator for consistent service/layer/collection checks
         services.AddScoped<IResourceValidator, ResourceValidator>();

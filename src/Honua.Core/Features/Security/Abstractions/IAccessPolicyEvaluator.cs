@@ -17,11 +17,28 @@ public interface IAccessPolicyEvaluator
     /// <param name="principal">The current user principal.</param>
     /// <param name="layerPolicy">Layer-specific policy (highest precedence).</param>
     /// <param name="servicePolicy">Service-level policy (fallback).</param>
+    /// <param name="scope">The access scope being evaluated.</param>
     /// <returns>Access decision for the request.</returns>
     AccessDecision Evaluate(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,
-        AccessPolicy? servicePolicy);
+        AccessPolicy? servicePolicy,
+        AccessScope scope = AccessScope.Read);
+}
+
+/// <summary>
+/// Access scope for policy evaluation.
+/// </summary>
+public enum AccessScope
+{
+    /// <summary>
+    /// Read access (queries, metadata, downloads).
+    /// </summary>
+    Read,
+    /// <summary>
+    /// Write access (create, update, delete).
+    /// </summary>
+    Write
 }
 
 /// <summary>

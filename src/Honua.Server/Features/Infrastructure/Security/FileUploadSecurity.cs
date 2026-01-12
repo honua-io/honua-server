@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Frozen;
 using System.Text.RegularExpressions;
 
@@ -277,21 +278,28 @@ internal static class FileUploadSecurity
 
             // Read first few KB for magic number detection
             var signatureLength = (int)Math.Min(8192, scanLimit);
-            var buffer = new byte[signatureLength];
-            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, signatureLength), cancellationToken);
-
-            if (bytesRead == 0)
+            var buffer = ArrayPool<byte>.Shared.Rent(signatureLength);
+            try
             {
-                return FileValidationResult.Invalid("File appears to be empty or cannot be read.");
-            }
+                var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, signatureLength), cancellationToken);
 
-            // Check for known malicious signatures
-            foreach (var signature in _maliciousSignatures.Values)
-            {
-                if (ByteArrayStartsWith(buffer, signature))
+                if (bytesRead == 0)
                 {
-                    return FileValidationResult.Invalid("File contains a potentially malicious signature.");
+                    return FileValidationResult.Invalid("File appears to be empty or cannot be read.");
                 }
+
+                var signatureSlice = buffer.AsSpan(0, bytesRead);
+                foreach (var signature in _maliciousSignatures.Values)
+                {
+                    if (ByteArrayStartsWith(signatureSlice, signature))
+                    {
+                        return FileValidationResult.Invalid("File contains a potentially malicious signature.");
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
             }
 
             // Additional content validation for text files
@@ -353,37 +361,45 @@ internal static class FileUploadSecurity
                 }
             }
 
-            var buffer = new char[4096];
+            const int bufferSize = 4096;
+            var buffer = ArrayPool<char>.Shared.Rent(bufferSize);
             var tail = string.Empty;
 
-            while (true)
+            try
             {
-                var read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-                if (read == 0)
+                while (true)
                 {
-                    break;
-                }
-
-                var chunk = new string(buffer, 0, read);
-                var combined = string.Concat(tail, chunk);
-
-                foreach (var pattern in dangerousPatterns)
-                {
-                    if (combined.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    var read = await reader.ReadAsync(buffer.AsMemory(0, bufferSize), cancellationToken);
+                    if (read == 0)
                     {
-                        return FileValidationResult.Invalid("File contains potentially dangerous script content.");
+                        break;
+                    }
+
+                    var chunk = new string(buffer, 0, read);
+                    var combined = string.Concat(tail, chunk);
+
+                    foreach (var pattern in dangerousPatterns)
+                    {
+                        if (combined.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return FileValidationResult.Invalid("File contains potentially dangerous script content.");
+                        }
+                    }
+
+                    if (maxPatternLength > 1)
+                    {
+                        var tailLength = Math.Min(maxPatternLength - 1, combined.Length);
+                        tail = combined[^tailLength..];
+                    }
+                    else
+                    {
+                        tail = string.Empty;
                     }
                 }
-
-                if (maxPatternLength > 1)
-                {
-                    var tailLength = Math.Min(maxPatternLength - 1, combined.Length);
-                    tail = combined[^tailLength..];
-                }
-                else
-                {
-                    tail = string.Empty;
-                }
+            }
+            finally
+            {
+                ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             }
 
             return FileValidationResult.Valid();
@@ -506,7 +522,7 @@ internal static class FileUploadSecurity
     /// <summary>
     /// Checks if a byte array starts with a specific pattern.
     /// </summary>
-    private static bool ByteArrayStartsWith(byte[] array, byte[] pattern)
+    private static bool ByteArrayStartsWith(ReadOnlySpan<byte> array, ReadOnlySpan<byte> pattern)
     {
         if (array.Length < pattern.Length)
             return false;

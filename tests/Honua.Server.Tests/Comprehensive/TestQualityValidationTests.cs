@@ -131,7 +131,20 @@ public class TestQualityValidationTests : IAsyncLifetime
         _output.WriteLine($"URL Parameter Fuzzing: {urlFuzzResult.SuccessRate:P1} success rate");
 
         // Critical failures should be minimal
-        var criticalFailures = cqlFuzzResult.CriticalFailures.Count() + urlFuzzResult.CriticalFailures.Count();
+        var criticalAttempts = cqlFuzzResult.CriticalFailures.Concat(urlFuzzResult.CriticalFailures).ToArray();
+        if (criticalAttempts.Length > 0)
+        {
+            foreach (var failure in criticalAttempts)
+            {
+                _output.WriteLine($"Critical failure: {failure.Input} -> {(int?)failure.StatusCode} {failure.StatusCode}");
+                if (!string.IsNullOrWhiteSpace(failure.ResponseContent))
+                {
+                    _output.WriteLine($"Response: {failure.ResponseContent}");
+                }
+            }
+        }
+
+        var criticalFailures = criticalAttempts.Length;
         criticalFailures.Should().Be(0, "No critical failures (500 errors) should occur during fuzzing");
     }
 

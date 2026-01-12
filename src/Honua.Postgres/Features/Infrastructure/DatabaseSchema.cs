@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
+
 namespace Honua.Postgres.Features.Infrastructure;
 
 /// <summary>
@@ -118,15 +120,17 @@ public static class DatabaseSchema
     /// <summary>
     /// Maps common field aliases to their canonical column names.
     /// </summary>
-    private static readonly Dictionary<string, string> _fieldMappings = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [ObjectIdColumn] = ObjectIdColumn,
-        [ObjectIdColumnAlt] = ObjectIdColumn,
-        [IdColumn] = ObjectIdColumn,
-        [LayerIdColumn] = LayerIdColumn,
-        [LayerIdColumnAlt] = LayerIdColumn,
-        [GeometryColumn] = GeometryColumn
-    };
+    private static readonly FrozenDictionary<string, string> _fieldMappings =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ObjectIdColumn] = ObjectIdColumn,
+            [ObjectIdColumnAlt] = ObjectIdColumn,
+            [IdColumn] = ObjectIdColumn,
+            [LayerIdColumn] = LayerIdColumn,
+            [LayerIdColumnAlt] = LayerIdColumn,
+            [GeometryColumn] = GeometryColumn
+        }
+        .ToFrozenDictionary();
 
     /// <summary>
     /// Maps a field name to its canonical column name.

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using Honua.Core.Configuration;
 using Honua.Server.Features.Infrastructure.Helpers;
 
@@ -47,12 +48,12 @@ internal static class ConfigurationValidationService
         {
             if (configuration.IsFeatureEnabled("DEV_AUTH"))
             {
-                warnings.Add("HONUA_DEV_AUTH is enabled. This should only be used in development environments.");
+                errors.Add("HONUA_DEV_AUTH is enabled. This should only be used in development environments.");
             }
 
             if (string.IsNullOrEmpty(configuration["HONUA_ADMIN_PASSWORD"]))
             {
-                warnings.Add("HONUA_ADMIN_PASSWORD is not set. Admin endpoints will require authentication in production.");
+                errors.Add("HONUA_ADMIN_PASSWORD is required in non-development environments.");
             }
         }
 
@@ -162,7 +163,7 @@ internal static class ConfigurationValidationService
 
         if (provider == StorageProvider.Local)
         {
-            errors.Add("Multi-node deployment requires a shared cloud file storage provider. Set FileStorage:Provider to AwsS3, AzureBlob, or GoogleCloudStorage.");
+            errors.Add("Multi-node deployment requires a shared cloud file storage provider. Set FileStorage:Provider to AwsS3 or AzureBlob.");
         }
 
         ValidateFileStorageConfiguration(configuration, provider, errors);
@@ -199,10 +200,6 @@ internal static class ConfigurationValidationService
                 RequireSetting(configuration, "FileStorage:AzureBlob:ConnectionString", errors);
                 RequireSetting(configuration, "FileStorage:AzureBlob:ContainerName", errors);
                 break;
-            case StorageProvider.GoogleCloudStorage:
-                RequireSetting(configuration, "FileStorage:GoogleCloudStorage:BucketName", errors);
-                RequireSetting(configuration, "FileStorage:GoogleCloudStorage:ProjectId", errors);
-                break;
             case StorageProvider.Local:
             default:
                 break;
@@ -223,7 +220,7 @@ internal static class ConfigurationValidationService
         return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(envVarName));
     }
 
-    private static bool IsSecretReference(string value, HashSet<string> allowedPrefixes)
+    private static bool IsSecretReference(string value, FrozenSet<string> allowedPrefixes)
     {
         if (SecretReferenceResolver.IsEnvironmentReference(value))
         {
@@ -260,25 +257,26 @@ internal static class ConfigurationValidationService
     {
         Local,
         AwsS3,
-        AzureBlob,
-        GoogleCloudStorage
+        AzureBlob
     }
 
-    private static readonly HashSet<string> _envOnlyPrefixes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "env"
-    };
+    private static readonly FrozenSet<string> _envOnlyPrefixes = new[]
+        {
+            "env"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> _connectionSecretPrefixes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "env",
-        "aws",
-        "azure",
-        "gcp"
-    };
+    private static readonly FrozenSet<string> _connectionSecretPrefixes = new[]
+        {
+            "env",
+            "aws",
+            "azure",
+            "gcp"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly Dictionary<string, HashSet<string>> _secretValidationRules =
-        new(StringComparer.Ordinal)
+    private static readonly FrozenDictionary<string, FrozenSet<string>> _secretValidationRules =
+        new Dictionary<string, FrozenSet<string>>(StringComparer.Ordinal)
         {
             ["HONUA_ADMIN_PASSWORD"] = _connectionSecretPrefixes,
             ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
@@ -289,13 +287,13 @@ internal static class ConfigurationValidationService
             ["FileStorage:AwsS3:AccessKeyId"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:SecretAccessKey"] = _envOnlyPrefixes,
             ["FileStorage:AzureBlob:ConnectionString"] = _envOnlyPrefixes,
-            ["FileStorage:GoogleCloudStorage:CredentialsPath"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Url"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Headers:Authorization"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Sms:ApiKey"] = _envOnlyPrefixes
-        };
+        }
+        .ToFrozenDictionary(StringComparer.Ordinal);
 }
 
 /// <summary>

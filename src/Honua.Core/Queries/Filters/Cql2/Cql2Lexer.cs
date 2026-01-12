@@ -40,6 +40,7 @@ public sealed class Cql2Lexer
 
             // Spatial predicates
             { "S_INTERSECTS", Cql2TokenType.S_Intersects },
+            { "INTERSECTS", Cql2TokenType.S_Intersects },
             { "S_CONTAINS", Cql2TokenType.S_Contains },
             { "S_WITHIN", Cql2TokenType.S_Within },
             { "S_CROSSES", Cql2TokenType.S_Crosses },

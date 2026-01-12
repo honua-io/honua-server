@@ -168,6 +168,11 @@ public sealed class LayerResponse
     public ExtentInfo? Extent { get; init; }
 
     /// <summary>
+    /// Temporal metadata for time-aware layers.
+    /// </summary>
+    public FeatureServerTimeInfo? TimeInfo { get; init; }
+
+    /// <summary>
     /// Minimum scale for layer visibility
     /// </summary>
     public double? MinScale { get; init; }
@@ -347,6 +352,32 @@ public sealed class SpatialReferenceInfo
     /// Well-Known Text representation
     /// </summary>
     public string? Wkt { get; init; }
+}
+
+/// <summary>
+/// Time information for FeatureServer layers.
+/// </summary>
+public sealed class FeatureServerTimeInfo
+{
+    /// <summary>
+    /// Field name containing start time values.
+    /// </summary>
+    public string? StartTimeField { get; init; }
+
+    /// <summary>
+    /// Field name containing end time values (optional for interval data).
+    /// </summary>
+    public string? EndTimeField { get; init; }
+
+    /// <summary>
+    /// Optional track identifier field.
+    /// </summary>
+    public string? TrackIdField { get; init; }
+
+    /// <summary>
+    /// Temporal extent in milliseconds since epoch (min, max).
+    /// </summary>
+    public long?[]? TimeExtent { get; init; }
 }
 
 /// <summary>
@@ -814,10 +845,80 @@ public sealed class QueryParameters
     public bool ReturnDistinctValues { get; init; }
 
     /// <summary>
+    /// Whether to include Z values in the output geometry.
+    /// </summary>
+    public bool ReturnZ { get; init; }
+
+    /// <summary>
+    /// Whether to include M values in the output geometry.
+    /// </summary>
+    public bool ReturnM { get; init; }
+
+    /// <summary>
+    /// Whether to return true curve geometries.
+    /// </summary>
+    public bool ReturnTrueCurves { get; init; }
+
+    /// <summary>
+    /// Whether to return exceeded limit features in the response.
+    /// </summary>
+    public bool ReturnExceededLimitFeatures { get; init; }
+
+    /// <summary>
     /// Array of object IDs to retrieve. When specified, only features with these IDs will be returned.
     /// This parameter provides an alternative to using a WHERE clause for object ID filtering.
     /// </summary>
     public long[]? ObjectIds { get; init; }
+
+    /// <summary>
+    /// Precision for geometry output coordinates.
+    /// </summary>
+    public int? GeometryPrecision { get; init; }
+
+    /// <summary>
+    /// Maximum allowable offset for geometry generalization.
+    /// </summary>
+    public double? MaxAllowableOffset { get; init; }
+
+    /// <summary>
+    /// Query result type (e.g., standard, tile).
+    /// </summary>
+    public string? ResultType { get; init; }
+
+    /// <summary>
+    /// Statistics definitions for outStatistics queries.
+    /// </summary>
+    public string? OutStatistics { get; init; }
+
+    /// <summary>
+    /// Fields used for grouping statistics.
+    /// </summary>
+    public string? GroupByFieldsForStatistics { get; init; }
+
+    /// <summary>
+    /// Having clause for statistics queries.
+    /// </summary>
+    public string? Having { get; init; }
+
+    /// <summary>
+    /// SQL format for the response.
+    /// </summary>
+    public string? SqlFormat { get; init; }
+
+    /// <summary>
+    /// Geodatabase version name.
+    /// </summary>
+    public string? GdbVersion { get; init; }
+
+    /// <summary>
+    /// Quantization parameters for geometry output.
+    /// </summary>
+    public string? QuantizationParameters { get; init; }
+
+    /// <summary>
+    /// Datum transformation parameter for output SR.
+    /// </summary>
+    public string? DatumTransformation { get; init; }
 
     /// <summary>
     /// Time instant or time extent for temporal queries.
@@ -830,7 +931,12 @@ public sealed class QueryParameters
 
     /// <summary>
     /// Temporal relationship for time-based queries.
-    /// Supported values: esriTimeRelationIntersects (default), esriTimeRelationOverlaps
+    /// Supported values include: esriTimeRelationIntersects (default), esriTimeRelationOverlaps,
+    /// esriTimeRelationWithin, esriTimeRelationContains, esriTimeRelationDisjoint,
+    /// esriTimeRelationBefore, esriTimeRelationAfter, esriTimeRelationEquals,
+    /// esriTimeRelationStarts, esriTimeRelationStartedBy, esriTimeRelationFinishes,
+    /// esriTimeRelationFinishedBy, esriTimeRelationMeets, esriTimeRelationMetBy,
+    /// esriTimeRelationOverlapsStartWithinEnd, esriTimeRelationOverlapsEndWithinStart.
     /// </summary>
     public string? TimeRelation { get; init; }
 }
@@ -1229,7 +1335,7 @@ public class ApplyEditsRequest
     /// Whether to rollback all changes on failure
     /// </summary>
     [JsonPropertyName("rollbackOnFailure")]
-    public bool RollbackOnFailure { get; set; } = false; // GeoServices default is false
+    public bool RollbackOnFailure { get; set; } = false; // GeoServices default is partial success
 
     /// <summary>
     /// Whether to use global IDs
@@ -1322,6 +1428,7 @@ public class EditError
 [JsonSerializable(typeof(FeatureServerResponse))]
 [JsonSerializable(typeof(LayerResponse))]
 [JsonSerializable(typeof(LayerInfo))]
+[JsonSerializable(typeof(FeatureServerTimeInfo))]
 [JsonSerializable(typeof(SpatialReferenceInfo))]
 [JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(ExtentInfo))]

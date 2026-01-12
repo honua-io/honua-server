@@ -4,8 +4,11 @@
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OData.Models;
@@ -27,6 +30,8 @@ internal sealed partial class ODataSearchService
     private readonly IFeatureReader _featureReader;
     private readonly IRelationshipStore _relationshipStore;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
+    private readonly IGeometryService _geometryService;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly ODataQueryService _queryService;
 
     /// <summary>
@@ -37,12 +42,16 @@ internal sealed partial class ODataSearchService
         IFeatureReader featureReader,
         IRelationshipStore relationshipStore,
         IStreamingFeatureStore streamingFeatureStore,
+        IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
         ODataQueryService queryService)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
         _relationshipStore = relationshipStore;
         _streamingFeatureStore = streamingFeatureStore;
+        _geometryService = geometryService;
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _queryService = queryService;
     }
 
@@ -90,19 +99,42 @@ internal sealed partial class ODataSearchService
         };
 
         var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+        var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+            _crsRegistry,
+            layer.SpatialReference.ToSrid(),
+            cancellationToken);
 
         // Convert features to OData format
-        var featuresData = result.Items.Select(f => new Dictionary<string, object?>
+        var featuresData = result.Items.Select(feature =>
         {
-            ["ObjectId"] = f.Id,
-            ["LayerId"] = layerId,
-            ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
-            ["Attributes"] = ODataAttributeSerializer.Serialize(f.Attributes)
+            var dict = new Dictionary<string, object?>
+            {
+                ["ObjectId"] = feature.Id,
+                ["LayerId"] = layerId,
+                ["Geometry"] = ODataGeometryConverter.ConvertWkbToGeometry(
+                    _geometryService,
+                    feature.Geometry,
+                    layer.SpatialReference.ToSrid(),
+                    axisOrder)
+            };
+
+            var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
+            foreach (var (key, value) in attributes)
+            {
+                if (ODataUtilityService.IsReservedFeatureProperty(key))
+                {
+                    continue;
+                }
+
+                dict[key] = value;
+            }
+
+            return dict;
         }).ToArray();
 
         return new ODataSearchResult
         {
-            Context = $"{baseUrl}/odata/$metadata#Features",
+            Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features"),
             Count = count == true ? result.TotalCount : null,
             Value = featuresData.Cast<object>().ToArray()
         };
@@ -348,10 +380,26 @@ internal sealed partial class ODataSearchService
         // Find matching relationships
         foreach (var relationship in layer.LayerRelationships)
         {
-            if (!relationshipNames.Contains(relationship.Name))
+            var sanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name);
+            if (!relationshipNames.Contains(relationship.Name) &&
+                !relationshipNames.Contains(sanitizedName))
             {
                 continue;
             }
+
+            var relatedLayerResult = await _resourceValidator.ValidateLayerAsync(
+                relationship.RelatedLayerId,
+                cancellationToken);
+            if (!relatedLayerResult.IsValid || relatedLayerResult.Resource == null)
+            {
+                continue;
+            }
+
+            var relatedLayer = relatedLayerResult.Resource;
+            var relatedAxisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+                _crsRegistry,
+                relatedLayer.SpatialReference.ToSrid(),
+                cancellationToken);
 
             // Query related features
             var relatedQuery = RelatedQuery.ForObjects(objectIds, relationship);
@@ -387,22 +435,30 @@ internal sealed partial class ODataSearchService
                     result[originId.Value] = relationsDict;
                 }
 
-                var relatedFeatureDict = new Dictionary<string, object?>
-                {
-                    ["ObjectId"] = feature.Id,
-                    ["Attributes"] = ODataAttributeSerializer.Serialize(feature.Attributes)
-                };
+                var relatedGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                    _geometryService,
+                    feature.Geometry,
+                    relatedLayer.SpatialReference.ToSrid(),
+                    relatedAxisOrder);
 
-                if (relationsDict.TryGetValue(relationship.Name, out var existingRelations))
+                var relatedAttributes = ODataAttributeSerializer.Serialize(feature.Attributes);
+                var relatedFeatureDict = ODataUtilityService.BuildFeaturePayload(
+                    relatedLayer.Id,
+                    feature,
+                    relatedGeometry,
+                    relatedAttributes);
+
+                var outputName = relationshipNames.Contains(relationship.Name) ? relationship.Name : sanitizedName;
+                if (relationsDict.TryGetValue(outputName, out var existingRelations))
                 {
                     var newRelations = new object?[existingRelations.Length + 1];
                     Array.Copy(existingRelations, newRelations, existingRelations.Length);
                     newRelations[existingRelations.Length] = relatedFeatureDict;
-                    relationsDict[relationship.Name] = newRelations;
+                    relationsDict[outputName] = newRelations;
                 }
                 else
                 {
-                    relationsDict[relationship.Name] = new object?[] { relatedFeatureDict };
+                    relationsDict[outputName] = new object?[] { relatedFeatureDict };
                 }
             }
         }

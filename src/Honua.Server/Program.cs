@@ -345,11 +345,11 @@ app.UseGlobalExceptionHandling();
 // Add CORS middleware before auth to handle preflight requests
 app.UseHonuaCors(app.Environment);
 
-// Add limits enforcement middleware (after correlation ID, before request logging)
-app.UseLimitsEnforcement();
-
-// Add authentication and authorization middleware
+// Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
+
+// Add limits enforcement middleware (after auth, before request logging)
+app.UseLimitsEnforcement();
 
 // Enable output caching middleware
 app.UseOutputCache();
@@ -424,8 +424,18 @@ app.Run();
 // All other code uses Core abstractions only
 static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
 {
-    // Register PostgreSQL services (the only direct Infrastructure reference)
-    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+    var provider = configuration.GetValue<string>("DataSource:Provider");
+    if (string.IsNullOrWhiteSpace(provider) ||
+        provider.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
+        provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase) ||
+        provider.Equals("postgis", StringComparison.OrdinalIgnoreCase))
+    {
+        Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+    }
+    else
+    {
+        throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
+    }
 
     // Wrap ILayerCatalog with caching decorator
     // This uses the decorator pattern to add caching behavior transparently

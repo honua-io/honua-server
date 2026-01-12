@@ -360,11 +360,11 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("POST /odata/Features({layerId}) with invalid JSON")]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid JSON")]
     public async Task Create_InvalidJson_ReturnsBadRequest()
     {
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent("{ invalid json }", Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -372,18 +372,22 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("POST /odata/Features({layerId}) with invalid geometry WKB")]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry WKB")]
     public async Task Create_InvalidGeometryWkb_ReturnsBadRequest()
     {
         var payload = new
         {
-            Geometry = "not-valid-base64-wkb",
+            Geometry = new
+            {
+                type = "Point",
+                coordinates = "invalid"
+            },
             Attributes = new { name = "Test" }
         };
 
         var json = JsonSerializer.Serialize(payload);
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -659,9 +663,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     private static JsonElement ParseAttributes(JsonElement feature)
     {
-        var attributesJson = feature.GetProperty("Attributes").GetString();
-        using var document = JsonDocument.Parse(attributesJson!);
-        return document.RootElement.Clone();
+        return ODataTestHelpers.ParseAttributes(feature);
     }
 
     #endregion

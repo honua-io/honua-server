@@ -11,6 +11,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(CatalogMetadata))]
 [JsonSerializable(typeof(AccessPolicy))]
+[JsonSerializable(typeof(LayerTimeInfo))]
 public sealed partial class CatalogJsonContext : JsonSerializerContext
 {
 }

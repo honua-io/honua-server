@@ -145,16 +145,17 @@ internal static partial class FeaturesEndpoints
     }
 
     /// <summary>
-    /// Handles UpdateFeature request by delegating to the CRUD handler.
+    /// Handles UpdateFeature request by delegating to the transaction handler.
     /// </summary>
     private static async Task<IResult> HandleUpdateFeature(
         string collectionId,
         string featureId,
         HttpContext context,
-        OgcFeaturesCrudHandler crudHandler)
+        OgcFeaturesTransactionHandler transactionHandler)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await crudHandler.HandleUpdateFeatureAsync(collectionId, featureId, context, cancellationToken);
+        var ifMatch = context.Request.Headers.IfMatch.ToString();
+        return await transactionHandler.HandleReplaceFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
 
     /// <summary>

@@ -225,6 +225,8 @@ ServiceTtlSeconds = "ServiceTtlSeconds must be between 1 and 86400 (24 hours)";
         public const string         /// <inheritdoc/>
 LayerTtlSeconds = "LayerTtlSeconds must be between 1 and 86400 (24 hours)";
         public const string         /// <inheritdoc/>
+QueryTtlSeconds = "QueryTtlSeconds must be between 1 and 3600 (1 hour)";
+        public const string         /// <inheritdoc/>
 NegativeTtlSeconds = "NegativeTtlSeconds must be between 1 and 3600 (1 hour)";
         public const string         /// <inheritdoc/>
 JitterPercentage = "JitterPercentage must be between 0 and 0.5 (50%)";
@@ -268,8 +270,6 @@ BackgroundRate = "BackgroundRate must be between 0.001 and 0.1";
 AwsS3BucketName = "AwsS3.BucketName must be between 3 and 63 characters";
         public const string         /// <inheritdoc/>
 AzureBlobContainerName = "AzureBlob.ContainerName must be between 3 and 63 characters";
-        public const string         /// <inheritdoc/>
-GoogleCloudStorageBucketName = "GoogleCloudStorage.BucketName must be between 3 and 63 characters";
 
         // Geometry and spatial validation messages
         public const string         /// <inheritdoc/>

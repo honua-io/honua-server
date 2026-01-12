@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Data;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -41,16 +42,18 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Supported file extensions mapped to formats
     /// </summary>
-    private static readonly Dictionary<string, SupportedFileFormat> _fileExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [".geojson"] = SupportedFileFormat.GeoJson,
-        [".json"] = SupportedFileFormat.GeoJson,
-        [".kml"] = SupportedFileFormat.Kml,
-        [".wkt"] = SupportedFileFormat.Wkt,
-        [".shp"] = SupportedFileFormat.Shapefile,
-        [".gpkg"] = SupportedFileFormat.GeoPackage,
-        [".gpx"] = SupportedFileFormat.Gpx
-    };
+    private static readonly FrozenDictionary<string, SupportedFileFormat> _fileExtensions =
+        new Dictionary<string, SupportedFileFormat>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".geojson"] = SupportedFileFormat.GeoJson,
+            [".json"] = SupportedFileFormat.GeoJson,
+            [".kml"] = SupportedFileFormat.Kml,
+            [".wkt"] = SupportedFileFormat.Wkt,
+            [".shp"] = SupportedFileFormat.Shapefile,
+            [".gpkg"] = SupportedFileFormat.GeoPackage,
+            [".gpx"] = SupportedFileFormat.Gpx
+        }
+        .ToFrozenDictionary();
 
     public StreamingFileImportService(
         IDatabaseConnectionProvider connectionProvider,
@@ -356,6 +359,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             totalFailed += failed;
             batchesCommitted++;
         }
+
+        await AnalyzeTableAsync(connection, allowedTableName, cancellationToken);
 
         // Report completion
         progress?.Report(new ImportProgress
@@ -1266,6 +1271,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     {
         await using var command = new NpgsqlCommand(CreateImportTableSql, connection);
         command.Parameters.AddWithValue("table_name", tableName);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AnalyzeTableAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"ANALYZE {tableName}";
+        await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

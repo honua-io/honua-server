@@ -2,7 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.OgcFeatures.Models;
+using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -14,6 +18,13 @@ namespace Honua.Server.Features.OgcFeatures.Services;
 /// </summary>
 internal sealed class OgcFeaturesGeometryServices
 {
+    private readonly GeometryLimits _geometryLimits;
+
+    public OgcFeaturesGeometryServices(IOptions<LimitsOptions> limitsOptions)
+    {
+        _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+    }
+
     /// <summary>
     /// Result of geometry WKB creation operation.
     /// </summary>
@@ -30,7 +41,7 @@ internal sealed class OgcFeaturesGeometryServices
     /// <summary>
     /// Converts WKB geometry to simple GeoJSON geometry with proper axis ordering.
     /// </summary>
-    public static SimpleGeoJsonGeometry? ConvertWkbToSimpleGeometry(byte[]? wkb, OgcFeaturesUtilities.AxisOrder axisOrder)
+    public SimpleGeoJsonGeometry? ConvertWkbToSimpleGeometry(byte[]? wkb, AxisOrder axisOrder)
     {
         if (wkb == null || wkb.Length == 0)
         {
@@ -44,12 +55,14 @@ internal sealed class OgcFeaturesGeometryServices
             return null;
         }
 
-        if (axisOrder == OgcFeaturesUtilities.AxisOrder.NorthEast)
+        if (axisOrder == AxisOrder.NorthEast)
         {
             geometry = (Geometry)geometry.Copy();
             geometry.Apply(new AxisSwapFilter());
             geometry.GeometryChanged();
         }
+
+        geometry = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits) ?? geometry;
 
         var writer = new GeoJsonWriter();
         var geoJson = writer.Write(geometry);
@@ -84,7 +97,8 @@ internal sealed class OgcFeaturesGeometryServices
     /// </summary>
     public WkbCreationResult TryCreateWkbFromGeoJson(
         SimpleGeoJsonGeometry geometry,
-        int srid)
+        int srid,
+        AxisOrder axisOrder = AxisOrder.EastNorth)
     {
         var coordinatesJson = geometry.CoordinatesJson;
         var geometriesJson = geometry.GeometriesJson;
@@ -105,6 +119,13 @@ internal sealed class OgcFeaturesGeometryServices
             if (ntsGeometry == null)
             {
                 return WkbCreationResult.Failure("Invalid geometry.");
+            }
+
+            if (axisOrder == AxisOrder.NorthEast)
+            {
+                ntsGeometry = (Geometry)ntsGeometry.Copy();
+                ntsGeometry.Apply(new AxisSwapFilter());
+                ntsGeometry.GeometryChanged();
             }
 
             if (srid > 0)
@@ -238,30 +259,7 @@ internal sealed class OgcFeaturesGeometryServices
     /// </summary>
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        if (geometry is GeometryCollection collection && collection.NumGeometries > 0)
-        {
-            return GetHasZandM(collection.GetGeometryN(0));
-        }
-
-        CoordinateSequence? sequence = geometry switch
-        {
-            Point point => point.CoordinateSequence,
-            LineString lineString => lineString.CoordinateSequence,
-            Polygon polygon => polygon.ExteriorRing.CoordinateSequence,
-            MultiPoint multiPoint when multiPoint.NumGeometries > 0 => ((Point)multiPoint.GetGeometryN(0)).CoordinateSequence,
-            MultiLineString multiLineString when multiLineString.NumGeometries > 0 => ((LineString)multiLineString.GetGeometryN(0)).CoordinateSequence,
-            MultiPolygon multiPolygon when multiPolygon.NumGeometries > 0 => ((Polygon)multiPolygon.GetGeometryN(0)).ExteriorRing.CoordinateSequence,
-            _ => null
-        };
-
-        if (sequence == null)
-        {
-            return (false, false);
-        }
-
-        var hasZ = !double.IsNaN(sequence.GetZ(0));
-        var hasM = !double.IsNaN(sequence.GetM(0));
-        return (hasZ, hasM);
+        return GeometryService.DetectZMFromGeometry(geometry);
     }
 
     /// <summary>
@@ -282,17 +280,7 @@ internal sealed class OgcFeaturesGeometryServices
             return geometry;
         }
 
-        try
-        {
-            // This is a placeholder for coordinate transformation
-            // In a full implementation, you would use a coordinate transformation library
-            geometry.SRID = toSrid;
-            return geometry;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        throw new NotSupportedException("In-memory CRS transforms are not supported. Use PostGIS ST_Transform.");
     }
 
     private static int CountPolygonVertices(Polygon polygon)

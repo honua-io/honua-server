@@ -4,13 +4,16 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -87,18 +90,133 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
-    private static Task<IResult> HandleGenerateRenderer(
+    private static async Task<IResult> HandleGenerateRenderer(
         HttpContext context)
     {
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.GenerateRenderer, out var error))
         {
-            return Task.FromResult(StandardErrorHelpers.CreateBadRequest(context,
+            return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
-                [error ?? "Invalid query parameter."]));
+                [error ?? "Invalid query parameter."]);
         }
 
-        return Task.FromResult(StandardErrorHelpers.CreateBadRequest(context, "generateRenderer is not implemented"));
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Service ID is required");
+        }
+
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Layer ID is required");
+        }
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
+        if (!resourceResult.IsValid)
+        {
+            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
+            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+            }
+
+            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+        }
+
+        var service = resourceResult.Resource!.Service;
+        var layer = resourceResult.Resource.Layer;
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        var classificationDef = GetValueString(values, "classificationDef");
+        if (!string.IsNullOrWhiteSpace(classificationDef)
+            && !TryParseJsonPayload(classificationDef, out var jsonError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid classificationDef",
+                [jsonError ?? "classificationDef must be valid JSON."]);
+        }
+
+        if (!layer.HasGeometry)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Layer does not support renderers");
+        }
+
+        var symbol = BuildSimpleSymbol(layer.GeometryType);
+        if (symbol == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Layer geometry type is not supported");
+        }
+
+        var renderer = new Dictionary<string, object?>
+        {
+            ["type"] = "simple",
+            ["symbol"] = symbol
+        };
+
+        return Results.Json(renderer, FeatureServerJsonContext.Default.DictionaryStringObject, contentType: "application/json");
+    }
+
+    private static Dictionary<string, object?>? BuildSimpleSymbol(GeometryType geometryType)
+    {
+        var strokeColor = new[] { 45, 105, 165, 255 };
+        var fillColor = new[] { 45, 105, 165, 64 };
+        var outline = new Dictionary<string, object?>
+        {
+            ["type"] = "esriSLS",
+            ["style"] = "esriSLSSolid",
+            ["color"] = strokeColor,
+            ["width"] = 1
+        };
+
+        return geometryType switch
+        {
+            GeometryType.Point or GeometryType.MultiPoint => new Dictionary<string, object?>
+            {
+                ["type"] = "esriSMS",
+                ["style"] = "esriSMSCircle",
+                ["color"] = strokeColor,
+                ["size"] = 6,
+                ["outline"] = outline
+            },
+            GeometryType.LineString or GeometryType.MultiLineString => new Dictionary<string, object?>
+            {
+                ["type"] = "esriSLS",
+                ["style"] = "esriSLSSolid",
+                ["color"] = strokeColor,
+                ["width"] = 2
+            },
+            GeometryType.Polygon or GeometryType.MultiPolygon => new Dictionary<string, object?>
+            {
+                ["type"] = "esriSFS",
+                ["style"] = "esriSFSSolid",
+                ["color"] = fillColor,
+                ["outline"] = outline
+            },
+            _ => null
+        };
+    }
+
+    private static bool TryParseJsonPayload(string payload, out string? error)
+    {
+        error = null;
+
+        try
+        {
+            using var _ = JsonDocument.Parse(payload);
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
     }
 
     private static async Task<IResult> HandleApplyEdits(
@@ -115,6 +233,13 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid applyEdits request",
                 [readError ?? "Invalid request body."]);
+        }
+
+        if (request.UseGlobalIds)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "useGlobalIds is not supported",
+                ["Set useGlobalIds to false and supply objectIds in attributes."]);
         }
 
         return await editsHandler.HandleApplyEditsAsync(
@@ -232,9 +357,35 @@ internal static partial class FeatureServerEndpoints
         }
 
         var where = GetValueString(ToCaseInsensitiveDictionary(context.Request.Query), "where");
+        SqlFragment? sqlFilter = null;
+        if (!string.IsNullOrWhiteSpace(where))
+        {
+            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            if (!parseResult.IsSuccess)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
+            }
+
+            if (parseResult.Expression != null)
+            {
+                var translationResult = filterService.Translate(parseResult.Expression, layer);
+                if (!translationResult.IsSuccess)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        ErrorMessages.Validation.InvalidParameter,
+                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
+                }
+
+                sqlFilter = translationResult.SqlFilter;
+            }
+        }
         var query = new FeatureQuery
         {
             Where = where,
+            SqlFilter = sqlFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid()
         };
 
@@ -545,6 +696,26 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        if (!TryParseBoolValue(values, "returnZ", false, out var returnZ, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseBoolValue(values, "returnM", false, out var returnM, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseBoolValue(values, "returnTrueCurves", false, out var returnTrueCurves, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseBoolValue(values, "returnExceededLimitFeatures", false, out var returnExceededLimitFeatures, out error))
+        {
+            return false;
+        }
+
         if (!TryParseIntValue(values, "resultOffset", out var resultOffset, out error))
         {
             return false;
@@ -555,7 +726,17 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        if (!TryParseIntValue(values, "geometryPrecision", out var geometryPrecision, out error))
+        {
+            return false;
+        }
+
         if (!TryParseIntValue(values, "nearestCount", out var nearestCount, out error))
+        {
+            return false;
+        }
+
+        if (!TryParseDoubleValue(values, "maxAllowableOffset", out var maxAllowableOffset, out error))
         {
             return false;
         }
@@ -591,11 +772,25 @@ internal static partial class FeatureServerEndpoints
             ReturnDistance = returnDistance,
             ReturnCentroid = returnCentroid,
             ReturnDistinctValues = returnDistinctValues,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            ReturnTrueCurves = returnTrueCurves,
+            ReturnExceededLimitFeatures = returnExceededLimitFeatures,
             ResultOffset = resultOffset,
             ResultRecordCount = resultRecordCount,
+            GeometryPrecision = geometryPrecision,
             NearestCount = nearestCount,
             Distance = distance,
-            ObjectIds = objectIds
+            ObjectIds = objectIds,
+            MaxAllowableOffset = maxAllowableOffset,
+            ResultType = GetValueString(values, "resultType"),
+            OutStatistics = GetValueString(values, "outStatistics"),
+            GroupByFieldsForStatistics = GetValueString(values, "groupByFieldsForStatistics"),
+            Having = GetValueString(values, "having"),
+            SqlFormat = GetValueString(values, "sqlFormat"),
+            GdbVersion = GetValueString(values, "gdbVersion"),
+            QuantizationParameters = GetValueString(values, "quantizationParameters"),
+            DatumTransformation = GetValueString(values, "datumTransformation")
         };
 
         return true;
@@ -644,12 +839,21 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        var where = GetValueString(values, "where");
+        var definitionExpression = GetValueString(values, "definitionExpression");
+        if (!string.IsNullOrWhiteSpace(definitionExpression))
+        {
+            where = string.IsNullOrWhiteSpace(where)
+                ? definitionExpression
+                : $"({where}) AND ({definitionExpression})";
+        }
+
         parameters = new QueryRelatedRecordsParameters
         {
             ObjectIds = objectIds,
             RelationshipId = relationshipId,
             OutFields = GetValueString(values, "outFields"),
-            Where = GetValueString(values, "where"),
+            Where = where,
             ReturnGeometry = returnGeometry,
             F = GetValueString(values, "f") ?? "json",
             ResultOffset = resultOffset,

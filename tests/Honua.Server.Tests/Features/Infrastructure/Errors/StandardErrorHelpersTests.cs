@@ -153,10 +153,14 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
 
         // Check that validation details are preserved
         odataError.Error.Details.Should().NotBeNull();
-        odataError.Error.Details!.Should().HaveCount(3); // Main message + 2 validation details
-        odataError.Error.Details![0].Message.Should().Be("Invalid field values");
-        odataError.Error.Details![1].Message.Should().Be("Name cannot be empty");
-        odataError.Error.Details![2].Message.Should().Be("Age must be between 0 and 150");
+        odataError.Error.Details!.Should().HaveCountGreaterOrEqualTo(5); // Main message + 2 validation details + correlation metadata
+        odataError.Error.Details!.Select(detail => detail.Message)
+            .Should().Contain("Invalid field values")
+            .And.Contain("Name cannot be empty")
+            .And.Contain("Age must be between 0 and 150");
+        odataError.Error.Details!.Select(detail => detail.Code)
+            .Should().Contain("CorrelationId")
+            .And.Contain("Timestamp");
     }
 
     [IntegrationTest]
@@ -335,11 +339,15 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
 
         odataError.Should().NotBeNull();
-        odataError!.Error.Details.Should().HaveCount(4); // Main message + 3 validation details
-        odataError.Error.Details![0].Message.Should().Be("Multiple validation errors occurred");
-        odataError.Error.Details![1].Message.Should().Be("Email address is invalid");
-        odataError.Error.Details![2].Message.Should().Be("Phone number format is incorrect");
-        odataError.Error.Details![3].Message.Should().Be("Date must be in the future");
+        odataError!.Error.Details.Should().HaveCountGreaterOrEqualTo(6); // Main message + 3 validation details + correlation metadata
+        odataError.Error.Details!.Select(detail => detail.Message)
+            .Should().Contain("Multiple validation errors occurred")
+            .And.Contain("Email address is invalid")
+            .And.Contain("Phone number format is incorrect")
+            .And.Contain("Date must be in the future");
+        odataError.Error.Details!.Select(detail => detail.Code)
+            .Should().Contain("CorrelationId")
+            .And.Contain("Timestamp");
     }
 
     #endregion

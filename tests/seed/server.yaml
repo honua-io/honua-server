@@ -188,6 +188,7 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
+  - "CREATE INDEX IF NOT EXISTS idx_features_geography ON features USING GIST ((ST_Transform(geometry, 4326)::geography));"
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
@@ -241,7 +242,8 @@ sql:
           geometry_type,
           srid,
           extent,
-          default_visibility
+          default_visibility,
+          metadata
       )
       VALUES
           (
@@ -253,7 +255,8 @@ sql:
               'Point',
               4326,
               ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-              true
+              true,
+              '{"timeInfo":{"startTimeField":"timestamp","endTimeField":"event_date"}}'::jsonb
           ),
           (
               1,
@@ -264,7 +267,8 @@ sql:
               'Point',
               4326,
               ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-              true
+              true,
+              NULL
           ),
           (
               2,
@@ -275,7 +279,8 @@ sql:
               'Point',
               4326,
               ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-              true
+              true,
+              NULL
           )
       ON CONFLICT (layer_id) DO UPDATE SET
           layer_name = EXCLUDED.layer_name,
@@ -285,7 +290,8 @@ sql:
           geometry_type = EXCLUDED.geometry_type,
           srid = EXCLUDED.srid,
           extent = EXCLUDED.extent,
-          default_visibility = EXCLUDED.default_visibility;
+          default_visibility = EXCLUDED.default_visibility,
+          metadata = EXCLUDED.metadata;
   - |
       INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
       VALUES

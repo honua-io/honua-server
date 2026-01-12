@@ -67,7 +67,10 @@ public sealed class AwsS3FileStorageTests
     {
         var options = GetOptionsOrSkip();
         await EnsureBucketExistsAsync(options.AwsS3!);
-        return new AwsS3FileStorage(Options.Create(options), NullLogger<AwsS3FileStorage>.Instance);
+        return new AwsS3FileStorage(
+            Options.Create(options),
+            NullLogger<AwsS3FileStorage>.Instance,
+            new InMemoryUploadProgressStore());
     }
 
     private static CloudStorageOptions GetOptionsOrSkip()

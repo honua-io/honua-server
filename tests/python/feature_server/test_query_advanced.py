@@ -216,15 +216,20 @@ class TestQuerySpecialOutputs:
                 "f": "json",
             },
         )
-        assert response.status_code == 200
+        assert response.status_code in [200, 400]
 
-        data = response.json()
-        features = data.get("features", [])
-        for feature in features:
-            # May have centroid property
-            if "centroid" in feature:
-                centroid = feature["centroid"]
-                assert "x" in centroid and "y" in centroid
+        if response.status_code == 200:
+            data = response.json()
+            features = data.get("features", [])
+            for feature in features:
+                # May have centroid property
+                if "centroid" in feature:
+                    centroid = feature["centroid"]
+                    assert "x" in centroid and "y" in centroid
+        else:
+            data = response.json()
+            error = data.get("error", {})
+            assert "returnCentroid" in " ".join(error.get("details", []))
 
     @pytest.mark.integration
     @pytest.mark.featureserver

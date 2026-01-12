@@ -1,6 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
@@ -23,6 +27,34 @@ internal static class ODataUtilityService
     /// </summary>
     private const string ODataContentType = "application/json;odata.metadata=minimal";
 
+    private static readonly FrozenSet<string> AllowedFormats = new[]
+        {
+            "json",
+            "application/json"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenSet<string> ReservedFeatureProperties = new[]
+        {
+            "ObjectId",
+            "LayerId",
+            "Geometry",
+            "@odata.context",
+            "@odata.type",
+            "@odata.id",
+            "@odata.etag",
+            "Attributes"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenSet<string> KeyProperties = new[]
+        {
+            "ObjectId",
+            "LayerId",
+            "Id"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Sets required OData headers on the HTTP response.
     /// </summary>
@@ -31,13 +63,13 @@ internal static class ODataUtilityService
         context.Response.Headers["OData-Version"] = ODataVersion;
         if (etag != null)
         {
-            context.Response.Headers.ETag = $"\"{etag}\"";
+            context.Response.Headers.ETag = NormalizeEtagHeader(etag);
         }
     }
 
     /// <summary>
     /// Creates an OData v4 compliant error response using standardized error handling.
-    /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.01/odata-json-format-v4.01.html#sec_ErrorResponseBody
+    /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.0/odata-json-format-v4.0.html#sec_ErrorResponseBody
     /// </summary>
     public static IResult CreateODataError(
         HttpContext context,
@@ -94,7 +126,6 @@ internal static class ODataUtilityService
     /// </summary>
     public static string GenerateNextLink(
         HttpRequest request,
-        int layerId,
         int nextSkip,
         int top,
         string? filter,
@@ -129,7 +160,7 @@ internal static class ODataUtilityService
             queryParams.Add("$count=true");
         }
 
-        return $"{baseUrl}/odata/Features({layerId})?{string.Join("&", queryParams)}";
+        return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
     }
 
     /// <summary>
@@ -149,10 +180,22 @@ internal static class ODataUtilityService
     /// <summary>
     /// Builds an OData context URL for the given base URL and entity type.
     /// </summary>
-    public static string BuildContextUrl(string baseUrl, string entityType, bool isSingle = false)
+    public static string BuildContextUrl(
+        string baseUrl,
+        string entityType,
+        bool isSingle = false,
+        string? select = null,
+        string? expand = null)
     {
+        var segment = entityType;
+        var selection = BuildContextSelection(select, expand);
+        if (!string.IsNullOrWhiteSpace(selection))
+        {
+            segment = $"{segment}({selection})";
+        }
+
         var suffix = isSingle ? "/$entity" : "";
-        return $"{baseUrl}/odata/$metadata#{entityType}{suffix}";
+        return $"{baseUrl}/odata/$metadata#{segment}{suffix}";
     }
 
     /// <summary>
@@ -163,11 +206,13 @@ internal static class ODataUtilityService
         string entityType,
         object[] value,
         long? totalCount = null,
-        string? nextLink = null)
+        string? nextLink = null,
+        string? select = null,
+        string? expand = null)
     {
         return new ODataResponse
         {
-            Context = BuildContextUrl(baseUrl, entityType),
+            Context = BuildContextUrl(baseUrl, entityType, isSingle: false, select, expand),
             Count = totalCount,
             NextLink = nextLink,
             Value = value
@@ -181,8 +226,8 @@ internal static class ODataUtilityService
         string baseUrl,
         long objectId,
         int layerId,
-        string? geometry,
-        string attributes)
+        ODataSpatialGeometry? geometry,
+        Dictionary<string, object?> attributes)
     {
         return new ODataFeatureResponse
         {
@@ -210,6 +255,11 @@ internal static class ODataUtilityService
         return ODataContentType;
     }
 
+    public static IReadOnlySet<string> GetAllowedFormats()
+    {
+        return AllowedFormats;
+    }
+
     /// <summary>
     /// Checks if pagination should be applied based on result size and current parameters.
     /// </summary>
@@ -233,7 +283,7 @@ internal static class ODataUtilityService
     /// </summary>
     public static string CreateLocationHeader(string baseUrl, int layerId, long objectId)
     {
-        return $"{baseUrl}/odata/Features({layerId},{objectId})";
+        return $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={objectId})";
     }
 
     /// <summary>
@@ -241,7 +291,7 @@ internal static class ODataUtilityService
     /// </summary>
     public static string CreateODataEntityId(string baseUrl, int layerId, long objectId)
     {
-        return $"{baseUrl}/odata/Features({layerId},{objectId})";
+        return $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={objectId})";
     }
 
     /// <summary>
@@ -294,6 +344,15 @@ internal static class ODataUtilityService
             return Results.NoContent();
         }
 
+        if (crudResult.Data is Dictionary<string, object?> dictionary)
+        {
+            return Results.Json(
+                dictionary,
+                ODataJsonContext.Default.DictionaryStringObject,
+                contentType: ODataContentType,
+                statusCode: crudResult.StatusCode);
+        }
+
         return Results.Json(
             crudResult.Data,
             GetJsonTypeInfo<T>(),
@@ -311,6 +370,148 @@ internal static class ODataUtilityService
         return (System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>)(object)ODataJsonContext.Default.ODataFeatureResponse;
     }
 
+    public static Dictionary<string, object?> BuildFeaturePayload(
+        int layerId,
+        Feature feature,
+        ODataSpatialGeometry? geometry,
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ObjectId"] = feature.Id,
+            ["LayerId"] = layerId,
+            ["Geometry"] = geometry
+        };
+
+        foreach (var (key, value) in attributes)
+        {
+            if (IsReservedFeatureProperty(key))
+            {
+                continue;
+            }
+
+            payload[key] = value;
+        }
+
+        return payload;
+    }
+
+    public static Dictionary<string, object?> BuildLayerPayload(LayerDefinition layer)
+    {
+        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Id"] = layer.Id,
+            ["Name"] = layer.Name,
+            ["Description"] = layer.Description,
+            ["GeometryType"] = layer.GeometryType.ToString(),
+            ["Srid"] = layer.SpatialReference.ToSrid()
+        };
+    }
+
+    public static HashSet<string>? ParseSelect(string? select)
+    {
+        if (string.IsNullOrWhiteSpace(select))
+        {
+            return null;
+        }
+
+        var fields = select.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(field => !string.IsNullOrWhiteSpace(field))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return fields.Contains("*") ? null : fields;
+    }
+
+    private static string? BuildContextSelection(string? select, string? expand)
+    {
+        var selections = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(select))
+        {
+            selections.AddRange(select.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(item => !item.Equals("*", StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(expand))
+        {
+            selections.AddRange(expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        return selections.Count == 0 ? null : string.Join(",", selections.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    public static Dictionary<string, object?> ApplySelect(Dictionary<string, object?> payload, string select)
+    {
+        var fields = ParseSelect(select);
+        if (fields == null)
+        {
+            return payload;
+        }
+
+        var filtered = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in payload)
+        {
+            if (key.StartsWith("@odata.", StringComparison.OrdinalIgnoreCase))
+            {
+                filtered[key] = value;
+                continue;
+            }
+
+            if (IsKeyProperty(key) || fields.Contains(key))
+            {
+                filtered[key] = value;
+            }
+        }
+
+        return filtered;
+    }
+
+    public static bool IsReservedFeatureProperty(string? propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            return true;
+        }
+
+        return ReservedFeatureProperties.Contains(propertyName);
+    }
+
+    public static bool IsKeyProperty(string? propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            return false;
+        }
+
+        return KeyProperties.Contains(propertyName);
+    }
+
+    public static string SanitizeIdentifier(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Identifier";
+        }
+
+        var sb = new System.Text.StringBuilder();
+        var started = false;
+
+        foreach (var c in name)
+        {
+            if (!started && char.IsLetter(c))
+            {
+                sb.Append(c);
+                started = true;
+            }
+            else if (started && (char.IsLetterOrDigit(c) || c == '_'))
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.Length > 0 ? sb.ToString() : "Identifier";
+    }
+
     private static string MapODataCode(int statusCode) => statusCode switch
     {
         StatusCodes.Status400BadRequest => "BadRequest",
@@ -320,6 +521,7 @@ internal static class ODataUtilityService
         StatusCodes.Status408RequestTimeout => "RequestTimeout",
         StatusCodes.Status413PayloadTooLarge => "PayloadTooLarge",
         StatusCodes.Status429TooManyRequests => "TooManyRequests",
+        StatusCodes.Status412PreconditionFailed => "PreconditionFailed",
         StatusCodes.Status500InternalServerError => "InternalServerError",
         StatusCodes.Status503ServiceUnavailable => "ServiceUnavailable",
         _ => "Error"
@@ -333,6 +535,82 @@ internal static class ODataUtilityService
         return method.Equals("POST", StringComparison.OrdinalIgnoreCase) ||
                method.Equals("PUT", StringComparison.OrdinalIgnoreCase) ||
                method.Equals("PATCH", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool ShouldReturnMinimal(string? preferHeader)
+    {
+        if (string.IsNullOrWhiteSpace(preferHeader))
+        {
+            return false;
+        }
+
+        return preferHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(token => token.Equals("return=minimal", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static object? NormalizeForEtag(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is IReadOnlyDictionary<string, object?> readOnlyDict)
+        {
+            var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in readOnlyDict)
+            {
+                sorted[kvp.Key] = NormalizeForEtag(kvp.Value);
+            }
+
+            return sorted;
+        }
+
+        if (value is IDictionary<string, object?> dict)
+        {
+            var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in dict)
+            {
+                sorted[kvp.Key] = NormalizeForEtag(kvp.Value);
+            }
+
+            return sorted;
+        }
+
+        if (value is System.Collections.IEnumerable enumerable && value is not string)
+        {
+            var list = new List<object?>();
+            foreach (var item in enumerable)
+            {
+                list.Add(NormalizeForEtag(item));
+            }
+
+            return list.ToArray();
+        }
+
+        return value;
+    }
+
+    private static string NormalizeEtagHeader(string etag)
+    {
+        var trimmed = etag.Trim();
+        if (trimmed.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = trimmed[2..].TrimStart();
+            if (rest.StartsWith('"') && rest.EndsWith('"'))
+            {
+                return $"W/{rest}";
+            }
+
+            return $"W/\"{rest}\"";
+        }
+
+        if (trimmed.StartsWith('"') && trimmed.EndsWith('"'))
+        {
+            return trimmed;
+        }
+
+        return $"\"{trimmed}\"";
     }
 
     /// <summary>

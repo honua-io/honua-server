@@ -2,12 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.FeatureServer.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -23,11 +26,13 @@ internal interface IRelatedRecordsService
     /// <param name="queryParams">Query parameters for related records</param>
     /// <param name="objectIds">Object IDs to find related records for</param>
     /// <param name="relationship">Relationship definition</param>
+    /// <param name="sqlFilter">Optional SQL filter fragment to apply</param>
     /// <returns>Configured RelatedQuery</returns>
     RelatedQuery BuildRelatedQuery(
         QueryRelatedRecordsParameters queryParams,
         long[] objectIds,
-        Relationship relationship);
+        Relationship relationship,
+        SqlFragment? sqlFilter);
 
     /// <summary>
     /// Executes a related records query with validation error handling.
@@ -66,10 +71,12 @@ internal interface IRelatedRecordsService
 internal sealed class RelatedRecordsService : IRelatedRecordsService
 {
     private readonly IRelationshipStore _relationshipStore;
+    private readonly GeometryLimits _geometryLimits;
 
-    public RelatedRecordsService(IRelationshipStore relationshipStore)
+    public RelatedRecordsService(IRelationshipStore relationshipStore, IOptions<LimitsOptions> limitsOptions)
     {
         _relationshipStore = relationshipStore ?? throw new ArgumentNullException(nameof(relationshipStore));
+        _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 
     /// <summary>
@@ -78,14 +85,17 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     public RelatedQuery BuildRelatedQuery(
         QueryRelatedRecordsParameters queryParams,
         long[] objectIds,
-        Relationship relationship)
+        Relationship relationship,
+        SqlFragment? sqlFilter)
     {
         var query = new RelatedQuery
         {
             ObjectIds = objectIds,
             Relationship = relationship,
             Where = queryParams.Where,
-            Limit = queryParams.ResultRecordCount
+            SqlFilter = sqlFilter,
+            Limit = queryParams.ResultRecordCount,
+            Offset = queryParams.ResultOffset
         };
 
         // Parse outFields if specified
@@ -183,7 +193,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                     ? new RelatedRecords
                     {
                         SpatialReference = spatialReference,
-                        Features = [.. relatedFeatures!.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFieldSet))]
+                        Features = [.. relatedFeatures!.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFieldSet, _geometryLimits))]
                     }
                     : null
             };
@@ -197,7 +207,8 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         Feature feature,
         bool returnGeometry,
         int? outputSrid,
-        HashSet<string>? outFields)
+        HashSet<string>? outFields,
+        GeometryLimits geometryLimits)
     {
         var attributes = outFields == null
             ? feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
@@ -208,7 +219,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         return new GeoServicesFeature
         {
             Attributes = attributes,
-            Geometry = returnGeometry ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid) : null
+            Geometry = returnGeometry
+                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid, geometryLimits)
+                : null
         };
     }
 }

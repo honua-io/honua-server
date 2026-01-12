@@ -331,28 +331,6 @@ public class CloudStorageOptionsValidatorTests
     }
 
     [UnitTest]
-    public void Validate_GoogleCloudStorageMissingBucket_ReturnsFail()
-    {
-        // Arrange
-        var options = new CloudStorageOptions
-        {
-            Provider = CloudStorageProvider.GoogleCloudStorage,
-            GoogleCloudStorage = new GoogleCloudStorageOptions
-            {
-                BucketName = "", // Invalid: empty
-                ProjectId = "my-project"
-            }
-        };
-
-        // Act
-        var result = _validator.Validate(null, options);
-
-        // Assert
-        Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("BucketName") && f.Contains("cannot be empty"));
-    }
-
-    [UnitTest]
     public void Validate_CleanupIntervalTooShort_ReturnsFail()
     {
         // Arrange

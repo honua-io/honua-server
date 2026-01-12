@@ -341,6 +341,12 @@ public sealed class GeometryValidationOptions
     public int CoordinatePrecision { get; init; } = 6;
 
     /// <summary>
+    /// Tolerance used to treat polygon rings as closed (units depend on CRS).
+    /// </summary>
+    [Range(1e-12, 1, ErrorMessage = "Ring closure tolerance must be between 1e-12 and 1.")]
+    public double RingClosureTolerance { get; init; } = 1e-6;
+
+    /// <summary>
     /// Maximum WKB size in bytes.
     /// Prevents memory exhaustion from large geometries. Range: 100KB-10MB.
     /// </summary>

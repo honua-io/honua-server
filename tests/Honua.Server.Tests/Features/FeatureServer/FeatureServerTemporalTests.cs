@@ -48,32 +48,37 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
 
         result.RootElement.TryGetProperty("features", out var featuresElement).Should().BeTrue();
 
-        // All returned features should have matching timestamp
+        // All returned features should intersect the queried instant based on timeInfo (timestamp -> event_date).
         foreach (var feature in featuresElement.EnumerateArray())
         {
             feature.TryGetProperty("attributes", out var attributes).Should().BeTrue();
 
-            // Check if any datetime field matches our criteria
-            var hasMatchingDate = false;
-            foreach (var property in attributes.EnumerateObject())
-            {
-                if (property.Value.ValueKind == JsonValueKind.String)
-                {
-                    var stringValue = property.Value.GetString();
-                    if (DateTime.TryParse(stringValue, out var dateValue))
-                    {
-                        var dateUtc = DateTime.SpecifyKind(dateValue, DateTimeKind.Utc);
-                        if (Math.Abs((dateUtc - testDate).TotalSeconds) < 1) // Allow 1 second tolerance
-                        {
-                            hasMatchingDate = true;
-                            break;
-                        }
-                    }
-                }
-            }
+            var start = TryReadTemporal(attributes, "timestamp");
+            start.Should().NotBeNull("Feature should include timestamp attribute");
 
-            hasMatchingDate.Should().BeTrue($"Feature should have a datetime field matching {testDate}");
+            var end = TryReadTemporal(attributes, "event_date") ?? start;
+
+            var startValue = start!.Value;
+            var endValue = end!.Value;
+
+            (startValue <= testDate && endValue >= testDate).Should().BeTrue(
+                $"Feature should have temporal range containing {testDate:o}");
         }
+    }
+
+    private static DateTimeOffset? TryReadTemporal(JsonElement attributes, string propertyName)
+    {
+        if (!attributes.TryGetProperty(propertyName, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String when DateTimeOffset.TryParse(value.GetString(), out var parsed) => parsed,
+            JsonValueKind.Number when value.TryGetInt64(out var unixMs) => DateTimeOffset.FromUnixTimeMilliseconds(unixMs),
+            _ => null
+        };
     }
 
     [IntegrationTest]
@@ -236,6 +241,64 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         result.RootElement.TryGetProperty("features", out _).Should().BeTrue();
     }
 
+    public static IEnumerable<object[]> TimeRelationCases()
+    {
+        yield return new object[]
+        {
+            "2023-01-03T00:00:00Z",
+            "esriTimeRelationIntersects",
+            new long[] { 1, 4 }
+        };
+
+        yield return new object[]
+        {
+            "2023-01-10T00:00:00Z,2023-01-15T00:00:00Z",
+            "esriTimeRelationContains",
+            new long[] { 1, 2, 4 }
+        };
+
+        yield return new object[]
+        {
+            "2023-01-01T00:00:00Z,2024-02-01T00:00:00Z",
+            "esriTimeRelationWithin",
+            new long[] { 1, 3, 5 }
+        };
+
+        yield return new object[]
+        {
+            "2023-12-15T00:00:00Z,2024-02-15T00:00:00Z",
+            "esriTimeRelationOverlaps",
+            new long[] { 1, 3 }
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(TimeRelationCases))]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_TimeRelation_UsesTimeInfoIntervals(
+        string timeParam,
+        string timeRelation,
+        long[] expectedObjectIds)
+    {
+        // Arrange
+        var serviceId = WebAppFixture.TestServiceId;
+        var layerId = WebAppFixture.TestLayerId;
+        var encodedTime = Uri.EscapeDataString(timeParam);
+
+        // Act
+        var response = await _client.GetAsync(
+            $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&timeRelation={timeRelation}&f=json");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var objectIds = ExtractObjectIds(document);
+        objectIds.Should().BeEquivalentTo(expectedObjectIds);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -396,5 +459,28 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         result.RootElement.TryGetProperty("features", out var featuresElement).Should().BeTrue();
         var featureCount = featuresElement.EnumerateArray().Count();
         featureCount.Should().BeLessOrEqualTo(10, "Should respect resultRecordCount limit");
+    }
+
+    private static List<long> ExtractObjectIds(JsonDocument document)
+    {
+        if (!document.RootElement.TryGetProperty("features", out var featuresElement))
+        {
+            return [];
+        }
+
+        var ids = new List<long>();
+        foreach (var feature in featuresElement.EnumerateArray())
+        {
+            if (feature.TryGetProperty("attributes", out var attributes) &&
+                attributes.TryGetProperty("objectid", out var objectId))
+            {
+                if (objectId.ValueKind == JsonValueKind.Number && objectId.TryGetInt64(out var idValue))
+                {
+                    ids.Add(idValue);
+                }
+            }
+        }
+
+        return ids;
     }
 }

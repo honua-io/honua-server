@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
@@ -46,4 +47,18 @@ public interface IFeatureReader
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Spatial extent of the features, null if no features found</returns>
     Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the temporal extent (min/max) for a temporal field.
+    /// </summary>
+    /// <param name="layerId">Layer identifier to analyze</param>
+    /// <param name="fieldName">Temporal field name</param>
+    /// <param name="fieldType">Temporal field type</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Temporal extent of the field, null if no values found</returns>
+    Task<TemporalExtentResult?> GetTemporalExtentAsync(
+        int layerId,
+        string fieldName,
+        FieldType fieldType,
+        CancellationToken cancellationToken = default);
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
 
@@ -56,17 +57,17 @@ public sealed record ODataLink : ILink
     /// <summary>
     /// Relation type (always "next" for OData pagination)
     /// </summary>
-    public string? Rel { get; init; } = "next";
+    public string? Rel { get; init; }
 
     /// <summary>
     /// MIME type (always JSON for OData)
     /// </summary>
-    public string? Type { get; init; } = "application/json";
+    public string? Type { get; init; }
 
     /// <summary>
     /// Human-readable title for the link
     /// </summary>
-    public string? Title { get; init; } = "Next Page";
+    public string? Title { get; init; }
 
     /// <summary>
     /// Creates an OData pagination link
@@ -74,7 +75,13 @@ public sealed record ODataLink : ILink
     /// <param name="href">URL to the next page</param>
     /// <returns>New OData link instance</returns>
     public static ODataLink CreateNextLink(string href)
-        => new() { Href = href };
+        => new()
+        {
+            Href = href,
+            Rel = "next",
+            Type = "application/json",
+            Title = "Next Page"
+        };
 }
 
 /// <summary>
@@ -184,16 +191,22 @@ public sealed class ErrorDetail
 public sealed class ODataFeatureRequest
 {
     /// <summary>
-    /// Feature geometry in Base64-encoded WKB format
+    /// Feature geometry in OData spatial (GeoJSON) format
     /// </summary>
     [JsonPropertyName("Geometry")]
-    public string? Geometry { get; init; }
+    public ODataSpatialGeometry? Geometry { get; set; }
 
     /// <summary>
-    /// Feature attributes as key-value pairs
+    /// Backward-compatible attributes payload
     /// </summary>
     [JsonPropertyName("Attributes")]
-    public Dictionary<string, object?>? Attributes { get; init; }
+    public Dictionary<string, object?>? Attributes { get; set; }
+
+    /// <summary>
+    /// Additional properties mapped as dynamic attributes for open types.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
 
 /// <summary>
@@ -220,14 +233,105 @@ public sealed class ODataFeatureResponse
     public int LayerId { get; init; }
 
     /// <summary>
-    /// Feature geometry in Base64-encoded WKB format
+    /// Feature geometry in OData spatial (GeoJSON) format
     /// </summary>
     [JsonPropertyName("Geometry")]
-    public string? Geometry { get; init; }
+    public ODataSpatialGeometry? Geometry { get; init; }
 
     /// <summary>
-    /// Feature attributes as JSON string
+    /// Feature attributes as key-value pairs
     /// </summary>
     [JsonPropertyName("Attributes")]
-    public string? Attributes { get; init; }
+    public Dictionary<string, object?>? Attributes { get; init; }
+}
+
+/// <summary>
+/// OData spatial CRS representation (GeoJSON-style)
+/// </summary>
+public sealed class ODataSpatialCrs
+{
+    /// <summary>
+    /// CRS type (typically "name")
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+
+    /// <summary>
+    /// CRS properties
+    /// </summary>
+    [JsonPropertyName("properties")]
+    public ODataSpatialCrsProperties? Properties { get; init; }
+}
+
+/// <summary>
+/// OData spatial CRS properties
+/// </summary>
+public sealed class ODataSpatialCrsProperties
+{
+    /// <summary>
+    /// CRS name (e.g., "EPSG:4326")
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+}
+
+/// <summary>
+/// OData spatial geometry representation
+/// </summary>
+public sealed class ODataSpatialGeometry
+{
+    /// <summary>
+    /// Geometry type (Point, LineString, Polygon, etc.)
+    /// </summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    /// <summary>
+    /// Geometry coordinates as raw JSON string
+    /// </summary>
+    [JsonPropertyName("coordinates")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? CoordinatesJson { get; init; }
+
+    /// <summary>
+    /// Geometry collection members as raw JSON string
+    /// </summary>
+    [JsonPropertyName("geometries")]
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? GeometriesJson { get; init; }
+
+    /// <summary>
+    /// Optional CRS definition for the geometry
+    /// </summary>
+    [JsonPropertyName("crs")]
+    public ODataSpatialCrs? Crs { get; init; }
+}
+
+/// <summary>
+/// Writes raw JSON for geometry coordinates/geometries without quoting.
+/// </summary>
+internal sealed class RawJsonStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.StartObject or JsonTokenType.StartArray => JsonDocument.ParseValue(ref reader).RootElement.GetRawText(),
+            _ => throw new JsonException("Unsupported JSON token for raw JSON value.")
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            writer.WriteRawValue(value);
+        }
+    }
 }

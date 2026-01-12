@@ -185,36 +185,40 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layer,
             limitsOptions.Value.Query,
-            logger);
+            logger,
+            cancellationToken);
     }
 
     /// <summary>
     /// Fetches layer metadata asynchronously
     /// </summary>
-    private static Task<IResult> FetchLayerMetadataAsync(
+    private static async Task<IResult> FetchLayerMetadataAsync(
         HttpContext context,
         string serviceId,
         LayerDefinition layer,
         QueryLimits limits,
-        ILogger logger)
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         try
         {
             FeatureServerLog.LayerMetadataRequested(logger, serviceId, layer.Id);
 
-            LayerResponse response = MapLayerToResponse(layer, limits);
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var timeInfo = await BuildTimeInfoAsync(layer, featureReader, cancellationToken).ConfigureAwait(false);
+            LayerResponse response = MapLayerToResponse(layer, limits, timeInfo);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layer.Id, layer.Name);
 
-            return Task.FromResult(Results.Json(response, FeatureServerJsonContext.Default.LayerResponse,
-                contentType: "application/json"));
+            return Results.Json(response, FeatureServerJsonContext.Default.LayerResponse,
+                contentType: "application/json");
         }
         catch (Exception ex)
         {
             FeatureServerLog.LayerMetadataFailed(logger, serviceId, layer.Id, ex.Message, ex);
-            return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(
+            return StandardErrorHelpers.CreateInternalServerError(
                 context,
-                "Layer metadata retrieval failed"));
+                "Layer metadata retrieval failed");
         }
     }
 }

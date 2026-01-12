@@ -156,6 +156,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
             await CreateSpatialIndexAsync(request.TableName, cancellationToken);
+            await AnalyzeTableAsync(request.TableName, cancellationToken);
 
             stopwatch.Stop();
 
@@ -526,6 +527,14 @@ internal sealed partial class EsriImportService : IEsriImportService
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
+    }
+
+    private async Task AnalyzeTableAsync(string tableName, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"ANALYZE \"{tableName}\"";
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)

@@ -18,7 +18,8 @@ WITH point_layer AS (
         geometry_type,
         srid,
         extent,
-        default_visibility
+        default_visibility,
+        metadata
     )
     VALUES (
         'CITE Tiles Points',
@@ -27,7 +28,8 @@ WITH point_layer AS (
         'Point',
         4326,
         ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-        TRUE
+        TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb
     )
     RETURNING layer_id
 )
@@ -81,7 +83,8 @@ WITH polygon_layer AS (
         geometry_type,
         srid,
         extent,
-        default_visibility
+        default_visibility,
+        metadata
     )
     VALUES (
         'CITE Tiles Polygons',
@@ -90,7 +93,8 @@ WITH polygon_layer AS (
         'Polygon',
         4326,
         ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-        TRUE
+        TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb
     )
     RETURNING layer_id
 )
@@ -124,7 +128,8 @@ WITH line_layer AS (
         geometry_type,
         srid,
         extent,
-        default_visibility
+        default_visibility,
+        metadata
     )
     VALUES (
         'CITE Tiles Lines',
@@ -133,7 +138,8 @@ WITH line_layer AS (
         'LineString',
         4326,
         ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-        TRUE
+        TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb
     )
     RETURNING layer_id
 )

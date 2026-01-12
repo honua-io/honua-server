@@ -39,11 +39,6 @@ public sealed record CloudStorageOptions
     public AzureBlobOptions? AzureBlob { get; set; }
 
     /// <summary>
-    /// Options specific to Google Cloud Storage
-    /// </summary>
-    public GoogleCloudStorageOptions? GoogleCloudStorage { get; set; }
-
-    /// <summary>
     /// Whether to enable automatic cleanup of expired files
     /// </summary>
     public bool EnableAutomaticCleanup { get; set; } = true;
@@ -135,30 +130,4 @@ public sealed record AzureBlobOptions
     /// Optional blob prefix for all stored files
     /// </summary>
     public string? BlobPrefix { get; set; }
-}
-
-/// <summary>
-/// Configuration options for Google Cloud Storage
-/// </summary>
-public sealed record GoogleCloudStorageOptions
-{
-    /// <summary>
-    /// GCS bucket name
-    /// </summary>
-    public string BucketName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// GCP project ID
-    /// </summary>
-    public string ProjectId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional object prefix for all stored files
-    /// </summary>
-    public string? ObjectPrefix { get; set; }
-
-    /// <summary>
-    /// Path to service account credentials JSON file (if not using default credentials)
-    /// </summary>
-    public string? CredentialsPath { get; set; }
 }

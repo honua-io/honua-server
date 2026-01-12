@@ -576,11 +576,6 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private Task SeedSchemaAsync(string schemaName)
     {
-        if (!_useSharedServer && string.IsNullOrWhiteSpace(_seedPath))
-        {
-            return Task.CompletedTask;
-        }
-
         if (!string.IsNullOrWhiteSpace(_seedPath))
         {
             return Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile);

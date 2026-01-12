@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -160,6 +161,16 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var extentQuery = _queryBuilder.BuildExtentQuery(layerId, effectiveQuery, geometryStorageType);
         return await _dataAccess.GetExtentAsync(layerId, extentQuery, effectiveQuery, cancellationToken);
+    }
+
+    public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
+        int layerId,
+        string fieldName,
+        FieldType fieldType,
+        CancellationToken cancellationToken = default)
+    {
+        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, fieldType);
+        return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken);
     }
 
     public async Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)

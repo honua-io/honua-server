@@ -42,6 +42,20 @@ internal sealed class FeatureServerQueryServices(
         string format,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields)
-        => _queryFormatter.FormatQueryResult(result, layer, format, returnGeometry, outputSrid, outFields);
+        => _queryFormatter.FormatQueryResult(
+            result,
+            layer,
+            format,
+            returnGeometry,
+            outputSrid,
+            returnZ,
+            returnM,
+            geometryPrecision,
+            maxAllowableOffset,
+            outFields);
 }

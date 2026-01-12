@@ -8,6 +8,9 @@ namespace Honua.Core.Features.Shared.Models;
 /// </summary>
 public readonly record struct BoundingBox
 {
+    private const double MinLongitude = -180d;
+    private const double MaxLongitude = 180d;
+
     /// <summary>
     /// Minimum X coordinate (westernmost longitude or leftmost easting)
     /// </summary>
@@ -70,7 +73,9 @@ public readonly record struct BoundingBox
     /// <summary>
     /// Gets the width (difference between MaxX and MinX)
     /// </summary>
-    public readonly double Width => MaxX - MinX;
+    public readonly double Width => IsAntimeridianCrossing
+        ? (MaxLongitude - MinX) + (MaxX - MinLongitude)
+        : MaxX - MinX;
 
     /// <summary>
     /// Gets the height (difference between MaxY and MinY)
@@ -80,7 +85,19 @@ public readonly record struct BoundingBox
     /// <summary>
     /// Gets the center X coordinate
     /// </summary>
-    public readonly double CenterX => (MinX + MaxX) / 2.0;
+    public readonly double CenterX
+    {
+        get
+        {
+            if (!IsAntimeridianCrossing)
+            {
+                return (MinX + MaxX) / 2.0;
+            }
+
+            var center = MinX + (Width / 2.0);
+            return NormalizeLongitude(center);
+        }
+    }
 
     /// <summary>
     /// Gets the center Y coordinate
@@ -104,7 +121,28 @@ public readonly record struct BoundingBox
     /// <param name="other">Other bounding box to test intersection with</param>
     /// <returns>True if the bounding boxes intersect, false otherwise</returns>
     public readonly bool Intersects(BoundingBox other)
-        => MinX <= other.MaxX && MaxX >= other.MinX && MinY <= other.MaxY && MaxY >= other.MinY;
+    {
+        if (MinY > other.MaxY || MaxY < other.MinY)
+        {
+            return false;
+        }
+
+        var ranges = GetLongitudeRanges();
+        var otherRanges = other.GetLongitudeRanges();
+
+        foreach (var range in ranges)
+        {
+            foreach (var otherRange in otherRanges)
+            {
+                if (range.Min <= otherRange.Max && range.Max >= otherRange.Min)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Checks if this bounding box contains another bounding box
@@ -112,7 +150,35 @@ public readonly record struct BoundingBox
     /// <param name="other">Other bounding box to test containment</param>
     /// <returns>True if this bounding box contains the other, false otherwise</returns>
     public readonly bool Contains(BoundingBox other)
-        => MinX <= other.MinX && MinY <= other.MinY && MaxX >= other.MaxX && MaxY >= other.MaxY;
+    {
+        if (MinY > other.MinY || MaxY < other.MaxY)
+        {
+            return false;
+        }
+
+        var ranges = GetLongitudeRanges();
+        var otherRanges = other.GetLongitudeRanges();
+
+        foreach (var otherRange in otherRanges)
+        {
+            var contained = false;
+            foreach (var range in ranges)
+            {
+                if (range.Min <= otherRange.Min && range.Max >= otherRange.Max)
+                {
+                    contained = true;
+                    break;
+                }
+            }
+
+            if (!contained)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Expands this bounding box to include another bounding box
@@ -120,12 +186,26 @@ public readonly record struct BoundingBox
     /// <param name="other">Other bounding box to include</param>
     /// <returns>New bounding box that encompasses both</returns>
     public readonly BoundingBox Union(BoundingBox other)
-        => Create(
-            Math.Min(MinX, other.MinX),
-            Math.Min(MinY, other.MinY),
-            Math.Max(MaxX, other.MaxX),
-            Math.Max(MaxY, other.MaxY),
-            SpatialReferenceId ?? other.SpatialReferenceId);
+    {
+        var minY = Math.Min(MinY, other.MinY);
+        var maxY = Math.Max(MaxY, other.MaxY);
+        var mergedRanges = MergeRanges(GetLongitudeRanges().Concat(other.GetLongitudeRanges()));
+
+        if (mergedRanges.Count == 0)
+        {
+            return Create(MinX, minY, MaxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        }
+
+        if (mergedRanges.Count == 1)
+        {
+            var range = mergedRanges[0];
+            return Create(range.Min, minY, range.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        }
+
+        var left = mergedRanges[0];
+        var right = mergedRanges[^1];
+        return Create(right.Min, minY, left.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+    }
 
     /// <summary>
     /// Gets the intersection of this bounding box with another bounding box
@@ -134,22 +214,46 @@ public readonly record struct BoundingBox
     /// <returns>Intersection bounding box, or null if they don't intersect</returns>
     public readonly BoundingBox? Intersection(BoundingBox other)
     {
-        if (!Intersects(other))
-            return null;
+        var minY = Math.Max(MinY, other.MinY);
+        var maxY = Math.Min(MaxY, other.MaxY);
 
-        return Create(
-            Math.Max(MinX, other.MinX),
-            Math.Max(MinY, other.MinY),
-            Math.Min(MaxX, other.MaxX),
-            Math.Min(MaxY, other.MaxY),
-            SpatialReferenceId ?? other.SpatialReferenceId);
+        if (minY > maxY)
+        {
+            return null;
+        }
+
+        var intersections = IntersectRanges(GetLongitudeRanges(), other.GetLongitudeRanges());
+        if (intersections.Count == 0)
+        {
+            return null;
+        }
+
+        if (intersections.Count == 1)
+        {
+            var range = intersections[0];
+            return Create(range.Min, minY, range.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        }
+
+        var left = intersections[0];
+        var right = intersections[^1];
+        return Create(right.Min, minY, left.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
     }
 
     /// <summary>
     /// Validates that the bounding box has valid coordinates (MinX ≤ MaxX, MinY ≤ MaxY)
     /// </summary>
     /// <returns>True if the bounding box is valid, false otherwise</returns>
-    public readonly bool IsValid => MinX <= MaxX && MinY <= MaxY;
+    public readonly bool IsValid => MinY <= MaxY && (MinX <= MaxX || IsAntimeridianCrossing);
+
+    /// <summary>
+    /// Indicates whether the bounding box crosses the antimeridian (dateline).
+    /// </summary>
+    public readonly bool IsAntimeridianCrossing =>
+        MinX > MaxX &&
+        MinX >= MinLongitude &&
+        MinX <= MaxLongitude &&
+        MaxX >= MinLongitude &&
+        MaxX <= MaxLongitude;
 
     /// <summary>
     /// Returns a string representation of the bounding box
@@ -159,4 +263,81 @@ public readonly record struct BoundingBox
         => SpatialReferenceId.HasValue
             ? $"BoundingBox[{MinX}, {MinY}, {MaxX}, {MaxY}] SRID:{SpatialReferenceId}"
             : $"BoundingBox[{MinX}, {MinY}, {MaxX}, {MaxY}]";
+
+    private readonly IReadOnlyList<(double Min, double Max)> GetLongitudeRanges()
+    {
+        if (IsAntimeridianCrossing)
+        {
+            return new[]
+            {
+                (MinX, MaxLongitude),
+                (MinLongitude, MaxX)
+            };
+        }
+
+        return new[] { (MinX, MaxX) };
+    }
+
+    private static List<(double Min, double Max)> MergeRanges(IEnumerable<(double Min, double Max)> ranges)
+    {
+        var ordered = ranges.OrderBy(range => range.Min).ToList();
+        if (ordered.Count == 0)
+        {
+            return ordered;
+        }
+
+        var merged = new List<(double Min, double Max)> { ordered[0] };
+        for (var i = 1; i < ordered.Count; i++)
+        {
+            var current = ordered[i];
+            var last = merged[^1];
+
+            if (current.Min <= last.Max)
+            {
+                merged[^1] = (last.Min, Math.Max(last.Max, current.Max));
+                continue;
+            }
+
+            merged.Add(current);
+        }
+
+        return merged;
+    }
+
+    private static List<(double Min, double Max)> IntersectRanges(
+        IReadOnlyList<(double Min, double Max)> ranges,
+        IReadOnlyList<(double Min, double Max)> otherRanges)
+    {
+        var intersections = new List<(double Min, double Max)>();
+
+        foreach (var range in ranges)
+        {
+            foreach (var otherRange in otherRanges)
+            {
+                var min = Math.Max(range.Min, otherRange.Min);
+                var max = Math.Min(range.Max, otherRange.Max);
+                if (min <= max)
+                {
+                    intersections.Add((min, max));
+                }
+            }
+        }
+
+        return MergeRanges(intersections);
+    }
+
+    private static double NormalizeLongitude(double value)
+    {
+        if (value > MaxLongitude)
+        {
+            return value - 360d;
+        }
+
+        if (value < MinLongitude)
+        {
+            return value + 360d;
+        }
+
+        return value;
+    }
 }

@@ -16,22 +16,25 @@ internal static class AccessPolicyHelpers
     public static AccessDecision EvaluateAccess(
         HttpContext context,
         AccessPolicy? layerPolicy,
-        AccessPolicy? servicePolicy)
+        AccessPolicy? servicePolicy,
+        AccessScope scope = AccessScope.Read)
     {
         var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
 
         return evaluator.Evaluate(
             context.User,
             layerPolicy,
-            servicePolicy);
+            servicePolicy,
+            scope);
     }
 
     public static IResult? RequireAccess(
         HttpContext context,
         AccessPolicy? layerPolicy,
-        AccessPolicy? servicePolicy)
+        AccessPolicy? servicePolicy,
+        AccessScope scope = AccessScope.Read)
     {
-        var decision = EvaluateAccess(context, layerPolicy, servicePolicy);
+        var decision = EvaluateAccess(context, layerPolicy, servicePolicy, scope);
         if (decision.IsAllowed)
         {
             return null;
@@ -46,23 +49,37 @@ internal static class AccessPolicyHelpers
             : StandardErrorHelpers.CreateForbidden(context, detail);
     }
 
-    public static IResult? RequireServiceAccess(HttpContext context, ServiceDefinition service)
-        => RequireAccess(context, null, service.Metadata?.AccessPolicy);
+    public static IResult? RequireServiceAccess(
+        HttpContext context,
+        ServiceDefinition service,
+        AccessScope scope = AccessScope.Read)
+        => RequireAccess(context, null, service.Metadata?.AccessPolicy, scope);
 
-    public static IResult? RequireLayerAccess(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
-        => RequireAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy);
+    public static IResult? RequireLayerAccess(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition? service = null,
+        AccessScope scope = AccessScope.Read)
+        => RequireAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope);
+
+    public static IResult? RequireServiceWriteAccess(HttpContext context, ServiceDefinition service)
+        => RequireAccess(context, null, service.Metadata?.AccessPolicy, AccessScope.Write);
+
+    public static IResult? RequireLayerWriteAccess(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
+        => RequireAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, AccessScope.Write);
 
     public static IResult? RequireAnyLayerAccess(
         HttpContext context,
         IEnumerable<LayerDefinition> layers,
-        ServiceDefinition? service = null)
+        ServiceDefinition? service = null,
+        AccessScope scope = AccessScope.Read)
     {
         var requiresAuth = false;
         var hasDenied = false;
 
         foreach (var layer in layers)
         {
-            var decision = EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy);
+            var decision = EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope);
             if (decision.IsAllowed)
             {
                 return null;
@@ -91,4 +108,7 @@ internal static class AccessPolicyHelpers
 
     public static bool IsLayerAccessible(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
         => EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy).IsAllowed;
+
+    public static bool IsLayerWriteAccessible(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
+        => EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, AccessScope.Write).IsAllowed;
 }

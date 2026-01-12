@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+
 namespace Honua.Server.Features.Infrastructure.Models;
 
 internal static class ProblemDetailsHelpers
@@ -28,18 +30,20 @@ internal static class ProblemDetailsHelpers
         => CreateProblem(AdminType, statusCode, title, detail, instance);
 
     public static IResult CreateProblem(HttpContext context, string type, int statusCode, string title, string detail)
-        => CreateProblem(type, statusCode, title, detail, BuildInstance(context));
+    {
+        var instance = BuildInstance(context);
+        var problemDetails = CreateProblemDetails(type, statusCode, title, detail, instance, context);
+
+        return Results.Json(
+            problemDetails,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            statusCode: statusCode,
+            contentType: ContentType);
+    }
 
     public static IResult CreateProblem(string type, int statusCode, string title, string detail, string? instance = null)
     {
-        var problemDetails = new ProblemDetailsResponse
-        {
-            Type = type,
-            Title = title,
-            Status = statusCode,
-            Detail = detail,
-            Instance = instance
-        };
+        var problemDetails = CreateProblemDetails(type, statusCode, title, detail, instance, context: null);
 
         return Results.Json(
             problemDetails,
@@ -62,6 +66,29 @@ internal static class ProblemDetailsHelpers
         }
 
         return instance;
+    }
+
+    private static ProblemDetailsResponse CreateProblemDetails(
+        string type,
+        int statusCode,
+        string title,
+        string detail,
+        string? instance,
+        HttpContext? context)
+    {
+        var correlationId = context?.TraceIdentifier;
+        var timestamp = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+
+        return new ProblemDetailsResponse
+        {
+            Type = type,
+            Title = title,
+            Status = statusCode,
+            Detail = detail,
+            Instance = instance,
+            CorrelationId = correlationId,
+            Timestamp = timestamp
+        };
     }
 
     internal static string GetTitle(int statusCode) => statusCode switch

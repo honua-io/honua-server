@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.OData.Models;
 
@@ -73,7 +74,7 @@ internal static class StandardErrorResponseFormatter
         SetODataHeaders(context, options);
 
         var code = MapODataCode(errorResponse.StatusCode);
-        var details = BuildODataDetails(errorResponse, options);
+        var details = BuildODataDetails(context, errorResponse, options);
 
         var error = new ODataError
         {
@@ -97,13 +98,12 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatOgcError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        var instance = BuildInstance(context);
         return ProblemDetailsHelpers.CreateProblem(
+            context,
             type: "about:blank",
             statusCode: errorResponse.StatusCode,
             title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options),
-            instance: instance);
+            detail: BuildDetailWithExtras(errorResponse, options));
     }
 
     /// <summary>
@@ -111,13 +111,12 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatAdminError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        var instance = BuildInstance(context);
         return ProblemDetailsHelpers.CreateProblem(
+            context,
             type: "https://honua.io/problems/admin",
             statusCode: errorResponse.StatusCode,
             title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options),
-            instance: instance);
+            detail: BuildDetailWithExtras(errorResponse, options));
     }
 
     /// <summary>
@@ -125,7 +124,7 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatGeoServicesError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        var details = BuildGeoServicesDetails(errorResponse, options);
+        var details = BuildGeoServicesDetails(context, errorResponse, options);
 
         var apiErrorResponse = new ApiErrorResponse
         {
@@ -150,20 +149,19 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatGenericError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        var instance = BuildInstance(context);
         AddResponseHeaders(context, options);
         return ProblemDetailsHelpers.CreateProblem(
+            context,
             type: "about:blank",
             statusCode: errorResponse.StatusCode,
             title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options),
-            instance: instance);
+            detail: BuildDetailWithExtras(errorResponse, options));
     }
 
     /// <summary>
     /// Builds OData error details array.
     /// </summary>
-    private static ErrorDetail[]? BuildODataDetails(StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    private static ErrorDetail[]? BuildODataDetails(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         var detailsList = new List<ErrorDetail>();
 
@@ -200,13 +198,29 @@ internal static class StandardErrorResponseFormatter
             });
         }
 
+        var metadata = BuildErrorMetadata(context);
+        if (!string.IsNullOrWhiteSpace(metadata.CorrelationId))
+        {
+            detailsList.Add(new ErrorDetail
+            {
+                Code = "CorrelationId",
+                Message = metadata.CorrelationId
+            });
+        }
+
+        detailsList.Add(new ErrorDetail
+        {
+            Code = "Timestamp",
+            Message = metadata.Timestamp
+        });
+
         return detailsList.Count > 0 ? [.. detailsList] : null;
     }
 
     /// <summary>
     /// Builds GeoServices error details array.
     /// </summary>
-    private static string[]? BuildGeoServicesDetails(StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    private static string[]? BuildGeoServicesDetails(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         var detailsList = new List<string>();
 
@@ -227,6 +241,14 @@ internal static class StandardErrorResponseFormatter
         {
             detailsList.Add($"Debug: {errorResponse.DebugInfo}");
         }
+
+        var metadata = BuildErrorMetadata(context);
+        if (!string.IsNullOrWhiteSpace(metadata.CorrelationId))
+        {
+            detailsList.Add($"CorrelationId: {metadata.CorrelationId}");
+        }
+
+        detailsList.Add($"Timestamp: {metadata.Timestamp}");
 
         return detailsList.Count > 0 ? [.. detailsList] : null;
     }
@@ -279,12 +301,13 @@ internal static class StandardErrorResponseFormatter
         }
     }
 
-    /// <summary>
-    /// Builds the instance URL for Problem Details.
-    /// </summary>
-    private static string BuildInstance(HttpContext context)
+    private readonly record struct ErrorMetadata(string? CorrelationId, string Timestamp);
+
+    private static ErrorMetadata BuildErrorMetadata(HttpContext context)
     {
-        return $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}";
+        var correlationId = context.TraceIdentifier;
+        var timestamp = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        return new ErrorMetadata(correlationId, timestamp);
     }
 
     /// <summary>

@@ -28,8 +28,12 @@ internal static class ObservabilityServiceCollectionExtensions
     {
         services.AddOutputCache(options =>
         {
-            // Add dynamic tags based on common route values for targeted invalidation.
-            options.AddBasePolicy(policy => policy.AddPolicy<RouteTagOutputCachePolicy>());
+            // Add dynamic tags and restrict caching to anonymous requests only.
+            options.AddBasePolicy(policy =>
+            {
+                policy.AddPolicy<RouteTagOutputCachePolicy>();
+                policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
+            });
 
             // Service metadata caching policy
             options.AddPolicy("ServiceMetadata", policy =>

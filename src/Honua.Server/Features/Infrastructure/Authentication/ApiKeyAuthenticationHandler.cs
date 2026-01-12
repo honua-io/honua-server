@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -122,13 +123,36 @@ internal sealed class ApiKeyAuthenticationHandler(
         byte[] configuredBytes = Encoding.UTF8.GetBytes(configuredKey);
 
         var maxLength = Math.Max(providedBytes.Length, configuredBytes.Length);
-        Span<byte> paddedProvided = maxLength <= 256 ? stackalloc byte[maxLength] : new byte[maxLength];
-        Span<byte> paddedConfigured = maxLength <= 256 ? stackalloc byte[maxLength] : new byte[maxLength];
+        byte[]? providedRental = null;
+        byte[]? configuredRental = null;
+        Span<byte> paddedProvided = maxLength <= 256
+            ? stackalloc byte[maxLength]
+            : (providedRental = ArrayPool<byte>.Shared.Rent(maxLength)).AsSpan(0, maxLength);
+        Span<byte> paddedConfigured = maxLength <= 256
+            ? stackalloc byte[maxLength]
+            : (configuredRental = ArrayPool<byte>.Shared.Rent(maxLength)).AsSpan(0, maxLength);
+
+        paddedProvided.Clear();
+        paddedConfigured.Clear();
 
         providedBytes.CopyTo(paddedProvided);
         configuredBytes.CopyTo(paddedConfigured);
 
         var matches = CryptographicOperations.FixedTimeEquals(paddedProvided, paddedConfigured);
+
+        CryptographicOperations.ZeroMemory(paddedProvided);
+        CryptographicOperations.ZeroMemory(paddedConfigured);
+
+        if (providedRental != null)
+        {
+            ArrayPool<byte>.Shared.Return(providedRental, clearArray: false);
+        }
+
+        if (configuredRental != null)
+        {
+            ArrayPool<byte>.Shared.Return(configuredRental, clearArray: false);
+        }
+
         return matches && providedBytes.Length == configuredBytes.Length;
     }
 

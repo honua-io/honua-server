@@ -2,13 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Postgres.Features.FeatureStore;
 
@@ -59,7 +62,20 @@ internal static class ServiceCollectionExtensions
             var dictionaryPool = provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>();
             var statementCache = provider.GetService<PreparedStatementCache>();
             var logger = provider.GetRequiredService<ILogger<FeatureDataAccess>>();
-            return new FeatureDataAccess(connectionProvider, geometryProcessor, cacheManager, dictionaryPool, statementCache, logger, schemaName);
+            var performanceOptions = provider.GetService<IOptions<PerformanceMonitoringOptions>>();
+            var limitsOptions = provider.GetService<IOptions<LimitsOptions>>();
+            var performanceMonitor = provider.GetService<IPerformanceMonitor>();
+            return new FeatureDataAccess(
+                connectionProvider,
+                geometryProcessor,
+                cacheManager,
+                dictionaryPool,
+                statementCache,
+                logger,
+                performanceOptions,
+                limitsOptions,
+                performanceMonitor,
+                schemaName);
         });
 
         // Register the main feature store implementation

@@ -15,10 +15,14 @@ namespace Honua.Server.Features.FeatureServer.Services;
 internal sealed class SpatialReferenceResolver
 {
     private readonly ICrsDetectionService _crsDetectionService;
+    private readonly ICrsRegistry _crsRegistry;
 
-    public SpatialReferenceResolver(ICrsDetectionService crsDetectionService)
+    public SpatialReferenceResolver(
+        ICrsDetectionService crsDetectionService,
+        ICrsRegistry crsRegistry)
     {
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
     }
 
     /// <summary>
@@ -33,16 +37,30 @@ internal sealed class SpatialReferenceResolver
         var srid = await ParseSridAsync(srValue, cancellationToken);
         if (srid.HasValue)
         {
-            return srid;
+            return await EnsureSupportedAsync(srid, cancellationToken);
         }
 
         // Fall back to geometry spatial reference if available
         if (geometrySpatialReference != null)
         {
-            return await ResolveSridFromGeometrySpatialReference(geometrySpatialReference, cancellationToken);
+            srid = await ResolveSridFromGeometrySpatialReference(geometrySpatialReference, cancellationToken);
+            return await EnsureSupportedAsync(srid, cancellationToken);
         }
 
         return null;
+    }
+
+    private async Task<int?> EnsureSupportedAsync(int? srid, CancellationToken cancellationToken)
+    {
+        if (!srid.HasValue || srid.Value <= 0)
+        {
+            return null;
+        }
+
+        return await _crsRegistry.IsSridSupportedAsync(srid.Value, cancellationToken)
+            .ConfigureAwait(false)
+            ? srid
+            : null;
     }
 
     /// <summary>

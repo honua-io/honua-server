@@ -2,16 +2,22 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Features.Caching;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
@@ -33,7 +39,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly IStreamingFeatureStore _streamingFeatureStore = dependencies.StreamingFeatureStore;
     private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
     private readonly ICommonQueryValidator _queryValidator = dependencies.QueryValidator;
+    private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFilterProcessor _filterProcessor = dependencies.FilterProcessor;
+    private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IResponseCache _responseCache = dependencies.ResponseCache;
+    private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
 
@@ -64,6 +74,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
             var layer = collectionResult.Resource!;
             var layerId = layer.Id;
+            var activity = Activity.Current;
+            activity?.SetTag("honua.protocol", "ogc-features");
+            activity?.SetTag("honua.collection_id", collectionId);
+            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
             if (accessError != null)
             {
@@ -83,7 +97,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             // Use filter processor for comprehensive filter handling
             var filterResult = await _filterProcessor.ProcessFiltersAsync(
-                request, layer, filter, bbox, datetime, crs);
+                request, layer, filter, bbox, datetime, crs, cancellationToken);
             if (!filterResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, filterResult.ErrorMessage!);
@@ -114,14 +128,37 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                !string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
                                !string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase);
 
+            var cacheableFormat = string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase);
+            var canCache = !useStreaming && cacheableFormat && ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
+            var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
+            if (canCache && cacheTtl <= TimeSpan.Zero)
+            {
+                canCache = false;
+            }
+
+            var cacheKey = canCache
+                ? ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request)
+                : null;
+
+            if (canCache && cacheKey != null)
+            {
+                var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
+                if (cached != null)
+                {
+                    context.Response.Headers["Content-Crs"] = FormatContentCrs(filterResult.CrsDefinition.Uri);
+                    return Results.Bytes(cached.Payload, cached.ContentType);
+                }
+            }
+
             if (useStreaming)
             {
                 var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
                 var hasMoreResults = totalCount > (effectiveOffset + effectiveLimit);
 
-                var baseUrl = $"{request.Scheme}://{request.Host}";
-                var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
-                var links = BuildItemsLinks(request, basePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
+                var streamBaseUrl = $"{request.Scheme}://{request.Host}";
+                var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
+                var streamLinks = BuildItemsLinks(request, streamBasePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
 
                 return new StreamingItemsResult(
                     _streamingFeatureStore,
@@ -129,8 +166,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     query,
                     collectionId,
                     filterResult.CrsDefinition.AxisOrder,
+                    _geometryServices,
                     outputFormat,
-                    links,
+                    streamLinks,
                     totalCount,
                     filterResult.CrsDefinition.Uri);
             }
@@ -144,7 +182,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         collectionId,
                         FormattableString.Invariant($"{feature.Id}"),
                         outputFormat);
-                    return ToOgcFeature(feature, filterResult.CrsDefinition.AxisOrder, links);
+                    return ToOgcFeature(feature, filterResult.CrsDefinition.AxisOrder, _geometryServices, links);
                 })
                 .ToArray();
 
@@ -168,6 +206,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
             {
                 var gml = BuildGmlFeatureCollection(features);
                 return Results.Text(gml, MediaTypes.Gml);
+            }
+
+            if (canCache && cacheKey != null)
+            {
+                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
+                    ? MediaTypes.GeoJson
+                    : MediaTypes.Json;
+                var payload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
+                await _responseCache.SetAsync(cacheKey, new CachedResponse(payload, contentType), cacheTtl, cancellationToken);
+                return Results.Bytes(payload, contentType);
             }
 
             return FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
@@ -206,6 +254,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
             var layer = collectionResult.Resource!;
             var layerId = layer.Id;
+            var activity = Activity.Current;
+            activity?.SetTag("honua.protocol", "ogc-features");
+            activity?.SetTag("honua.collection_id", collectionId);
+            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
             if (accessError != null)
             {
@@ -222,10 +274,36 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return CreateFormatError(context, formatError);
             }
 
-            var crsResult = OgcCrsResolver.TryResolveCrs(crs);
-            if (!crsResult.IsSuccess)
+            var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
+                layer,
+                _crsRegistry,
+                cancellationToken);
+            if (!OgcFeaturesUtilities.TryResolveCrs(crs, supportedCrs, out var crsDefinition, out var crsError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, crsResult.ErrorMessage!);
+                return StandardErrorHelpers.CreateBadRequest(context, crsError!);
+            }
+
+            var cacheableFormat = string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase);
+            var canCache = cacheableFormat && ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
+            var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
+            if (canCache && cacheTtl <= TimeSpan.Zero)
+            {
+                canCache = false;
+            }
+
+            var cacheKey = canCache
+                ? ResponseCacheUtilities.BuildOgcCollectionKey(collectionId, request)
+                : null;
+
+            if (canCache && cacheKey != null)
+            {
+                var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
+                if (cached != null)
+                {
+                    context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
+                    return Results.Bytes(cached.Payload, cached.ContentType);
+                }
             }
 
             var feature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -235,14 +313,24 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var featureLinks = BuildFeatureLinks(request, collectionId, featureId, outputFormat);
-            var ogcFeature = ToOgcFeature(feature.Value, crsResult.CrsDefinition.AxisOrder, featureLinks);
+            var ogcFeature = ToOgcFeature(feature.Value, crsDefinition.AxisOrder, _geometryServices, featureLinks);
 
-            context.Response.Headers["Content-Crs"] = FormatContentCrs(crsResult.CrsDefinition.Uri);
+            context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
                 var gml = BuildGmlSingleFeature(ogcFeature);
                 return Results.Text(gml, MediaTypes.Gml);
+            }
+
+            if (canCache && cacheKey != null)
+            {
+                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
+                    ? MediaTypes.GeoJson
+                    : MediaTypes.Json;
+                var payload = JsonSerializer.SerializeToUtf8Bytes(ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
+                await _responseCache.SetAsync(cacheKey, new CachedResponse(payload, contentType), cacheTtl, cancellationToken);
+                return Results.Bytes(payload, contentType);
             }
 
             return FormatFeatureResponse(ogcFeature, OgcJsonContext.Default.GeoJsonFeature, outputFormat, "Feature");
@@ -260,10 +348,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         Feature feature,
-        OgcFeaturesUtilities.AxisOrder axisOrder,
+        AxisOrder axisOrder,
+        OgcFeaturesGeometryServices geometryServices,
         ImmutableArray<Link>? links = null)
     {
-        var geometry = OgcFeaturesGeometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
+        var geometry = geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
     }
 
@@ -436,7 +525,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
         HttpContext context,
         IAsyncEnumerable<Feature> features,
         string collectionId,
-        OgcFeaturesUtilities.AxisOrder axisOrder,
+        AxisOrder axisOrder,
+        OgcFeaturesGeometryServices geometryServices,
         string outputFormat,
         ImmutableArray<Link> links,
         long numberMatched,
@@ -460,7 +550,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 collectionId,
                 FormattableString.Invariant($"{feature.Id}"),
                 outputFormat);
-            var ogcFeature = ToOgcFeature(feature, axisOrder, featureLinks);
+            var ogcFeature = ToOgcFeature(feature, axisOrder, geometryServices, featureLinks);
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;
@@ -486,6 +576,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
+        await context.Response.BodyWriter.CompleteAsync();
     }
 
     private sealed class StreamingItemsResult : IResult
@@ -494,18 +585,20 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly LayerDefinition _layer;
         private readonly FeatureQuery _query;
         private readonly string _collectionId;
-        private readonly OgcFeaturesUtilities.AxisOrder _axisOrder;
+        private readonly AxisOrder _axisOrder;
         private readonly string _outputFormat;
         private readonly ImmutableArray<Link> _links;
         private readonly long _numberMatched;
         private readonly string _crsUri;
+        private readonly OgcFeaturesGeometryServices _geometryServices;
 
         public StreamingItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
             LayerDefinition layer,
             FeatureQuery query,
             string collectionId,
-            OgcFeaturesUtilities.AxisOrder axisOrder,
+            AxisOrder axisOrder,
+            OgcFeaturesGeometryServices geometryServices,
             string outputFormat,
             ImmutableArray<Link> links,
             long numberMatched,
@@ -516,6 +609,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _query = query;
             _collectionId = collectionId;
             _axisOrder = axisOrder;
+            _geometryServices = geometryServices;
             _outputFormat = outputFormat;
             _links = links;
             _numberMatched = numberMatched;
@@ -537,6 +631,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 stream,
                 _collectionId,
                 _axisOrder,
+                _geometryServices,
                 _outputFormat,
                 _links,
                 _numberMatched,

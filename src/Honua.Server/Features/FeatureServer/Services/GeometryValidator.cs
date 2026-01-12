@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -21,6 +22,7 @@ namespace Honua.Server.Features.FeatureServer.Services;
 internal sealed partial class GeometryValidator : IGeometryValidator
 {
     private readonly GeometryValidationOptions _options;
+    private readonly GeometryLimits _geometryLimits;
     private readonly IGeometryTopologyValidator _topologyValidator;
     private readonly ILogger<GeometryValidator> _logger;
     private readonly WKBReader _wkbReader = new();
@@ -30,7 +32,9 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         IGeometryTopologyValidator topologyValidator,
         ILogger<GeometryValidator> logger)
     {
-        _options = limitsOptions?.Value?.Validation ?? new GeometryValidationOptions();
+        var resolvedLimits = limitsOptions?.Value ?? new LimitsOptions();
+        _options = resolvedLimits.Validation ?? new GeometryValidationOptions();
+        _geometryLimits = resolvedLimits.Geometry ?? new GeometryLimits();
         _topologyValidator = topologyValidator ?? throw new ArgumentNullException(nameof(topologyValidator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -110,11 +114,12 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         }
 
         // Check WKB size limit
-        if (wkb.Length > _options.MaxWkbSize)
+        var maxWkbSize = Math.Min(_options.MaxWkbSize, _geometryLimits.MaxGeometrySize);
+        if (wkb.Length > maxWkbSize)
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.WkbTooLarge,
-                $"WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_options.MaxWkbSize:N0} bytes)");
+                $"WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({maxWkbSize:N0} bytes)");
         }
 
         try
@@ -130,11 +135,12 @@ internal sealed partial class GeometryValidator : IGeometryValidator
 
             // Count vertices
             var vertexCount = CountVertices(geometry);
-            if (vertexCount > _options.MaxVertices)
+            var maxVertices = Math.Min(_options.MaxVertices, _geometryLimits.MaxVerticesPerGeometry);
+            if (vertexCount > maxVertices)
             {
                 return GeometryValidationResult.Failure(
                     ValidationErrorCode.TooManyVertices,
-                    $"Geometry has {vertexCount:N0} vertices, exceeds maximum allowed ({_options.MaxVertices:N0})");
+                    $"Geometry has {vertexCount:N0} vertices, exceeds maximum allowed ({maxVertices:N0})");
             }
 
             // Count rings for polygons
@@ -146,14 +152,15 @@ internal sealed partial class GeometryValidator : IGeometryValidator
                     $"Geometry has {ringCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
             }
 
+            var (hasZ, hasM) = GeometryService.DetectZMFromGeometry(geometry);
             var stats = new GeometryStats
             {
                 GeometryType = geometry.GeometryType,
                 VertexCount = vertexCount,
                 RingCount = ringCount,
                 WkbSize = wkb.Length,
-                HasZ = geometry.Coordinate?.Z is not null && !double.IsNaN(geometry.Coordinate.Z),
-                HasM = geometry.Coordinate is CoordinateM,
+                HasZ = hasZ,
+                HasM = hasM,
                 Srid = geometry.SRID > 0 ? geometry.SRID : null
             };
 
@@ -462,7 +469,8 @@ internal sealed partial class GeometryValidator : IGeometryValidator
             var first = ring[0];
             var last = ring[^1];
             if (first.Length >= 2 && last.Length >= 2 &&
-                (Math.Abs(first[0] - last[0]) > 1e-10 || Math.Abs(first[1] - last[1]) > 1e-10))
+                (Math.Abs(first[0] - last[0]) > _options.RingClosureTolerance ||
+                 Math.Abs(first[1] - last[1]) > _options.RingClosureTolerance))
             {
                 warnings.Add(new ValidationIssue(ValidationErrorCode.UnclosedRing, $"Ring {i} is not closed, will be auto-closed"));
             }

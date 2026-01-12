@@ -18,6 +18,7 @@ CITE_RESULTS_DIR="cite-results"
 CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HONUA_HEALTHCHECK_TIMEOUT=300  # 5 minutes
+POSTGRES_HEALTHCHECK_TIMEOUT=120  # 2 minutes
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -119,8 +120,74 @@ trap cleanup EXIT
 echo -e "${YELLOW}Starting CITE test environment...${NC}"
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null || true
 
-# Start base services (without test profile)
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server postgres cite-engine
+# Start Postgres first so the database can be seeded before Honua Server caches metadata
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d postgres
+
+# Wait for Postgres to be healthy
+echo -e "${YELLOW}Waiting for Postgres to be ready...${NC}"
+start_time=$(date +%s)
+while true; do
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+
+    if [[ $elapsed -gt $POSTGRES_HEALTHCHECK_TIMEOUT ]]; then
+        echo -e "${RED}❌ Timeout waiting for Postgres to become healthy${NC}"
+        echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs postgres"
+        exit 1
+    fi
+
+    if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps postgres | grep -q "healthy"; then
+        break
+    fi
+
+    echo "Waiting for Postgres... (${elapsed}s elapsed)"
+    sleep 5
+done
+
+echo -e "${GREEN}✅ Postgres is healthy${NC}"
+
+# Start Honua Server once to apply migrations, then stop to avoid caching empty catalog results
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server
+
+echo -e "${YELLOW}Waiting for Honua Server to be ready (migrations)...${NC}"
+start_time=$(date +%s)
+while true; do
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+
+    if [[ $elapsed -gt $HONUA_HEALTHCHECK_TIMEOUT ]]; then
+        echo -e "${RED}❌ Timeout waiting for Honua Server to become healthy${NC}"
+        echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
+        exit 1
+    fi
+
+    if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -q "healthy"; then
+        break
+    fi
+
+    echo "Waiting for Honua Server... (${elapsed}s elapsed)"
+    sleep 5
+done
+
+echo -e "${GREEN}✅ Honua Server is healthy${NC}"
+
+echo -e "${YELLOW}Stopping Honua Server to seed data...${NC}"
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" stop honua-server
+
+# Seed the database now that migrations exist
+echo -e "${YELLOW}Seeding CITE database...${NC}"
+POSTGRES_CONTAINER=$($COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps -q postgres)
+if [[ -z "$POSTGRES_CONTAINER" ]]; then
+    echo -e "${RED}❌ Postgres container not found${NC}"
+    exit 1
+fi
+
+docker cp docker/cite-seed.sql "$POSTGRES_CONTAINER":/tmp/cite-seed.sql
+docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite -f /tmp/cite-seed.sql >/dev/null
+echo -e "${GREEN}✅ CITE database seeded${NC}"
+
+# Start Honua Server + CITE engine after seeding
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server cite-engine
 
 # Wait for Honua Server to be healthy
 echo -e "${YELLOW}Waiting for Honua Server to be ready...${NC}"
@@ -144,17 +211,6 @@ while true; do
 done
 
 echo -e "${GREEN}✅ Honua Server is healthy${NC}"
-
-echo -e "${YELLOW}Seeding CITE database...${NC}"
-POSTGRES_CONTAINER=$($COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps -q postgres)
-if [[ -z "$POSTGRES_CONTAINER" ]]; then
-    echo -e "${RED}❌ Postgres container not found${NC}"
-    exit 1
-fi
-
-docker cp docker/cite-seed.sql "$POSTGRES_CONTAINER":/tmp/cite-seed.sql
-docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite -f /tmp/cite-seed.sql >/dev/null
-echo -e "${GREEN}✅ CITE database seeded${NC}"
 
 # Verify API endpoints are responding (after seeding to avoid cached empty data)
 echo -e "${YELLOW}Verifying OGC API Features endpoints...${NC}"

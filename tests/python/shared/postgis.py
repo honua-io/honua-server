@@ -443,7 +443,7 @@ class PostGISFixture:
                         'Default layer for integration tests',
                         current_schema(),
                         'features',
-                        'GeometryCollection',
+                        'Point',
                         4326,
                         ST_MakeEnvelope(-180, -90, 180, 90, 4326),
                         true

@@ -46,6 +46,7 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         landingPage.Should().NotBeNull();
         landingPage!.Title.Should().NotBeNullOrEmpty();
         landingPage.Description.Should().NotBeNullOrEmpty();
+        landingPage.Supports3d.Should().BeFalse();
         landingPage.Links.Should().NotBeEmpty();
 
         // Verify required links exist
@@ -119,7 +120,33 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         conformanceLink.Href.Should().EndWith("/ogc/features/conformance");
     }
 
-    // TODO: Add cache header tests when output caching is properly configured for test environment
+    [IntegrationTest]
+    [Operation(Operations.Cache)]
+    [Endpoint("GET /ogc/features")]
+    public async Task GetLandingPage_ReturnsCacheHeaders()
+    {
+        var client = _fixture.CreateClient();
+
+        var response = await client.GetAsync("/ogc/features");
+
+        response.Be200Ok();
+        response.Headers.Should().ContainKey("Cache-Control");
+        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Cache)]
+    [Endpoint("GET /ogc/features/conformance")]
+    public async Task GetConformance_ReturnsCacheHeaders()
+    {
+        var client = _fixture.CreateClient();
+
+        var response = await client.GetAsync("/ogc/features/conformance");
+
+        response.Be200Ok();
+        response.Headers.Should().ContainKey("Cache-Control");
+        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]

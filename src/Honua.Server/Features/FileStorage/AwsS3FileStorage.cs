@@ -20,12 +20,18 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
     private readonly AwsS3Options _options;
     private readonly AmazonS3Client _client;
     private readonly ILogger<AwsS3FileStorage> _logger;
+    private readonly IUploadProgressStore _progressStore;
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _batchIndex;
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _uploadCancellationTokens;
 
-    public AwsS3FileStorage(IOptions<CloudStorageOptions> options, ILogger<AwsS3FileStorage> logger)
+    public AwsS3FileStorage(
+        IOptions<CloudStorageOptions> options,
+        ILogger<AwsS3FileStorage> logger,
+        IUploadProgressStore progressStore)
     {
         ArgumentNullException.ThrowIfNull(options);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
 
         var resolved = options.Value ?? throw new ArgumentNullException(nameof(options));
         _options = resolved.AwsS3 ?? throw new InvalidOperationException("AWS S3 options are not configured.");
@@ -52,6 +58,7 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
 
         _client = CreateClient(_options);
         _batchIndex = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
+        _uploadCancellationTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
     }
 
     public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
@@ -61,6 +68,15 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
         ArgumentNullException.ThrowIfNull(request);
 
         var stopwatch = Stopwatch.StartNew();
+        var uploadId = request.UploadId;
+        var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
+
+        _uploadCancellationTokens[uploadId] = linkedCancellationSource;
+
+        var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
+        await _progressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+        request.Progress?.Report(initialProgress);
 
         try
         {
@@ -85,6 +101,36 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 InputStream = request.Content
             };
 
+            if (request.Progress != null)
+            {
+                var lastProgressUpdate = DateTimeOffset.UtcNow;
+                putRequest.StreamTransferProgress += (_, args) =>
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    if (now - lastProgressUpdate < TimeSpan.FromMilliseconds(100) && args.TransferredBytes < args.TotalBytes)
+                    {
+                        return;
+                    }
+
+                    var resolvedTotalBytes = args.TotalBytes > 0 ? args.TotalBytes : totalBytes;
+                    var progress = new UploadProgress
+                    {
+                        UploadId = uploadId,
+                        Status = OperationStatus.Processing,
+                        BytesUploaded = args.TransferredBytes,
+                        TotalBytes = resolvedTotalBytes,
+                        FileName = request.FileName,
+                        ContentType = request.ContentType,
+                        StartedAt = initialProgress.StartedAt,
+                        CurrentPhase = "Uploading"
+                    };
+
+                    _ = _progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                    request.Progress.Report(progress);
+                    lastProgressUpdate = now;
+                };
+            }
+
             foreach (var pair in metadata)
             {
                 putRequest.Metadata[pair.Key] = pair.Value;
@@ -95,7 +141,7 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 putRequest.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
             }
 
-            await _client.PutObjectAsync(putRequest, cancellationToken);
+            await _client.PutObjectAsync(putRequest, linkedCancellationSource.Token);
 
             var sizeBytes = await ResolveSizeAsync(objectKey, request, cancellationToken);
             var cloudFile = new CloudFile
@@ -112,22 +158,93 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 Provider = CloudStorageProvider.AwsS3
             };
 
+            var completedProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Completed,
+                BytesUploaded = sizeBytes,
+                TotalBytes = totalBytes > 0 ? totalBytes : sizeBytes,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                CloudFileId = objectKey,
+                StartedAt = initialProgress.StartedAt,
+                CompletedAt = uploadedAt,
+                CurrentPhase = "Upload completed"
+            };
+            await _progressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            request.Progress?.Report(completedProgress);
+
             stopwatch.Stop();
             FileStorageLog.FileUploaded(_logger, request.FileName, sizeBytes, objectKey, stopwatch.ElapsedMilliseconds);
 
             return UploadResult.CreateSuccess(cloudFile, stopwatch.Elapsed);
         }
+        catch (OperationCanceledException) when (linkedCancellationSource.Token.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            var cancelledProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Cancelled,
+                BytesUploaded = 0,
+                TotalBytes = totalBytes,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                StartedAt = initialProgress.StartedAt,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Upload was cancelled",
+                CurrentPhase = "Cancelled"
+            };
+            await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            request.Progress?.Report(cancelledProgress);
+            throw;
+        }
         catch (ArgumentException ex)
         {
             stopwatch.Stop();
+            var failedProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Failed,
+                BytesUploaded = 0,
+                TotalBytes = totalBytes,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                StartedAt = initialProgress.StartedAt,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = ex.Message,
+                CurrentPhase = "Failed"
+            };
+            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            request.Progress?.Report(failedProgress);
             FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
             return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
+            var failedProgress = new UploadProgress
+            {
+                UploadId = uploadId,
+                Status = OperationStatus.Failed,
+                BytesUploaded = 0,
+                TotalBytes = totalBytes,
+                FileName = request.FileName,
+                ContentType = request.ContentType,
+                StartedAt = initialProgress.StartedAt,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "File upload failed",
+                CurrentPhase = "Failed"
+            };
+            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            request.Progress?.Report(failedProgress);
             FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
             return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
+        }
+        finally
+        {
+            _uploadCancellationTokens.TryRemove(uploadId, out _);
+            linkedCancellationSource.Dispose();
         }
     }
 
@@ -459,25 +576,47 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
     /// <inheritdoc />
     public Task<UploadProgress?> GetUploadProgressAsync(string uploadId, CancellationToken cancellationToken = default)
     {
-        // TODO: Implement progress tracking for AWS S3 uploads
-        // For now, return null indicating no progress tracking support
-        return Task.FromResult<UploadProgress?>(null);
+        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
+        return _progressStore.GetProgressAsync(uploadId, cancellationToken);
     }
 
     /// <inheritdoc />
     public Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default)
     {
-        // TODO: Implement upload cancellation for AWS S3 uploads
-        // For now, return false indicating cancellation not supported
-        return Task.FromResult(false);
+        return CancelUploadInternalAsync(uploadId, cancellationToken);
     }
 
     /// <inheritdoc />
     public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
     {
-        // TODO: Implement active uploads tracking for AWS S3
-        // For now, return empty list
-        return Task.FromResult<IReadOnlyList<UploadProgress>>(Array.Empty<UploadProgress>());
+        return _progressStore.GetActiveUploadsAsync(cancellationToken);
+    }
+
+    private async Task<bool> CancelUploadInternalAsync(string uploadId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
+
+        if (_uploadCancellationTokens.TryRemove(uploadId, out var cancellationSource))
+        {
+            await cancellationSource.CancelAsync();
+            cancellationSource.Dispose();
+
+            var currentProgress = await _progressStore.GetProgressAsync(uploadId, cancellationToken);
+            if (currentProgress != null && currentProgress.Status == OperationStatus.Processing)
+            {
+                var cancelledProgress = currentProgress with
+                {
+                    Status = OperationStatus.Cancelled,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Cancelled"
+                };
+                await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private static AmazonS3Client CreateClient(AwsS3Options options)

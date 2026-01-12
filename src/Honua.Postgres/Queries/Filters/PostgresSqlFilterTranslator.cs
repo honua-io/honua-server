@@ -377,6 +377,15 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             "SECOND" => args.Length == 1
                 ? $"EXTRACT(SECOND FROM {args[0]})"
                 : throw new ArgumentException("SECOND requires one argument"),
+            "CURRENT_DATE" => args.Length == 0
+                ? "CURRENT_DATE"
+                : throw new ArgumentException("CURRENT_DATE does not accept arguments"),
+            "CURRENT_TIMESTAMP" => args.Length == 0
+                ? "CURRENT_TIMESTAMP"
+                : throw new ArgumentException("CURRENT_TIMESTAMP does not accept arguments"),
+            "CURRENT_TIME" => args.Length == 0
+                ? "CURRENT_TIME"
+                : throw new ArgumentException("CURRENT_TIME does not accept arguments"),
             "COALESCE" => $"COALESCE({argString})",
             "NULLIF" => $"NULLIF({argString})",
             "POWER" => $"POWER({argString})",
@@ -614,7 +623,8 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private static bool IsGeometryAlias(string propertyName)
         => propertyName.Equals(DatabaseSchema.GeometryColumn, StringComparison.OrdinalIgnoreCase) ||
-           propertyName.Equals("shape", StringComparison.OrdinalIgnoreCase);
+           propertyName.Equals("shape", StringComparison.OrdinalIgnoreCase) ||
+           propertyName.Equals("geometry", StringComparison.OrdinalIgnoreCase);
 
     private string TranslateArrayExpression(FilterExpression expression, LayerDefinition layer)
     {

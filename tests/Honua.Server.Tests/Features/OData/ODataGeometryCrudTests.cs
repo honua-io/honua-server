@@ -37,14 +37,13 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /odata/Features({layerId}) with Point geometry")]
+    [Endpoint("POST /odata/Layers({layerId})/Features with Point geometry")]
     public async Task CreateFeature_WithPointGeometry_ReturnsCreatedWithGeometry()
     {
-        // Create a point geometry as Base64-encoded WKB
-        var pointWkb = CreatePointWkb(-122.0, 37.0);
+        var pointGeometry = CreatePointGeometry(-122.0, 37.0);
         var request = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(pointWkb),
+            Geometry = pointGeometry,
             Attributes = new Dictionary<string, object?>
             {
                 ["name"] = "Test City",
@@ -57,21 +56,21 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(responseContent, ODataJsonContext.Default.ODataFeatureResponse);
-        created.Should().NotBeNull();
-        created!.ObjectId.Should().BeGreaterThan(0);
-        created.Geometry.Should().NotBeNullOrEmpty();
+        using var document = JsonDocument.Parse(responseContent);
+        var created = document.RootElement;
+        created.GetProperty("ObjectId").GetInt64().Should().BeGreaterThan(0);
+        created.GetProperty("Geometry").ValueKind.Should().NotBe(JsonValueKind.Null);
     }
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /odata/Features({layerId}) without geometry")]
+    [Endpoint("POST /odata/Layers({layerId})/Features without geometry")]
     public async Task CreateFeature_WithoutGeometry_ReturnsCreatedWithNullGeometry()
     {
         var request = new ODataFeatureRequest
@@ -87,21 +86,21 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(responseContent, ODataJsonContext.Default.ODataFeatureResponse);
-        created.Should().NotBeNull();
-        created!.ObjectId.Should().BeGreaterThan(0);
-        created.Geometry.Should().BeNullOrEmpty();
+        using var document = JsonDocument.Parse(responseContent);
+        var created = document.RootElement;
+        created.GetProperty("ObjectId").GetInt64().Should().BeGreaterThan(0);
+        created.GetProperty("Geometry").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /odata/Features({layerId}) with attributes only")]
+    [Endpoint("POST /odata/Layers({layerId})/Features with attributes only")]
     public async Task CreateFeature_WithAttributesOnly_ReturnsCreated()
     {
         var request = new ODataFeatureRequest
@@ -115,14 +114,16 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(responseContent, ODataJsonContext.Default.ODataFeatureResponse);
-        created!.Attributes.Should().Contain("Attributes Only City");
+        using var document = JsonDocument.Parse(responseContent);
+        var created = document.RootElement;
+        var createdAttributes = ODataTestHelpers.ParseAttributes(created);
+        createdAttributes.GetProperty("name").GetString().Should().Be("Attributes Only City");
     }
 
     #endregion
@@ -137,7 +138,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         // First create a feature
         var initialRequest = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(CreatePointWkb(-122.0, 37.0)),
+            Geometry = CreatePointGeometry(-122.0, 37.0),
             Attributes = new Dictionary<string, object?>
             {
                 ["name"] = "Moving City"
@@ -146,19 +147,18 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
         var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(createJson, Encoding.UTF8, "application/json"));
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createContent = await createResponse.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(createContent, ODataJsonContext.Default.ODataFeatureResponse);
-        var objectId = created!.ObjectId;
+        using var createDocument = JsonDocument.Parse(createContent);
+        var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
 
         // Now update with new geometry
-        var newPointWkb = CreatePointWkb(-118.0, 34.0);
         var updateRequest = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(newPointWkb)
+            Geometry = CreatePointGeometry(-118.0, 34.0)
         };
 
         var updateJson = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
@@ -172,8 +172,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var updateContent = await updateResponse.Content.ReadAsStringAsync();
-        var updated = JsonSerializer.Deserialize(updateContent, ODataJsonContext.Default.ODataFeatureResponse);
-        updated!.Geometry.Should().NotBeNullOrEmpty();
+        using var updateDocument = JsonDocument.Parse(updateContent);
+        updateDocument.RootElement.GetProperty("Geometry").ValueKind.Should().NotBe(JsonValueKind.Null);
     }
 
     [IntegrationTest]
@@ -184,7 +184,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         // Create a feature with geometry
         var initialRequest = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(CreatePointWkb(-122.0, 37.0)),
+            Geometry = CreatePointGeometry(-122.0, 37.0),
             Attributes = new Dictionary<string, object?>
             {
                 ["name"] = "Original Name"
@@ -193,13 +193,14 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
         var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(createJson, Encoding.UTF8, "application/json"));
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(createContent, ODataJsonContext.Default.ODataFeatureResponse);
-        var objectId = created!.ObjectId;
-        var originalGeometry = created.Geometry;
+        using var createDocument = JsonDocument.Parse(createContent);
+        var createRoot = createDocument.RootElement;
+        var objectId = createRoot.GetProperty("ObjectId").GetInt64();
+        var originalGeometry = createRoot.GetProperty("Geometry").GetRawText();
 
         // Update only attributes
         var updateRequest = new ODataFeatureRequest
@@ -221,9 +222,11 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var updateContent = await updateResponse.Content.ReadAsStringAsync();
-        var updated = JsonSerializer.Deserialize(updateContent, ODataJsonContext.Default.ODataFeatureResponse);
-        updated!.Geometry.Should().Be(originalGeometry); // Geometry should be preserved
-        updated.Attributes.Should().Contain("Updated Name");
+        using var updateDocument = JsonDocument.Parse(updateContent);
+        var updateRoot = updateDocument.RootElement;
+        updateRoot.GetProperty("Geometry").GetRawText().Should().Be(originalGeometry);
+        var updatedAttributes = ODataTestHelpers.ParseAttributes(updateRoot);
+        updatedAttributes.GetProperty("name").GetString().Should().Be("Updated Name");
     }
 
     [IntegrationTest]
@@ -234,7 +237,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         // Create a feature with geometry
         var initialRequest = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(CreatePointWkb(-122.0, 37.0)),
+            Geometry = CreatePointGeometry(-122.0, 37.0),
             Attributes = new Dictionary<string, object?>
             {
                 ["name"] = "Will Lose Geometry"
@@ -243,12 +246,12 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
         var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(createJson, Encoding.UTF8, "application/json"));
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(createContent, ODataJsonContext.Default.ODataFeatureResponse);
-        var objectId = created!.ObjectId;
+        using var createDocument = JsonDocument.Parse(createContent);
+        var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
 
         // Update with explicit null geometry
         var updateRequest = new ODataFeatureRequest
@@ -277,13 +280,13 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Delete)]
-    [Endpoint("DELETE /odata/Features({layerId},{objectId}) with geometry")]
+    [Endpoint("DELETE /odata/Features({layerId},{objectId})")]
     public async Task DeleteFeature_WithGeometry_ReturnsNoContent()
     {
         // Create a feature with geometry
         var initialRequest = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(CreatePointWkb(-122.0, 37.0)),
+            Geometry = CreatePointGeometry(-122.0, 37.0),
             Attributes = new Dictionary<string, object?>
             {
                 ["name"] = "To Be Deleted"
@@ -292,12 +295,12 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
         var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(createJson, Encoding.UTF8, "application/json"));
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(createContent, ODataJsonContext.Default.ODataFeatureResponse);
-        var objectId = created!.ObjectId;
+        using var createDocument = JsonDocument.Parse(createContent);
+        var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
 
         // Delete the feature
         var deleteResponse = await _fixture.Client.DeleteAsync($"/odata/Features({TestLayerId},{objectId})");
@@ -311,7 +314,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Delete)]
-    [Endpoint("DELETE /odata/Features({layerId},{objectId}) without geometry")]
+    [Endpoint("DELETE /odata/Layers({layerId})/Features({objectId})")]
     public async Task DeleteFeature_WithoutGeometry_ReturnsNoContent()
     {
         // Create a feature without geometry
@@ -326,15 +329,15 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
         var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(createJson, Encoding.UTF8, "application/json"));
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(createContent, ODataJsonContext.Default.ODataFeatureResponse);
-        var objectId = created!.ObjectId;
+        using var createDocument = JsonDocument.Parse(createContent);
+        var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
 
         // Delete the feature
-        var deleteResponse = await _fixture.Client.DeleteAsync($"/odata/Features({TestLayerId},{objectId})");
+        var deleteResponse = await _fixture.Client.DeleteAsync($"/odata/Layers({TestLayerId})/Features({objectId})");
 
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
@@ -355,8 +358,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /odata/Features({layerId}) with SRID 3857 layer")]
-    public async Task CreateFeature_OnSrid3857Layer_TransformsGeometry()
+    [Endpoint("POST /odata/Layers({layerId})/Features with SRID 3857 layer")]
+    public async Task CreateFeature_OnSrid3857Layer_MismatchedGeometryCrs_TransformsToLayerSrid()
     {
         // Use the spatial-reference seed with SRID 3857 layers
         var sridFixture = new WebAppFixture();
@@ -365,11 +368,10 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         try
         {
-            // Create with WGS84 point - should be transformed to 3857
-            var pointWkb = CreatePointWkb(-122.4194, 37.7749);
+            // Create with WGS84 point - should be rejected without reprojection
             var request = new ODataFeatureRequest
             {
-                Geometry = Convert.ToBase64String(pointWkb),
+                Geometry = CreatePointGeometry(-122.4194, 37.7749, 4326),
                 Attributes = new Dictionary<string, object?>
                 {
                     ["name"] = "SRID Test Point"
@@ -378,23 +380,25 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
             var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
             var response = await sridFixture.Client.PostAsync(
-                $"/odata/Features({SpatialReferenceTestLayerCatalog.PointLayerId})",
+                $"/odata/Layers({SpatialReferenceTestLayerCatalog.PointLayerId})/Features",
                 new StringContent(json, Encoding.UTF8, "application/json"));
 
             response.StatusCode.Should().Be(HttpStatusCode.Created);
 
             var responseContent = await response.Content.ReadAsStringAsync();
             var created = JsonSerializer.Deserialize(responseContent, ODataJsonContext.Default.ODataFeatureResponse);
-            created!.Geometry.Should().NotBeNullOrEmpty();
+            created.Should().NotBeNull();
+            created!.Geometry.Should().NotBeNull();
+            created.Geometry!.Crs.Should().NotBeNull();
+            created.Geometry.Crs!.Properties!.Name.Should().Be("EPSG:3857");
 
-            // Verify the geometry was stored with correct SRID
-            var storedSrid = await SpatialReferenceTestData.GetGeometrySridAsync(
-                sridFixture.Postgres,
-                sridFixture.CurrentSchema!,
-                created.ObjectId,
-                SpatialReferenceTestLayerCatalog.PointLayerId);
-
-            storedSrid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);
+            using var coordinatesDocument = JsonDocument.Parse(created.Geometry.CoordinatesJson!);
+            var coordinates = coordinatesDocument.RootElement;
+            coordinates.ValueKind.Should().Be(JsonValueKind.Array);
+            var x = coordinates[0].GetDouble();
+            var y = coordinates[1].GetDouble();
+            Math.Abs(x).Should().BeGreaterThan(180);
+            Math.Abs(y).Should().BeGreaterThan(90);
         }
         finally
         {
@@ -408,7 +412,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /odata/Features({layerId}) to nonexistent layer")]
+    [Endpoint("POST /odata/Layers({layerId})/Features to nonexistent layer")]
     public async Task CreateFeature_NonExistentLayer_ReturnsNotFound()
     {
         var request = new ODataFeatureRequest
@@ -421,7 +425,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
         var response = await _fixture.Client.PostAsync(
-            "/odata/Features(99999)",
+            "/odata/Layers(99999)/Features",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -463,7 +467,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         // First create a feature to work with
         var createRequest = new ODataFeatureRequest
         {
-            Geometry = Convert.ToBase64String(CreatePointWkb(-120.0, 36.0)),
+            Geometry = CreatePointGeometry(-120.0, 36.0),
             Attributes = new Dictionary<string, object?>
             {
                 ["name"] = "Batch Test City"
@@ -472,12 +476,12 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         var createJson = JsonSerializer.Serialize(createRequest, ODataJsonContext.Default.ODataFeatureRequest);
         var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(createJson, Encoding.UTF8, "application/json"));
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
-        var created = JsonSerializer.Deserialize(createContent, ODataJsonContext.Default.ODataFeatureResponse);
-        var objectId = created!.ObjectId;
+        using var createDocument = JsonDocument.Parse(createContent);
+        var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
 
         // Create batch with update and then delete
         var batchRequest = new
@@ -521,29 +525,20 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     #region Helper Methods
 
-    /// <summary>
-    /// Creates a WKB representation of a Point geometry.
-    /// WKB format: byte order (1) + type (4 bytes) + x (8 bytes) + y (8 bytes)
-    /// </summary>
-    private static byte[] CreatePointWkb(double x, double y)
+    private static ODataSpatialGeometry CreatePointGeometry(double x, double y, int? srid = null)
     {
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
-
-        // Byte order: little-endian
-        writer.Write((byte)1);
-
-        // Type: Point (1) with SRID flag (0x20000001)
-        writer.Write(0x20000001);
-
-        // SRID: 4326
-        writer.Write(4326);
-
-        // X and Y coordinates
-        writer.Write(x);
-        writer.Write(y);
-
-        return ms.ToArray();
+        return new ODataSpatialGeometry
+        {
+            Type = "Point",
+            CoordinatesJson = FormattableString.Invariant($"[{x},{y}]"),
+            Crs = srid.HasValue
+                ? new ODataSpatialCrs
+                {
+                    Type = "name",
+                    Properties = new ODataSpatialCrsProperties { Name = $"EPSG:{srid.Value}" }
+                }
+                : null
+        };
     }
 
     #endregion

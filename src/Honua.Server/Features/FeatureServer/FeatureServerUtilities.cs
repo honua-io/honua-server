@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -53,8 +54,22 @@ internal static partial class FeatureServerEndpoints
                 "returnDistance",
                 "returnCentroid",
                 "returnDistinctValues",
+                "returnZ",
+                "returnM",
+                "returnTrueCurves",
+                "returnExceededLimitFeatures",
                 "time",
-                "timeRelation"
+                "timeRelation",
+                "geometryPrecision",
+                "maxAllowableOffset",
+                "resultType",
+                "outStatistics",
+                "groupByFieldsForStatistics",
+                "having",
+                "sqlFormat",
+                "gdbVersion",
+                "quantizationParameters",
+                "datumTransformation"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -74,6 +89,7 @@ internal static partial class FeatureServerEndpoints
                 "relationshipId",
                 "outFields",
                 "where",
+                "definitionExpression",
                 "returnGeometry",
                 "resultOffset",
                 "resultRecordCount",
@@ -90,11 +106,35 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
     {
+        const string tokenKey = "FeatureServerQueryTimeoutToken";
+
+        if (context.Items.TryGetValue(tokenKey, out var existing) && existing is CancellationToken cachedToken)
+        {
+            return cachedToken;
+        }
+
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-        var timeout = limits.Query.QueryTimeout;
-        var timeoutCts = new CancellationTokenSource(timeout);
-        var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            context.RequestAborted, timeoutCts.Token);
+        var queryTimeout = limits.Query.QueryTimeout;
+
+        var baseToken = context.RequestAborted;
+        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
+        {
+            baseToken = timeoutToken;
+        }
+
+        if (queryTimeout <= TimeSpan.Zero)
+        {
+            context.Items[tokenKey] = baseToken;
+            return baseToken;
+        }
+
+        var timeoutCts = new CancellationTokenSource(queryTimeout);
+        var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(baseToken, timeoutCts.Token);
+
+        context.Response.RegisterForDispose(timeoutCts);
+        context.Response.RegisterForDispose(combinedCts);
+
+        context.Items[tokenKey] = combinedCts.Token;
         return combinedCts.Token;
     }
 
@@ -103,6 +143,8 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static FeatureServerResponse MapServiceToResponse(ServiceDefinition service, QueryLimits queryLimits)
     {
+        var objectIdField = ResolveServiceObjectIdField(service);
+
         return new FeatureServerResponse
         {
             ServiceName = service.Name,
@@ -114,14 +156,29 @@ internal static partial class FeatureServerEndpoints
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = service.SupportedFormats,
             Capabilities = string.Join(",", service.Capabilities),
-            Fields = [.. service.AllFields.Select(MapFieldInfo)]
+            Fields = [.. service.AllFields.Select(MapFieldInfo)],
+            ObjectIdField = objectIdField
         };
+    }
+
+    private static string ResolveServiceObjectIdField(ServiceDefinition service)
+    {
+        var candidate = service.Layers
+            .Select(layer => layer.PrimaryKeyField?.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return candidate.Length == 1 ? candidate[0]! : "objectid";
     }
 
     /// <summary>
     /// Maps layer definition to layer response
     /// </summary>
-    private static LayerResponse MapLayerToResponse(LayerDefinition layer, QueryLimits queryLimits)
+    private static LayerResponse MapLayerToResponse(
+        LayerDefinition layer,
+        QueryLimits queryLimits,
+        FeatureServerTimeInfo? timeInfo)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
 
@@ -134,10 +191,110 @@ internal static partial class FeatureServerEndpoints
             GeometryType = MapGeometryType(layer.GeometryType),
             SpatialReference = layer.SpatialReference.ToSpatialReferenceInfo(),
             Extent = layer.Extent.HasValue ? MapExtent(layer.Extent.Value) : null,
+            TimeInfo = timeInfo,
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField
         };
+    }
+
+    private static async Task<FeatureServerTimeInfo?> BuildTimeInfoAsync(
+        LayerDefinition layer,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
+        {
+            return null;
+        }
+
+        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
+            layer.Id,
+            startField!.Name,
+            startField.Type,
+            cancellationToken).ConfigureAwait(false);
+
+        TemporalExtentResult? endExtent = null;
+        if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            endExtent = await featureReader.GetTemporalExtentAsync(
+                layer.Id,
+                endField.Name,
+                endField.Type,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var min = startExtent?.Start;
+        var max = endField == null
+            ? startExtent?.End
+            : endExtent?.End ?? endExtent?.Start;
+
+        long? minMs = min?.ToUnixTimeMilliseconds();
+        long? maxMs = max?.ToUnixTimeMilliseconds();
+
+        return new FeatureServerTimeInfo
+        {
+            StartTimeField = startField.Name,
+            EndTimeField = endField?.Name,
+            TrackIdField = layer.Metadata?.TimeInfo?.TrackIdField,
+            TimeExtent = new long?[] { minMs, maxMs }
+        };
+    }
+
+    private static bool TryResolveTemporalFields(
+        LayerDefinition layer,
+        out FieldDefinition? startField,
+        out FieldDefinition? endField)
+    {
+        startField = null;
+        endField = null;
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo != null)
+        {
+            if (string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            {
+                return false;
+            }
+
+            startField = FindTemporalField(layer, timeInfo.StartTimeField);
+            if (startField == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
+            {
+                endField = FindTemporalField(layer, timeInfo.EndTimeField);
+                if (endField == null)
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
+        }
+
+        if (startField == null)
+        {
+            return false;
+        }
+
+        if (endField != null && endField.Type != startField.Type)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
+    {
+        return layer.AttributeFields.FirstOrDefault(field =>
+            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            field.Type is FieldType.DateTime or FieldType.Date);
     }
 
     /// <summary>
@@ -209,7 +366,7 @@ internal static partial class FeatureServerEndpoints
             GeometryType.MultiPoint => "esriGeometryMultipoint",
             GeometryType.MultiLineString => "esriGeometryPolyline",
             GeometryType.MultiPolygon => "esriGeometryPolygon",
-            GeometryType.GeometryCollection => "esriGeometryPolygon",
+            GeometryType.GeometryCollection => "esriGeometryNull",
             GeometryType.None => "esriGeometryNull",
             _ => "esriGeometryNull"
         };

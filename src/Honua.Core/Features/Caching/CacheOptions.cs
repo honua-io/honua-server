@@ -44,6 +44,13 @@ public sealed class CacheOptions
     public int LayerTtlSeconds { get; set; } = TimeConstants.ThirtyMinutes;
 
     /// <summary>
+    /// Time-to-live for cached query responses in seconds.
+    /// Default is 30 seconds for short-lived response caching.
+    /// </summary>
+    [Range(TimeConstants.OneSecond, TimeConstants.OneHour, ErrorMessage = ErrorMessages.RangeValidation.QueryTtlSeconds)]
+    public int QueryTtlSeconds { get; set; } = TimeConstants.ThirtySeconds;
+
+    /// <summary>
     /// Time-to-live for negative cache entries (missing layers/services) in seconds.
     /// Default is 60 seconds to avoid repeated lookups without long-lived false negatives.
     /// </summary>
@@ -104,6 +111,11 @@ public sealed class CacheOptions
     public TimeSpan NegativeTtl => TimeSpan.FromSeconds(NegativeTtlSeconds);
 
     /// <summary>
+    /// Gets the query response TTL as a TimeSpan.
+    /// </summary>
+    public TimeSpan QueryTtl => TimeSpan.FromSeconds(QueryTtlSeconds);
+
+    /// <summary>
     /// Gets the retry interval as a TimeSpan.
     /// </summary>
     public TimeSpan RetryInterval => TimeSpan.FromSeconds(RetryIntervalSeconds);
@@ -133,6 +145,15 @@ public sealed class CacheOptions
     public TimeSpan GetLayerTtlWithJitter()
     {
         return ApplyJitter(LayerTtl);
+    }
+
+    /// <summary>
+    /// Gets the query response TTL with jitter applied to prevent cache stampedes.
+    /// </summary>
+    /// <returns>TTL with random jitter applied</returns>
+    public TimeSpan GetQueryTtlWithJitter()
+    {
+        return ApplyJitter(QueryTtl);
     }
 
     /// <summary>

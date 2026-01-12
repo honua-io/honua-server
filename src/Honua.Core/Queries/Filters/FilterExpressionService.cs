@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Core.Queries.Filters.OData;
 
@@ -14,6 +15,9 @@ public enum FilterLanguage
 {
     /// <summary>OData $filter expressions.</summary>
     OData,
+
+    /// <summary>GeoServices SQL (FeatureServer where clauses).</summary>
+    ArcGisSql,
 
     /// <summary>CQL2 text expressions.</summary>
     Cql2Text,
@@ -158,6 +162,7 @@ public sealed class FilterExpressionService : IFilterExpressionService
             FilterExpression expression = language switch
             {
                 FilterLanguage.OData => new ODataFilterParser().Parse(filter),
+                FilterLanguage.ArcGisSql => new GeoServicesSqlParser().Parse(filter),
                 FilterLanguage.Cql2Text => new Cql2Parser().Parse(filter),
                 FilterLanguage.Cql2Json => new Cql2JsonParser().Parse(filter),
                 _ => throw new NotSupportedException($"Unsupported filter language '{language}'.")

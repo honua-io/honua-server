@@ -11,6 +11,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
+      - HONUA_ADMIN_PASSWORD=cite-admin-password
       - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_tiles;User Id=postgres;Password=cite_password;
       - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_tiles;User Id=postgres;Password=cite_password;
       - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
@@ -76,7 +77,7 @@ services:
           echo 'Waiting for services to be ready...'
           sleep 30
           echo 'Preparing TeamEngine console...'
-          curl -sSL -o /tmp/teamengine-console-6.0.0-RC2-bin.zip https://repo1.maven.org/maven2/org/opengis/cite/teamengine/teamengine-console/6.0.0-RC2/teamengine-console-6.0.0-RC2-bin.zip
+          curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors -L -o /tmp/teamengine-console-6.0.0-RC2-bin.zip https://repo1.maven.org/maven2/org/opengis/cite/teamengine/teamengine-console/6.0.0-RC2/teamengine-console-6.0.0-RC2-bin.zip
           unzip -q /tmp/teamengine-console-6.0.0-RC2-bin.zip -d /tmp/te-console
           mkdir -p /root/te_base/resources/lib /root/te_base/scripts
           mkdir -p /root/te_base/users/cite/logs

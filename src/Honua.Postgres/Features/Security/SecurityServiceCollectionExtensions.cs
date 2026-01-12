@@ -251,29 +251,6 @@ internal static class SecurityServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds HashiCorp Vault secret resolver support.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>Updated service collection for chaining</returns>
-    /// <remarks>
-    /// Vault support is not implemented yet; register a custom resolver when needed.
-    /// </remarks>
-    public static IServiceCollection AddHashiCorpVaultSupport(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        // TODO: Implement HashiCorp Vault resolver
-        // Would require:
-        // 1. VaultSharp or similar Vault client library
-        // 2. Vault server connection configuration
-        // 3. HashiCorpVaultResolver implementation
-        // 4. Registration with CompositeSecretResolver
-
-        return services;
-    }
-
-    /// <summary>
     /// Adds Google Secret Manager secret resolver support.
     /// </summary>
     /// <param name="services">Service collection to configure</param>

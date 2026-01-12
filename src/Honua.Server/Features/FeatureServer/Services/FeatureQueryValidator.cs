@@ -47,6 +47,10 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ReturnExtentOnly = queryParams.ReturnExtentOnly,
             ReturnCentroid = queryParams.ReturnCentroid,
             ReturnDistinctValues = queryParams.ReturnDistinctValues,
+            ReturnZ = queryParams.ReturnZ,
+            ReturnM = queryParams.ReturnM,
+            ReturnTrueCurves = queryParams.ReturnTrueCurves,
+            ReturnExceededLimitFeatures = queryParams.ReturnExceededLimitFeatures,
             F = queryParams.F,
             ResultOffset = pagination.Offset,
             ResultRecordCount = pagination.Limit,
@@ -59,6 +63,16 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             Units = queryParams.Units,
             NearestCount = queryParams.NearestCount,
             ReturnDistance = queryParams.ReturnDistance,
+            GeometryPrecision = queryParams.GeometryPrecision,
+            MaxAllowableOffset = queryParams.MaxAllowableOffset,
+            ResultType = queryParams.ResultType,
+            OutStatistics = queryParams.OutStatistics,
+            GroupByFieldsForStatistics = queryParams.GroupByFieldsForStatistics,
+            Having = queryParams.Having,
+            SqlFormat = queryParams.SqlFormat,
+            GdbVersion = queryParams.GdbVersion,
+            QuantizationParameters = queryParams.QuantizationParameters,
+            DatumTransformation = queryParams.DatumTransformation,
             Time = queryParams.Time,
             TimeRelation = queryParams.TimeRelation,
             ObjectIds = queryParams.ObjectIds
@@ -71,7 +85,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     public RelatedRecordsValidationResult ValidateRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams)
     {
         var paginationResult = _commonQueryValidator.ValidateAndNormalizePagination(
-            null,
+            queryParams.ResultOffset,
             queryParams.ResultRecordCount,
             _featureQueryPagination);
         if (!paginationResult.IsValid)
@@ -79,7 +93,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             return RelatedRecordsValidationResult.Invalid(paginationResult.ErrorMessage ?? "Invalid record count.");
         }
 
-        var recordCount = paginationResult.Value!.Limit;
+        var pagination = paginationResult.Value!;
 
         // Create new validated parameters object
         var validatedParams = new QueryRelatedRecordsParameters
@@ -89,7 +103,8 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             OutFields = queryParams.OutFields,
             ReturnGeometry = queryParams.ReturnGeometry,
             F = queryParams.F,
-            ResultRecordCount = recordCount,
+            ResultOffset = pagination.Offset,
+            ResultRecordCount = pagination.Limit,
             Where = queryParams.Where
         };
 

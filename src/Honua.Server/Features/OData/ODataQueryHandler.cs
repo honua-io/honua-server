@@ -1,11 +1,20 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Diagnostics;
+using System.Text.Json;
+using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
@@ -25,8 +34,12 @@ internal sealed partial class ODataQueryHandler(
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
     private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
+    private readonly IGeometryService _geometryService = dependencies.GeometryService;
+    private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly ODataValidationService _validationService = dependencies.ValidationService;
     private readonly ODataQuerySearchService _querySearchService = dependencies.QuerySearchService;
+    private readonly IResponseCache _responseCache = dependencies.ResponseCache;
+    private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<ODataQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -39,6 +52,7 @@ internal sealed partial class ODataQueryHandler(
         [FromQuery(Name = "$top")] string? top = null,
         [FromQuery(Name = "$skip")] string? skip = null,
         [FromQuery(Name = "$count")] string? count = null,
+        [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -47,6 +61,12 @@ internal sealed partial class ODataQueryHandler(
             if (queryValidation != null)
             {
                 return queryValidation;
+            }
+
+            var formatValidation = ValidateFormat(context, format);
+            if (formatValidation != null)
+            {
+                return formatValidation;
             }
 
             if (!ODataParsingUtilities.TryParseOptionalInt(top, "$top", out var topValue, out var parseError))
@@ -102,12 +122,9 @@ internal sealed partial class ODataQueryHandler(
             layerQuery = layerQuery.Take(pagination.Limit);
 
             // Convert to response format
-            var layerData = layerQuery.Select(l => new Dictionary<string, object?>
-            {
-                ["Id"] = l.Id,
-                ["Name"] = l.Name,
-                ["Description"] = l.Description
-            }).ToArray();
+            var layerData = layerQuery
+                .Select(ODataUtilityService.BuildLayerPayload)
+                .ToArray();
 
             // Apply field selection if specified
             object[] result = string.IsNullOrWhiteSpace(select)
@@ -115,11 +132,149 @@ internal sealed partial class ODataQueryHandler(
                 : _querySearchService.ApplyFieldSelection(layerData, select);
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-            var response = ODataUtilityService.CreateODataResponse(baseUrl, "Layers", result, totalCount);
+            var response = ODataUtilityService.CreateODataResponse(baseUrl, "Layers", result, totalCount, select: select);
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(response, ODataJsonContext.Default.ODataResponse,
                 contentType: ODataUtilityService.GetODataContentType());
+        }
+        catch (OperationCanceledException)
+            when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.InvalidLayersQuery(_logger, ex);
+            var safeDetail = ExceptionMapper.Map(ex).Detail;
+            return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
+        }
+        catch (Exception ex)
+        {
+            Log.LayersQueryFailed(_logger, ex);
+            return ODataUtilityService.CreateODataError(context, "InternalServerError",
+                "An error occurred processing the OData request", 500);
+        }
+    }
+
+    /// <summary>
+    /// Handles OData single layer request
+    /// </summary>
+    public async Task<IResult> HandleGetLayerAsync(
+        HttpContext context,
+        int layerId,
+        [FromQuery(Name = "$select")] string? select = null,
+        [FromQuery(Name = "$format")] string? format = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Layer);
+            if (queryValidation != null)
+            {
+                return queryValidation;
+            }
+
+            var formatValidation = ValidateFormat(context, format);
+            if (formatValidation != null)
+            {
+                return formatValidation;
+            }
+
+            var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
+            if (!layerResult.IsValid)
+            {
+                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
+                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
+                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
+                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
+            }
+
+            var layer = layerResult.Resource!;
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
+            var payload = ODataUtilityService.BuildLayerPayload(layer);
+            if (!string.IsNullOrWhiteSpace(select))
+            {
+                var selected = _querySearchService.ApplyFieldSelection(new[] { payload }, select);
+                payload = selected.Length > 0 && selected[0] is Dictionary<string, object?> selectedPayload
+                    ? selectedPayload
+                    : payload;
+            }
+
+            payload["@odata.context"] = ODataUtilityService.BuildContextUrl(
+                ODataUtilityService.GetBaseUrl(context.Request),
+                "Layers",
+                isSingle: true,
+                select: select);
+
+            ODataUtilityService.SetODataHeaders(context);
+            return Results.Json(payload, ODataJsonContext.Default.DictionaryStringObject,
+                contentType: ODataUtilityService.GetODataContentType());
+        }
+        catch (OperationCanceledException)
+            when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.InvalidLayersQuery(_logger, ex);
+            var safeDetail = ExceptionMapper.Map(ex).Detail;
+            return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
+        }
+        catch (Exception ex)
+        {
+            Log.LayersQueryFailed(_logger, ex);
+            return ODataUtilityService.CreateODataError(context, "InternalServerError",
+                "An error occurred processing the OData request", 500);
+        }
+    }
+
+    /// <summary>
+    /// Handles OData layers $count request
+    /// </summary>
+    public async Task<IResult> HandleGetLayersCountAsync(
+        HttpContext context,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$format")] string? format = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.LayersCount);
+            if (queryValidation != null)
+            {
+                return queryValidation;
+            }
+
+            var formatValidation = ValidateFormat(context, format);
+            if (formatValidation != null)
+            {
+                return formatValidation;
+            }
+
+            var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+            var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
+            var visibleLayers = layers
+                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+                .ToArray();
+
+            IEnumerable<LayerDefinition> layerQuery = visibleLayers;
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                layerQuery = _querySearchService.ApplyBasicFilter(layerQuery, filter);
+            }
+
+            var count = layerQuery.LongCount();
+
+            ODataUtilityService.SetODataHeaders(context);
+            return Results.Text(count.ToString(CultureInfo.InvariantCulture), "text/plain");
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -190,6 +345,10 @@ internal sealed partial class ODataQueryHandler(
                 return accessError;
             }
 
+            var activity = Activity.Current;
+            activity?.SetTag("honua.protocol", "odata");
+            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
+
             // Build feature query using query service
             var featureQuery = _querySearchService.BuildFeatureQuery(
                 filter, orderby, pagination.Limit,
@@ -198,6 +357,28 @@ internal sealed partial class ODataQueryHandler(
             if (queryError != null)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
+            }
+
+            var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions) &&
+                           string.IsNullOrWhiteSpace(expand);
+            var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
+            if (canCache && cacheTtl <= TimeSpan.Zero)
+            {
+                canCache = false;
+            }
+
+            var cacheKey = canCache
+                ? ResponseCacheUtilities.BuildODataLayerKey(layerId, context.Request)
+                : null;
+
+            if (canCache && cacheKey != null)
+            {
+                var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, effectiveToken);
+                if (cached != null)
+                {
+                    ODataUtilityService.SetODataHeaders(context);
+                    return Results.Bytes(cached.Payload, cached.ContentType);
+                }
             }
 
             // Execute query
@@ -211,16 +392,19 @@ internal sealed partial class ODataQueryHandler(
                     expand, layer, queryResult.Items.Select(f => f.Id).ToArray(), effectiveToken);
             }
 
+            var layerSrid = layer.SpatialReference.ToSrid();
+            var axisOrder = await ResolveAxisOrderAsync(layerSrid, effectiveToken);
+
             // Convert features to OData format
             var featuresData = queryResult.Items.Select(f =>
             {
-                var dict = new Dictionary<string, object?>
-                {
-                    ["ObjectId"] = f.Id,
-                    ["LayerId"] = layerId,
-                    ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
-                    ["Attributes"] = ODataAttributeSerializer.Serialize(f.Attributes)
-                };
+                var attributes = ODataAttributeSerializer.Serialize(f.Attributes);
+                var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                    _geometryService,
+                    f.Geometry,
+                    layerSrid,
+                    axisOrder);
+                var dict = ODataUtilityService.BuildFeaturePayload(layerId, f, geometry, attributes);
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))
@@ -246,19 +430,27 @@ internal sealed partial class ODataQueryHandler(
             if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, (int)queryResult.TotalCount, pagination.Limit))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
-                nextLink = ODataUtilityService.GenerateNextLink(context.Request, layerId, nextSkip, pagination.Limit,
+                nextLink = ODataUtilityService.GenerateNextLink(context.Request, nextSkip, pagination.Limit,
                     filter, select, orderby, count);
             }
 
             var response = new ODataResponse
             {
-                Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features"),
+                Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand),
                 Count = count == true ? queryResult.TotalCount : null,
                 NextLink = nextLink,
                 Value = result
             };
 
             ODataUtilityService.SetODataHeaders(context);
+            if (canCache && cacheKey != null)
+            {
+                var contentType = ODataUtilityService.GetODataContentType();
+                var payload = JsonSerializer.SerializeToUtf8Bytes(response, ODataJsonContext.Default.ODataResponse);
+                await _responseCache.SetAsync(cacheKey, new CachedResponse(payload, contentType), cacheTtl, effectiveToken);
+                return Results.Bytes(payload, contentType);
+            }
+
             return Results.Json(response, ODataJsonContext.Default.ODataResponse,
                 contentType: ODataUtilityService.GetODataContentType());
         }
@@ -295,6 +487,25 @@ internal sealed partial class ODataQueryHandler(
         }
 
         return null;
+    }
+
+    private IResult? ValidateFormat(HttpContext context, string? format)
+    {
+        var validation = _validationService.ValidateFormat(format, ODataUtilityService.GetAllowedFormats());
+        if (!validation.IsValid)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "InvalidQueryOption",
+                validation.ErrorMessage ?? "Invalid format parameter.");
+        }
+
+        return null;
+    }
+
+    private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)
+    {
+        return ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken);
     }
 
 

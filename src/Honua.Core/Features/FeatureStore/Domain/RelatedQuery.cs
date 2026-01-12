@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -27,6 +28,11 @@ public readonly record struct RelatedQuery
     public string? Where { get; init; }
 
     /// <summary>
+    /// Translated SQL filter fragment for related records.
+    /// </summary>
+    public SqlFragment? SqlFilter { get; init; }
+
+    /// <summary>
     /// Fields to return from related records (null means all fields)
     /// </summary>
     public ImmutableArray<string>? OutFields { get; init; }
@@ -35,6 +41,11 @@ public readonly record struct RelatedQuery
     /// Maximum number of related records to return per origin object
     /// </summary>
     public int? Limit { get; init; }
+
+    /// <summary>
+    /// Number of related records to skip for pagination
+    /// </summary>
+    public int? Offset { get; init; }
 
     /// <summary>
     /// Creates a simple related query for specific object IDs

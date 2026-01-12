@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
@@ -58,6 +59,14 @@ internal interface IFeatureQueryBuilder
         int layerId,
         FeatureQuery? query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a temporal extent query for calculating min/max of a temporal field.
+    /// </summary>
+    ParameterizedQuery BuildTemporalExtentQuery(
+        int layerId,
+        string fieldName,
+        FieldType fieldType);
 
     /// <summary>
     /// Builds an MVT tile query

@@ -15,6 +15,8 @@ public sealed record ResiliencePolicyOptions
     /// <inheritdoc/>
     public double BackoffExponent { get; init; } = 2.0;
     /// <inheritdoc/>
+    public double JitterPercentage { get; init; }
+    /// <inheritdoc/>
     public int CircuitBreakerFailures { get; init; } = 5;
     /// <inheritdoc/>
     public TimeSpan CircuitBreakDuration { get; init; } = TimeSpan.FromSeconds(30);
@@ -26,6 +28,17 @@ public sealed record ResiliencePolicyOptions
     public TimeSpan GetDelay(int attempt)
     {
         var delayMs = BaseDelay.TotalMilliseconds * Math.Pow(BackoffExponent, attempt);
+        if (JitterPercentage > 0)
+        {
+            var jitterMultiplier = 1.0 + (Random.Shared.NextDouble() * 2 - 1) * JitterPercentage;
+            delayMs *= jitterMultiplier;
+        }
+
+        if (delayMs < 0)
+        {
+            delayMs = 0;
+        }
+
         return TimeSpan.FromMilliseconds(delayMs);
     }
 

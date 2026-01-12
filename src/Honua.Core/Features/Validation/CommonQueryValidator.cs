@@ -130,7 +130,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         }
 
         ReadOnlySpan<char> bboxSpan = bboxValue.AsSpan();
-        Span<double> coords = stackalloc double[4];
+        Span<double> coords = stackalloc double[6];
         var count = 0;
         foreach (var range in bboxSpan.Split(','))
         {
@@ -155,7 +155,12 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
             count++;
         }
 
-        if (count != coords.Length)
+        if (count == 6)
+        {
+            return ValidationResult<BoundingBox>.Failure("3D bounding boxes are not supported.");
+        }
+
+        if (count != 4)
         {
             return ValidationResult<BoundingBox>.Failure(
                 "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");

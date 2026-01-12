@@ -1,13 +1,13 @@
 # OGC API Features CITE Conformance Test Results
 
-**Execution Date**: Tue Jan  6 16:45:54 HST 2026
+**Execution Date**: Sun Jan 11 19:02:55 HST 2026
 **Profile**: full
-**Honua Server Version**: 2731bff
+**Honua Server Version**: 6b7e693
 
 ## Test Summary
 
-- **Total Tests**: 131
-- **Passed**: 131
+- **Total Tests**: 137
+- **Passed**: 137
 - **Failed**: 0
 - **Skipped**: 0
 - **CantTell**: 0
@@ -21,10 +21,21 @@
 
 ## Conformance Classes Tested
 
+**Part 1 - Core:**
 - Core (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core)
 - OpenAPI 3.0 (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30)
 - HTML (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html)
 - GeoJSON (http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson)
+
+**Part 2 - Coordinate Reference Systems:**
+- CRS (http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs)
+
+**Part 3 - Filtering:**
+- Filter (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter)
+- Features Filter (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter)
+- Simple CQL (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/simple-cql)
+- CQL Text (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/cql-text)
+- Queryables (http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables)
 
 ## Results
 
@@ -262,6 +273,123 @@ cite-results/cite-session-20260107-024547/log.xml
 cite-results/cite-session-20260107-024547/report_logs.xml
 cite-results/cite-session-20260107-024547/sources.xml
 cite-results/cite-session-20260107-024547/testng/e3e3913a-7898-4d2c-9933-6bcf631c2b0a/testng-results.xml
+cite-results/cite-session-20260110-184347/html/index.html
+cite-results/cite-session-20260110-184347/html/navigation.html
+cite-results/cite-session-20260110-184347/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260110-184347/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260110-184347/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260110-184347/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260110-184347/html/overview.html
+cite-results/cite-session-20260110-184347/html/reporterOutput.html
+cite-results/cite-session-20260110-184347/index.xml
+cite-results/cite-session-20260110-184347/log.xml
+cite-results/cite-session-20260110-184347/report_logs.xml
+cite-results/cite-session-20260110-184347/sources.xml
+cite-results/cite-session-20260110-184347/testng/d0d4c310-e83d-4bdf-934f-12fa35cbd620/testng-results.xml
+cite-results/cite-session-20260110-190305/html/index.html
+cite-results/cite-session-20260110-190305/html/navigation.html
+cite-results/cite-session-20260110-190305/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260110-190305/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260110-190305/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260110-190305/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260110-190305/html/overview.html
+cite-results/cite-session-20260110-190305/html/reporterOutput.html
+cite-results/cite-session-20260110-190305/index.xml
+cite-results/cite-session-20260110-190305/log.xml
+cite-results/cite-session-20260110-190305/report_logs.xml
+cite-results/cite-session-20260110-190305/sources.xml
+cite-results/cite-session-20260110-190305/testng/12dd01b5-9492-4535-bd2e-c64ce96c84f5/testng-results.xml
+cite-results/cite-session-20260110-193646/html/index.html
+cite-results/cite-session-20260110-193646/html/navigation.html
+cite-results/cite-session-20260110-193646/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260110-193646/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260110-193646/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260110-193646/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260110-193646/html/overview.html
+cite-results/cite-session-20260110-193646/html/reporterOutput.html
+cite-results/cite-session-20260110-193646/index.xml
+cite-results/cite-session-20260110-193646/log.xml
+cite-results/cite-session-20260110-193646/report_logs.xml
+cite-results/cite-session-20260110-193646/sources.xml
+cite-results/cite-session-20260110-193646/testng/31f9e11d-de9b-4ad6-aa4e-497689e48740/testng-results.xml
+cite-results/cite-session-20260110-202904/html/index.html
+cite-results/cite-session-20260110-202904/html/navigation.html
+cite-results/cite-session-20260110-202904/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260110-202904/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260110-202904/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260110-202904/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260110-202904/html/overview.html
+cite-results/cite-session-20260110-202904/html/reporterOutput.html
+cite-results/cite-session-20260110-202904/index.xml
+cite-results/cite-session-20260110-202904/log.xml
+cite-results/cite-session-20260110-202904/report_logs.xml
+cite-results/cite-session-20260110-202904/sources.xml
+cite-results/cite-session-20260110-202904/testng/c9be7e12-4ef4-4dbd-9881-61db7ead5367/testng-results.xml
+cite-results/cite-session-20260111-054729/html/index.html
+cite-results/cite-session-20260111-054729/html/navigation.html
+cite-results/cite-session-20260111-054729/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260111-054729/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260111-054729/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260111-054729/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260111-054729/html/overview.html
+cite-results/cite-session-20260111-054729/html/reporterOutput.html
+cite-results/cite-session-20260111-054729/index.xml
+cite-results/cite-session-20260111-054729/log.xml
+cite-results/cite-session-20260111-054729/report_logs.xml
+cite-results/cite-session-20260111-054729/sources.xml
+cite-results/cite-session-20260111-054729/testng/811b27b5-e79e-4acf-91a9-d1ec35c3d805/testng-results.xml
+cite-results/cite-session-20260111-060102/html/index.html
+cite-results/cite-session-20260111-060102/html/navigation.html
+cite-results/cite-session-20260111-060102/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260111-060102/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260111-060102/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260111-060102/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260111-060102/html/overview.html
+cite-results/cite-session-20260111-060102/html/reporterOutput.html
+cite-results/cite-session-20260111-060102/index.xml
+cite-results/cite-session-20260111-060102/log.xml
+cite-results/cite-session-20260111-060102/report_logs.xml
+cite-results/cite-session-20260111-060102/sources.xml
+cite-results/cite-session-20260111-060102/testng/93e5eb4c-f5b7-4c00-a202-5efe90251e87/testng-results.xml
+cite-results/cite-session-20260111-072134/html/index.html
+cite-results/cite-session-20260111-072134/html/navigation.html
+cite-results/cite-session-20260111-072134/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260111-072134/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260111-072134/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260111-072134/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260111-072134/html/overview.html
+cite-results/cite-session-20260111-072134/html/reporterOutput.html
+cite-results/cite-session-20260111-072134/index.xml
+cite-results/cite-session-20260111-072134/log.xml
+cite-results/cite-session-20260111-072134/report_logs.xml
+cite-results/cite-session-20260111-072134/sources.xml
+cite-results/cite-session-20260111-072134/testng/85ecd27c-2be8-415c-b96f-e758d8f05936/testng-results.xml
+cite-results/cite-session-20260112-042838/html/index.html
+cite-results/cite-session-20260112-042838/html/navigation.html
+cite-results/cite-session-20260112-042838/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260112-042838/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260112-042838/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260112-042838/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260112-042838/html/overview.html
+cite-results/cite-session-20260112-042838/html/reporterOutput.html
+cite-results/cite-session-20260112-042838/index.xml
+cite-results/cite-session-20260112-042838/log.xml
+cite-results/cite-session-20260112-042838/report_logs.xml
+cite-results/cite-session-20260112-042838/sources.xml
+cite-results/cite-session-20260112-042838/testng/6b7497e9-6025-4a6f-815b-3fe5d60c3d2c/testng-results.xml
+cite-results/cite-session-20260112-050247/html/index.html
+cite-results/cite-session-20260112-050247/html/navigation.html
+cite-results/cite-session-20260112-050247/html/ogcapi-features-1.0-1.9.html
+cite-results/cite-session-20260112-050247/html/ogcapi-features-1.0-1.9_Coordinate Reference Systems by Reference.html
+cite-results/cite-session-20260112-050247/html/ogcapi-features-1.0-1.9_Core.html
+cite-results/cite-session-20260112-050247/html/ogcapi-features-1.0-1.9_groups.html
+cite-results/cite-session-20260112-050247/html/overview.html
+cite-results/cite-session-20260112-050247/html/reporterOutput.html
+cite-results/cite-session-20260112-050247/index.xml
+cite-results/cite-session-20260112-050247/log.xml
+cite-results/cite-session-20260112-050247/report_logs.xml
+cite-results/cite-session-20260112-050247/sources.xml
+cite-results/cite-session-20260112-050247/testng/ef0d8ef9-7562-4694-bfed-2dbac4fd0681/testng-results.xml
 
 ---
-Generated by: scripts/run-cite-tests.sh
+Generated by: ./scripts/run-cite-tests.sh

@@ -17,6 +17,8 @@ internal static class CoreEndpoints
 {
     private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _openApiCache =
         new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan LandingPageCacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan ConformanceCacheDuration = TimeSpan.FromHours(1);
 
     /// <summary>
     /// Maps core metadata endpoints for OGC API Features
@@ -77,6 +79,7 @@ internal static class CoreEndpoints
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/features";
+        EnsureCacheControl(context, LandingPageCacheDuration);
 
         var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
             .ToBuilder();
@@ -113,6 +116,7 @@ internal static class CoreEndpoints
         {
             Title = "Honua OGC API Features",
             Description = "OGC API Features implementation for geospatial data access",
+            Supports3d = false,
             Links = links.ToImmutable()
         };
 
@@ -135,6 +139,8 @@ internal static class CoreEndpoints
             return CreateFormatError(context, formatError);
         }
 
+        EnsureCacheControl(context, ConformanceCacheDuration);
+
         var conformance = new ConformanceDeclaration
         {
             ConformsTo = ImmutableArray.Create(
@@ -148,10 +154,6 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
                 // OGC API Features Part 3 - Filtering
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/simple-cql",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/cql-text",
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
 
                 // OGC API Common
@@ -170,6 +172,17 @@ internal static class CoreEndpoints
         };
 
         return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
+    }
+
+    private static void EnsureCacheControl(HttpContext context, TimeSpan maxAge)
+    {
+        if (context.Response.Headers.ContainsKey("Cache-Control"))
+        {
+            return;
+        }
+
+        var maxAgeSeconds = (int)Math.Max(0, maxAge.TotalSeconds);
+        context.Response.Headers.CacheControl = $"public, max-age={maxAgeSeconds}";
     }
 
     /// <summary>

@@ -152,6 +152,8 @@ internal sealed class ConfigurationDocumentationService
                     "Service metadata cache TTL in seconds", 300, opts.ServiceTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:LayerTtlSeconds", "Cache__LayerTtlSeconds", "integer",
                     "Layer metadata cache TTL in seconds", 300, opts.LayerTtlSeconds, "Range: 1-86400"),
+                BuildPropertyWithCurrent("Cache:QueryTtlSeconds", "Cache__QueryTtlSeconds", "integer",
+                    "Query response cache TTL in seconds", 30, opts.QueryTtlSeconds, "Range: 1-3600"),
                 BuildPropertyWithCurrent("Cache:NegativeTtlSeconds", "Cache__NegativeTtlSeconds", "integer",
                     "Negative cache TTL in seconds for missing layers/services", 30, opts.NegativeTtlSeconds, "Range: 1-3600"),
                 BuildPropertyWithCurrent("Cache:JitterPercentage", "Cache__JitterPercentage", "number",
@@ -195,7 +197,7 @@ internal sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildProperty("FileStorage:Provider", "FileStorage__Provider", "string",
-                    "Storage provider (Local, AwsS3, AzureBlob, GoogleCloudStorage)",
+                    "Storage provider (Local, AwsS3, AzureBlob)",
                     CloudStorageProvider.Local.ToString()),
                 BuildProperty("FileStorage:DefaultTimeToLive", "FileStorage__DefaultTimeToLive", "timespan",
                     "Default time-to-live for temporary files (HH:MM:SS)", defaults.DefaultTimeToLive),
@@ -232,16 +234,7 @@ internal sealed class ConfigurationDocumentationService
                 BuildProperty("FileStorage:AzureBlob:ContainerName", "FileStorage__AzureBlob__ContainerName", "string",
                     "Azure Blob container name (required when Provider=AzureBlob)", null, validation: "Required when Provider=AzureBlob"),
                 BuildProperty("FileStorage:AzureBlob:BlobPrefix", "FileStorage__AzureBlob__BlobPrefix", "string",
-                    "Optional blob prefix for stored objects", null),
-
-                BuildProperty("FileStorage:GoogleCloudStorage:BucketName", "FileStorage__GoogleCloudStorage__BucketName", "string",
-                    "GCS bucket name (required when Provider=GoogleCloudStorage)", null, validation: "Required when Provider=GoogleCloudStorage"),
-                BuildProperty("FileStorage:GoogleCloudStorage:ProjectId", "FileStorage__GoogleCloudStorage__ProjectId", "string",
-                    "GCS project id (required when Provider=GoogleCloudStorage)", null, validation: "Required when Provider=GoogleCloudStorage"),
-                BuildProperty("FileStorage:GoogleCloudStorage:ObjectPrefix", "FileStorage__GoogleCloudStorage__ObjectPrefix", "string",
-                    "Optional object prefix for stored files", null),
-                BuildProperty("FileStorage:GoogleCloudStorage:CredentialsPath", "FileStorage__GoogleCloudStorage__CredentialsPath", "string",
-                    "Path to GCS service account credentials JSON", null, isSensitive: true)
+                    "Optional blob prefix for stored objects", null)
             ]
         };
     }
@@ -638,6 +631,7 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
             new() { Name = "Cache__DefaultTtlSeconds", ConfigPath = "Cache", Description = "Default cache TTL", Default = "300", Example = "600" },
+            new() { Name = "Cache__QueryTtlSeconds", ConfigPath = "Cache", Description = "Query response cache TTL", Default = "30", Example = "60" },
             new() { Name = "Cache__NegativeTtlSeconds", ConfigPath = "Cache", Description = "Negative cache TTL for missing resources", Default = "30", Example = "30" },
             new() { Name = "Cache__JitterPercentage", ConfigPath = "Cache", Description = "TTL jitter percentage", Default = "0.2", Example = "0.1" },
             new() { Name = "Cache__EnableFallback", ConfigPath = "Cache", Description = "Use in-memory fallback", Default = "true", Example = "false" },
@@ -646,7 +640,7 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "Deployment__Mode", ConfigPath = "Deployment", Description = "Deployment mode (SingleInstance or MultiNode)", Default = "SingleInstance", Example = "MultiNode" },
 
             // File storage
-            new() { Name = "FileStorage__Provider", ConfigPath = "FileStorage", Description = "Storage provider (Local, AwsS3, AzureBlob, GoogleCloudStorage)", Default = "Local", Example = "AwsS3" },
+            new() { Name = "FileStorage__Provider", ConfigPath = "FileStorage", Description = "Storage provider (Local, AwsS3, AzureBlob)", Default = "Local", Example = "AwsS3" },
             new() { Name = "HONUA_STORAGE_PROVIDER", ConfigPath = "FileStorage", Description = "Storage provider override (env alias)", Required = false, Example = "AzureBlob" },
             new() { Name = "FileStorage__LocalStorage__BasePath", ConfigPath = "FileStorage", Description = "Local storage base path", Required = false, Example = "/var/lib/honua/storage" },
             new() { Name = "FileStorage__AwsS3__BucketName", ConfigPath = "FileStorage", Description = "AWS S3 bucket name", Required = false, Example = "honua-prod" },
@@ -654,8 +648,6 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "FileStorage__AwsS3__ServiceUrl", ConfigPath = "FileStorage", Description = "S3-compatible service URL (Localstack/MinIO)", Required = false, Example = "http://localhost:4566" },
             new() { Name = "FileStorage__AwsS3__ForcePathStyle", ConfigPath = "FileStorage", Description = "Force path-style S3 addressing", Required = false, Example = "true" },
             new() { Name = "FileStorage__AzureBlob__ContainerName", ConfigPath = "FileStorage", Description = "Azure Blob container name", Required = false, Example = "honua-attachments" },
-            new() { Name = "FileStorage__GoogleCloudStorage__BucketName", ConfigPath = "FileStorage", Description = "GCS bucket name", Required = false, Example = "honua-prod" },
-            new() { Name = "FileStorage__GoogleCloudStorage__ProjectId", ConfigPath = "FileStorage", Description = "GCS project id", Required = false, Example = "honua-prod" },
 
             // Key limits
             new() { Name = "Limits__Query__MaxRecordCount", ConfigPath = "Limits.Query", Description = "Max features per query", Default = "2000", Example = "5000" },
@@ -673,7 +665,6 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "FileStorage__AwsS3__AccessKeyId", ConfigPath = "FileStorage", Description = "AWS S3 access key id", Required = false, Example = "env:HONUA_S3_KEY_ID" },
             new() { Name = "FileStorage__AwsS3__SecretAccessKey", ConfigPath = "FileStorage", Description = "AWS S3 secret access key", Required = false, Example = "env:HONUA_S3_SECRET" },
             new() { Name = "FileStorage__AzureBlob__ConnectionString", ConfigPath = "FileStorage", Description = "Azure Blob connection string", Required = false, Example = "env:HONUA_AZURE_BLOB_CONN" },
-            new() { Name = "FileStorage__GoogleCloudStorage__CredentialsPath", ConfigPath = "FileStorage", Description = "GCS credentials path", Required = false, Example = "env:HONUA_GCS_CREDENTIALS_PATH" },
 
             // Monitoring secrets
             new() { Name = "Monitoring__IntelligentAlerting__NotificationChannels__Email__Password", ConfigPath = "Monitoring", Description = "SMTP password", Required = false, Example = "env:HONUA_SMTP_PASSWORD" },

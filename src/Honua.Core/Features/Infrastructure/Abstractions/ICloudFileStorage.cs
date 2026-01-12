@@ -6,9 +6,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 namespace Honua.Core.Features.Infrastructure.Abstractions;
 
 /// <summary>
-/// Abstract cloud file storage provider supporting AWS S3, Azure Blob Storage,
-/// and Google Cloud Storage for temporary file storage during geospatial data
-/// upload and import processing.
+/// Abstract cloud file storage provider supporting AWS S3 and Azure Blob Storage
+/// for temporary file storage during geospatial data upload and import processing.
 /// </summary>
 public interface ICloudFileStorage
 {

@@ -118,7 +118,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
             {
                 Id = "create-1",
                 Method = "POST",
-                Url = $"Features({TestLayerId})",
+                Url = $"Layers({TestLayerId})/Features",
                 Body = new Dictionary<string, object?>
                 {
                     ["Attributes"] = new Dictionary<string, object?>
@@ -266,7 +266,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
                 {
                     Id = "create-1",
                     Method = "POST",
-                    Url = $"Features({TestLayerId})",
+                    Url = $"Layers({TestLayerId})/Features",
                     AtomicityGroup = "group-1",
                     Body = new Dictionary<string, object?>
                     {
@@ -589,12 +589,9 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         foreach (var value in values.EnumerateArray())
         {
-            var attributesJson = value.GetProperty("Attributes").GetString();
-            attributesJson.Should().NotBeNullOrEmpty();
-
-            using var attributesDoc = JsonDocument.Parse(attributesJson!);
-            var name = attributesDoc.RootElement.GetProperty("name").GetString() ?? string.Empty;
-            var state = attributesDoc.RootElement.GetProperty("state").GetString() ?? string.Empty;
+            var attributes = ODataTestHelpers.ParseAttributes(value);
+            var name = attributes.GetProperty("name").GetString() ?? string.Empty;
+            var state = attributes.GetProperty("state").GetString() ?? string.Empty;
 
             name.Should().Contain("San");
             state.Should().Be("California");
@@ -656,11 +653,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         foreach (var value in values.EnumerateArray())
         {
-            var attributesJson = value.GetProperty("Attributes").GetString();
-            attributesJson.Should().NotBeNullOrEmpty();
-
-            using var attributesDoc = JsonDocument.Parse(attributesJson!);
-            var name = attributesDoc.RootElement.GetProperty("name").GetString() ?? string.Empty;
+            var attributes = ODataTestHelpers.ParseAttributes(value);
+            var name = attributes.GetProperty("name").GetString() ?? string.Empty;
             name.Contains("San", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
         }
     }
@@ -767,11 +761,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         var landmarkNames = new List<string>();
         foreach (var landmark in landmarks.EnumerateArray())
         {
-            var attributesJson = landmark.GetProperty("Attributes").GetString();
-            attributesJson.Should().NotBeNullOrEmpty();
-
-            using var attributesDoc = JsonDocument.Parse(attributesJson!);
-            var name = attributesDoc.RootElement.GetProperty("name").GetString();
+            var attributes = ODataTestHelpers.ParseAttributes(landmark);
+            var name = attributes.GetProperty("name").GetString();
             if (!string.IsNullOrWhiteSpace(name))
             {
                 landmarkNames.Add(name);

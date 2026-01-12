@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
@@ -18,10 +19,12 @@ namespace Honua.Server.Features.OData;
 internal sealed partial class ODataBatchOperationHandler(
     ODataBatchDependencies batchDependencies,
     ODataValidationService validationService,
+    IETagService etagService,
     ILogger<ODataBatchOperationHandler> logger)
 {
     private readonly ODataBatchDependencies _batchDependencies = batchDependencies ?? throw new ArgumentNullException(nameof(batchDependencies));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
+    private readonly IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
     private readonly ILogger<ODataBatchOperationHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -70,7 +73,7 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             // Process the batch
-            var handler = new ODataBatchHandler(_batchDependencies, _logger);
+            var handler = new ODataBatchHandler(_batchDependencies, _etagService, _logger);
             var response = await handler.ProcessBatchAsync(batchRequest, baseUrl, effectiveToken);
 
             // Handle cache invalidation for mutated layers
@@ -104,7 +107,7 @@ internal sealed partial class ODataBatchOperationHandler(
 
         foreach (var request in batchRequest.Requests)
         {
-            if (!TryParseLayerId(request.Url, out var layerId))
+            if (!TryResolveLayerId(request, out var layerId))
             {
                 continue;
             }
@@ -120,7 +123,8 @@ internal sealed partial class ODataBatchOperationHandler(
                 continue;
             }
 
-            var decision = AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null);
+            var scope = IsMutationMethod(request.Method) ? AccessScope.Write : AccessScope.Read;
+            var decision = AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope: scope);
             if (decision.IsAllowed)
             {
                 continue;
@@ -204,7 +208,7 @@ internal sealed partial class ODataBatchOperationHandler(
                 continue;
             }
 
-            if (TryParseLayerId(request.Url, out var layerId))
+            if (TryResolveLayerId(request, out var layerId))
             {
                 layerIds.Add(layerId);
             }
@@ -226,40 +230,36 @@ internal sealed partial class ODataBatchOperationHandler(
     }
 
     /// <summary>
-    /// Attempts to parse layer ID from OData URL
+    /// Attempts to resolve layer ID from an OData batch request
     /// </summary>
-    private static bool TryParseLayerId(string url, out int layerId)
+    private static bool TryResolveLayerId(ODataBatchRequestItem request, out int layerId)
     {
         layerId = default;
 
-        if (string.IsNullOrWhiteSpace(url))
+        if (!ODataPathParser.TryParse(request.Url, out var parsed, out _))
         {
             return false;
         }
 
-        var trimmed = url.Trim().TrimStart('/');
-        if (trimmed.StartsWith("odata/", StringComparison.OrdinalIgnoreCase))
+        if (parsed.LayerId.HasValue)
         {
-            trimmed = trimmed["odata/".Length..];
+            layerId = parsed.LayerId.Value;
+            return true;
         }
 
-        if (!trimmed.StartsWith("Features(", StringComparison.OrdinalIgnoreCase))
+        if (request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) && request.Body != null)
         {
-            return false;
+            if (ODataFeaturePayloadParser.TryParse(request.Body, out var payload, out _))
+            {
+                if (payload.LayerId.HasValue)
+                {
+                    layerId = payload.LayerId.Value;
+                    return true;
+                }
+            }
         }
 
-        var open = trimmed.IndexOf('(');
-        var close = trimmed.IndexOf(')');
-        if (open < 0 || close <= open + 1)
-        {
-            return false;
-        }
-
-        var inner = trimmed.Substring(open + 1, close - open - 1);
-        var commaIndex = inner.IndexOf(',', StringComparison.Ordinal);
-        var layerText = commaIndex > 0 ? inner[..commaIndex] : inner;
-
-        return int.TryParse(layerText, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);
+        return false;
     }
 
     private IResult? ValidateAllowedParameters(

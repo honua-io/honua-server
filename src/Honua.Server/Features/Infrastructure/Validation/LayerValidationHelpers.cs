@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
@@ -43,12 +44,14 @@ internal static class LayerValidationHelpers
     /// <param name="context">HTTP context containing request services and user information</param>
     /// <param name="layerId">Layer ID to validate</param>
     /// <param name="protocol">Protocol format for error responses</param>
+    /// <param name="scope">Access scope required for the request</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Validation result with layer or error response</returns>
     public static async Task<LayerValidationResult> ValidateLayerWithAccessAsync(
         HttpContext context,
         int layerId,
         ValidationProtocol protocol,
+        AccessScope scope = AccessScope.Read,
         CancellationToken cancellationToken = default)
     {
         var effectiveToken = protocol == ValidationProtocol.OData
@@ -74,7 +77,7 @@ internal static class LayerValidationHelpers
         }
 
         var layer = layerResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
@@ -88,11 +91,13 @@ internal static class LayerValidationHelpers
     /// </summary>
     /// <param name="context">HTTP context containing request services and user information</param>
     /// <param name="collectionId">Collection ID string to validate and parse</param>
+    /// <param name="scope">Access scope required for the request</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Validation result with layer or error response</returns>
     public static async Task<LayerValidationResult> ValidateCollectionWithAccessAsync(
         HttpContext context,
         string collectionId,
+        AccessScope scope = AccessScope.Read,
         CancellationToken cancellationToken = default)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
@@ -106,7 +111,7 @@ internal static class LayerValidationHelpers
         }
 
         var layer = collectionResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);

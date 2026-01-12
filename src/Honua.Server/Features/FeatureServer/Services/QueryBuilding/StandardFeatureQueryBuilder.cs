@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.FeatureServer.Services.QueryBuilding;
 
@@ -14,13 +14,6 @@ namespace Honua.Server.Features.FeatureServer.Services.QueryBuilding;
 /// </summary>
 internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
 {
-    private static readonly HashSet<string> _allowedCoreOrderByFields = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "objectid",
-        "object_id",
-        "created_at",
-        "updated_at"
-    };
     /// <summary>
     /// Builds a standard feature query from the provided context
     /// </summary>
@@ -39,7 +32,10 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
             Limit = context.QueryParams.ResultRecordCount ?? context.Service.MaxRecordCount,
             SpatialReferenceSrid = context.Layer.SpatialReference.ToSrid(),
             OutputSrid = context.OutputSrid,
-            OrderBy = ParseOrderByFields(context.QueryParams.OrderByFields, context.Layer)
+            OrderBy = OrderByParsing.ParseFeatureServerOrderBy(
+                context.QueryParams.OrderByFields,
+                context.Layer,
+                FeatureServerOrderByFields.AllowedCoreOrderByFields)
         };
 
         // Apply field selection
@@ -182,88 +178,4 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
         };
     }
 
-    private static ImmutableArray<OrderByClause>? ParseOrderByFields(string? orderByFields, LayerDefinition layer)
-    {
-        if (string.IsNullOrWhiteSpace(orderByFields))
-        {
-            return null;
-        }
-
-        var clauses = new List<OrderByClause>();
-        foreach (var rawField in orderByFields.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var trimmed = rawField.Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0)
-            {
-                continue;
-            }
-
-            var field = parts[0];
-            if (!IsValidOrderByField(field))
-            {
-                throw new InvalidOperationException($"Invalid orderByFields value: {field}");
-            }
-
-            if (parts.Length > 2)
-            {
-                throw new InvalidOperationException($"Invalid orderByFields value: {trimmed}");
-            }
-
-            var ascending = true;
-            if (parts.Length == 2)
-            {
-                if (parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase))
-                {
-                    ascending = false;
-                }
-                else if (!parts[1].Equals("ASC", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException($"Invalid orderByFields direction: {parts[1]}");
-                }
-            }
-
-            var fieldDefinition = layer.Fields.FirstOrDefault(f =>
-                f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
-            if (fieldDefinition == null && !_allowedCoreOrderByFields.Contains(field))
-            {
-                throw new InvalidOperationException($"Unknown orderByFields value: {field}");
-            }
-
-            var resolvedField = fieldDefinition?.Name ?? field;
-            if (!IsValidOrderByField(resolvedField))
-            {
-                throw new InvalidOperationException($"Invalid orderByFields value: {field}");
-            }
-            var fieldType = fieldDefinition?.Type;
-
-            clauses.Add(new OrderByClause(resolvedField, ascending, fieldType));
-        }
-
-        return clauses.Count == 0 ? null : clauses.ToImmutableArray();
-    }
-
-    private static bool IsValidOrderByField(string fieldName)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return false;
-        }
-
-        for (var i = 0; i < fieldName.Length; i++)
-        {
-            var ch = fieldName[i];
-            if (!(char.IsLetterOrDigit(ch) || ch == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

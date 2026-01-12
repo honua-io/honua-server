@@ -75,9 +75,6 @@ public sealed class CloudStorageOptionsValidator : OptionsValidator<CloudStorage
             case CloudStorageProvider.AzureBlob:
                 ValidateAzureBlobOptions(options.AzureBlob, failures);
                 break;
-            case CloudStorageProvider.GoogleCloudStorage:
-                ValidateGoogleCloudStorageOptions(options.GoogleCloudStorage, failures);
-                break;
             default:
                 failures.Add($"Unsupported cloud storage provider: {options.Provider}");
                 break;
@@ -186,52 +183,4 @@ public sealed class CloudStorageOptionsValidator : OptionsValidator<CloudStorage
         }
     }
 
-    /// <summary>
-    /// Validates Google Cloud Storage specific options.
-    /// </summary>
-    private static void ValidateGoogleCloudStorageOptions(GoogleCloudStorageOptions? options, List<string> failures)
-    {
-        if (options == null)
-        {
-            failures.Add("GoogleCloudStorage configuration is required when Provider is GoogleCloudStorage");
-            return;
-        }
-
-        // Bucket name validation
-        ValidateRequiredString(options.BucketName, "GoogleCloudStorage.BucketName", failures);
-        if (!string.IsNullOrWhiteSpace(options.BucketName))
-        {
-            ValidateStringLength(options.BucketName, 63, "GoogleCloudStorage.BucketName", failures, 3);
-
-            // GCS bucket naming is similar to S3 but with additional restrictions
-            if (!_s3BucketNamePattern.IsMatch(options.BucketName))
-            {
-                failures.Add("GoogleCloudStorage.BucketName must contain only lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen");
-            }
-        }
-
-        // Project ID validation
-        ValidateRequiredString(options.ProjectId, "GoogleCloudStorage.ProjectId", failures);
-
-        // Validate credentials path if provided
-        if (!string.IsNullOrEmpty(options.CredentialsPath))
-        {
-            ValidatePath(options.CredentialsPath, "GoogleCloudStorage.CredentialsPath", failures);
-
-            if (!File.Exists(options.CredentialsPath))
-            {
-                failures.Add($"GoogleCloudStorage.CredentialsPath file does not exist: {options.CredentialsPath}");
-            }
-            else if (!options.CredentialsPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            {
-                failures.Add("GoogleCloudStorage.CredentialsPath should point to a JSON credentials file");
-            }
-        }
-
-        // Validate object prefix if provided
-        if (!string.IsNullOrEmpty(options.ObjectPrefix))
-        {
-            ValidatePath(options.ObjectPrefix, "GoogleCloudStorage.ObjectPrefix", failures, requireAbsolute: false, preventTraversal: false);
-        }
-    }
 }

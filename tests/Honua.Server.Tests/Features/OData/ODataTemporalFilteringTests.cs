@@ -338,8 +338,6 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
 
     private static JsonElement ParseAttributes(JsonElement feature)
     {
-        var attributesJson = feature.GetProperty("Attributes").GetString();
-        using var document = JsonDocument.Parse(attributesJson!);
-        return document.RootElement.Clone();
+        return ODataTestHelpers.ParseAttributes(feature);
     }
 }

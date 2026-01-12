@@ -37,7 +37,7 @@ public record FieldDefinition(
     {
         FieldType.String => "esriFieldTypeString",
         FieldType.Integer => "esriFieldTypeInteger",
-        FieldType.BigInteger => "esriFieldTypeInteger",
+        FieldType.BigInteger => "esriFieldTypeInteger64",
         FieldType.Double => "esriFieldTypeDouble",
         FieldType.Float => "esriFieldTypeSingle",
         FieldType.Boolean => "esriFieldTypeSmallInteger", // Boolean as 0/1

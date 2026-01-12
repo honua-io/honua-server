@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Data.Common;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
@@ -28,12 +29,13 @@ internal static partial class MetadataEndpoints
     private const string ServiceCacheKeyPrefix = "service:";
     private const string ServiceListCacheKey = "services:all";
     private const string RelationshipCacheKeyPrefix = "relationship:";
-    private static readonly HashSet<string> _relationshipTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "esriRelRoleOrigin",
-        "esriRelRoleDestination",
-        "esriRelRoleAny"
-    };
+    private static readonly FrozenSet<string> _relationshipTypes = new[]
+        {
+            "esriRelRoleOrigin",
+            "esriRelRoleDestination",
+            "esriRelRoleAny"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Map admin metadata endpoints to the web application with formal API versioning
@@ -407,7 +409,16 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var success = await adminCatalog.BindLayerToServiceAsync(name, request.LayerId, context.RequestAborted);
+        bool success;
+        try
+        {
+            success = await adminCatalog.BindLayerToServiceAsync(name, request.LayerId, context.RequestAborted);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, ex.Message);
+            return;
+        }
 
         if (!success)
         {

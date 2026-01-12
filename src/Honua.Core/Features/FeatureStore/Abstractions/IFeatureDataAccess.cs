@@ -61,6 +61,14 @@ internal interface IFeatureDataAccess
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Calculates temporal extent for a temporal field.
+    /// </summary>
+    Task<TemporalExtentResult?> GetTemporalExtentAsync(
+        int layerId,
+        ParameterizedQuery? query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Generates MVT tile data
     /// </summary>
     Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken);

@@ -35,7 +35,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
-    public async Task CreateFeature_WithNon4326Layer_TransformsToLayerSrid()
+    public async Task CreateFeature_WithNon4326Layer_MismatchedContentCrs_ReturnsBadRequest()
     {
         var feature = new GeoJsonFeature
         {
@@ -43,7 +43,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
             Geometry = new SimpleGeoJsonGeometry
             {
                 Type = "Point",
-                CoordinatesJson = "[-122.4194, 37.7749]"
+                CoordinatesJson = "[37.7749, -122.4194]"
             },
             Properties = new Dictionary<string, object?>
             {
@@ -52,10 +52,51 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
-        var content = new StringContent(json, Encoding.UTF8, "application/geo+json");
-        var response = await _fixture.Client.PostAsync(
-            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items",
-            content);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/geo+json")
+        };
+        request.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/4326>");
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(responseContent);
+        problem.GetProperty("status").GetInt32().Should().Be(400);
+        problem.GetProperty("detail").GetString().Should().Contain("does not match layer SRID");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithNon4326Layer_MatchingContentCrs_CreatesFeature()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[1000, 2000]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "OGC SRID Feature"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/geo+json")
+        };
+        request.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+        var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -71,6 +112,15 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
             created.Id!.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         srid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);
+
+        var coordinates = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
+            _fixture.Postgres,
+            schema,
+            created.Id!.Value,
+            SpatialReferenceTestLayerCatalog.PointLayerId);
+        coordinates.Should().NotBeNull();
+        coordinates!.Value.X.Should().BeApproximately(1000, 1e-6);
+        coordinates.Value.Y.Should().BeApproximately(2000, 1e-6);
     }
 
     [IntegrationTest]

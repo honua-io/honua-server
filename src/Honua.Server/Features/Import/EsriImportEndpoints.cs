@@ -134,6 +134,13 @@ internal static partial class EsriImportEndpoints
                 "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
         }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
+            await WriteErrorAsync(context,
+                "Failed to connect to ArcGIS service.",
+                StatusCodes.Status502BadGateway);
+        }
         catch (Exception ex)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);

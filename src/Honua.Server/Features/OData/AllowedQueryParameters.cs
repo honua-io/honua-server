@@ -14,13 +14,42 @@ internal static class AllowedQueryParameters
     public static readonly FrozenSet<string> None =
         Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    public static readonly FrozenSet<string> Layer = new[]
+        {
+            "$select",
+            "$format"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    public static readonly FrozenSet<string> Feature = new[]
+        {
+            "$select",
+            "$format"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    public static readonly FrozenSet<string> LayersCount = new[]
+        {
+            "$filter",
+            "$format"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    public static readonly FrozenSet<string> FeaturesCount = new[]
+        {
+            "$filter",
+            "$format"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     public static readonly FrozenSet<string> Layers = new[]
         {
             "$filter",
             "$select",
             "$top",
             "$skip",
-            "$count"
+            "$count",
+            "$format"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -32,7 +61,10 @@ internal static class AllowedQueryParameters
             "$top",
             "$skip",
             "$count",
-            "$expand"
+            "$expand",
+            "$apply",
+            "$search",
+            "$format"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

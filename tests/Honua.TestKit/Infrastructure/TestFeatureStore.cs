@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
@@ -257,6 +258,54 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             SpatialReference = 4326
         };
         return Task.FromResult<FeatureExtent?>(extent);
+    }
+
+    public Task<TemporalExtentResult?> GetTemporalExtentAsync(
+        int layerId,
+        string fieldName,
+        FieldType fieldType,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_layerFeatures.TryGetValue(layerId, out var features))
+        {
+            return Task.FromResult<TemporalExtentResult?>(null);
+        }
+
+        DateTimeOffset? min = null;
+        DateTimeOffset? max = null;
+
+        foreach (var feature in features)
+        {
+            if (!feature.Attributes.TryGetValue(fieldName, out var value))
+            {
+                continue;
+            }
+
+            var temporal = value switch
+            {
+                DateTimeOffset dto => dto,
+                DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(
+                    dateTime,
+                    dateTime.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dateTime.Kind)),
+                DateOnly dateOnly => new DateTimeOffset(dateOnly.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)),
+                _ => (DateTimeOffset?)null
+            };
+
+            if (temporal == null)
+            {
+                continue;
+            }
+
+            min = min.HasValue && min.Value <= temporal.Value ? min : temporal;
+            max = max.HasValue && max.Value >= temporal.Value ? max : temporal;
+        }
+
+        if (min == null && max == null)
+        {
+            return Task.FromResult<TemporalExtentResult?>(null);
+        }
+
+        return Task.FromResult<TemporalExtentResult?>(TemporalExtentResult.Create(min, max));
     }
 
     /// <summary>

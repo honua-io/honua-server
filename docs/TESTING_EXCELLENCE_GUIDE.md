@@ -47,7 +47,6 @@ public class FeatureQueryTests
 
 #### 3. Emulator Coverage
 - **File storage emulators**: S3 (local emulator) and Azure Blob (Azurite) round-trip tests.
-- **GCS**: intentionally excluded from the test matrix for now due to the current client not being AOT-friendly.
 
 ### Test Organization
 

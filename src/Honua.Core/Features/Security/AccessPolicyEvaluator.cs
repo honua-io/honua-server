@@ -16,11 +16,16 @@ public sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
     public AccessDecision Evaluate(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,
-        AccessPolicy? servicePolicy)
+        AccessPolicy? servicePolicy,
+        AccessScope scope = AccessScope.Read)
     {
         var policy = layerPolicy ?? servicePolicy ?? new AccessPolicy { AllowAnonymous = false };
 
-        if (policy.AllowAnonymous)
+        var allowAnonymous = scope == AccessScope.Read
+            ? policy.AllowAnonymous
+            : policy.AllowAnonymousWrite;
+
+        if (allowAnonymous)
         {
             return AccessDecision.Allowed();
         }
@@ -30,13 +35,21 @@ public sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
             return AccessDecision.RequiresAuth("Authentication is required.");
         }
 
-        if (policy.AllowedRoles is { Length: > 0 } && !IsInAnyRole(principal, policy.AllowedRoles))
+        var allowedRoles = scope == AccessScope.Read
+            ? policy.AllowedRoles
+            : policy.AllowedWriteRoles ?? policy.AllowedRoles;
+
+        if (allowedRoles is { Length: > 0 } && !IsInAnyRole(principal, allowedRoles))
         {
             return AccessDecision.Forbidden("User does not have the required role.");
         }
 
-        if (policy.AllowedTenants is { Length: > 0 } &&
-            !IsInAllowedTenant(principal, policy.TenantClaimType, policy.AllowedTenants))
+        var allowedTenants = scope == AccessScope.Read
+            ? policy.AllowedTenants
+            : policy.AllowedWriteTenants ?? policy.AllowedTenants;
+
+        if (allowedTenants is { Length: > 0 } &&
+            !IsInAllowedTenant(principal, policy.TenantClaimType, allowedTenants))
         {
             return AccessDecision.Forbidden("User does not belong to an allowed tenant.");
         }

@@ -36,6 +36,7 @@ public sealed class CacheOptionsValidator : OptionsValidator<CacheOptions>
             ValidateRange(options.DefaultTtlSeconds, 1, int.MaxValue, "DefaultTtlSeconds", failures);
             ValidateRange(options.ServiceTtlSeconds, 1, int.MaxValue, "ServiceTtlSeconds", failures);
             ValidateRange(options.LayerTtlSeconds, 1, int.MaxValue, "LayerTtlSeconds", failures);
+            ValidateRange(options.QueryTtlSeconds, 1, int.MaxValue, "QueryTtlSeconds", failures);
             ValidateRange(options.NegativeTtlSeconds, 1, int.MaxValue, "NegativeTtlSeconds", failures);
         }
 

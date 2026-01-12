@@ -7,6 +7,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.OData.Client;
+using Microsoft.Spatial;
 
 namespace Honua.Server.Tests.Features.OData;
 
@@ -130,6 +131,44 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         layers.Should().NotBeEmpty();
         layers.Should().Contain(layer => layer.Id == 0 && layer.Name == "US Cities");
         layers.Should().Contain(layer => layer.Id == 1 && layer.Name == "City Landmarks");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers?$filter=Name eq 'US Cities'")]
+    public async Task LayersQuery_WithFilter_ByName_ReturnsSingleMatch()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/odata/Layers?$filter=Name%20eq%20'US%20Cities'");
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var layers = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+
+        layers.Should().HaveCount(1);
+        layers[0].GetProperty("Name").GetString().Should().Be("US Cities");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers?$filter=startswith(Name,'US')")]
+    public async Task LayersQuery_WithFilter_StartsWith_ReturnsExpectedMatches()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/odata/Layers?$filter=startswith(Name,'US')");
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var layers = document.RootElement.GetProperty("value").EnumerateArray()
+            .Select(item => item.GetProperty("Name").GetString())
+            .ToList();
+
+        layers.Should().Contain("US Cities");
+        layers.Should().NotContain("City Landmarks");
     }
 
     [IntegrationTest]
@@ -299,10 +338,8 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var feature = document.RootElement.GetProperty("value").EnumerateArray().First();
         feature.GetProperty("ObjectId").GetInt64().Should().Be(2);
 
-        var attributesJson = feature.GetProperty("Attributes").GetString();
-        attributesJson.Should().NotBeNullOrEmpty();
-        using var attributesDocument = JsonDocument.Parse(attributesJson!);
-        attributesDocument.RootElement.GetProperty("population").GetInt64().Should().Be(3979576);
+        var attributes = ODataTestHelpers.ParseAttributes(feature);
+        attributes.GetProperty("population").GetInt64().Should().Be(3979576);
     }
 
     [IntegrationTest]
@@ -949,7 +986,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     {
         public long ObjectId { get; init; }
         public int LayerId { get; init; }
-        public byte[]? Geometry { get; init; }
+        public Geography? Geometry { get; init; }
         public string? Attributes { get; init; }
     }
 

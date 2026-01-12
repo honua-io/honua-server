@@ -20,6 +20,7 @@ using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.Geometry;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
@@ -155,6 +156,7 @@ internal static class ServiceCollectionExtensions
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
             new CrsDetectionService(serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
+        services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
 
         // Register import limits configuration
         services.AddSingleton(serviceProvider =>

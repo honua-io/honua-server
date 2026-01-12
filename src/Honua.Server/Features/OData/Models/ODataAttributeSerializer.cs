@@ -10,22 +10,11 @@ namespace Honua.Server.Features.OData.Models;
 /// </summary>
 internal static class ODataAttributeSerializer
 {
-    public static string Serialize(IReadOnlyDictionary<string, object?> attributes)
-    {
-        var normalized = NormalizeAttributes(attributes);
-        return JsonSerializer.Serialize(normalized, ODataJsonContext.Default.DictionaryStringObject);
-    }
+    public static Dictionary<string, object?> Serialize(IReadOnlyDictionary<string, object?> attributes)
+        => NormalizeAttributes(attributes);
 
-    public static Dictionary<string, object?> Deserialize(string? attributesJson)
-    {
-        if (string.IsNullOrWhiteSpace(attributesJson))
-        {
-            return new Dictionary<string, object?>();
-        }
-
-        var parsed = JsonSerializer.Deserialize(attributesJson, ODataJsonContext.Default.DictionaryStringObject);
-        return parsed ?? new Dictionary<string, object?>();
-    }
+    public static Dictionary<string, object?> Deserialize(IReadOnlyDictionary<string, object?>? attributes)
+        => attributes == null ? new Dictionary<string, object?>() : NormalizeAttributes(attributes);
 
     public static Dictionary<string, object?> NormalizeAttributes(IReadOnlyDictionary<string, object?> attributes)
         => attributes.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));

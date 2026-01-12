@@ -32,4 +32,14 @@ internal sealed record ProblemDetailsResponse
     /// URI reference that identifies the specific occurrence of the problem.
     /// </summary>
     public string? Instance { get; init; }
+
+    /// <summary>
+    /// Correlation identifier for tracing the request.
+    /// </summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>
+    /// Timestamp for when the error occurred (UTC, ISO 8601).
+    /// </summary>
+    public string? Timestamp { get; init; }
 }

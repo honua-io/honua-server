@@ -27,5 +27,9 @@ internal interface IFeatureServerQueryServices
         string format,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields);
 }

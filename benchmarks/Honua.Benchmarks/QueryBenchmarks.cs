@@ -67,6 +67,7 @@ public class QueryBenchmarks
             dictionaryPool,
             statementCache: null,
             dataAccessLogger,
+            performanceOptions: null,
             _schemaName);
         _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 

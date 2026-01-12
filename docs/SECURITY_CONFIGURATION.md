@@ -114,7 +114,6 @@ Use environment references for any storage or monitoring credentials:
 FileStorage__AwsS3__AccessKeyId=env:HONUA_S3_KEY_ID
 FileStorage__AwsS3__SecretAccessKey=env:HONUA_S3_SECRET
 FileStorage__AzureBlob__ConnectionString=env:HONUA_AZURE_BLOB_CONN
-FileStorage__GoogleCloudStorage__CredentialsPath=env:HONUA_GCS_CREDENTIALS_PATH
 
 # Monitoring alerting secrets
 Monitoring__IntelligentAlerting__NotificationChannels__Email__Password=env:HONUA_SMTP_PASSWORD

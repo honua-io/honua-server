@@ -65,9 +65,13 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         odataError!.Error.Code.Should().Be("BadRequest");
         odataError.Error.Message.Should().Be("Bad Request");
         odataError.Error.Details.Should().NotBeNull();
-        odataError.Error.Details!.Should().HaveCount(2);
-        odataError.Error.Details![0].Message.Should().Be("Invalid filter syntax");
-        odataError.Error.Details![1].Message.Should().Be("Missing quotes around string literal");
+        odataError.Error.Details!.Should().HaveCountGreaterOrEqualTo(4);
+        odataError.Error.Details!.Select(detail => detail.Message)
+            .Should().Contain("Invalid filter syntax")
+            .And.Contain("Missing quotes around string literal");
+        odataError.Error.Details!.Select(detail => detail.Code)
+            .Should().Contain("CorrelationId")
+            .And.Contain("Timestamp");
     }
 
     #endregion
@@ -127,9 +131,12 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         apiErrorResponse.GetProperty("error").GetProperty("message").GetString().Should().Be("Bad Request");
 
         var details = apiErrorResponse.GetProperty("error").GetProperty("details").EnumerateArray().ToList();
-        details.Should().HaveCount(2);
-        details[0].GetString().Should().Be("Invalid where clause");
-        details[1].GetString().Should().Be("Syntax error near 'WHERE'");
+        details.Should().HaveCountGreaterOrEqualTo(4);
+        var detailStrings = details.Select(detail => detail.GetString() ?? string.Empty).ToList();
+        detailStrings.Should().Contain("Invalid where clause");
+        detailStrings.Should().Contain("Syntax error near 'WHERE'");
+        detailStrings.Should().Contain(detail => detail.StartsWith("CorrelationId:", StringComparison.OrdinalIgnoreCase));
+        detailStrings.Should().Contain(detail => detail.StartsWith("Timestamp:", StringComparison.OrdinalIgnoreCase));
     }
 
     #endregion

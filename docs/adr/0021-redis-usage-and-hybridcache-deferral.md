@@ -11,18 +11,18 @@ Honua Server uses Redis for multiple responsibilities:
 - Distributed import coordination (job queue + leader election).
 - Import request/progress storage using `IDistributedCache`.
 
-HybridCache was considered to reduce custom caching code and improve provider flexibility. However, the current Redis usage relies on features HybridCache does not provide:
-- **Pattern invalidation** for catalog/relationship cache keys.
-- **Distributed locks** for cache stampede protection.
+HybridCache was considered to reduce custom caching code and improve provider flexibility. However, the current Redis usage relies on behaviors HybridCache does not provide or only provides in-process:
+- **Pattern invalidation** for catalog/relationship cache keys (HybridCache supports tag invalidation, but it's logical and doesn't support glob/prefix deletes).
+- **Cross-node stampede protection** via distributed locks (HybridCache only coalesces concurrent requests within a single process).
 - **Redis list operations** for job queue semantics.
 - **Explicit leader election** using Redis locks.
-- **AOT-safe serialization** already wired for cache payloads.
+- **AOT-safe serialization** is already wired for cache payloads; HybridCache would require explicit serializer configuration to preserve AOT compatibility.
 
 These behaviors are required for multi-node deployments and import processing coordination.
 
 ## Decision
 
-Keep the current Redis-based implementations and defer HybridCache adoption.
+Keep the current Redis-based implementations and defer HybridCache adoption for metadata caching.
 
 HybridCache may be revisited if:
 - It adds pattern invalidation or key-space management hooks.

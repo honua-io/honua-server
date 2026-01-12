@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -23,6 +24,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureServerQueryServices _queryServices = dependencies.QueryServices;
     private readonly IRelatedRecordsService _relatedRecordsService = dependencies.RelatedRecordsService;
+    private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly ILogger<FeatureServerRelatedRecordsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -109,8 +111,37 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             var objectIds = queryParams.ObjectIds;
 
+            SqlFragment? sqlFilter = null;
+            if (!string.IsNullOrWhiteSpace(validatedParams.Where))
+            {
+                var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+                if (!parseResult.IsSuccess)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(httpContext,
+                        ErrorMessages.Validation.InvalidParameter,
+                        [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
+                }
+
+                if (parseResult.Expression != null)
+                {
+                    var translationResult = _filterExpressionService.Translate(parseResult.Expression, relatedLayer);
+                    if (!translationResult.IsSuccess)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(httpContext,
+                            ErrorMessages.Validation.InvalidParameter,
+                            [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
+                    }
+
+                    sqlFilter = translationResult.SqlFilter;
+                }
+            }
+
             // Build related query from validated parameters
-            RelatedQuery relatedQuery = _relatedRecordsService.BuildRelatedQuery(validatedParams, objectIds, relationship);
+            RelatedQuery relatedQuery = _relatedRecordsService.BuildRelatedQuery(
+                validatedParams,
+                objectIds,
+                relationship,
+                sqlFilter);
 
             // Execute related query
             QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(layerId, relatedQuery, cancellationToken);

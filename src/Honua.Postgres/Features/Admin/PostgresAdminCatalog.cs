@@ -168,6 +168,13 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     /// <inheritdoc />
     public async Task<bool> BindLayerToServiceAsync(string serviceName, int layerId, CancellationToken cancellationToken = default)
     {
+        var (serviceSrid, layerSrid) = await GetServiceAndLayerSridsAsync(serviceName, layerId, cancellationToken).ConfigureAwait(false);
+        if (serviceSrid.HasValue && layerSrid.HasValue && serviceSrid.Value != layerSrid.Value)
+        {
+            throw new InvalidOperationException(
+                $"Layer SRID {layerSrid.Value} does not match service SRID {serviceSrid.Value} for service '{serviceName}'.");
+        }
+
         // Get next layer order for this service
         string orderSql = $"""
             SELECT COALESCE(MAX(layer_order), 0) + 1 FROM {_serviceLayersTable}
@@ -197,6 +204,33 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result != null;
+    }
+
+    private async Task<(int? ServiceSrid, int? LayerSrid)> GetServiceAndLayerSridsAsync(
+        string serviceName,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                (SELECT srid FROM honua.services WHERE LOWER(service_name) = LOWER(@serviceName)) AS service_srid,
+                (SELECT srid FROM honua.layers WHERE layer_id = @layerId) AS layer_srid
+            """;
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@serviceName", serviceName);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return (null, null);
+        }
+
+        var serviceSrid = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
+        var layerSrid = reader.IsDBNull(1) ? (int?)null : reader.GetInt32(1);
+        return (serviceSrid, layerSrid);
     }
 
     /// <inheritdoc />
