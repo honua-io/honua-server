@@ -228,6 +228,8 @@ docs/temp/
 *.local.json
 appsettings.Development.json
 !appsettings.Development.json.template
+cite-results/cite-session-*/
+cite-tiles-results/cite-tiles-session-*/
 
 # Environment files (keep examples, ignore actual configs)
 .env
