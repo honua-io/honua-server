@@ -1,0 +1,56 @@
+groups:
+  - name: honua.alerts
+    rules:
+      - alert: HonuaInstanceDown
+        expr: up{job="honua-servers"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Honua instance down"
+          description: "Prometheus has not scraped {{ $labels.instance }} for 2 minutes."
+
+      - alert: HonuaHighErrorRate
+        expr: sum(rate(honua_http_request_total{status_code=~"5.."}[5m])) / sum(rate(honua_http_request_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate"
+          description: "5xx error rate > 5% for 10 minutes."
+
+      - alert: HonuaHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(honua_http_request_duration_ms_bucket[5m])) by (le)) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency (p95)"
+          description: "P95 request latency > 500ms for 10 minutes."
+
+      - alert: HonuaActiveRequestsHigh
+        expr: sum(honua_http_active_requests) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High active request count"
+          description: "Active requests > 100 for 10 minutes."
+
+      - alert: HonuaCacheHitRatioLow
+        expr: sum(rate(honua_cache_operation_total{operation="hit"}[10m])) / sum(rate(honua_cache_operation_total{operation=~"hit|miss"}[10m])) < 0.7
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit ratio"
+          description: "Cache hit ratio < 70% for 15 minutes."
+
+      - alert: HonuaDatabaseLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)) > 200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database query latency (p95)"
+          description: "P95 database query latency > 200ms for 10 minutes."

@@ -6,6 +6,13 @@
 
 Honua Server is a greenfield implementation of a geospatial feature server supporting multiple protocols (GeoServices REST, OGC API Features, OData v4, MVT). This is a **clean rewrite** — the legacy codebase exists as reference only.
 
+## MVP Deferrals (Operational Simplicity)
+
+The MVP intentionally defers enterprise/operational features to reduce complexity:
+- No app-level rate limiting; enforce at the edge (nginx/ALB/WAF).
+- No secure-connection allowlist or connection audit trail; secure connections are encrypted or secret references only.
+- No security compliance framework, audit log storage, or compliance dashboards/monitoring.
+
 ## Critical Rules
 
 ### Legacy Code Reference Policy
@@ -88,6 +95,12 @@ Query_WithWhereClause_ReturnsFilteredFeatures()
 Query_InvalidSyntax_Returns400WithErrorDetails()
 ```
 
+**Scale Tests (Multi-Node + Redis)**:
+- Start the scale stack: `docker compose -f docker-compose.scale-test.yml up --build --scale honua=3`
+- Set env vars (inside the devcontainer): `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`
+- Run scale tests only: `dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`
+- Scale tests expect `docker/nginx/scale-test.conf` to emit `X-Instance-ID` for `/rest/`, `/ogc/`, and `/odata/`
+
 ### Architecture Enforcement
 
 #### BLOCKING VIOLATIONS (must fix before merge)
@@ -122,7 +135,7 @@ public class FeaturesController : ControllerBase  // BLOCKING - No controllers a
 public static void MapFeatureServerEndpoints(this WebApplication app)
 {
     app.MapGet("/rest/services/{id}/FeatureServer/{layerId}/query",
-        async (int id, int layerId, IFeatureStore store) => { });
+        async (int id, int layerId, IFeatureReader reader) => { });
 }
 ```
 
@@ -134,7 +147,7 @@ public class PostgresConnection { }       // BLOCKING - Should be internal
 
 // CORRECT: Proper encapsulation
 internal class FeatureRepository { }      // OK - Implementation details are internal
-public interface IFeatureStore { }        // OK - Abstractions can be public
+public interface IFeatureReader { }       // OK - Abstractions can be public
 ```
 
 **4. Missing documentation**
@@ -180,7 +193,7 @@ src/Honua.Server/Features/
 ```csharp
 // WARNING: Too many dependencies (endpoint limit: 5, handler limit: 4)
 public class QueryHandler(
-    IFeatureStore store,        // 1
+    IFeatureReader reader,      // 1
     ILayerCatalog catalog,      // 2
     ILogger<QueryHandler> log,  // 3
     IValidator validator,       // 4
@@ -204,13 +217,13 @@ class A : B : C : D { }  // WARNING: >3 levels, consider composition
 ```csharp
 // GOOD: Proper dependency direction
 // Honua.Core defines interface
-public interface IFeatureStore { }
+public interface IFeatureReader { }
 
 // Honua.Postgres implements interface
-internal class PostgresFeatureStore : IFeatureStore { }
+internal class PostgresFeatureStore : IFeatureReader { }
 
 // Honua.Server uses interface
-public static async Task<IResult> QueryFeatures(IFeatureStore store) { }
+public static async Task<IResult> QueryFeatures(IFeatureReader reader) { }
 ```
 
 **2. Vertical slice organization**

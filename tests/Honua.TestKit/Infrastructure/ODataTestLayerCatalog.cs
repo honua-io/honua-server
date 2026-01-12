@@ -4,13 +4,14 @@
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.TestKit.Infrastructure;
 
 /// <summary>
 /// Test implementation of ILayerCatalog with comprehensive field definitions
 /// designed for OData and cross-protocol integration tests.
-/// Matches the ODataTestFeatureStore schema with numeric, boolean, string,
+/// Matches the OData test schema with numeric, boolean, string,
 /// and nullable field types.
 /// </summary>
 public sealed class ODataTestLayerCatalog : ILayerCatalog
@@ -24,7 +25,7 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
 
     public ODataTestLayerCatalog()
     {
-        // Create comprehensive field definitions matching ODataTestFeatureStore
+        // Create comprehensive field definitions matching OData test data
         var testFields = new[]
         {
             new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
@@ -39,7 +40,7 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
             new FieldDefinition("notes", FieldType.String, 500, true, null, "Additional notes")
         };
 
-        var spatialRef = new SpatialReference(4326); // WGS84
+        var spatialRef = SpatialReference.Create(4326); // WGS84
         var extent = FeatureExtent.Create(-125.0, 30.0, -100.0, 50.0, 4326);
 
         var landmarksFields = new[]

@@ -9,6 +9,7 @@
     "/ogc/tiles": {
       "get": {
         "summary": "Landing page",
+        "operationId": "core.getLandingPage",
         "parameters": [
           {
             "name": "f",
@@ -39,6 +40,7 @@
     "/ogc/tiles/conformance": {
       "get": {
         "summary": "Conformance declaration",
+        "operationId": "core.getConformance",
         "parameters": [
           {
             "name": "f",
@@ -69,6 +71,7 @@
     "/ogc/tiles/openapi.json": {
       "get": {
         "summary": "OpenAPI specification",
+        "operationId": "core.getApiDefinition",
         "parameters": [
           {
             "name": "f",
@@ -96,6 +99,7 @@
     "/ogc/tiles/collections": {
       "get": {
         "summary": "Collections list",
+        "operationId": "collections.getCollections",
         "parameters": [
           {
             "name": "f",
@@ -126,6 +130,7 @@
     "/ogc/tiles/collections/{collectionId}": {
       "get": {
         "summary": "Collection metadata",
+        "operationId": "collections.getCollection",
         "parameters": [
           {
             "name": "collectionId",
@@ -163,6 +168,7 @@
     "/ogc/tiles/tiles": {
       "get": {
         "summary": "Dataset tilesets list",
+        "operationId": "tilesets.getTilesets",
         "parameters": [
           {
             "name": "f",
@@ -193,6 +199,7 @@
     "/ogc/tiles/tiles/{tileMatrixSetId}": {
       "get": {
         "summary": "Dataset tileset metadata",
+        "operationId": "tilesets.getTileset",
         "parameters": [
           {
             "name": "tileMatrixSetId",
@@ -242,6 +249,7 @@
     "/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
       "get": {
         "summary": "Dataset tile",
+        "operationId": "tilesets.getTile",
         "parameters": [
           {
             "name": "tileMatrixSetId",
@@ -293,13 +301,13 @@
             "name": "crs",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" }
+            "schema": { "type": "string", "format": "uri" }
           },
           {
             "name": "subset-crs",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" }
+            "schema": { "type": "string", "format": "uri" }
           },
           {
             "name": "collections",
@@ -331,6 +339,7 @@
     "/ogc/tiles/collections/{collectionId}/tiles": {
       "get": {
         "summary": "Collection tilesets list",
+        "operationId": "collections.getTilesets",
         "parameters": [
           {
             "name": "collectionId",
@@ -368,6 +377,7 @@
     "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}": {
       "get": {
         "summary": "Collection tileset metadata",
+        "operationId": "collections.getTileset",
         "parameters": [
           {
             "name": "collectionId",
@@ -411,6 +421,7 @@
     "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
       "get": {
         "summary": "Collection tile",
+        "operationId": "collections.getTile",
         "parameters": [
           {
             "name": "collectionId",
@@ -468,13 +479,13 @@
             "name": "crs",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" }
+            "schema": { "type": "string", "format": "uri" }
           },
           {
             "name": "subset-crs",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" }
+            "schema": { "type": "string", "format": "uri" }
           }
         ],
         "responses": {
@@ -494,6 +505,7 @@
     "/ogc/tiles/tileMatrixSets": {
       "get": {
         "summary": "Tile matrix sets list",
+        "operationId": "tileMatrixSets.getTileMatrixSets",
         "parameters": [
           {
             "name": "f",
@@ -524,6 +536,7 @@
     "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}": {
       "get": {
         "summary": "Tile matrix set definition",
+        "operationId": "tileMatrixSets.getTileMatrixSet",
         "parameters": [
           {
             "name": "tileMatrixSetId",
@@ -628,9 +641,9 @@
           "itemType": { "type": "string" },
           "crs": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": { "type": "string", "format": "uri" }
           },
-          "storageCrs": { "type": "string" }
+          "storageCrs": { "type": "string", "format": "uri" }
         }
       },
       "Extent": {
@@ -651,7 +664,7 @@
               "items": { "type": "number" }
             }
           },
-          "crs": { "type": "string" }
+          "crs": { "type": "string", "format": "uri" }
         }
       },
       "TemporalExtent": {
@@ -684,12 +697,17 @@
       },
       "TileSetItem": {
         "type": "object",
-        "required": ["dataType", "crs", "links"],
+        "required": ["dataType", "crs", "tileMatrixSetId", "links"],
         "properties": {
           "title": { "type": "string" },
           "dataType": { "type": "string" },
-          "crs": { "type": "string" },
+          "crs": { "type": "string", "format": "uri" },
+          "tileMatrixSetId": { "type": "string" },
           "tileMatrixSetURI": { "type": "string" },
+          "tileMatrixSetLimits": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TileMatrixSetLimit" }
+          },
           "links": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/Link" }
@@ -698,13 +716,18 @@
       },
       "TileSet": {
         "type": "object",
-        "required": ["dataType", "crs", "links"],
+        "required": ["dataType", "crs", "tileMatrixSetId", "links"],
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
           "dataType": { "type": "string" },
-          "crs": { "type": "string" },
+          "crs": { "type": "string", "format": "uri" },
+          "tileMatrixSetId": { "type": "string" },
           "tileMatrixSetURI": { "type": "string" },
+          "tileMatrixSetLimits": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TileMatrixSetLimit" }
+          },
           "links": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/Link" }
@@ -713,6 +736,17 @@
             "type": "array",
             "items": { "type": "string" }
           }
+        }
+      },
+      "TileMatrixSetLimit": {
+        "type": "object",
+        "required": ["tileMatrix", "minTileRow", "maxTileRow", "minTileCol", "maxTileCol"],
+        "properties": {
+          "tileMatrix": { "type": "string" },
+          "minTileRow": { "type": "integer", "minimum": 0 },
+          "maxTileRow": { "type": "integer", "minimum": 0 },
+          "minTileCol": { "type": "integer", "minimum": 0 },
+          "maxTileCol": { "type": "integer", "minimum": 0 }
         }
       },
       "TileMatrixSetsList": {
@@ -736,7 +770,7 @@
           "id": { "type": "string" },
           "title": { "type": "string" },
           "uri": { "type": "string" },
-          "crs": { "type": "string" },
+          "crs": { "type": "string", "format": "uri" },
           "links": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/Link" }
@@ -750,7 +784,7 @@
           "id": { "type": "string" },
           "title": { "type": "string" },
           "uri": { "type": "string" },
-          "crs": { "type": "string" },
+          "crs": { "type": "string", "format": "uri" },
           "wellKnownScaleSet": { "type": "string" },
           "tileMatrices": {
             "type": "array",

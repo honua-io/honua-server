@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
+
 namespace Honua.Core.Features.Import.Domain;
 
 /// <summary>
@@ -19,19 +21,19 @@ public sealed record ImportLimits
     /// Maximum memory usage target in bytes during import.
     /// Default: 100MB (104857600 bytes).
     /// </summary>
-    public long MaxMemoryBytes { get; init; } = 100 * 1024 * 1024;
+    public long MaxMemoryBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
     /// File size threshold in bytes above which imports are queued for background processing.
     /// Default: 100MB (104857600 bytes).
     /// </summary>
-    public long BackgroundJobThresholdBytes { get; init; } = 100 * 1024 * 1024;
+    public long BackgroundJobThresholdBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
     /// Maximum file size allowed for preview operations in bytes.
     /// Default: 10MB (10485760 bytes).
     /// </summary>
-    public long MaxPreviewSizeBytes { get; init; } = 10 * 1024 * 1024;
+    public long MaxPreviewSizeBytes { get; init; } = FileSizeConstants.TenMB;
 
     /// <summary>
     /// Maximum number of features to include in a preview.
@@ -43,7 +45,7 @@ public sealed record ImportLimits
     /// Buffer size for streaming reads in bytes.
     /// Default: 64KB (65536 bytes).
     /// </summary>
-    public int StreamBufferSize { get; init; } = 64 * 1024;
+    public int StreamBufferSize { get; init; } = 64 * (int)FileSizeConstants.OneKB;
 
     /// <summary>
     /// Whether to use transactions for batch inserts.
@@ -88,7 +90,7 @@ public sealed record ImportLimits
     /// Maximum WKB size in bytes per geometry.
     /// Default: 1MB (1048576 bytes).
     /// </summary>
-    public long MaxWkbSize { get; init; } = 1024 * 1024;
+    public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
 
     /// <summary>
     /// Whether to skip invalid geometries or fail the import.
@@ -109,9 +111,9 @@ public sealed record ImportLimits
     public static ImportLimits MemoryConstrained => new()
     {
         BatchSize = 500,
-        MaxMemoryBytes = 50 * 1024 * 1024,
-        BackgroundJobThresholdBytes = 50 * 1024 * 1024,
-        StreamBufferSize = 32 * 1024
+        MaxMemoryBytes = FileSizeConstants.FiftyMB,
+        BackgroundJobThresholdBytes = FileSizeConstants.FiftyMB,
+        StreamBufferSize = 32 * (int)FileSizeConstants.OneKB
     };
 
     /// <summary>
@@ -121,8 +123,8 @@ public sealed record ImportLimits
     public static ImportLimits HighThroughput => new()
     {
         BatchSize = 5000,
-        MaxMemoryBytes = 500 * 1024 * 1024,
-        BackgroundJobThresholdBytes = 500 * 1024 * 1024,
-        StreamBufferSize = 256 * 1024
+        MaxMemoryBytes = FileSizeConstants.FiveHundredMB,
+        BackgroundJobThresholdBytes = FileSizeConstants.FiveHundredMB,
+        StreamBufferSize = 256 * (int)FileSizeConstants.OneKB
     };
 }

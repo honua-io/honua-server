@@ -70,4 +70,13 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Information,
         Message = "Development environment with no admin password configured - enabling auth bypass")]
     public static partial void DevelopmentEnvironmentAuthBypass(ILogger logger);
+
+    /// <summary>
+    /// Logs when resolving the admin password via secret providers fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4107,
+        Level = LogLevel.Error,
+        Message = "Failed to resolve admin password from secret provider")]
+    public static partial void AdminPasswordResolutionFailed(ILogger logger, Exception exception);
 }

@@ -10,6 +10,7 @@ sql:
           supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
           capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
           service_extent GEOMETRY,
+          metadata JSONB,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -26,6 +27,7 @@ sql:
           min_scale DOUBLE PRECISION,
           max_scale DOUBLE PRECISION,
           default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+          metadata JSONB,
           created_at TIMESTAMPTZ DEFAULT NOW()
       );
   - |
@@ -71,6 +73,7 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
+  - "CREATE INDEX IF NOT EXISTS idx_features_geography ON features USING GIST ((ST_Transform(geometry, 4326)::geography));"
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
   - "DELETE FROM honua.relationships;"
   - "DELETE FROM honua.service_layers;"

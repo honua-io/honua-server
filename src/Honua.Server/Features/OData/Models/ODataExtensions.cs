@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.OData.Models;
@@ -73,7 +72,7 @@ public static class ODataExtensions
     public static ODataFeatureResponse ToODataFeatureResponse(this GeoJsonFeatureBase featureBase,
         string context,
         int layerId,
-        object? geometry = null)
+        ODataSpatialGeometry? geometry = null)
     {
         // Convert ID to ObjectId (long)
         long objectId = featureBase.Id switch
@@ -89,14 +88,8 @@ public static class ODataExtensions
             Context = context,
             LayerId = layerId,
             ObjectId = objectId,
-            Attributes = SerializeAttributes(featureBase.Properties),
-            Geometry = geometry switch
-            {
-                null => null,
-                string text => text,
-                byte[] bytes => Convert.ToBase64String(bytes),
-                _ => geometry.ToString()
-            }
+            Attributes = ODataAttributeSerializer.Serialize(featureBase.Properties),
+            Geometry = geometry
         };
     }
 
@@ -108,7 +101,7 @@ public static class ODataExtensions
     public static GeoJsonFeatureBase ToGeoJsonFeatureBase(this ODataFeatureResponse featureResponse)
         => GeoJsonFeatureBase.Create(
             featureResponse.ObjectId,
-            DeserializeAttributes(featureResponse.Attributes),
+            ODataAttributeSerializer.Deserialize(featureResponse.Attributes),
             featureResponse.Geometry != null);
 
     /// <summary>
@@ -132,20 +125,6 @@ public static class ODataExtensions
         => PagedResponseBase.Create(
             oDataResponse.Value?.Length ?? 0,
             oDataResponse.Count);
-
-    private static string? SerializeAttributes(IReadOnlyDictionary<string, object?> attributes)
-        => JsonSerializer.Serialize(attributes, ODataJsonContext.Default.DictionaryStringObject);
-
-    private static Dictionary<string, object?> DeserializeAttributes(string? attributesJson)
-    {
-        if (string.IsNullOrWhiteSpace(attributesJson))
-        {
-            return new Dictionary<string, object?>();
-        }
-
-        var parsed = JsonSerializer.Deserialize(attributesJson, ODataJsonContext.Default.DictionaryStringObject);
-        return parsed ?? new Dictionary<string, object?>();
-    }
 
     /// <summary>
     /// Creates an ODataError from a shared ServiceError

@@ -3,8 +3,14 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Postgres.Features.Attachments;
+using Honua.Server.Features.FileStorage;
 using Honua.Server.Tests.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -18,6 +24,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     private readonly DatabaseFixtureAdapter _fixture;
     private readonly ITestOutputHelper _output;
     private PostgresAttachmentStore _attachmentStore = null!;
+    private LocalFileStorage _fileStorage = null!;
     private string _schemaName = null!;
     private string _tempStoragePath = null!;
     private const int TestLayerId = 1;
@@ -35,9 +42,23 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         _tempStoragePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_tempStoragePath);
 
+        var progressStore = Substitute.For<IUploadProgressStore>();
+        _fileStorage = new LocalFileStorage(
+            Options.Create(new LocalStorageOptions
+            {
+                BasePath = _tempStoragePath,
+                CreateDirectoryIfNotExists = true
+            }),
+            NullLogger<LocalFileStorage>.Instance,
+            progressStore);
+
         // Create attachment store with the isolated schema
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
-        _attachmentStore = new PostgresAttachmentStore(connectionProvider, _schemaName, _tempStoragePath);
+        _attachmentStore = new PostgresAttachmentStore(
+            connectionProvider,
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            _schemaName);
 
         // Create test table structure
         await _fixture.ExecuteAsync($"""
@@ -97,10 +118,10 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.NotEmpty(attachment.StoragePath);
 
         // Verify file was stored
-        var fullPath = Path.Combine(_tempStoragePath, attachment.StoragePath);
-        Assert.True(File.Exists(fullPath));
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
 
-        var storedContent = await File.ReadAllBytesAsync(fullPath);
+        var storedContent = await _fileStorage.DownloadBytesAsync(attachment.StoragePath);
+        Assert.NotNull(storedContent);
         Assert.Equal(content, storedContent);
     }
 
@@ -207,10 +228,9 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     {
         // Arrange
         var attachment = await CreateTestAttachment();
-        var filePath = Path.Combine(_tempStoragePath, attachment.StoragePath);
 
         // Verify file exists before deletion
-        Assert.True(File.Exists(filePath));
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
 
         // Act
         var deleted = await _attachmentStore.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id);
@@ -223,7 +243,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Null(retrieved);
 
         // Verify file is deleted from filesystem
-        Assert.False(File.Exists(filePath));
+        Assert.False(await _fileStorage.ExistsAsync(attachment.StoragePath));
     }
 
     [Fact]
@@ -278,7 +298,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             filename: "metadata.pdf",
             contentType: "application/pdf",
             size: 1024,
-            storagePath: "test/path/file.pdf",
+            storagePath: Guid.NewGuid().ToString("N"),
             keywords: "metadata,test");
 
         // Act

@@ -3,11 +3,17 @@
 
 using System.Collections.Frozen;
 using System.Collections.Immutable;
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -54,32 +60,6 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
-    /// Format option for content negotiation
-    /// </summary>
-    public readonly record struct FormatOption(string QueryValue, string MediaType, string Title);
-
-    /// <summary>
-    /// CRS definition with URI, SRID, and axis order
-    /// </summary>
-    public readonly record struct CrsDefinition(string Uri, int Srid, AxisOrder AxisOrder);
-
-    /// <summary>
-    /// Axis order enumeration
-    /// </summary>
-    public enum AxisOrder
-    {
-        EastNorth,
-        NorthEast
-    }
-
-    /// <summary>
-    /// Supported metadata formats
-    /// </summary>
-    public static readonly ImmutableArray<FormatOption> MetadataFormats = ImmutableArray.Create(
-        new FormatOption("json", MediaTypes.Json, "JSON"),
-        new FormatOption("html", MediaTypes.Html, "HTML"));
-
-    /// <summary>
     /// Supported feature formats
     /// </summary>
     public static readonly ImmutableArray<FormatOption> FeatureFormats = ImmutableArray.Create(
@@ -91,25 +71,112 @@ internal static class OgcFeaturesUtilities
     // CRS constants
     public const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     public const string Epsg4326Uri = "http://www.opengis.net/def/crs/EPSG/0/4326";
+    public const string Epsg3857Uri = "http://www.opengis.net/def/crs/EPSG/0/3857";
     public const string WfsNamespace = "http://www.opengis.net/wfs/2.0";
     public const string GmlNamespace = "http://www.opengis.net/gml/3.2";
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     public const string AtomNamespace = "http://www.w3.org/2005/Atom";
 
+    private static readonly ImmutableArray<string> _defaultCrsIdentifiers =
+        ImmutableArray.Create(Crs84Uri, Epsg4326Uri, Epsg3857Uri);
+
     /// <summary>
-    /// Validates query parameters against allowed set
+    /// Returns the supported CRS URIs for a collection.
     /// </summary>
-    public static BadRequest<string>? ValidateQueryParameters(HttpRequest request, IReadOnlySet<string> allowedParameters)
+    public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
+        LayerDefinition layer,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
     {
-        foreach (var key in request.Query.Keys)
+        var definitions = await GetSupportedCrsDefinitionsAsync(layer, crsRegistry, cancellationToken).ConfigureAwait(false);
+        return definitions.Keys
+            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Builds CRS definitions for a collection.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
+        LayerDefinition layer,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var crsIdentifier in _defaultCrsIdentifiers)
         {
-            if (!allowedParameters.Contains(key))
+            var definition = await crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
+            if (definition.HasValue)
             {
-                return TypedResults.BadRequest($"Unknown query parameter: {key}");
+                definitions[definition.Value.Uri] = definition.Value;
             }
         }
 
-        return null;
+        var storageCrs = layer.SpatialReference.ToOgcCrs();
+        var storageDefinition = await crsRegistry.ResolveAsync(storageCrs, cancellationToken).ConfigureAwait(false);
+        if (storageDefinition.HasValue)
+        {
+            definitions[storageDefinition.Value.Uri] = storageDefinition.Value;
+        }
+
+        return definitions;
+    }
+
+    /// <summary>
+    /// Normalizes CRS inputs to canonical URI forms (e.g. EPSG:4326 -> http://www.opengis.net/def/crs/EPSG/0/4326).
+    /// </summary>
+    public static string NormalizeCrsUri(string crs)
+    {
+        var trimmed = crs.Trim();
+
+        if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
+        {
+            var code = trimmed[5..];
+            if (int.TryParse(code, out var srid))
+            {
+                return $"http://www.opengis.net/def/crs/EPSG/0/{srid}";
+            }
+        }
+
+        const string urnPrefix = "urn:ogc:def:crs:EPSG::";
+        if (trimmed.StartsWith(urnPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var code = trimmed[urnPrefix.Length..];
+            if (int.TryParse(code, out var srid))
+            {
+                return $"http://www.opengis.net/def/crs/EPSG/0/{srid}";
+            }
+        }
+
+        return trimmed;
+    }
+
+    /// <summary>
+    /// Resolves CRS parameters against supported CRS definitions.
+    /// </summary>
+    public static bool TryResolveCrs(
+        string? crs,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        out CrsDefinition definition,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(crs))
+        {
+            definition = supportedCrs[Crs84Uri];
+            error = null;
+            return true;
+        }
+
+        var normalized = NormalizeCrsUri(crs);
+        if (supportedCrs.TryGetValue(normalized, out definition))
+        {
+            error = null;
+            return true;
+        }
+
+        definition = default;
+        error = $"Unsupported CRS '{crs}'.";
+        return false;
     }
 
     /// <summary>
@@ -129,15 +196,11 @@ internal static class OgcFeaturesUtilities
             }
         }
 
-        foreach (var key in request.Query.Keys)
-        {
-            if (!allowed.Contains(key))
-            {
-                return TypedResults.BadRequest($"Unknown query parameter: {key}");
-            }
-        }
-
-        return null;
+        var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        var validationResult = validator.ValidateAllowedParameters(request.Query.Keys.ToArray(), allowed);
+        return validationResult.IsValid
+            ? null
+            : TypedResults.BadRequest(validationResult.ErrorMessage ?? "Invalid query parameter.");
     }
 
     /// <summary>
@@ -155,246 +218,117 @@ internal static class OgcFeaturesUtilities
             or FieldType.Time
             or FieldType.Uuid;
 
-    /// <summary>
-    /// Determines output format from request parameters and headers
-    /// </summary>
-    public static bool TryGetOutputFormat(
-        string? formatParameter,
-        HttpContext context,
-        bool isFeatureContent,
-        out string outputFormat,
-        out IResult? error)
+    public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
+        LayerDefinition layer,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
     {
-        outputFormat = isFeatureContent ? MediaTypes.GeoJson : MediaTypes.Json;
-        error = null;
-
-        if (!string.IsNullOrWhiteSpace(formatParameter))
+        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
         {
-            var normalized = formatParameter.Trim();
-            switch (normalized.ToLowerInvariant())
-            {
-                case "json":
-                    outputFormat = MediaTypes.Json;
-                    return true;
-                case "geojson" when isFeatureContent:
-                    outputFormat = MediaTypes.GeoJson;
-                    return true;
-                case "geojson":
-                    error = TypedResults.BadRequest("GeoJSON format is only supported for feature content");
-                    return false;
-                case "gml" when isFeatureContent:
-                case "xml" when isFeatureContent:
-                    outputFormat = MediaTypes.Gml;
-                    return true;
-                case "gml":
-                case "xml":
-                    error = TypedResults.BadRequest("GML format is only supported for feature content");
-                    return false;
-                case "html":
-                    outputFormat = MediaTypes.Html;
-                    return true;
-                default:
-                    error = TypedResults.BadRequest($"Unsupported format '{formatParameter}'");
-                    return false;
-            }
+            return null;
         }
 
-        var acceptHeader = context.Request.Headers.Accept.ToString();
-        if (string.IsNullOrWhiteSpace(acceptHeader))
+        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
+            layer.Id,
+            startField!.Name,
+            startField.Type,
+            cancellationToken).ConfigureAwait(false);
+
+        TemporalExtentResult? endExtent = null;
+        if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            endExtent = await featureReader.GetTemporalExtentAsync(
+                layer.Id,
+                endField.Name,
+                endField.Type,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        var acceptsGeoJson = acceptHeader.Contains("application/geo+json", StringComparison.OrdinalIgnoreCase);
-        var acceptsJson = acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase);
-        var acceptsJsonSuffix = acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase);
-        var acceptsHtml = acceptHeader.Contains("text/html", StringComparison.OrdinalIgnoreCase);
-        var acceptsGml = acceptHeader.Contains("application/gml+xml", StringComparison.OrdinalIgnoreCase) ||
-                         acceptHeader.Contains("application/xml", StringComparison.OrdinalIgnoreCase) ||
-                         acceptHeader.Contains("text/xml", StringComparison.OrdinalIgnoreCase) ||
-                         acceptHeader.Contains("+xml", StringComparison.OrdinalIgnoreCase);
-
-        if (isFeatureContent)
+        if (startExtent == null)
         {
-            if (acceptsGml)
+            return null;
+        }
+
+        var min = startExtent?.Start;
+        var max = endField == null
+            ? startExtent?.End
+            : endExtent?.End ?? endExtent?.Start;
+
+        return new TemporalExtent
+        {
+            Interval = ImmutableArray.Create(ImmutableArray.Create(
+                FormatTemporalValue(min),
+                FormatTemporalValue(max)))
+        };
+    }
+
+    private static bool TryResolveTemporalFields(
+        LayerDefinition layer,
+        out FieldDefinition? startField,
+        out FieldDefinition? endField)
+    {
+        startField = null;
+        endField = null;
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo != null)
+        {
+            if (string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
             {
-                outputFormat = MediaTypes.Gml;
-                return true;
+                return false;
             }
 
-            if (acceptsGeoJson)
+            startField = FindTemporalField(layer, timeInfo.StartTimeField);
+            if (startField == null)
             {
-                outputFormat = MediaTypes.GeoJson;
-                return true;
+                return false;
             }
 
-            if (acceptsJson || acceptsJsonSuffix)
+            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
             {
-                outputFormat = MediaTypes.Json;
-                return true;
-            }
-
-            if (acceptsHtml)
-            {
-                outputFormat = MediaTypes.Html;
-                return true;
+                endField = FindTemporalField(layer, timeInfo.EndTimeField);
+                if (endField == null)
+                {
+                    return false;
+                }
             }
         }
         else
         {
-            if (acceptsJson || acceptsJsonSuffix)
-            {
-                outputFormat = MediaTypes.Json;
-                return true;
-            }
-
-            if (acceptsHtml)
-            {
-                outputFormat = MediaTypes.Html;
-                return true;
-            }
+            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
         }
 
-        if (acceptHeader.Contains("*/*", StringComparison.OrdinalIgnoreCase))
+        if (startField == null)
         {
-            return true;
+            return false;
         }
 
-        error = Results.StatusCode(StatusCodes.Status406NotAcceptable);
-        return false;
+        if (endField != null && endField.Type != startField.Type)
+        {
+            return false;
+        }
+
+        return true;
     }
 
-    /// <summary>
-    /// Builds URL with format parameter
-    /// </summary>
-    public static string BuildUrlWithFormat(HttpRequest request, string basePath, string? formatValue)
+    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
     {
-        var queryBuilder = new List<string>();
-
-        foreach (var param in request.Query)
-        {
-            if (string.Equals(param.Key, "f", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!string.IsNullOrEmpty(param.Value))
-            {
-                queryBuilder.Add($"{param.Key}={Uri.EscapeDataString(param.Value.ToString())}");
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(formatValue))
-        {
-            queryBuilder.Add($"f={Uri.EscapeDataString(formatValue)}");
-        }
-
-        return queryBuilder.Count > 0 ? $"{basePath}?{string.Join("&", queryBuilder)}" : basePath;
+        return layer.AttributeFields.FirstOrDefault(field =>
+            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            field.Type is FieldType.DateTime or FieldType.Date);
     }
 
-    /// <summary>
-    /// Builds format-specific links for content negotiation
-    /// </summary>
-    public static ImmutableArray<Link> BuildFormatLinks(
-        HttpRequest request,
-        string basePath,
-        string outputFormat,
-        ImmutableArray<FormatOption> formats,
-        string title)
+    private static string? FormatTemporalValue(DateTimeOffset? value)
     {
-        var links = new List<Link>
+        if (!value.HasValue)
         {
-            Link.Create(
-                href: $"{basePath}{request.QueryString}",
-                rel: RelationTypes.Self,
-                type: outputFormat,
-                title: title)
-        };
-
-        foreach (var format in formats)
-        {
-            if (string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            links.Add(Link.Create(
-                href: BuildUrlWithFormat(request, basePath, format.QueryValue),
-                rel: RelationTypes.Alternate,
-                type: format.MediaType,
-                title: format.Title));
+            return null;
         }
 
-        return links.ToImmutableArray();
-    }
-
-    /// <summary>
-    /// Adds alternate format links to existing link collection
-    /// </summary>
-    public static ImmutableArray<Link> AddAlternateLinks(
-        ImmutableArray<Link> existing,
-        HttpRequest request,
-        string basePath,
-        string outputFormat,
-        ImmutableArray<FormatOption> formats)
-    {
-        var builder = existing.ToBuilder();
-
-        foreach (var format in formats)
-        {
-            if (string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            builder.Add(Link.Create(
-                href: BuildUrlWithFormat(request, basePath, format.QueryValue),
-                rel: RelationTypes.Alternate,
-                type: format.MediaType,
-                title: format.Title));
-        }
-
-        return builder.ToImmutableArray();
-    }
-
-    /// <summary>
-    /// Formats metadata response with HTML option
-    /// </summary>
-    public static IResult FormatMetadataResponse<T>(
-        T payload,
-        JsonTypeInfo<T> typeInfo,
-        string outputFormat,
-        string title)
-    {
-        if (outputFormat == MediaTypes.Html)
-        {
-            var json = JsonSerializer.Serialize(payload, typeInfo);
-            var html = BuildHtmlDocument(title, json);
-            return Results.Text(html, MediaTypes.Html);
-        }
-
-        return Results.Json(payload, typeInfo, contentType: MediaTypes.Json);
-    }
-
-    /// <summary>
-    /// Builds HTML document wrapper for JSON content
-    /// </summary>
-    private static string BuildHtmlDocument(string title, string json)
-    {
-        return $@"<!DOCTYPE html>
-<html>
-<head>
-    <title>{title}</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-        pre {{ background: #f5f5f5; padding: 20px; border-radius: 5px; overflow: auto; }}
-        .title {{ color: #333; margin-bottom: 20px; }}
-    </style>
-</head>
-<body>
-    <h1 class=""title"">{title}</h1>
-    <pre><code>{json}</code></pre>
-</body>
-</html>";
+        var utc = value.Value.ToUniversalTime();
+        var format = utc.Ticks % TimeSpan.TicksPerSecond == 0
+            ? "yyyy-MM-ddTHH:mm:ss'Z'"
+            : "yyyy-MM-ddTHH:mm:ss.fffffff'Z'";
+        return utc.ToString(format, CultureInfo.InvariantCulture);
     }
 }

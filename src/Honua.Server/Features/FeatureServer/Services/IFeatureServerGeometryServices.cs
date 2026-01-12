@@ -11,4 +11,6 @@ internal interface IFeatureServerGeometryServices
     GeometryValidationResult ValidateEsriJson(GeoServicesGeometry? geometry);
 
     GeometryValidationResult ValidateWkb(byte[]? wkb);
+
+    Task<GeometryValidationResult> ValidateCompleteAsync(byte[] wkb, CancellationToken cancellationToken = default);
 }

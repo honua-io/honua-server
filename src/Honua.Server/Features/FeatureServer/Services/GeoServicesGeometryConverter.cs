@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -17,7 +18,12 @@ internal static class GeoServicesGeometryConverter
     /// <summary>
     /// Converts WKB geometry to GeoServices format.
     /// </summary>
-    public static GeoServicesGeometry? ConvertWkbToGeoServicesGeometry(byte[]? wkbGeometry, int? srid = null)
+    public static GeoServicesGeometry? ConvertWkbToGeoServicesGeometry(
+        byte[]? wkbGeometry,
+        int? srid = null,
+        Honua.Core.Configuration.GeometryLimits? geometryLimits = null,
+        bool includeZ = true,
+        bool includeM = true)
     {
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
@@ -37,6 +43,16 @@ internal static class GeoServicesGeometryConverter
         if (geometry == null || geometry.IsEmpty)
         {
             return null;
+        }
+
+        if (geometryLimits != null)
+        {
+            geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits) ?? geometry;
+        }
+
+        if (!includeZ || !includeM)
+        {
+            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, includeZ, includeM);
         }
 
         if (srid.HasValue)
@@ -602,30 +618,7 @@ internal static class GeoServicesGeometryConverter
 
     private static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        if (geometry is GeometryCollection collection && collection.NumGeometries > 0)
-        {
-            return GetHasZandM(collection.GetGeometryN(0));
-        }
-
-        CoordinateSequence? sequence = geometry switch
-        {
-            Point point => point.CoordinateSequence,
-            LineString lineString => lineString.CoordinateSequence,
-            Polygon polygon => polygon.ExteriorRing.CoordinateSequence,
-            MultiPoint multiPoint when multiPoint.NumGeometries > 0 => ((Point)multiPoint.GetGeometryN(0)).CoordinateSequence,
-            MultiLineString multiLineString when multiLineString.NumGeometries > 0 => ((LineString)multiLineString.GetGeometryN(0)).CoordinateSequence,
-            MultiPolygon multiPolygon when multiPolygon.NumGeometries > 0 => ((Polygon)multiPolygon.GetGeometryN(0)).ExteriorRing.CoordinateSequence,
-            _ => null
-        };
-
-        if (sequence == null)
-        {
-            return (false, false);
-        }
-
-        var hasZ = HasOrdinateValues(sequence, Ordinate.Z);
-        var hasM = HasOrdinateValues(sequence, Ordinate.M);
-        return (hasZ, hasM);
+        return GeometryService.DetectZMFromGeometry(geometry);
     }
 
     private static bool IsEmptyGeometry(GeoServicesGeometry geometry)
@@ -667,17 +660,4 @@ internal static class GeoServicesGeometryConverter
         return values.ToArray();
     }
 
-    private static bool HasOrdinateValues(CoordinateSequence sequence, Ordinate ordinate)
-    {
-        for (var i = 0; i < sequence.Count; i++)
-        {
-            var value = sequence.GetOrdinate(i, ordinate);
-            if (!double.IsNaN(value))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

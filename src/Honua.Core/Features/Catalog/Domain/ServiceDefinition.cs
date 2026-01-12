@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
@@ -17,6 +18,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="SupportedFormats">Query response formats supported by the service</param>
 /// <param name="Capabilities">Operations supported by the service</param>
 /// <param name="ServiceExtent">Overall spatial extent of all service data</param>
+/// <param name="Metadata">Optional catalog metadata for access policy and extensions</param>
 public record ServiceDefinition(
     string Name,
     string Description,
@@ -25,7 +27,8 @@ public record ServiceDefinition(
     int MaxRecordCount = 1000,
     string[] SupportedFormats = default!,
     string[] Capabilities = default!,
-    FeatureExtent? ServiceExtent = null)
+    FeatureExtent? ServiceExtent = null,
+    CatalogMetadata? Metadata = null)
 {
     /// <summary>
     /// Default supported formats for GeoServices REST API

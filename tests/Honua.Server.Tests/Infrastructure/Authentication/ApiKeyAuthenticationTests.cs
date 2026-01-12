@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -21,6 +23,8 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// Integration tests for API key authentication with development bypass functionality
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Admin, Protocols.Health, Protocols.FeatureServer)]
+[Operation(Operations.Security)]
 public class ApiKeyAuthenticationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _output;
@@ -46,7 +50,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     /// </summary>
     private static WebApplicationFactory<Program> CreateTestFactory(Action<IWebHostBuilder> configure)
     {
-        return new WebApplicationFactory<Program>()
+        return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 // Apply additional test-specific configuration first
@@ -72,6 +76,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     // API keys are now required in development environment
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_DevelopmentBypass_ExplicitlyEnabled_AllowsAccess()
     {
         // Arrange - Explicitly enable development bypass
@@ -91,6 +96,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_ProductionEnvironment_NoBypass_RequiresAuth()
     {
         // Arrange - Production environment without bypass
@@ -114,6 +120,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     #region API Key Authentication Tests
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_ValidApiKey_AllowsAccess()
     {
         // Arrange
@@ -136,6 +143,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_InvalidApiKey_DeniesAccess()
     {
         // Arrange
@@ -160,6 +168,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_EmptyApiKey_DeniesAccess()
     {
         // Arrange
@@ -180,6 +189,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_NoApiKeyHeader_DeniesAccess()
     {
         // Arrange
@@ -201,6 +211,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_NoAdminPassword_DeniesAccess()
     {
         // Arrange - Production environment with no admin password configured
@@ -228,6 +239,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     #region Public Endpoint Tests
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task HealthEndpoint_NoAuth_AlwaysAccessible()
     {
         // Arrange - Production environment with auth required
@@ -247,7 +259,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task FeatureServerEndpoint_NoAuth_AlwaysAccessible()
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task FeatureServerEndpoint_NoAuth_RequiresAuthByDefault()
     {
         // Arrange - Production environment with auth required and mocked services
         using var factory = CreateTestFactory(builder =>
@@ -263,17 +276,59 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
                 // Add mock implementations for services needed by FeatureServer
                 services.AddScoped<ILayerCatalog>(provider => new TestLayerCatalog());
-                services.AddScoped<IFeatureStore>(provider => new TestFeatureStore());
+                services.AddScoped<TestFeatureStore>();
+                services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
             });
         });
         using var client = factory.CreateClient();
 
         // Act - Access public FeatureServer endpoint without API key
-        var response = await client.GetAsync("/rest/services/1/FeatureServer");
+        var response = await client.GetAsync("/rest/services/test/FeatureServer");
 
-        // Assert - Should always be accessible (will get error due to missing data, but not 401)
+        // Assert - Should require authentication by default
+        Assert.Equal(401, (int)response.StatusCode);
+        _output.WriteLine($"FeatureServer endpoint requires auth by default: {response.StatusCode}");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task FeatureServerEndpoint_NoAuth_AllowPublicRead_AllowsAccess()
+    {
+        // Arrange - Production environment with allow-public enabled and mocked services
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+
+            builder.ConfigureTestServices(services =>
+            {
+                // Remove the real PostgreSQL services
+                services.RemoveAll<Npgsql.NpgsqlDataSource>();
+                services.RemoveAll<IDatabaseConnectionProvider>();
+
+                // Add mock implementations for services needed by FeatureServer
+                services.AddScoped<ILayerCatalog>(_ => new TestLayerCatalog(
+                    servicePolicy: new AccessPolicy { AllowAnonymous = true }));
+                services.AddScoped<TestFeatureStore>();
+                services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+            });
+        });
+        using var client = factory.CreateClient();
+
+        // Act - Access public FeatureServer endpoint without API key
+        var response = await client.GetAsync("/rest/services/test/FeatureServer");
+
+        // Assert - Should allow access when public read is enabled
         Assert.NotEqual(401, (int)response.StatusCode);
-        _output.WriteLine($"FeatureServer endpoint accessible without auth: {response.StatusCode}");
+        _output.WriteLine($"FeatureServer endpoint accessible when public read is enabled: {response.StatusCode}");
     }
 
     #endregion
@@ -281,6 +336,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     #region Edge Cases
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_CaseSensitiveApiKey_DeniesAccess()
     {
         // Arrange
@@ -301,6 +357,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_SpecialCharactersInApiKey_WorksCorrectly()
     {
         // Arrange

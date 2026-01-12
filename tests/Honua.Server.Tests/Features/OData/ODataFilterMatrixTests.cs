@@ -650,9 +650,7 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
 
     private static JsonElement ParseAttributes(JsonElement feature)
     {
-        var attributesJson = feature.GetProperty("Attributes").GetString();
-        using var doc = JsonDocument.Parse(attributesJson!);
-        return doc.RootElement.Clone();
+        return ODataTestHelpers.ParseAttributes(feature);
     }
 
     #endregion

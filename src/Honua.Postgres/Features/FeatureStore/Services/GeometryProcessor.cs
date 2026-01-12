@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
@@ -13,7 +15,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
 {
     private const string GeometryColumnName = "geometry";
 
-    public string GetGeometrySelectExpression(GeometryStorageType storageType, FeatureQuery query)
+    public string GetGeometrySelectExpression(CoreGeometryStorageType storageType, FeatureQuery query)
     {
         var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
 
@@ -23,15 +25,10 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
         }
 
-        if (storageType == GeometryStorageType.Bytea && !query.OutputSrid.HasValue)
-        {
-            return $"{GeometryColumnName} AS {GeometryColumnName}";
-        }
-
         return $"ST_AsBinary({baseGeometry}) AS {GeometryColumnName}";
     }
 
-    public string GetGeometryGmlExpression(GeometryStorageType storageType, FeatureQuery query)
+    public string GetGeometryGmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)
     {
         var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
 
@@ -44,29 +41,29 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         return $"ST_AsGML(3, {baseGeometry}, 15, 1)";
     }
 
-    public string GetGeometryWriteExpression(GeometryStorageType storageType, string parameterName, int? layerSrid)
+    public string GetGeometryWriteExpression(CoreGeometryStorageType storageType, string parameterName, int? layerSrid)
     {
         return storageType switch
         {
-            GeometryStorageType.Geometry => BuildGeometryWriteExpression(parameterName, layerSrid),
-            GeometryStorageType.Geography => BuildGeographyWriteExpression(parameterName, layerSrid),
-            GeometryStorageType.Bytea => parameterName,
+            CoreGeometryStorageType.Geometry => BuildGeometryWriteExpression(parameterName, layerSrid),
+            CoreGeometryStorageType.Geography => BuildGeographyWriteExpression(parameterName, layerSrid),
+            CoreGeometryStorageType.Bytea => parameterName,
             _ => parameterName
         };
     }
 
-    public string GetGeometryOperand(GeometryStorageType storageType, string? columnExpression = null, int? layerSrid = null)
+    public string GetGeometryOperand(CoreGeometryStorageType storageType, string? columnExpression = null, int? layerSrid = null)
     {
         var column = columnExpression ?? GeometryColumnName;
         var operand = storageType switch
         {
-            GeometryStorageType.Geometry => column,
-            GeometryStorageType.Geography => $"{column}::geometry",
-            GeometryStorageType.Bytea => $"ST_GeomFromEWKB({column})",
+            CoreGeometryStorageType.Geometry => column,
+            CoreGeometryStorageType.Geography => $"{column}::geometry",
+            CoreGeometryStorageType.Bytea => $"ST_GeomFromEWKB({column})",
             _ => column
         };
 
-        if (storageType == GeometryStorageType.Bytea && layerSrid.HasValue)
+        if (storageType == CoreGeometryStorageType.Bytea && layerSrid.HasValue)
         {
             operand = $"ST_SetSRID({operand}, {layerSrid.Value})";
         }
@@ -110,29 +107,30 @@ internal sealed class GeometryProcessor : IGeometryProcessor
     /// <summary>
     /// Gets the geometry operand for geography operations (WGS84)
     /// </summary>
-    public string GetGeographyOperand(GeometryStorageType storageType, int? layerSrid)
+    public string GetGeographyOperand(CoreGeometryStorageType storageType, int? layerSrid)
     {
         var geometryOperand = storageType switch
         {
-            GeometryStorageType.Geography => GeometryColumnName,
-            GeometryStorageType.Geometry => GeometryColumnName,
-            GeometryStorageType.Bytea => $"ST_GeomFromEWKB({GeometryColumnName})",
+            CoreGeometryStorageType.Geography => GeometryColumnName,
+            CoreGeometryStorageType.Geometry => GeometryColumnName,
+            CoreGeometryStorageType.Bytea => $"ST_GeomFromEWKB({GeometryColumnName})",
             _ => GeometryColumnName
         };
 
-        if (storageType == GeometryStorageType.Geography)
+        if (storageType == CoreGeometryStorageType.Geography)
         {
             return geometryOperand;
         }
 
-        if (storageType == GeometryStorageType.Bytea && layerSrid.HasValue)
+        if (storageType == CoreGeometryStorageType.Bytea && layerSrid.HasValue)
         {
             geometryOperand = $"ST_SetSRID({geometryOperand}, {layerSrid.Value})";
         }
 
-        if (layerSrid.HasValue && layerSrid.Value != 4326)
+        var wgs84Srid = SpatialReference.WGS84.Wkid;
+        if (layerSrid.HasValue && layerSrid.Value != wgs84Srid)
         {
-            geometryOperand = $"ST_Transform({geometryOperand}, 4326)";
+            geometryOperand = $"ST_Transform({geometryOperand}, {wgs84Srid})";
         }
 
         return $"{geometryOperand}::geography";
@@ -151,7 +149,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
 
     private static string BuildGeographyWriteExpression(string parameterName, int? layerSrid)
     {
-        const int targetSrid = 4326;
+        var targetSrid = SpatialReference.WGS84.Wkid;
         var baseGeometry = $"ST_GeomFromEWKB({parameterName})";
         var assumedSrid = layerSrid ?? targetSrid;
         return $"ST_Transform(ST_SetSRID({baseGeometry}, COALESCE(NULLIF(ST_SRID({baseGeometry}), 0), {assumedSrid})), {targetSrid})::geography";

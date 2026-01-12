@@ -3,8 +3,13 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
@@ -28,7 +33,7 @@ internal static class AttachmentEndpoints
     public static IEndpointRouteBuilder MapAttachmentEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Query attachments for a feature
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryAttachments", HandleQueryAttachments)
+        var queryAttachments = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryAttachments", HandleQueryAttachments)
             .WithDisplayName("Query Feature Attachments")
             .WithName("QueryAttachments")
             .WithSummary("Query attachments for a feature")
@@ -44,6 +49,7 @@ internal static class AttachmentEndpoints
             .WithDescription("Upload a file attachment to a specific feature")
             .WithTags("FeatureServer", "Attachments")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAuthorization()
             .DisableAntiforgery();
 
         // Update attachment
@@ -53,7 +59,8 @@ internal static class AttachmentEndpoints
             .WithSummary("Update an attachment's metadata")
             .WithDescription("Update keywords and other metadata for an existing attachment")
             .WithTags("FeatureServer", "Attachments")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAuthorization();
 
         // Delete attachments
         endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/deleteAttachments", HandleDeleteAttachments)
@@ -62,10 +69,11 @@ internal static class AttachmentEndpoints
             .WithSummary("Delete attachments from a feature")
             .WithDescription("Delete one or more attachments from a specific feature")
             .WithTags("FeatureServer", "Attachments")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAuthorization();
 
         // Download attachment content
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments/{attachmentId:long}", HandleDownloadAttachment)
+        var downloadAttachment = endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments/{attachmentId:long}", HandleDownloadAttachment)
             .WithDisplayName("Download Feature Attachment")
             .WithName("DownloadAttachment")
             .WithSummary("Download attachment content")
@@ -81,11 +89,11 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleQueryAttachments(HttpContext context)
     {
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
+        var resource = await TryValidateLayerAccessAsync(context);
+        if (resource == null)
             return;
-        }
+
+        var layerId = resource.Value.Layer.Id;
 
         if (!context.Request.Query.TryGetValue("objectId", out var objectIdValue) ||
             !long.TryParse(objectIdValue, out var featureId))
@@ -97,11 +105,12 @@ internal static class AttachmentEndpoints
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
-        var result = await QueryAttachmentsAsync(
+        var result = await AttachmentHandler.QueryAttachmentsAsync(
             layerId,
             featureId,
             attachmentStore,
             logger,
+            context,
             context.RequestAborted);
 
         await result.ExecuteAsync(context);
@@ -112,34 +121,55 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleAddAttachment(HttpContext context)
     {
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
+        if (resource == null)
             return;
+
+        var layerId = resource.Value.Layer.Id;
+
+        var objectIdValue = context.Request.Query.TryGetValue("objectId", out var queryObjectId)
+            ? queryObjectId.ToString()
+            : null;
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
+        if (string.IsNullOrWhiteSpace(objectIdValue) &&
+            form.TryGetValue("objectId", out var formObjectId))
+        {
+            objectIdValue = formObjectId.ToString();
         }
 
-        if (!context.Request.Form.TryGetValue("objectId", out var objectIdValue) ||
+        if (string.IsNullOrWhiteSpace(objectIdValue) ||
             !long.TryParse(objectIdValue, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
         }
 
-        if (context.Request.Form.Files.Count == 0)
+        if (form.Files.Count == 0)
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "At least one file must be uploaded");
             return;
         }
 
-        var file = context.Request.Form.Files[0];
-        var keywords = context.Request.Form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
+        var file = form.Files[0];
+        var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
+
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted);
+        if (feature == null)
+        {
+            await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
+            return;
+        }
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
-        var result = await AddAttachmentAsync(
+        var result = await AttachmentHandler.AddAttachmentAsync(
+            context,
             layerId,
             featureId,
             file,
@@ -158,32 +188,35 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleUpdateAttachment(HttpContext context)
     {
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
+        if (resource == null)
             return;
-        }
 
-        if (!context.Request.Form.TryGetValue("objectId", out var objectIdValue) ||
+        var layerId = resource.Value.Layer.Id;
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
+        if (!form.TryGetValue("objectId", out var objectIdValue) ||
             !long.TryParse(objectIdValue, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
         }
 
-        if (!context.Request.Form.TryGetValue("attachmentId", out var attachmentIdValue) ||
+        if (!form.TryGetValue("attachmentId", out var attachmentIdValue) ||
             !long.TryParse(attachmentIdValue, out var attachmentId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "attachmentId parameter is required");
             return;
         }
 
-        var keywords = context.Request.Form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
+        var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
-        var result = await UpdateAttachmentAsync(
+        var result = await AttachmentHandler.UpdateAttachmentAsync(
+            context,
             layerId,
             featureId,
             attachmentId,
@@ -200,20 +233,22 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleDeleteAttachments(HttpContext context)
     {
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
+        var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write);
+        if (resource == null)
             return;
-        }
 
-        if (!context.Request.Form.TryGetValue("objectId", out var objectIdValue) ||
+        var layerId = resource.Value.Layer.Id;
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+
+        if (!form.TryGetValue("objectId", out var objectIdValue) ||
             !long.TryParse(objectIdValue, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
         }
 
-        if (!context.Request.Form.TryGetValue("attachmentIds", out var attachmentIdsValue))
+        if (!form.TryGetValue("attachmentIds", out var attachmentIdsValue))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "attachmentIds parameter is required");
             return;
@@ -240,7 +275,8 @@ internal static class AttachmentEndpoints
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
-        var result = await DeleteAttachmentsAsync(
+        var result = await AttachmentHandler.DeleteAttachmentsAsync(
+            context,
             layerId,
             featureId,
             attachmentIds.ToArray(),
@@ -256,20 +292,11 @@ internal static class AttachmentEndpoints
     /// </summary>
     private static async Task HandleDownloadAttachment(HttpContext context)
     {
-        // Extract and validate service ID for authorization
-        if (!context.Request.RouteValues.TryGetValue("serviceId", out var serviceIdObj) ||
-            string.IsNullOrEmpty(serviceIdObj?.ToString()))
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+        var resource = await TryValidateLayerAccessAsync(context);
+        if (resource == null)
             return;
-        }
-        var serviceId = serviceIdObj.ToString()!;
 
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
-        {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
-            return;
-        }
+        var layerId = resource.Value.Layer.Id;
 
         if (!context.Request.RouteValues.TryGetValue("featureId", out var featureIdObj) ||
             !long.TryParse(featureIdObj?.ToString(), out var featureId))
@@ -285,28 +312,11 @@ internal static class AttachmentEndpoints
             return;
         }
 
-        // Authorization: Verify service and layer exist before allowing download
-        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
-        var service = await layerCatalog.GetServiceAsync(serviceId, context.RequestAborted);
-        if (service == null)
-        {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            await context.Response.WriteAsJsonAsync(new { error = "Service not found" });
-            return;
-        }
-
-        var layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
-        if (layer == null)
-        {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            await context.Response.WriteAsJsonAsync(new { error = "Layer not found" });
-            return;
-        }
-
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
-        var result = await DownloadAttachmentAsync(
+        var result = await AttachmentHandler.DownloadAttachmentAsync(
+            context,
             layerId,
             featureId,
             attachmentId,
@@ -317,30 +327,49 @@ internal static class AttachmentEndpoints
         await result.ExecuteAsync(context);
     }
 
-    // Handler methods would go here - delegating to AttachmentHandler
-    // For now, creating placeholder methods to be implemented in the handler
+    private static async Task<(ServiceDefinition Service, LayerDefinition Layer)?> TryValidateLayerAccessAsync(
+        HttpContext context,
+        AccessScope scope = AccessScope.Read)
+    {
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            return null;
+        }
 
-    private static Task<IResult> QueryAttachmentsAsync(int layerId, long featureId, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
-        => AttachmentHandler.QueryAttachmentsAsync(layerId, featureId, attachmentStore, logger, cancellationToken);
+        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
+            return null;
+        }
 
-    private static Task<IResult> AddAttachmentAsync(
-        int layerId,
-        long featureId,
-        IFormFile file,
-        string? keywords,
-        IAttachmentStore attachmentStore,
-        AttachmentLimits limits,
-        FileUploadSecurityOptions securityOptions,
-        ILogger<AttachmentOperations> logger,
-        CancellationToken cancellationToken)
-        => AttachmentHandler.AddAttachmentAsync(layerId, featureId, file, keywords, attachmentStore, limits, securityOptions, logger, cancellationToken);
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, context.RequestAborted);
+        if (!resourceResult.IsValid)
+        {
+            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
+            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            {
+                await StandardErrorHelpers.CreateBadRequest(context, errorMessage).ExecuteAsync(context);
+            }
+            else
+            {
+                await StandardErrorHelpers.CreateNotFound(context, errorMessage).ExecuteAsync(context);
+            }
 
-    private static Task<IResult> UpdateAttachmentAsync(int layerId, long featureId, long attachmentId, string? keywords, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
-        => AttachmentHandler.UpdateAttachmentAsync(layerId, featureId, attachmentId, keywords, attachmentStore, logger, cancellationToken);
+            return null;
+        }
 
-    private static Task<IResult> DeleteAttachmentsAsync(int layerId, long featureId, long[] attachmentIds, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
-        => AttachmentHandler.DeleteAttachmentsAsync(layerId, featureId, attachmentIds, attachmentStore, logger, cancellationToken);
+        var resource = resourceResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, resource.Layer, resource.Service, scope);
+        if (accessError != null)
+        {
+            await accessError.ExecuteAsync(context);
+            return null;
+        }
 
-    private static Task<IResult> DownloadAttachmentAsync(int layerId, long featureId, long attachmentId, IAttachmentStore attachmentStore, ILogger<AttachmentOperations> logger, CancellationToken cancellationToken)
-        => AttachmentHandler.DownloadAttachmentAsync(layerId, featureId, attachmentId, attachmentStore, logger, cancellationToken);
+        return resource;
+    }
+
+    // Handlers delegate directly to AttachmentHandler methods for implementation.
 }

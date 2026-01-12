@@ -4,325 +4,10 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.OgcFeatures.Models;
-
-/// <summary>
-/// OGC API Features landing page response
-/// </summary>
-public sealed record LandingPage
-{
-    /// <summary>
-    /// Title of the API
-    /// </summary>
-    [JsonPropertyName("title")]
-    public required string Title { get; init; }
-
-    /// <summary>
-    /// Description of the API
-    /// </summary>
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    /// <summary>
-    /// Links to related resources
-    /// </summary>
-    [JsonPropertyName("links")]
-    public required ImmutableArray<Link> Links { get; init; }
-}
-
-/// <summary>
-/// Conformance declaration response
-/// </summary>
-public sealed record ConformanceDeclaration
-{
-    /// <summary>
-    /// List of conformance classes that this API conforms to
-    /// </summary>
-    [JsonPropertyName("conformsTo")]
-    public required ImmutableArray<string> ConformsTo { get; init; }
-
-    /// <summary>
-    /// Links to related resources
-    /// </summary>
-    [JsonPropertyName("links")]
-    public ImmutableArray<Link>? Links { get; init; }
-}
-
-/// <summary>
-/// Link object as defined by OGC API Features specification
-/// </summary>
-public sealed record Link
-{
-    /// <summary>
-    /// The URI of the linked resource
-    /// </summary>
-    [JsonPropertyName("href")]
-    public required string Href { get; init; }
-
-    /// <summary>
-    /// Relation type (e.g., "self", "alternate", "describedby")
-    /// </summary>
-    [JsonPropertyName("rel")]
-    public string? Rel { get; init; }
-
-    /// <summary>
-    /// MIME type of the linked resource
-    /// </summary>
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
-    /// <summary>
-    /// Indicates the link is a URI template
-    /// </summary>
-    [JsonPropertyName("templated")]
-    public bool? Templated { get; init; }
-
-    /// <summary>
-    /// Language of the linked resource
-    /// </summary>
-    [JsonPropertyName("hreflang")]
-    public string? HrefLang { get; init; }
-
-    /// <summary>
-    /// Human-readable title for the link
-    /// </summary>
-    [JsonPropertyName("title")]
-    public string? Title { get; init; }
-
-    /// <summary>
-    /// Creates a link with required properties
-    /// </summary>
-    /// <param name="href">The URI of the linked resource</param>
-    /// <param name="rel">Relation type</param>
-    /// <param name="type">MIME type</param>
-    /// <param name="title">Human-readable title</param>
-    /// <returns>New link instance</returns>
-    public static Link Create(string href, string? rel = null, string? type = null, string? title = null)
-        => new() { Href = href, Rel = rel, Type = type, Title = title };
-}
-
-/// <summary>
-/// Standard OGC API Features relation types
-/// </summary>
-public static class RelationTypes
-{
-    /// <summary>
-    /// Conveys an identifier for the link's context
-    /// </summary>
-    public const string Self = "self";
-
-    /// <summary>
-    /// Refers to an alternate representation of the same resource
-    /// </summary>
-    public const string Alternate = "alternate";
-
-    /// <summary>
-    /// Refers to a resource that describes the link's context
-    /// </summary>
-    public const string DescribedBy = "describedby";
-
-    /// <summary>
-    /// Refers to a resource that serves as the data source
-    /// </summary>
-    public const string Data = "data";
-
-    /// <summary>
-    /// Refers to the items (features) of a collection
-    /// </summary>
-    public const string Items = "items";
-
-    /// <summary>
-    /// Indicates the link target provides service documentation
-    /// </summary>
-    public const string ServiceDoc = "service-doc";
-
-    /// <summary>
-    /// Indicates the link target provides service description
-    /// </summary>
-    public const string ServiceDesc = "service-desc";
-
-    /// <summary>
-    /// Indicates the link target provides conformance declaration
-    /// </summary>
-    public const string Conformance = "conformance";
-
-    /// <summary>
-    /// Indicates the link target provides collections metadata
-    /// </summary>
-    public const string Collections = "data";
-
-    /// <summary>
-    /// Indicates the link target provides the collection containing a feature
-    /// </summary>
-    public const string Collection = "collection";
-
-    /// <summary>
-    /// Indicates the link target provides next page of results
-    /// </summary>
-    public const string Next = "next";
-
-    /// <summary>
-    /// Indicates the link target provides previous page of results
-    /// </summary>
-    public const string Prev = "prev";
-
-    /// <summary>
-    /// Indicates the link target provides queryables schema (OGC API Features Part 3)
-    /// </summary>
-    public const string Queryables = "queryables";
-
-    /// <summary>
-    /// Indicates the link target provides a tilesets list for vector tiles
-    /// </summary>
-    public const string TilesetsVector = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-vector";
-
-    /// <summary>
-    /// Indicates the link target provides a tilesets list for map tiles
-    /// </summary>
-    public const string TilesetsMap = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-map";
-
-    /// <summary>
-    /// Indicates the link target provides a tilesets list for coverage tiles
-    /// </summary>
-    public const string TilesetsCoverage = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-coverage";
-
-    /// <summary>
-    /// Indicates the link target provides the tiling scheme definition
-    /// </summary>
-    public const string TilingScheme = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme";
-
-    /// <summary>
-    /// Indicates the link target provides the geospatial data resource
-    /// </summary>
-    public const string Geodata = "http://www.opengis.net/def/rel/ogc/1.0/geodata";
-}
-
-/// <summary>
-/// Collections response containing list of available feature collections
-/// </summary>
-public sealed record Collections
-{
-    /// <summary>
-    /// List of available collections
-    /// </summary>
-    [JsonPropertyName("collections")]
-    public required ImmutableArray<CollectionInfo> CollectionList { get; init; }
-
-    /// <summary>
-    /// Links to related resources
-    /// </summary>
-    [JsonPropertyName("links")]
-    public required ImmutableArray<Link> Links { get; init; }
-}
-
-/// <summary>
-/// Feature collection metadata
-/// </summary>
-public sealed record CollectionInfo
-{
-    /// <summary>
-    /// Unique identifier for the collection
-    /// </summary>
-    [JsonPropertyName("id")]
-    public required string Id { get; init; }
-
-    /// <summary>
-    /// Human readable title for the collection
-    /// </summary>
-    [JsonPropertyName("title")]
-    public string? Title { get; init; }
-
-    /// <summary>
-    /// Description of the collection
-    /// </summary>
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    /// <summary>
-    /// Links to related resources
-    /// </summary>
-    [JsonPropertyName("links")]
-    public required ImmutableArray<Link> Links { get; init; }
-
-    /// <summary>
-    /// Spatial extent of the collection
-    /// </summary>
-    [JsonPropertyName("extent")]
-    public Extent? Extent { get; init; }
-
-    /// <summary>
-    /// Collection data type (always "feature" for feature collections)
-    /// </summary>
-    [JsonPropertyName("itemType")]
-    public string ItemType { get; init; } = "feature";
-
-    /// <summary>
-    /// Coordinate reference systems supported by this collection
-    /// </summary>
-    [JsonPropertyName("crs")]
-    public ImmutableArray<string>? Crs { get; init; }
-
-    /// <summary>
-    /// Storage coordinate reference system identifier
-    /// </summary>
-    [JsonPropertyName("storageCrs")]
-    public string? StorageCrs { get; init; }
-}
-
-/// <summary>
-/// Spatial and temporal extent of a collection
-/// </summary>
-public sealed record Extent
-{
-    /// <summary>
-    /// Spatial extent
-    /// </summary>
-    [JsonPropertyName("spatial")]
-    public SpatialExtent? Spatial { get; init; }
-
-    /// <summary>
-    /// Temporal extent
-    /// </summary>
-    [JsonPropertyName("temporal")]
-    public TemporalExtent? Temporal { get; init; }
-}
-
-/// <summary>
-/// Spatial extent with bounding box
-/// </summary>
-public sealed record SpatialExtent
-{
-    /// <summary>
-    /// Bounding box coordinates [minx, miny, maxx, maxy]
-    /// </summary>
-    [JsonPropertyName("bbox")]
-    public required ImmutableArray<ImmutableArray<double>> BoundingBox { get; init; }
-
-    /// <summary>
-    /// Coordinate reference system identifier
-    /// </summary>
-    [JsonPropertyName("crs")]
-    public string Crs { get; init; } = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
-}
-
-/// <summary>
-/// Temporal extent with start and end times
-/// </summary>
-public sealed record TemporalExtent
-{
-    /// <summary>
-    /// Temporal interval [start, end] - null values indicate open intervals
-    /// </summary>
-    [JsonPropertyName("interval")]
-    public required ImmutableArray<ImmutableArray<string?>> Interval { get; init; }
-
-    /// <summary>
-    /// Temporal reference system
-    /// </summary>
-    [JsonPropertyName("trs")]
-    public string Trs { get; init; } = "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian";
-}
 
 /// <summary>
 /// JSON converter for raw JSON strings to avoid double encoding
@@ -435,7 +120,7 @@ public sealed record GeoJsonFeature
 /// GeoJSON FeatureCollection for OGC API Features Items response
 /// </summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "FeatureCollection is the standard GeoJSON type name")]
-public sealed record FeatureCollection
+public sealed record FeatureCollection : ICollectionResponse<GeoJsonFeature>
 {
     /// <summary>
     /// GeoJSON object type (always "FeatureCollection")
@@ -472,6 +157,14 @@ public sealed record FeatureCollection
     /// </summary>
     [JsonPropertyName("timeStamp")]
     public DateTimeOffset? TimeStamp { get; init; }
+
+    // ICollectionResponse implementation
+    ImmutableArray<GeoJsonFeature> ICollectionResponse<GeoJsonFeature>.Items => Features.ToImmutableArray();
+    ImmutableArray<ILink>? ICollectionResponse<GeoJsonFeature>.Links => Links?.Cast<ILink>().ToImmutableArray();
+    IPaginationMetadata? ICollectionResponse<GeoJsonFeature>.Pagination =>
+        NumberMatched.HasValue || NumberReturned > 0
+            ? PaginationMetadata.Create(NumberMatched, NumberReturned, false)
+            : null;
 }
 
 /// <summary>
@@ -578,37 +271,115 @@ public sealed record JsonSchemaProperty
 }
 
 /// <summary>
-/// Standard media types for OGC API Features
+/// Request for batch feature operations
 /// </summary>
-public static class MediaTypes
+public sealed record BatchRequest
 {
     /// <summary>
-    /// JSON media type
+    /// List of operations to perform in the batch
     /// </summary>
-    public const string Json = "application/json";
+    [JsonPropertyName("operations")]
+    public required List<BatchOperation> Operations { get; init; }
 
     /// <summary>
-    /// GeoJSON media type
+    /// Whether to stop processing on first error
     /// </summary>
-    public const string GeoJson = "application/geo+json";
+    [JsonPropertyName("failFast")]
+    public bool FailFast { get; init; } = false;
+}
+
+/// <summary>
+/// Single operation in a batch request
+/// </summary>
+public sealed record BatchOperation
+{
+    /// <summary>
+    /// Unique identifier for this operation
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; init; }
 
     /// <summary>
-    /// HTML media type
+    /// Type of operation (CREATE, UPDATE, DELETE)
     /// </summary>
-    public const string Html = "text/html";
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
 
     /// <summary>
-    /// OpenAPI 3.0 specification media type
+    /// Feature ID for UPDATE or DELETE operations
     /// </summary>
-    public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
+    [JsonPropertyName("featureId")]
+    public string? FeatureId { get; init; }
 
     /// <summary>
-    /// GML 3.2 media type
+    /// Feature data for CREATE or UPDATE operations
     /// </summary>
-    public const string Gml = "application/gml+xml;version=3.2";
+    [JsonPropertyName("feature")]
+    public GeoJsonFeature? Feature { get; init; }
+}
+
+/// <summary>
+/// Response from batch operation
+/// </summary>
+public sealed record BatchOperationResponse
+{
+    /// <summary>
+    /// Results for each operation
+    /// </summary>
+    [JsonPropertyName("results")]
+    public required List<BatchOperationResult> Results { get; init; }
 
     /// <summary>
-    /// Mapbox Vector Tile media type
+    /// Whether any operations failed
     /// </summary>
-    public const string Mvt = "application/vnd.mapbox-vector-tile";
+    [JsonPropertyName("hasErrors")]
+    public bool HasErrors { get; init; }
+
+    /// <summary>
+    /// Number of operations processed
+    /// </summary>
+    [JsonPropertyName("processedCount")]
+    public int ProcessedCount { get; init; }
+
+    /// <summary>
+    /// Number of successful operations
+    /// </summary>
+    [JsonPropertyName("successCount")]
+    public int SuccessCount { get; init; }
+}
+
+/// <summary>
+/// Result of a single operation in a batch
+/// </summary>
+public sealed record BatchOperationResult
+{
+    /// <summary>
+    /// Operation identifier
+    /// </summary>
+    [JsonPropertyName("operationId")]
+    public string? OperationId { get; init; }
+
+    /// <summary>
+    /// Whether the operation succeeded
+    /// </summary>
+    [JsonPropertyName("isSuccess")]
+    public bool IsSuccess { get; init; }
+
+    /// <summary>
+    /// Error message if operation failed
+    /// </summary>
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// HTTP status code for the operation
+    /// </summary>
+    [JsonPropertyName("statusCode")]
+    public int StatusCode { get; init; }
+
+    /// <summary>
+    /// Feature ID if operation created or updated a feature
+    /// </summary>
+    [JsonPropertyName("featureId")]
+    public string? FeatureId { get; init; }
 }

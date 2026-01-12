@@ -5,6 +5,7 @@ Comprehensive test infrastructure for Honua Server integration and unit tests.
 ## Features
 
 - **PostgreSQL/PostGIS Integration**: Testcontainers-based database fixtures with schema-based isolation
+- **Redis Integration**: Testcontainers-based Redis fixture for caching and import coordination tests
 - **Parallel Test Execution**: Aggressive parallel execution with schema isolation for maximum throughput
 - **Custom Test Attributes**: Protocol, Operation, and Endpoint tracking for 100% API surface coverage
 - **Fluent Test Data Builders**: Build complex spatial data scenarios with ease
@@ -134,6 +135,18 @@ Set `HONUA_TEST_DB_URL` to use an existing PostGIS database instead of Testconta
 
 ```bash
 export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"
+```
+
+### RedisFixture
+
+Shared Redis container for integration tests that need distributed caching or job coordination.
+
+#### External Redis (opt-in)
+
+Set `HONUA_TEST_REDIS_URL` to use an existing Redis instance instead of Testcontainers.
+
+```bash
+export HONUA_TEST_REDIS_URL="localhost:6379"
 ```
 
 #### Shared YAML Seed

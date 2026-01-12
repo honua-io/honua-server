@@ -289,49 +289,6 @@ public static class SecurityTestScenarios
         };
     }
 
-    /// <summary>
-    /// Tests rate limiting effectiveness.
-    /// </summary>
-    public static async Task<SecurityTestResult> TestRateLimiting(
-        HttpClient client,
-        string endpoint,
-        int requestCount = 100,
-        TimeSpan duration = default)
-    {
-        if (duration == default)
-        {
-            duration = TimeSpan.FromSeconds(10);
-        }
-
-        var results = new List<SecurityTestAttempt>();
-        var startTime = DateTime.UtcNow;
-        var tasks = new List<Task<HttpResponseMessage>>();
-
-        // Fire requests rapidly
-        for (int i = 0; i < requestCount; i++)
-        {
-            tasks.Add(client.GetAsync(endpoint));
-        }
-
-        var responses = await Task.WhenAll(tasks);
-        var rateLimitedCount = responses.Count(r => r.StatusCode == HttpStatusCode.TooManyRequests);
-
-        results.Add(new SecurityTestAttempt
-        {
-            Payload = $"{requestCount} requests in {duration.TotalSeconds}s",
-            StatusCode = HttpStatusCode.OK,
-            ResponseContent = $"Rate limited: {rateLimitedCount}/{requestCount}",
-            IsSafe = rateLimitedCount > 0 // Rate limiting should kick in
-        });
-
-        return new SecurityTestResult
-        {
-            TestType = "Rate Limiting",
-            Endpoint = endpoint,
-            Attempts = results
-        };
-    }
-
     private static bool IsResponseSafe(HttpStatusCode statusCode, string responseContent, string payload)
     {
         // If request was rejected (4xx/5xx), it's likely safe

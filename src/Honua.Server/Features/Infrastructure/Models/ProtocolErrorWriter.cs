@@ -6,6 +6,10 @@ using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
+/// <summary>
+/// Legacy protocol error writer. This class is deprecated in favor of StandardErrorResponseFormatter.
+/// </summary>
+[Obsolete("Use StandardErrorResponseFormatter instead for consistent error handling across all protocols.")]
 internal static class ProtocolErrorWriter
 {
     private const string ODataContentType = "application/json;odata.metadata=minimal";
@@ -107,8 +111,41 @@ internal static class ProtocolErrorWriter
         path.StartsWithSegments("/ogc/tiles") ||
         path.StartsWithSegments("/collections");
 
-    private static bool IsAdmin(PathString path) =>
-        path.StartsWithSegments("/api/v1/admin");
+    private static bool IsAdmin(PathString path)
+    {
+        if (!path.StartsWithSegments("/api", out var remaining))
+        {
+            return false;
+        }
+
+        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments is null || segments.Length < 2)
+        {
+            return false;
+        }
+
+        var versionSegment = segments[0];
+        if (!versionSegment.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var versionPart = versionSegment.AsSpan(1);
+        if (versionPart.IsEmpty)
+        {
+            return false;
+        }
+
+        foreach (var ch in versionPart)
+        {
+            if (!char.IsDigit(ch) && ch != '.')
+            {
+                return false;
+            }
+        }
+
+        return string.Equals(segments[1], "admin", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsGeoServices(PathString path) =>
         path.StartsWithSegments("/rest/services") ||

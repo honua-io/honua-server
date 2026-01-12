@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.OgcFeatures;
 
 [Collection("Database")]
 [Protocol(Protocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
 public class OgcFeaturesItemsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -142,6 +143,29 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCql2JsonFilter_ReturnsFilteredFeatures()
+    {
+        var filterJson = """{"op":"=","args":[{"property":"category"},"test"]}""";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?filter-lang=cql2-json&filter={Uri.EscapeDataString(filterJson)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
+
+        foreach (var feature in features)
+        {
+            var properties = feature.GetProperty("properties");
+            properties.GetProperty("category").GetString().Should().Be("test");
+        }
     }
 
     [IntegrationTest]

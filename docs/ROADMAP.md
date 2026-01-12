@@ -16,11 +16,11 @@ This roadmap assumes the MVP described in `docs/MVP_PLAN.md` (full FeatureServer
 
 ## GA (breadth + robustness)
 - **OData batch:** `/$batch` endpoint for multi-operation requests.
-- **Performance & scale:** Connection pooling tuning, cache controls; rate limiting via proxy guidance.
-- **Observability:** Full OTel (traces/metrics/logs), dashboards, SLOs; structured audit logging.
+- **Performance & scale:** Connection pooling tuning, cache controls; edge rate limiting templates (nginx/ALB/WAF).
+- **Observability:** Full OTel (traces/metrics/logs), dashboards, SLOs; structured audit logging + compliance storage.
 - **Protocol depth:** MapServer identify/legend/dynamicLayers; GeometryServer union/intersect/difference; OGC API Maps preview.
 - **Outputs:** KML, Shapefile export for small jobs; MVT refinements.
-- **Security:** Layer-level RBAC, key rotation, hardened defaults.
+- **Security:** Layer-level RBAC, key rotation, hardened defaults; secure-connection allowlist + audit trail.
 - **Cloud storage:** S3/Blob for attachments/exports; lifecycle policies.
 - **Additional DBs:** SQLite/DuckDB for single-node/lab use.
 - **Tooling:** CLI for admin tasks and migrations.

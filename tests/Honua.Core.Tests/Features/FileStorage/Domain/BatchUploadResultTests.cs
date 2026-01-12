@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.FileStorage.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FileStorage.Domain;

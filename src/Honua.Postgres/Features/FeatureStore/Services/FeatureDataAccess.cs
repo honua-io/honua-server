@@ -6,14 +6,19 @@ using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
@@ -29,7 +34,11 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private readonly IFeatureCacheManager _cacheManager;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
     private readonly PreparedStatementCache? _statementCache;
+    private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<FeatureDataAccess> _logger;
+    private readonly double _slowQueryThresholdMs;
+    private readonly int _queryTimeoutSeconds;
+    private readonly int _tileTimeoutSeconds;
     private readonly string _tableName;
 
     public FeatureDataAccess(
@@ -39,6 +48,9 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
         PreparedStatementCache? statementCache,
         ILogger<FeatureDataAccess> logger,
+        IOptions<PerformanceMonitoringOptions>? performanceOptions = null,
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IPerformanceMonitor? performanceMonitor = null,
         string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
@@ -46,7 +58,14 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _statementCache = statementCache;
+        _performanceMonitor = performanceMonitor;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _slowQueryThresholdMs = (performanceOptions?.Value.SlowRequestThreshold ?? TimeSpan.FromSeconds(1))
+            .TotalMilliseconds;
+
+        var limits = limitsOptions?.Value ?? new LimitsOptions();
+        _queryTimeoutSeconds = GetTimeoutSeconds(limits.Query.QueryTimeout, TimeConstants.ThirtySeconds);
+        _tileTimeoutSeconds = GetTimeoutSeconds(limits.Tiles.TileTimeout, TimeConstants.TenSeconds);
 
         var tableNameOnly = "features";
         _tableName = string.IsNullOrEmpty(schemaName) ? tableNameOnly : $"{schemaName}.{tableNameOnly}";
@@ -68,7 +87,10 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
             var count = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
             stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("count", stopwatch.ElapsedMilliseconds, (int)count);
+            var recordCount = count > int.MaxValue ? int.MaxValue : (int)count;
+            _cacheManager.RecordQueryMetrics("count", stopwatch.ElapsedMilliseconds, recordCount);
+            RecordPerformanceQuery("count", layerId, stopwatch.ElapsedMilliseconds, recordCount);
+            LogSlowQuery("count", stopwatch.ElapsedMilliseconds, layerId, count <= int.MaxValue ? (int?)count : null);
 
             return count;
         }
@@ -103,6 +125,8 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("select", stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery("select", layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery("select", stopwatch.ElapsedMilliseconds, layerId, features.Count);
 
             return features.ToImmutableArray();
         }
@@ -137,6 +161,8 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("select_gml", stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery("select_gml", layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery("select_gml", stopwatch.ElapsedMilliseconds, layerId, features.Count);
 
             return features.ToImmutableArray();
         }
@@ -146,6 +172,107 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
             _cacheManager.RecordQueryMetrics("select_gml_error", stopwatch.ElapsedMilliseconds);
             throw;
         }
+    }
+
+    public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
+    {
+        if (query.ObjectIds.Length == 0)
+        {
+            return QueryResult<Feature>.Empty();
+        }
+
+        if (!FeatureQueryBuilder.IsValidFieldName(query.Relationship.OriginForeignKeyField))
+        {
+            throw new ArgumentException($"Invalid relationship field: {query.Relationship.OriginForeignKeyField}");
+        }
+
+        if (!FeatureQueryBuilder.IsValidFieldName(query.Relationship.DestinationForeignKeyField))
+        {
+            throw new ArgumentException($"Invalid relationship field: {query.Relationship.DestinationForeignKeyField}");
+        }
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var foreignKeyValues = await GetOriginForeignKeyValuesAsync(connection, layerId, query, cancellationToken).ConfigureAwait(false);
+        if (foreignKeyValues.Count == 0)
+        {
+            return QueryResult<Feature>.Empty();
+        }
+
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
+
+        var sql = new StringBuilder();
+        sql.Append("SELECT objectid, ")
+            .Append(geometrySelect)
+            .Append(", attributes FROM ")
+            .Append(_tableName)
+            .Append(" WHERE layer_id = $1")
+            .Append(" AND attributes->>'")
+            .Append(query.Relationship.DestinationForeignKeyField)
+            .Append("' = ANY($2)");
+
+        var parameters = new List<object>
+        {
+            query.Relationship.RelatedLayerId,
+            foreignKeyValues.ToArray()
+        };
+
+        var paramIndex = 3;
+        if (query.SqlFilter != null)
+        {
+            var sqlFragment = query.SqlFilter;
+            var convertedSql = FeatureQueryBuilder.ConvertNamedParametersToPositional(sqlFragment.Sql, ref paramIndex);
+            sql.Append(CultureInfo.InvariantCulture, $" AND ({convertedSql})");
+
+            foreach (var param in sqlFragment.Parameters)
+            {
+                parameters.Add(param ?? DBNull.Value);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(query.Where))
+        {
+            var parameterizedClause = FeatureQueryBuilder.ParseAndParameterizeWhereClause(query.Where.Trim(), ref paramIndex, parameters);
+            sql.Append(CultureInfo.InvariantCulture, $" AND ({parameterizedClause})");
+        }
+
+        sql.Append(" ORDER BY objectid");
+
+        if (query.Limit.HasValue && query.Limit.Value > 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {query.Limit.Value}");
+        }
+
+        if (query.Offset.HasValue && query.Offset.Value > 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" OFFSET {query.Offset.Value}");
+        }
+
+        await using var command = new NpgsqlCommand(sql.ToString(), connection);
+        foreach (var parameter in parameters)
+        {
+            command.Parameters.AddWithValue(parameter);
+        }
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
+
+        var features = new List<Feature>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var feature = await ReadFeatureAsync(reader, cancellationToken);
+
+            if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+            {
+                feature = FilterFeatureFields(feature, query.OutFields.Value);
+            }
+
+            features.Add(feature);
+        }
+
+        return features.Count == 0
+            ? QueryResult<Feature>.Empty()
+            : QueryResult<Feature>.Create(features.Count, features.ToImmutableArray());
     }
 
     public async Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
@@ -180,6 +307,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -191,7 +319,51 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         return await ReadFeatureAsync(reader, cancellationToken);
     }
 
-    public async Task<FeatureExtent?> GetExtentAsync(int layerId, CoreParameterizedQuery? query, CancellationToken cancellationToken)
+    public async Task<FeatureExtent?> GetExtentAsync(
+        int layerId,
+        CoreParameterizedQuery? query,
+        FeatureQuery featureQuery,
+        CancellationToken cancellationToken)
+    {
+        if (query == null)
+        {
+            return null;
+        }
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(query.Sql, connection);
+
+        command.Parameters.AddWithValue(layerId);
+        foreach (var param in query.WhereParameters)
+        {
+            command.Parameters.AddWithValue(param);
+        }
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+        {
+            return null;
+        }
+
+        var minx = reader.GetDouble(0);
+        var miny = reader.GetDouble(1);
+        var maxx = reader.GetDouble(2);
+        var maxy = reader.GetDouble(3);
+
+        var spatialReference = featureQuery.OutputSrid
+            ?? featureQuery.SpatialReferenceSrid
+            ?? SpatialReference.WGS84.Wkid;
+
+        return FeatureExtent.Create(minx, miny, maxx, maxy, spatialReference);
+    }
+
+    public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
+        int layerId,
+        CoreParameterizedQuery? query,
+        CancellationToken cancellationToken)
     {
         if (query == null)
         {
@@ -209,17 +381,20 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+        if (!await reader.ReadAsync(cancellationToken))
         {
             return null;
         }
 
-        var minx = reader.GetDouble(0);
-        var miny = reader.GetDouble(1);
-        var maxx = reader.GetDouble(2);
-        var maxy = reader.GetDouble(3);
+        var start = ReadTemporalValue(reader, 0);
+        var end = ReadTemporalValue(reader, 1);
 
-        return FeatureExtent.Create(minx, miny, maxx, maxy, 4326);
+        if (start == null && end == null)
+        {
+            return null;
+        }
+
+        return TemporalExtentResult.Create(start, end);
     }
 
     public async Task<byte[]?> GetMvtTileAsync(int layerId, CoreParameterizedQuery query, CancellationToken cancellationToken)
@@ -231,6 +406,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         {
             command.Parameters.AddWithValue(param);
         }
+        ApplyCommandTimeout(command, _tileTimeoutSeconds);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -242,16 +418,39 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         return reader.GetFieldValue<byte[]>(0);
     }
 
-    public async IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, CoreParameterizedQuery query, [EnumeratorCancellation] CancellationToken cancellationToken)
+    private static DateTimeOffset? ReadTemporalValue(NpgsqlDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var value = reader.GetValue(ordinal);
+        return value switch
+        {
+            DateTimeOffset dto => dto,
+            DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(
+                dateTime,
+                dateTime.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dateTime.Kind)),
+            DateOnly dateOnly => new DateTimeOffset(dateOnly.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)),
+            string text when DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed) => parsed,
+            _ => null
+        };
+    }
+
+    public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
+        int layerId,
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(query.Sql, connection);
-
-        command.Parameters.AddWithValue(layerId);
-        foreach (var param in query.WhereParameters)
-        {
-            command.Parameters.AddWithValue(param);
-        }
+        await using var command = await CreateCommandAsync(
+            connection,
+            query.Sql,
+            cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+            cancellationToken).ConfigureAwait(false);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -261,16 +460,18 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         }
     }
 
-    public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, CoreParameterizedQuery query, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
+        int layerId,
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(query.Sql, connection);
-
-        command.Parameters.AddWithValue(layerId);
-        foreach (var param in query.WhereParameters)
-        {
-            command.Parameters.AddWithValue(param);
-        }
+        await using var command = await CreateCommandAsync(
+            connection,
+            query.Sql,
+            cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+            cancellationToken).ConfigureAwait(false);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -414,6 +615,18 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private static partial class Log
     {
         [LoggerMessage(
+            EventId = 6120,
+            Level = LogLevel.Warning,
+            Message = "Slow {QueryType} query for layer {LayerId} (protocol {Protocol}) took {ElapsedMs}ms (rows: {RowCount}).")]
+        public static partial void SlowQuery(
+            ILogger logger,
+            string queryType,
+            int layerId,
+            long elapsedMs,
+            int? rowCount,
+            string? protocol);
+
+        [LoggerMessage(
             EventId = 6121,
             Level = LogLevel.Error,
             Message = "ApplyEdits failed for layer {LayerId} with {OperationCount} operations.")]
@@ -441,6 +654,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         {
             Transaction = transaction
         };
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
         command.Parameters.AddWithValue(layerId);
         var geometryParam = new NpgsqlParameter
         {
@@ -494,6 +708,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         {
             Transaction = transaction
         };
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(feature.Id);
         var geometryParam = new NpgsqlParameter
@@ -533,6 +748,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         {
             Transaction = transaction
         };
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
 
@@ -561,6 +777,24 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
             // Inject objectid into attributes for GeoServices FeatureServer compatibility
             attributesDictionary["objectid"] = id;
+
+            if (reader.FieldCount > 3)
+            {
+                for (var i = 3; i < reader.FieldCount; i++)
+                {
+                    var fieldName = reader.GetName(i);
+                    if (fieldName.Equals("total_count", StringComparison.OrdinalIgnoreCase))
+                    {
+                        attributesDictionary["total_count"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<long>(i);
+                        continue;
+                    }
+
+                    if (fieldName.Equals("distance", StringComparison.OrdinalIgnoreCase))
+                    {
+                        attributesDictionary["distance"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<double>(i);
+                    }
+                }
+            }
 
             var attributes = attributesDictionary.ToImmutableDictionary();
             return Feature.Create(id, geometry, attributes);
@@ -593,12 +827,128 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
             // Inject objectid into attributes for GeoServices FeatureServer compatibility
             attributesDictionary["objectid"] = id;
 
+            if (reader.FieldCount > 3)
+            {
+                for (var i = 3; i < reader.FieldCount; i++)
+                {
+                    var fieldName = reader.GetName(i);
+                    if (fieldName.Equals("total_count", StringComparison.OrdinalIgnoreCase))
+                    {
+                        attributesDictionary["total_count"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<long>(i);
+                        continue;
+                    }
+
+                    if (fieldName.Equals("distance", StringComparison.OrdinalIgnoreCase))
+                    {
+                        attributesDictionary["distance"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<double>(i);
+                    }
+                }
+            }
+
             var attributes = attributesDictionary.ToImmutableDictionary();
             return GmlFeature.Create(id, geometryGml, attributes);
         }
         finally
         {
             _dictionaryPool.Return(attributesDictionary);
+        }
+    }
+
+    private async Task<List<string>> GetOriginForeignKeyValuesAsync(
+        NpgsqlConnection connection,
+        int layerId,
+        RelatedQuery query,
+        CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            SELECT DISTINCT attributes->>'{query.Relationship.OriginForeignKeyField}' AS fk_value
+            FROM {_tableName}
+            WHERE layer_id = $1 AND objectid = ANY($2)
+              AND attributes->>'{query.Relationship.OriginForeignKeyField}' IS NOT NULL";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(layerId);
+        command.Parameters.AddWithValue(query.ObjectIds);
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
+
+        var values = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!reader.IsDBNull(0))
+            {
+                var value = reader.GetString(0);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    values.Add(value);
+                }
+            }
+        }
+
+        return values;
+    }
+
+    private static Feature FilterFeatureFields(Feature feature, ImmutableArray<string> outFields)
+    {
+        if (outFields.IsDefaultOrEmpty)
+        {
+            return feature;
+        }
+
+        var filteredAttributes = new Dictionary<string, object?>();
+
+        foreach (var field in outFields)
+        {
+            if (feature.Attributes.TryGetValue(field, out var value))
+            {
+                filteredAttributes[field] = value;
+            }
+        }
+
+        return Feature.Create(feature.Id, feature.Geometry, filteredAttributes.ToImmutableDictionary());
+    }
+
+    private void LogSlowQuery(string queryType, long elapsedMs, int layerId, int? rowCount)
+    {
+        if (_slowQueryThresholdMs <= 0 || elapsedMs < _slowQueryThresholdMs)
+        {
+            return;
+        }
+
+        var protocol = Activity.Current?.GetTagItem("honua.protocol")?.ToString();
+        Log.SlowQuery(_logger, queryType, layerId, elapsedMs, rowCount, protocol);
+    }
+
+    private void RecordPerformanceQuery(string queryType, int layerId, long elapsedMs, int recordCount)
+    {
+        if (_performanceMonitor == null)
+        {
+            return;
+        }
+
+        _performanceMonitor.RecordDatabaseQuery(
+            queryType,
+            layerId.ToString(CultureInfo.InvariantCulture),
+            TimeSpan.FromMilliseconds(elapsedMs),
+            recordCount);
+    }
+
+    private static int GetTimeoutSeconds(TimeSpan timeout, int fallbackSeconds)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            return fallbackSeconds;
+        }
+
+        return (int)Math.Ceiling(timeout.TotalSeconds);
+    }
+
+    private static void ApplyCommandTimeout(NpgsqlCommand command, int timeoutSeconds)
+    {
+        if (timeoutSeconds > 0)
+        {
+            command.CommandTimeout = timeoutSeconds;
         }
     }
 
@@ -612,6 +962,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         {
             var command = new NpgsqlCommand(sql, connection);
             configureParameters(command);
+            ApplyCommandTimeout(command, _queryTimeoutSeconds);
             return command;
         }
 
@@ -624,11 +975,13 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         if (prepared != null)
         {
             configureParameters(prepared);
+            ApplyCommandTimeout(prepared, _queryTimeoutSeconds);
             return prepared;
         }
 
         var fallback = new NpgsqlCommand(sql, connection);
         configureParameters(fallback);
+        ApplyCommandTimeout(fallback, _queryTimeoutSeconds);
         return fallback;
     }
 

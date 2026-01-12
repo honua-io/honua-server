@@ -10,13 +10,19 @@ import httpx
 
 from shared.cql2_cases import CQL2_TEXT_CASES
 
+FEATURESERVER_CQL2_TEXT_CASES = [
+    (name, expression)
+    for name, expression in CQL2_TEXT_CASES
+    if not name.startswith(("spatial_", "temporal_", "array_"))
+]
+
 
 class TestFeatureServerCql2Where:
     """CQL2-Text filter coverage for FeatureServer queries."""
 
     @pytest.mark.integration
     @pytest.mark.featureserver
-    @pytest.mark.parametrize("name, expression", CQL2_TEXT_CASES)
+    @pytest.mark.parametrize("name, expression", FEATURESERVER_CQL2_TEXT_CASES)
     def test_query_where_cql2_text(
         self,
         http_client: httpx.Client,

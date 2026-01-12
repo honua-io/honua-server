@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Postgres.Tests.Features.Import;
 
@@ -18,7 +20,10 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _service = new CrsDetectionService(_fixture.ConnectionString);
+        var connectionProvider = new PostgresDatabaseConnectionProvider(
+            _fixture.DataSource,
+            NullLogger<PostgresDatabaseConnectionProvider>.Instance);
+        _service = new CrsDetectionService(connectionProvider);
     }
 
     public async Task DisposeAsync()

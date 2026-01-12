@@ -59,6 +59,8 @@ Examples:
 - layer:metadata:456
 - service:definition:789
 - spatial:reference:4326
+- layer:exists:123
+- service:exists:basemap
 ```
 
 #### Best Practices for Cache Keys
@@ -227,6 +229,23 @@ await cache.RemoveByPatternAsync($"*:{layerId}");
 // Invalidate all metadata (keeps feature data)
 await cache.RemoveByPatternAsync("*:metadata:*");
 ```
+
+## Advanced Strategies
+
+### Negative Caching for Missing Resources
+
+Honua caches "not found" results for layers and services to reduce repeated database lookups on invalid IDs.
+Control the duration with `Cache:NegativeTtlSeconds` (default 30 seconds) to avoid long-lived false negatives.
+
+### TTL Jitter to Prevent Stampedes
+
+All metadata cache TTLs support jitter via `Cache:JitterPercentage` to avoid synchronized expiration.
+This reduces bursts of concurrent cache rebuilds on hot keys.
+
+### Existence Short-Circuiting
+
+Existence cache keys (`layer:exists:*`, `service:exists:*`) provide a lightweight lookup path for
+validation checks without loading full metadata.
 
 ## Performance Impact and Benefits
 

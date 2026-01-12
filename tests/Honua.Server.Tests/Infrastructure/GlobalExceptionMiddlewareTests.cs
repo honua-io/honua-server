@@ -300,7 +300,9 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
         problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
         // ValidationException messages are designed to be safe and should be exposed
-        problemDetails.GetProperty("detail").GetString().Should().Be("Field 'name' is required.");
+        var detail = problemDetails.GetProperty("detail").GetString();
+        detail.Should().Contain("Field 'name' is required.");
+        detail.Should().Contain("Missing required field: name");
         problemDetails.GetProperty("status").GetInt32().Should().Be(400);
     }
 
@@ -317,7 +319,9 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
-        problemDetails.GetProperty("detail").GetString().Should().Be("The service is temporarily unavailable. Please try again later.");
+        var detail = problemDetails.GetProperty("detail").GetString();
+        detail.Should().Contain("The service is temporarily unavailable. Please try again later.");
+        detail.Should().Contain("Retry-After: 30s");
         problemDetails.GetProperty("status").GetInt32().Should().Be(503);
 
         // Should include Retry-After header

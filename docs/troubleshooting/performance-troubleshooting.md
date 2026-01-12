@@ -34,7 +34,7 @@ docker logs honua-server | grep -E "(slow|timeout|performance)"
 curl -s http://localhost:8080/health | jq '.database.connectionCount'
 
 # Check cache hit ratios
-curl -s http://localhost:8080/admin/metrics | jq '.cache'
+curl -s http://localhost:8080/api/v1/metrics/cache | jq '{hit_ratio: (.hitRatio * 100), total_requests: .totalRequests}'
 ```
 
 ## Query Performance Issues
@@ -166,14 +166,14 @@ curl -s http://localhost:8080/admin/metrics | jq '.cache'
 1. **Check Cache Metrics**:
    ```bash
    # View current cache statistics
-   curl -s http://localhost:8080/admin/metrics | jq '{
-     cache_hits: .cache.hits,
-     cache_misses: .cache.misses,
-     hit_ratio: (.cache.hits / (.cache.hits + .cache.misses) * 100)
+   curl -s http://localhost:8080/api/v1/metrics/cache | jq '{
+     cache_hits: ([.types[]?.hits] | add // 0),
+     cache_misses: ([.types[]?.misses] | add // 0),
+     hit_ratio: (.hitRatio * 100)
    }'
 
    # Monitor cache usage over time
-   watch -n 5 'curl -s http://localhost:8080/admin/metrics | jq .cache'
+   watch -n 5 'curl -s http://localhost:8080/api/v1/metrics/cache | jq .types'
    ```
 
 2. **Check Redis Connectivity**:
@@ -474,14 +474,23 @@ tail -f /var/log/redis/redis-server.log
 
 1. **Application Metrics Collection**:
    ```bash
-   # Monitor metrics endpoint
-   curl http://localhost:8080/admin/metrics | jq '
+   # Monitor metrics endpoints (HTTP rates/latency are in OpenTelemetry exports)
+   curl -s http://localhost:8080/api/v1/metrics/performance | jq '
    {
-     requests: .http.requests_per_second,
-     response_time: .http.average_response_time_ms,
-     cache_hit_ratio: (.cache.hits / (.cache.hits + .cache.misses) * 100),
-     database_connections: .database.active_connections,
-     memory_usage_mb: (.memory.used_bytes / 1024 / 1024)
+     memory_usage_mb: (.memory.allocatedBytes / 1024 / 1024),
+     working_set_mb: (.systemInfo.workingSet / 1024 / 1024)
+   }'
+
+   curl -s http://localhost:8080/api/v1/metrics/cache | jq '
+   {
+     cache_hit_ratio: (.hitRatio * 100),
+     total_requests: .totalRequests
+   }'
+
+   curl -s http://localhost:8080/api/v1/metrics/database | jq '
+   {
+     cache_hit_rate: (.cacheHitRate * 100),
+     operations: (.operations | keys)
    }'
    ```
 
@@ -524,7 +533,7 @@ tail -f /var/log/redis/redis-server.log
    fi
 
    # Check cache hit ratio
-   HIT_RATIO=$(curl -s http://localhost:8080/admin/metrics | jq '.cache.hits / (.cache.hits + .cache.misses) * 100')
+   HIT_RATIO=$(curl -s http://localhost:8080/api/v1/metrics/cache | jq '.hitRatio * 100')
    if (( $(echo "$HIT_RATIO < 80" | bc -l) )); then
        echo "ALERT: Cache hit ratio is ${HIT_RATIO}%" | mail -s "Honua Cache Alert" admin@example.com
    fi
@@ -576,7 +585,9 @@ For complex performance issues:
    psql -h localhost -U postgres -d honua -c "SELECT * FROM honua.performance_summary;" >> performance-report.txt
 
    echo "=== Application Metrics ===" >> performance-report.txt
-   curl -s http://localhost:8080/admin/metrics >> performance-report.txt
+   curl -s http://localhost:8080/api/v1/metrics/performance >> performance-report.txt
+   curl -s http://localhost:8080/api/v1/metrics/cache >> performance-report.txt
+   curl -s http://localhost:8080/api/v1/metrics/database >> performance-report.txt
    ```
 
 2. **Share performance metrics and query execution plans**

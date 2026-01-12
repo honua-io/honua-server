@@ -54,38 +54,43 @@ public static class ExtentExtensions
         return FeatureExtent.Create(bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1], spatialReference);
     }
 
-    /// <summary>
-    /// Extracts SRID from CRS URI (e.g., "http://www.opengis.net/def/crs/EPSG/0/4326" returns 4326)
-    /// </summary>
-    /// <param name="crsUri">CRS URI string</param>
-    /// <returns>SRID if found, otherwise 4326 as default</returns>
-    public static int ExtractSridFromCrs(string? crsUri)
+    extension(string? crsUri)
     {
-        if (string.IsNullOrEmpty(crsUri))
-            return 4326; // Default to WGS84
-
-        // Handle EPSG URIs
-        if (crsUri.Contains("/EPSG/", StringComparison.OrdinalIgnoreCase))
+        /// <summary>
+        /// Extracts SRID from CRS URI (e.g., "http://www.opengis.net/def/crs/EPSG/0/4326" returns 4326)
+        /// </summary>
+        /// <returns>SRID if found, otherwise 4326 as default</returns>
+        public int ExtractSridFromCrs()
         {
-            var parts = crsUri.Split('/');
-            if (parts.Length >= 2)
+            if (string.IsNullOrEmpty(crsUri))
+                return 4326; // Default to WGS84
+
+            ReadOnlySpan<char> span = crsUri;
+            const string epsgMarker = "/EPSG/";
+
+            var epsgIndex = span.IndexOf(epsgMarker.AsSpan(), StringComparison.OrdinalIgnoreCase);
+            if (epsgIndex >= 0)
             {
-                var sridString = parts[^1]; // Last part after final slash
-                if (int.TryParse(sridString, out var srid))
+                var sridSpan = span[(epsgIndex + epsgMarker.Length)..];
+                var slashIndex = sridSpan.LastIndexOf('/');
+                if (slashIndex >= 0)
+                {
+                    sridSpan = sridSpan[(slashIndex + 1)..];
+                }
+
+                if (int.TryParse(sridSpan, out var srid))
                     return srid;
             }
-        }
 
-        // Handle simple EPSG:#### format
-        if (crsUri.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
-        {
-            var sridString = crsUri[5..]; // Remove "EPSG:" prefix
-            if (int.TryParse(sridString, out var srid))
-                return srid;
-        }
+            if (span.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
+            {
+                var sridSpan = span["EPSG:".Length..];
+                if (int.TryParse(sridSpan, out var srid))
+                    return srid;
+            }
 
-        // Default to WGS84 if parsing fails
-        return 4326;
+            return 4326;
+        }
     }
 
     /// <summary>

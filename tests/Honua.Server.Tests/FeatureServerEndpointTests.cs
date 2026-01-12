@@ -10,6 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
 
@@ -17,6 +18,223 @@ namespace Honua.Server.Tests;
 /// Integration tests for FeatureServer metadata endpoints.
 /// Tests Issue #5 - Layer metadata endpoint implementation.
 /// </summary>
+/// <summary>
+/// Integration tests for streaming query functionality (Issue #229)
+/// </summary>
+[Collection("Database")]
+[Protocol(Protocols.FeatureServer)]
+public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _webAppFixture = new();
+    private readonly ITestOutputHelper _output;
+
+    public StreamingFeatureServerEndpointTests(ITestOutputHelper output)
+    {
+        _output = output ?? throw new ArgumentNullException(nameof(output));
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _webAppFixture.InitializeAsync();
+
+        // Ensure we have a large dataset for streaming tests
+        await _webAppFixture.EnsureLargeTestDatasetAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _webAppFixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_LargeResultSet_UsesStreamingResponse()
+    {
+        // Arrange
+        using var client = _webAppFixture.CreateClient();
+
+        // Query for a large result set (>1000 features to trigger streaming)
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["where"] = "1=1", // Get all features
+            ["resultRecordCount"] = "2000", // Request large batch
+            ["f"] = "json"
+        };
+
+        var queryString = string.Join("&", queryParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value ?? "")}"));
+        var requestUri = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?{queryString}";
+
+        // Act
+        var response = await client.GetAsync(requestUri);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+
+        // Verify streaming headers are present
+        Assert.True(response.Headers.TransferEncodingChunked ?? false, "Response should use chunked transfer encoding for streaming");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        Assert.NotNull(queryResponse);
+        Assert.True(queryResponse.Features?.Length > 0, "Should return features");
+
+        _output.WriteLine($"Streamed {queryResponse.Features?.Length} features with chunked transfer encoding");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_LargeResultSet_GeoJsonFormat_UsesStreamingResponse()
+    {
+        // Arrange
+        using var client = _webAppFixture.CreateClient();
+
+        // Query for a large result set in GeoJSON format
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["where"] = "1=1",
+            ["resultRecordCount"] = "1500",
+            ["f"] = "geojson"
+        };
+
+        var queryString = string.Join("&", queryParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value ?? "")}"));
+        var requestUri = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?{queryString}";
+
+        // Act
+        var response = await client.GetAsync(requestUri);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+
+        // Verify content type for GeoJSON
+        Assert.Equal("application/geo+json", response.Content.Headers.ContentType?.MediaType);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var geoJsonResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.GeoJsonFeatureSet);
+
+        Assert.NotNull(geoJsonResponse);
+        Assert.Equal("FeatureCollection", geoJsonResponse.Type);
+        Assert.True(geoJsonResponse.Features?.Length > 0, "Should return features in GeoJSON format");
+
+        _output.WriteLine($"Streamed {geoJsonResponse.Features?.Length} features in GeoJSON format");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_SmallResultSet_DoesNotUseStreaming()
+    {
+        // Arrange
+        using var client = _webAppFixture.CreateClient();
+
+        // Query for a small result set (should not trigger streaming)
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["where"] = "1=1",
+            ["resultRecordCount"] = "10", // Small batch
+            ["f"] = "json"
+        };
+
+        var queryString = string.Join("&", queryParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value ?? "")}"));
+        var requestUri = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?{queryString}";
+
+        // Act
+        var response = await client.GetAsync(requestUri);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+
+        // Small result sets should not use chunked transfer encoding
+        Assert.False(response.Headers.TransferEncodingChunked ?? false, "Small result sets should not use streaming");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        Assert.NotNull(queryResponse);
+        Assert.True(queryResponse.Features?.Length <= 10, "Should return limited features");
+
+        _output.WriteLine($"Non-streaming response for {queryResponse.Features?.Length} features");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_ReturnIdsOnly_UsesStreaming()
+    {
+        // Arrange
+        using var client = _webAppFixture.CreateClient();
+
+        // Query for IDs only with large result set
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["where"] = "1=1",
+            ["returnIdsOnly"] = "true",
+            ["resultRecordCount"] = "2000",
+            ["f"] = "json"
+        };
+
+        var queryString = string.Join("&", queryParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value ?? "")}"));
+        var requestUri = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?{queryString}";
+
+        // Act
+        var response = await client.GetAsync(requestUri);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+
+        // Verify streaming headers for IDs only query
+        Assert.True(response.Headers.TransferEncodingChunked ?? false, "IDs-only queries should also use streaming for large result sets");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        Assert.NotNull(queryResponse);
+        Assert.True(queryResponse.ObjectIds?.Length > 0, "Should return object IDs");
+        queryResponse.Features.Should().BeEmpty();
+
+        _output.WriteLine($"Streamed {queryResponse.ObjectIds?.Length} object IDs");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_POST_LargeResultSet_UsesStreamingResponse()
+    {
+        // Arrange
+        using var client = _webAppFixture.CreateClient();
+
+        var queryParams = new QueryParameters
+        {
+            Where = "1=1",
+            ResultRecordCount = 1500,
+            F = "json"
+        };
+
+        var requestUri = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query";
+        var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PostAsync(requestUri, content);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+
+        // Verify streaming headers are present for POST requests too
+        Assert.True(response.Headers.TransferEncodingChunked ?? false, "POST requests should also use streaming for large result sets");
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        Assert.NotNull(queryResponse);
+        Assert.True(queryResponse.Features?.Length > 0, "Should return features via POST");
+
+        _output.WriteLine($"Streamed {queryResponse.Features?.Length} features via POST request");
+    }
+}
+
 [Protocol(Protocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime
@@ -79,7 +297,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("code").GetInt32().Should().Be(404);
-        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
@@ -144,7 +365,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("code").GetInt32().Should().Be(404);
-        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
@@ -159,7 +383,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Layer 999 not found in service");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Layer 999 not found in service"));
     }
 
     [IntegrationTest]
@@ -404,16 +633,18 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
-    public async Task GenerateRenderer_WithClassificationDef_ReturnsNotImplemented()
+    public async Task GenerateRenderer_WithClassificationDef_ReturnsRenderer()
     {
         var classificationDef = Uri.EscapeDataString("""{"type":"uniqueValue"}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
-        response.Be400BadRequest();
+        response.Be200Ok();
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("generateRenderer is not implemented");
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.GetProperty("type").GetString().Should().Be("simple");
+        jsonDoc.RootElement.TryGetProperty("symbol", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -430,7 +661,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
         errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
     }
 
@@ -448,7 +682,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
         errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
     }
 
@@ -467,7 +704,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
         var hasUnknownParameter = false;
         foreach (var detail in errorElement.GetProperty("details").EnumerateArray())
         {
@@ -496,7 +733,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("code").GetInt32().Should().Be(404);
-        errorElement.GetProperty("message").GetString().Should().Contain("Service 'nonexistent' not found");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
@@ -511,7 +751,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.HaveStatusCode(System.Net.HttpStatusCode.NotFound);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Layer 999 not found in service");
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Not Found");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Layer 999 not found in service"));
     }
 
     [IntegrationTest]
@@ -751,7 +996,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
-        errorElement.GetProperty("message").GetString().Should().Be("Invalid query parameters");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
         errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
 
         // Verify error details mention objectIds parameter specifically

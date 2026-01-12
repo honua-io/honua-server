@@ -3,8 +3,8 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
@@ -21,7 +21,6 @@ internal sealed class ConfigurationDocumentationService
     private readonly IOptions<LimitsOptions> _limitsOptions;
     private readonly IOptions<CacheOptions> _cacheOptions;
     private readonly IOptions<TileOptions> _tileOptions;
-    private readonly IOptions<RateLimitOptions> _rateLimitOptions;
     private readonly IOptions<AdaptiveSamplingOptions> _adaptiveSamplingOptions;
     private readonly IOptions<TracingOptions> _tracingOptions;
 
@@ -34,7 +33,6 @@ internal sealed class ConfigurationDocumentationService
         IOptions<LimitsOptions> limitsOptions,
         IOptions<CacheOptions> cacheOptions,
         IOptions<TileOptions> tileOptions,
-        IOptions<RateLimitOptions> rateLimitOptions,
         IOptions<AdaptiveSamplingOptions> adaptiveSamplingOptions,
         IOptions<TracingOptions> tracingOptions)
     {
@@ -43,7 +41,6 @@ internal sealed class ConfigurationDocumentationService
         _limitsOptions = limitsOptions;
         _cacheOptions = cacheOptions;
         _tileOptions = tileOptions;
-        _rateLimitOptions = rateLimitOptions;
         _adaptiveSamplingOptions = adaptiveSamplingOptions;
         _tracingOptions = tracingOptions;
     }
@@ -58,6 +55,8 @@ internal sealed class ConfigurationDocumentationService
             BuildFeatureFlagsSection(),
             BuildDatabaseSection(),
             BuildCacheSection(),
+            BuildDeploymentSection(),
+            BuildFileStorageSection(),
             BuildLimitsQuerySection(),
             BuildLimitsGeometrySection(),
             BuildLimitsEditsSection(),
@@ -65,7 +64,7 @@ internal sealed class ConfigurationDocumentationService
             BuildLimitsTilesSection(),
             BuildLimitsConnectionsSection(),
             BuildLimitsImportsSection(),
-            BuildRateLimitSection(),
+            BuildNetworkingSection(),
             BuildTileOptionsSection(),
             BuildSecuritySection(),
             BuildTracingSection(),
@@ -118,6 +117,8 @@ internal sealed class ConfigurationDocumentationService
             [
                 BuildProperty("ConnectionStrings:DefaultConnection", "ConnectionStrings__DefaultConnection", "string",
                     "PostgreSQL connection string", null, isRequired: true, isSensitive: true),
+                BuildProperty("Database:SecureConnection:Name", "Database__SecureConnection__Name", "string",
+                    "Named secure connection to resolve from the registry (uses DefaultConnection for registry access)", null),
                 BuildProperty("Database:QueryCache:MaxCachedStatements", "Database__QueryCache__MaxCachedStatements", "integer",
                     "Maximum number of cached prepared statements", 100),
                 BuildProperty("Database:QueryCache:StatementLifetimeMinutes", "Database__QueryCache__StatementLifetimeMinutes", "integer",
@@ -138,9 +139,11 @@ internal sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "Cache",
-            Description = "Redis metadata caching configuration",
+            Description = "Redis metadata and output caching configuration",
             Properties =
             [
+                BuildProperty("ConnectionStrings:redis", "ConnectionStrings__redis", "string",
+                    "Redis connection string for metadata/output caching", null, isSensitive: true),
                 BuildPropertyWithCurrent("Cache:Enabled", "Cache__Enabled", "boolean",
                     "Whether caching is enabled", true, opts.Enabled),
                 BuildPropertyWithCurrent("Cache:DefaultTtlSeconds", "Cache__DefaultTtlSeconds", "integer",
@@ -149,6 +152,12 @@ internal sealed class ConfigurationDocumentationService
                     "Service metadata cache TTL in seconds", 300, opts.ServiceTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:LayerTtlSeconds", "Cache__LayerTtlSeconds", "integer",
                     "Layer metadata cache TTL in seconds", 300, opts.LayerTtlSeconds, "Range: 1-86400"),
+                BuildPropertyWithCurrent("Cache:QueryTtlSeconds", "Cache__QueryTtlSeconds", "integer",
+                    "Query response cache TTL in seconds", 30, opts.QueryTtlSeconds, "Range: 1-3600"),
+                BuildPropertyWithCurrent("Cache:NegativeTtlSeconds", "Cache__NegativeTtlSeconds", "integer",
+                    "Negative cache TTL in seconds for missing layers/services", 30, opts.NegativeTtlSeconds, "Range: 1-3600"),
+                BuildPropertyWithCurrent("Cache:JitterPercentage", "Cache__JitterPercentage", "number",
+                    "TTL jitter percentage to prevent stampedes", 0.2, opts.JitterPercentage, "Range: 0-0.5"),
                 BuildPropertyWithCurrent("Cache:EnableFallback", "Cache__EnableFallback", "boolean",
                     "Use in-memory fallback when Redis unavailable", true, opts.EnableFallback),
                 BuildPropertyWithCurrent("Cache:FallbackMaxEntries", "Cache__FallbackMaxEntries", "integer",
@@ -157,6 +166,75 @@ internal sealed class ConfigurationDocumentationService
                     "Retry interval after Redis failure", 30, opts.RetryIntervalSeconds, "Range: 5-300"),
                 BuildPropertyWithCurrent("Cache:KeyPrefix", "Cache__KeyPrefix", "string",
                     "Prefix for cache keys", "honua:", opts.KeyPrefix)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildDeploymentSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "Deployment",
+            Description = "Deployment mode configuration for single-instance or multi-node operation",
+            Properties =
+            [
+                BuildProperty("Deployment:Mode", "Deployment__Mode", "string",
+                    "Deployment mode (SingleInstance or MultiNode). MultiNode requires Redis and shared file storage.",
+                    DeploymentMode.SingleInstance.ToString())
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildFileStorageSection()
+    {
+        var defaults = new CloudStorageOptions();
+        var defaultLocalBasePath = Path.Combine(Path.GetTempPath(), "honua-storage");
+
+        return new ConfigurationSection
+        {
+            Name = "FileStorage",
+            Description = "Cloud file storage configuration for attachments and imports",
+            Properties =
+            [
+                BuildProperty("FileStorage:Provider", "FileStorage__Provider", "string",
+                    "Storage provider (Local, AwsS3, AzureBlob)",
+                    CloudStorageProvider.Local.ToString()),
+                BuildProperty("FileStorage:DefaultTimeToLive", "FileStorage__DefaultTimeToLive", "timespan",
+                    "Default time-to-live for temporary files (HH:MM:SS)", defaults.DefaultTimeToLive),
+                BuildProperty("FileStorage:MaxFileSizeBytes", "FileStorage__MaxFileSizeBytes", "integer",
+                    "Maximum file size allowed for uploads in bytes", defaults.MaxFileSizeBytes),
+                BuildProperty("FileStorage:EnableAutomaticCleanup", "FileStorage__EnableAutomaticCleanup", "boolean",
+                    "Enable automatic cleanup of expired files", defaults.EnableAutomaticCleanup),
+                BuildProperty("FileStorage:CleanupInterval", "FileStorage__CleanupInterval", "timespan",
+                    "Interval for cleanup job execution (HH:MM:SS)", defaults.CleanupInterval),
+                BuildProperty("FileStorage:LocalStorage:BasePath", "FileStorage__LocalStorage__BasePath", "string",
+                    "Base directory for local storage provider", defaultLocalBasePath),
+                BuildProperty("FileStorage:LocalStorage:CreateDirectoryIfNotExists", "FileStorage__LocalStorage__CreateDirectoryIfNotExists", "boolean",
+                    "Create local storage directory if missing", true),
+
+                BuildProperty("FileStorage:AwsS3:BucketName", "FileStorage__AwsS3__BucketName", "string",
+                    "AWS S3 bucket name (required when Provider=AwsS3)", null, validation: "Required when Provider=AwsS3"),
+                BuildProperty("FileStorage:AwsS3:Region", "FileStorage__AwsS3__Region", "string",
+                    "AWS region (required when Provider=AwsS3)", null, validation: "Required when Provider=AwsS3"),
+                BuildProperty("FileStorage:AwsS3:KeyPrefix", "FileStorage__AwsS3__KeyPrefix", "string",
+                    "Optional key prefix for stored objects", null),
+                BuildProperty("FileStorage:AwsS3:ServiceUrl", "FileStorage__AwsS3__ServiceUrl", "string",
+                    "Optional S3-compatible service URL (e.g., Localstack/MinIO)", null),
+                BuildProperty("FileStorage:AwsS3:ForcePathStyle", "FileStorage__AwsS3__ForcePathStyle", "boolean",
+                    "Force path-style S3 addressing (useful for emulators)", false),
+                BuildProperty("FileStorage:AwsS3:AccessKeyId", "FileStorage__AwsS3__AccessKeyId", "string",
+                    "AWS access key id (optional if using IAM role)", null, isSensitive: true),
+                BuildProperty("FileStorage:AwsS3:SecretAccessKey", "FileStorage__AwsS3__SecretAccessKey", "string",
+                    "AWS secret access key (optional if using IAM role)", null, isSensitive: true),
+                BuildProperty("FileStorage:AwsS3:EnableServerSideEncryption", "FileStorage__AwsS3__EnableServerSideEncryption", "boolean",
+                    "Enable server-side encryption for S3 objects", true),
+
+                BuildProperty("FileStorage:AzureBlob:ConnectionString", "FileStorage__AzureBlob__ConnectionString", "string",
+                    "Azure Blob connection string (required when Provider=AzureBlob)", null, isSensitive: true, validation: "Required when Provider=AzureBlob"),
+                BuildProperty("FileStorage:AzureBlob:ContainerName", "FileStorage__AzureBlob__ContainerName", "string",
+                    "Azure Blob container name (required when Provider=AzureBlob)", null, validation: "Required when Provider=AzureBlob"),
+                BuildProperty("FileStorage:AzureBlob:BlobPrefix", "FileStorage__AzureBlob__BlobPrefix", "string",
+                    "Optional blob prefix for stored objects", null)
             ]
         };
     }
@@ -196,7 +274,7 @@ internal sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Geometry:MaxVerticesPerGeometry", "Limits__Geometry__MaxVerticesPerGeometry", "integer",
                     "Maximum vertices per geometry", 100000, opts.MaxVerticesPerGeometry, "Range: 1000-1000000"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxGeometrySize", "Limits__Geometry__MaxGeometrySize", "integer",
-                    "Maximum geometry size in bytes", 10485760, opts.MaxGeometrySize, "Range: 1MB-100MB"),
+                    "Maximum geometry size in bytes", FileSizeConstants.TenMB, opts.MaxGeometrySize, "Range: 1MB-100MB"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxCoordinatePrecision", "Limits__Geometry__MaxCoordinatePrecision", "integer",
                     "Maximum coordinate decimal places", 8, opts.MaxCoordinatePrecision, "Range: 1-15"),
                 BuildPropertyWithCurrent("Limits:Geometry:SimplifyTolerance", "Limits__Geometry__SimplifyTolerance", "number",
@@ -219,7 +297,7 @@ internal sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Edits:MaxEditsPerTransaction", "Limits__Edits__MaxEditsPerTransaction", "integer",
                     "Maximum operations per transaction", 5000, opts.MaxEditsPerTransaction, "Range: 100-50000"),
                 BuildPropertyWithCurrent("Limits:Edits:MaxPayloadSize", "Limits__Edits__MaxPayloadSize", "integer",
-                    "Maximum request body size in bytes", 52428800, opts.MaxPayloadSize, "Range: 1MB-500MB")
+                    "Maximum request body size in bytes", FileSizeConstants.FiftyMB, opts.MaxPayloadSize, "Range: 1MB-500MB")
             ]
         };
     }
@@ -234,11 +312,11 @@ internal sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Attachments:MaxAttachmentSize", "Limits__Attachments__MaxAttachmentSize", "integer",
-                    "Maximum single attachment size in bytes", 10485760, opts.MaxAttachmentSize, "Range: 1MB-100MB"),
+                    "Maximum single attachment size in bytes", FileSizeConstants.TenMB, opts.MaxAttachmentSize, "Range: 1MB-100MB"),
                 BuildPropertyWithCurrent("Limits:Attachments:MaxAttachmentsPerFeature", "Limits__Attachments__MaxAttachmentsPerFeature", "integer",
                     "Maximum attachments per feature", 10, opts.MaxAttachmentsPerFeature, "Range: 1-100"),
                 BuildPropertyWithCurrent("Limits:Attachments:MaxTotalAttachmentSize", "Limits__Attachments__MaxTotalAttachmentSize", "integer",
-                    "Maximum total attachment size per feature in bytes", 104857600, opts.MaxTotalAttachmentSize, "Range: 10MB-1GB"),
+                    "Maximum total attachment size per feature in bytes", FileSizeConstants.OneHundredMB, opts.MaxTotalAttachmentSize, "Range: 10MB-1GB"),
                 BuildPropertyWithCurrent("Limits:Attachments:AllowedMimeTypes", "Limits__Attachments__AllowedMimeTypes", "string",
                     "Comma-separated allowed MIME types", "image/*,application/pdf", opts.AllowedMimeTypes)
             ]
@@ -297,11 +375,11 @@ internal sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewSize", "Limits__Imports__MaxPreviewSize", "integer",
-                    "Maximum file size for preview in bytes", 10485760, opts.MaxPreviewSize, "Range: 1MB-50MB"),
+                    "Maximum file size for preview in bytes", FileSizeConstants.TenMB, opts.MaxPreviewSize, "Range: 1MB-50MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxSyncImportSize", "Limits__Imports__MaxSyncImportSize", "integer",
-                    "Maximum file size for sync import in bytes", 52428800, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
+                    "Maximum file size for sync import in bytes", FileSizeConstants.FiftyMB, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxImportSize", "Limits__Imports__MaxImportSize", "integer",
-                    "Maximum import file size in bytes", 524288000, opts.MaxImportSize, "Range: 50MB-5GB"),
+                    "Maximum import file size in bytes", FileSizeConstants.FiveHundredMB, opts.MaxImportSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewFeatures", "Limits__Imports__MaxPreviewFeatures", "integer",
                     "Maximum features in preview", 100, opts.MaxPreviewFeatures, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Imports:BatchSize", "Limits__Imports__BatchSize", "integer",
@@ -310,21 +388,22 @@ internal sealed class ConfigurationDocumentationService
         };
     }
 
-    private ConfigurationSection BuildRateLimitSection()
+    private ConfigurationSection BuildNetworkingSection()
     {
-        var opts = _rateLimitOptions.Value;
         return new ConfigurationSection
         {
-            Name = "RateLimit",
-            Description = "Rate limiting configuration",
+            Name = "Networking",
+            Description = "Public URL and proxy forwarding configuration",
             Properties =
             [
-                BuildPropertyWithCurrent("RateLimit:MaxRequestsPerWindow", "RateLimit__MaxRequestsPerWindow", "integer",
-                    "Maximum requests per time window", opts.MaxRequestsPerWindow, opts.MaxRequestsPerWindow),
-                BuildPropertyWithCurrent("RateLimit:WindowSize", "RateLimit__WindowSize", "timespan",
-                    "Rate limit window duration", opts.WindowSize, opts.WindowSize),
-                BuildPropertyWithCurrent("RateLimit:TrustProxyHeaders", "RateLimit__TrustProxyHeaders", "boolean",
-                    "Trust X-Forwarded-For headers", opts.TrustProxyHeaders, opts.TrustProxyHeaders)
+                BuildProperty("Public:BaseUrl", "PUBLIC_BASE_URL", "string",
+                    "Public base URL used for link generation", null),
+                BuildProperty("ForwardedHeaders:Enabled", "ForwardedHeaders__Enabled", "boolean",
+                    "Enable forwarded headers processing", false),
+                BuildProperty("ForwardedHeaders:ForwardLimit", "ForwardedHeaders__ForwardLimit", "integer",
+                    "Maximum number of forwarded entries to process", 1),
+                BuildProperty("ForwardedHeaders:KnownProxies", "ForwardedHeaders__KnownProxies__0", "string",
+                    "Trusted proxy IP addresses for forwarded headers", null)
             ]
         };
     }
@@ -546,11 +625,29 @@ internal sealed class ConfigurationDocumentationService
 
             // Database
             new() { Name = "ConnectionStrings__DefaultConnection", ConfigPath = "Database", Description = "PostgreSQL connection string", Required = true, Example = "Host=localhost;Database=honua;Username=postgres;Password=password" },
+            new() { Name = "Database__SecureConnection__Name", ConfigPath = "Database", Description = "Named secure connection to use from registry", Required = false, Example = "production-primary" },
 
             // Cache
+            new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
             new() { Name = "Cache__DefaultTtlSeconds", ConfigPath = "Cache", Description = "Default cache TTL", Default = "300", Example = "600" },
+            new() { Name = "Cache__QueryTtlSeconds", ConfigPath = "Cache", Description = "Query response cache TTL", Default = "30", Example = "60" },
+            new() { Name = "Cache__NegativeTtlSeconds", ConfigPath = "Cache", Description = "Negative cache TTL for missing resources", Default = "30", Example = "30" },
+            new() { Name = "Cache__JitterPercentage", ConfigPath = "Cache", Description = "TTL jitter percentage", Default = "0.2", Example = "0.1" },
             new() { Name = "Cache__EnableFallback", ConfigPath = "Cache", Description = "Use in-memory fallback", Default = "true", Example = "false" },
+
+            // Deployment
+            new() { Name = "Deployment__Mode", ConfigPath = "Deployment", Description = "Deployment mode (SingleInstance or MultiNode)", Default = "SingleInstance", Example = "MultiNode" },
+
+            // File storage
+            new() { Name = "FileStorage__Provider", ConfigPath = "FileStorage", Description = "Storage provider (Local, AwsS3, AzureBlob)", Default = "Local", Example = "AwsS3" },
+            new() { Name = "HONUA_STORAGE_PROVIDER", ConfigPath = "FileStorage", Description = "Storage provider override (env alias)", Required = false, Example = "AzureBlob" },
+            new() { Name = "FileStorage__LocalStorage__BasePath", ConfigPath = "FileStorage", Description = "Local storage base path", Required = false, Example = "/var/lib/honua/storage" },
+            new() { Name = "FileStorage__AwsS3__BucketName", ConfigPath = "FileStorage", Description = "AWS S3 bucket name", Required = false, Example = "honua-prod" },
+            new() { Name = "FileStorage__AwsS3__Region", ConfigPath = "FileStorage", Description = "AWS S3 region", Required = false, Example = "us-west-2" },
+            new() { Name = "FileStorage__AwsS3__ServiceUrl", ConfigPath = "FileStorage", Description = "S3-compatible service URL (Localstack/MinIO)", Required = false, Example = "http://localhost:4566" },
+            new() { Name = "FileStorage__AwsS3__ForcePathStyle", ConfigPath = "FileStorage", Description = "Force path-style S3 addressing", Required = false, Example = "true" },
+            new() { Name = "FileStorage__AzureBlob__ContainerName", ConfigPath = "FileStorage", Description = "Azure Blob container name", Required = false, Example = "honua-attachments" },
 
             // Key limits
             new() { Name = "Limits__Query__MaxRecordCount", ConfigPath = "Limits.Query", Description = "Max features per query", Default = "2000", Example = "5000" },
@@ -558,9 +655,23 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "Limits__Geometry__MaxVerticesPerGeometry", ConfigPath = "Limits.Geometry", Description = "Max vertices", Default = "100000", Example = "50000" },
             new() { Name = "Limits__Connections__MaxConcurrentQueries", ConfigPath = "Limits.Connections", Description = "Max concurrent queries", Default = "100", Example = "200" },
 
-            // Rate limiting
-            new() { Name = "RateLimit__MaxRequestsPerWindow", ConfigPath = "RateLimit", Description = "Max requests per window", Default = "100", Example = "200" },
-            new() { Name = "RateLimit__WindowSize", ConfigPath = "RateLimit", Description = "Rate limit window", Default = "00:01:00", Example = "00:00:30" },
+            // Networking
+            new() { Name = "PUBLIC_BASE_URL", ConfigPath = "Networking", Description = "Public base URL override", Required = false, Example = "https://api.honua.example.com" },
+            new() { Name = "ForwardedHeaders__Enabled", ConfigPath = "Networking", Description = "Enable forwarded headers", Default = "false", Example = "true" },
+            new() { Name = "ForwardedHeaders__ForwardLimit", ConfigPath = "Networking", Description = "Forwarded headers limit", Default = "1", Example = "2" },
+            new() { Name = "ForwardedHeaders__KnownProxies__0", ConfigPath = "Networking", Description = "First trusted proxy IP", Required = false, Example = "10.0.0.10" },
+
+            // File storage secrets
+            new() { Name = "FileStorage__AwsS3__AccessKeyId", ConfigPath = "FileStorage", Description = "AWS S3 access key id", Required = false, Example = "env:HONUA_S3_KEY_ID" },
+            new() { Name = "FileStorage__AwsS3__SecretAccessKey", ConfigPath = "FileStorage", Description = "AWS S3 secret access key", Required = false, Example = "env:HONUA_S3_SECRET" },
+            new() { Name = "FileStorage__AzureBlob__ConnectionString", ConfigPath = "FileStorage", Description = "Azure Blob connection string", Required = false, Example = "env:HONUA_AZURE_BLOB_CONN" },
+
+            // Monitoring secrets
+            new() { Name = "Monitoring__IntelligentAlerting__NotificationChannels__Email__Password", ConfigPath = "Monitoring", Description = "SMTP password", Required = false, Example = "env:HONUA_SMTP_PASSWORD" },
+            new() { Name = "Monitoring__IntelligentAlerting__NotificationChannels__Slack__WebhookUrl", ConfigPath = "Monitoring", Description = "Slack webhook URL", Required = false, Example = "env:HONUA_SLACK_WEBHOOK" },
+            new() { Name = "Monitoring__IntelligentAlerting__NotificationChannels__Webhook__Url", ConfigPath = "Monitoring", Description = "Alert webhook URL", Required = false, Example = "env:HONUA_ALERT_WEBHOOK" },
+            new() { Name = "Monitoring__IntelligentAlerting__NotificationChannels__Webhook__Headers__Authorization", ConfigPath = "Monitoring", Description = "Alert webhook auth header", Required = false, Example = "env:HONUA_ALERT_WEBHOOK_AUTH" },
+            new() { Name = "Monitoring__IntelligentAlerting__NotificationChannels__Sms__ApiKey", ConfigPath = "Monitoring", Description = "SMS API key", Required = false, Example = "env:HONUA_SMS_API_KEY" },
 
             // CORS
             new() { Name = "Cors__AllowedOrigins__0", ConfigPath = "Security", Description = "First CORS origin", Required = false, Example = "https://myapp.example.com" },

@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.TestKit.Attributes;
 using Xunit.Abstractions;
 using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
 

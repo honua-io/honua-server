@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Monitoring;
+
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
 /// <summary>
@@ -31,7 +33,7 @@ internal interface IFeatureCacheManager
     /// <summary>
     /// Gets current performance statistics
     /// </summary>
-    Dictionary<string, object> GetPerformanceStatistics();
+    Dictionary<string, DatabaseOperationMetricsSnapshot> GetPerformanceStatistics();
 
     /// <summary>
     /// Clears expired cache entries

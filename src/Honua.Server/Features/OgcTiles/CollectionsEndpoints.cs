@@ -5,10 +5,15 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
-using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcTiles;
 
@@ -16,7 +21,7 @@ internal static class CollectionsEndpoints
 {
     public static IEndpointRouteBuilder MapCollectionsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/ogc/tiles/collections", HandleGetCollections)
+        var collections = endpoints.MapGet("/ogc/tiles/collections", HandleGetCollections)
             .WithDisplayName("OGC API Tiles Collections")
             .WithName("OgcTilesCollections")
             .WithSummary("Get OGC API Tiles collections")
@@ -26,7 +31,7 @@ internal static class CollectionsEndpoints
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        endpoints.MapGet("/ogc/tiles/collections/{collectionId}", HandleGetCollection)
+        var collection = endpoints.MapGet("/ogc/tiles/collections/{collectionId}", HandleGetCollection)
             .WithDisplayName("OGC API Tiles Collection")
             .WithName("OgcTilesCollection")
             .WithSummary("Get OGC API Tiles collection metadata")
@@ -43,33 +48,38 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog,
+        IFeatureReader featureReader,
+        [FromServices] ICrsRegistry crsRegistry,
         ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
         try
         {
-            var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
+            var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
             if (validationError is not null)
             {
-                return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+                return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
-            if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+            if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
                 return CreateFormatError(context, formatError);
             }
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var collections = layers.Select(layer => CreateCollection(layer, baseUrl)).ToImmutableArray();
+            var visibleLayers = layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer)).ToList();
+            var collectionTasks = visibleLayers
+                .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
+            var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
 
-            var links = OgcFeaturesUtilities.BuildFormatLinks(
+            var links = OgcCommonUtilities.BuildFormatLinks(
                     request,
                     $"{baseUrl}/ogc/tiles/collections",
                     outputFormat,
-                    OgcFeaturesUtilities.MetadataFormats,
+                    OgcCommonUtilities.MetadataFormats,
                     "Collections")
                 .ToBuilder();
 
@@ -85,7 +95,7 @@ internal static class CollectionsEndpoints
                 Links = links.ToImmutable()
             };
 
-            return OgcFeaturesUtilities.FormatMetadataResponse(response, OgcTilesJsonContext.Default.Collections, outputFormat, "Collections");
+            return OgcCommonUtilities.FormatMetadataResponse(response, OgcTilesJsonContext.Default.Collections, outputFormat, "Collections");
         }
         catch (OperationCanceledException)
             when (OgcTilesUtilities.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -106,37 +116,45 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         ILayerCatalog layerCatalog,
+        IFeatureReader featureReader,
+        [FromServices] ICrsRegistry crsRegistry,
         ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
         try
         {
-            var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
+            var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
             if (validationError is not null)
             {
-                return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+                return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
-            if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+            if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
                 return CreateFormatError(context, formatError);
             }
 
             if (!int.TryParse(collectionId, out var layerId))
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
-                return OgcErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            var collection = CreateCollection(layer, baseUrl);
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
+            var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken);
             var basePath = $"{baseUrl}/ogc/tiles/collections/{collectionId}";
             var selfHref = $"{basePath}{request.QueryString}";
             var updatedLinks = collection.Links.Select(link =>
@@ -145,10 +163,10 @@ internal static class CollectionsEndpoints
                         : link)
                 .ToImmutableArray();
 
-            updatedLinks = OgcFeaturesUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcFeaturesUtilities.MetadataFormats);
+            updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
             collection = collection with { Links = updatedLinks };
 
-            return OgcFeaturesUtilities.FormatMetadataResponse(
+            return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
                 OgcTilesJsonContext.Default.CollectionInfo,
                 outputFormat,
@@ -168,7 +186,12 @@ internal static class CollectionsEndpoints
         }
     }
 
-    private static CollectionInfo CreateCollection(LayerDefinition layer, string baseUrl)
+    private static async Task<CollectionInfo> CreateCollectionAsync(
+        LayerDefinition layer,
+        string baseUrl,
+        IFeatureReader featureReader,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
         var collectionLinks = ImmutableArray.Create(
@@ -204,29 +227,48 @@ internal static class CollectionsEndpoints
             )
         );
 
+        SpatialExtent? spatialExtent = null;
+        if (layer.Extent != null)
+        {
+            var extentCrsIdentifier = layer.SpatialReference.ToOgcCrs();
+            var extentDefinition = await crsRegistry.ResolveAsync(extentCrsIdentifier, cancellationToken);
+            spatialExtent = new SpatialExtent
+            {
+                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                    layer.Extent.Value.MinX,
+                    layer.Extent.Value.MinY,
+                    layer.Extent.Value.MaxX,
+                    layer.Extent.Value.MaxY)),
+                Crs = extentDefinition?.Uri ?? extentCrsIdentifier
+            };
+        }
+
+        var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);
+        var extent = spatialExtent == null && temporalExtent == null
+            ? null
+            : new Extent
+            {
+                Spatial = spatialExtent,
+                Temporal = temporalExtent
+            };
+
+        var storageCrsDefinition = await crsRegistry.ResolveAsync(
+            layer.SpatialReference.ToOgcCrs(),
+            cancellationToken);
+        var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsUrisAsync(
+            layer,
+            crsRegistry,
+            cancellationToken);
+
         return new CollectionInfo
         {
             Id = collectionId,
             Title = layer.Name,
             Description = layer.Description,
             Links = collectionLinks,
-            Extent = layer.Extent != null ? new Extent
-            {
-                Spatial = new SpatialExtent
-                {
-                    BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                        layer.Extent.Value.MinX,
-                        layer.Extent.Value.MinY,
-                        layer.Extent.Value.MaxX,
-                        layer.Extent.Value.MaxY)),
-                    Crs = layer.SpatialReference.Srid.ToOgcCrs()
-                }
-            } : null,
-            Crs = ImmutableArray.Create(
-                OgcFeaturesUtilities.Crs84Uri,
-                OgcFeaturesUtilities.Epsg4326Uri
-            ),
-            StorageCrs = layer.SpatialReference.Srid.ToOgcCrs()
+            Extent = extent,
+            Crs = supportedCrs,
+            StorageCrs = storageCrsDefinition?.Uri
         };
     }
 
@@ -234,7 +276,7 @@ internal static class CollectionsEndpoints
     {
         if (formatError is BadRequest<string> badRequest)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
         }
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
@@ -246,7 +288,7 @@ internal static class CollectionsEndpoints
                 "Requested format is not acceptable.");
         }
 
-        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
+        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 }
 

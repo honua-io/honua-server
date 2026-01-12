@@ -3,8 +3,9 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Ogc.Common;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.OgcFeatures;
@@ -16,13 +17,15 @@ internal static class CoreEndpoints
 {
     private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _openApiCache =
         new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan _landingPageCacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan _conformanceCacheDuration = TimeSpan.FromHours(1);
 
     /// <summary>
     /// Maps core metadata endpoints for OGC API Features
     /// </summary>
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/ogc/features", HandleGetLandingPage)
+        var landing = endpoints.MapGet("/ogc/features", HandleGetLandingPage)
             .WithDisplayName("OGC API Features Landing Page")
             .WithName("OgcLandingPage")
             .WithSummary("Get OGC API Features landing page")
@@ -33,7 +36,7 @@ internal static class CoreEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
-        endpoints.MapGet("/ogc/features/conformance", HandleGetConformance)
+        var conformance = endpoints.MapGet("/ogc/features/conformance", HandleGetConformance)
             .WithDisplayName("OGC API Features Conformance")
             .WithName("OgcConformance")
             .WithSummary("Get OGC API Features conformance declaration")
@@ -44,7 +47,7 @@ internal static class CoreEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
-        endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
+        var openApi = endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Features OpenAPI Specification")
             .WithName("OpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")
@@ -62,22 +65,23 @@ internal static class CoreEndpoints
     /// </summary>
     private static IResult HandleGetLandingPage(HttpContext context, string? f)
     {
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
             return CreateFormatError(context, formatError);
         }
 
         var request = context.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/features";
+        EnsureCacheControl(context, _landingPageCacheDuration);
 
-        var links = OgcFeaturesUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcFeaturesUtilities.MetadataFormats, "This document")
+        var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
             .ToBuilder();
 
         // API definition
@@ -112,10 +116,11 @@ internal static class CoreEndpoints
         {
             Title = "Honua OGC API Features",
             Description = "OGC API Features implementation for geospatial data access",
+            Supports3d = false,
             Links = links.ToImmutable()
         };
 
-        return OgcFeaturesUtilities.FormatMetadataResponse(landingPage, OgcJsonContext.Default.LandingPage, outputFormat, "Landing page");
+        return OgcCommonUtilities.FormatMetadataResponse(landingPage, OgcJsonContext.Default.LandingPage, outputFormat, "Landing page");
     }
 
     /// <summary>
@@ -123,36 +128,33 @@ internal static class CoreEndpoints
     /// </summary>
     private static IResult HandleGetConformance(HttpContext context, string? f)
     {
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
             return CreateFormatError(context, formatError);
         }
 
+        EnsureCacheControl(context, _conformanceCacheDuration);
+
         var conformance = new ConformanceDeclaration
         {
             ConformsTo = ImmutableArray.Create(
-                // OGC API Features Core
+                // OGC API Features Part 1 - Core
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
 
-                // OGC API Features CRS
+                // OGC API Features Part 2 - Coordinate Reference Systems by Reference
                 "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
-                // OGC API Features Filtering
+                // OGC API Features Part 3 - Filtering
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables-query-parameters",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter-cql2-text",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter-cql2-json",
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
 
                 // OGC API Common
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
@@ -161,15 +163,26 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-common-2/1.0/conf/collections"
             ),
-            Links = OgcFeaturesUtilities.BuildFormatLinks(
+            Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
                 $"{context.Request.Scheme}://{context.Request.Host}/ogc/features/conformance",
                 outputFormat,
-                OgcFeaturesUtilities.MetadataFormats,
+                OgcCommonUtilities.MetadataFormats,
                 "Conformance declaration")
         };
 
-        return OgcFeaturesUtilities.FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
+        return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
+    }
+
+    private static void EnsureCacheControl(HttpContext context, TimeSpan maxAge)
+    {
+        if (context.Response.Headers.ContainsKey("Cache-Control"))
+        {
+            return;
+        }
+
+        var maxAgeSeconds = (int)Math.Max(0, maxAge.TotalSeconds);
+        context.Response.Headers.CacheControl = $"public, max-age={maxAgeSeconds}";
     }
 
     /// <summary>
@@ -182,15 +195,15 @@ internal static class CoreEndpoints
     {
         var request = context.Request;
 
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(request, OgcFeaturesUtilities.AllowedQueryParameters.OpenApi);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcFeaturesUtilities.AllowedQueryParameters.OpenApi);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
         if (!string.IsNullOrWhiteSpace(f) && !string.Equals(f, "json", StringComparison.OrdinalIgnoreCase))
         {
-            return OgcErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'");
+            return StandardErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'");
         }
 
         var acceptHeader = request.Headers.Accept.ToString();
@@ -243,7 +256,7 @@ internal static class CoreEndpoints
     {
         if (formatError is BadRequest<string> badRequest)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
         }
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
@@ -255,7 +268,7 @@ internal static class CoreEndpoints
                 "Requested format is not acceptable.");
         }
 
-        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
+        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
     private static Task<string?> GetOpenApiContentAsync(string contentRootPath)

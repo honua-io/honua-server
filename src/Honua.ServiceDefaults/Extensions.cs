@@ -46,6 +46,13 @@ public static partial class Extensions
         return builder;
     }
 
+    public static IHostApplicationBuilder AddTelemetryDefaults(this IHostApplicationBuilder builder)
+    {
+        builder.AddAdaptiveSampling();
+        builder.ConfigureOpenTelemetry();
+        return builder;
+    }
+
     public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
     {
         // Bind tracing options from configuration
@@ -117,14 +124,6 @@ public static partial class Extensions
                                 serviceInstanceId: Environment.MachineName))
                     .AddAspNetCoreInstrumentation(options =>
                     {
-                        // Enrich spans with protocol-specific tags
-                        options.EnrichWithHttpRequest = (activity, request) =>
-                        {
-                            var path = request.Path.Value ?? string.Empty;
-                            var protocol = GetProtocolFromPath(path);
-                            activity.SetTag(HonuaTelemetry.Tags.Protocol, protocol);
-                        };
-
                         options.EnrichWithHttpResponse = (activity, response) =>
                         {
                             if (response.StatusCode >= 400)
@@ -150,7 +149,8 @@ public static partial class Extensions
                         options.RecordException = tracingOptions.RecordExceptionStackTraces;
                     })
                     .AddHttpClientInstrumentation()
-                    .AddNpgsql();
+                    .AddNpgsql()
+                    .AddRedisInstrumentation();
 
                 if (ShouldAddSpanSanitizer(tracingOptions))
                 {
@@ -165,27 +165,6 @@ public static partial class Extensions
         }
 
         return builder;
-    }
-
-    /// <summary>
-    /// Determines the API protocol from the request path.
-    /// </summary>
-    private static string GetProtocolFromPath(string path)
-    {
-        if (path.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase))
-            return HonuaTelemetry.Protocols.FeatureServer;
-        if (path.Contains("/ogc/", StringComparison.OrdinalIgnoreCase) ||
-            path.Contains("/collections", StringComparison.OrdinalIgnoreCase))
-            return HonuaTelemetry.Protocols.OgcFeatures;
-        if (path.Contains("/odata", StringComparison.OrdinalIgnoreCase))
-            return HonuaTelemetry.Protocols.OData;
-        if (path.Contains("/import", StringComparison.OrdinalIgnoreCase))
-            return HonuaTelemetry.Protocols.Import;
-        if (path.Contains("/admin", StringComparison.OrdinalIgnoreCase))
-            return HonuaTelemetry.Protocols.Admin;
-        if (path.Contains("/health", StringComparison.OrdinalIgnoreCase))
-            return HonuaTelemetry.Protocols.Health;
-        return "unknown";
     }
 
     private static string? ResolveOtlpEndpoint(IConfiguration configuration, TracingOptions tracingOptions)
@@ -419,6 +398,9 @@ public static partial class Extensions
 
         // Register system metrics collector as singleton
         builder.Services.AddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
+
+        // Register smart sampling rules as singleton
+        builder.Services.AddSingleton<ISmartSamplingRules, SmartSamplingRules>();
 
         // Register adaptive sampler as singleton
         builder.Services.AddSingleton<IAdaptiveSampler, AdaptiveSampler>();

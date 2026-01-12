@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using Honua.Core.Configuration;
+using Honua.Server.Features.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Admin.Services;
 
@@ -32,6 +34,9 @@ internal static class ConfigurationValidationService
             errors.Add("ConnectionStrings__DefaultConnection is required. Set this environment variable to your PostgreSQL connection string.");
         }
 
+        var deploymentMode = ResolveDeploymentMode(configuration, errors);
+        ValidateDeploymentDependencies(configuration, deploymentMode, errors, warnings);
+
         // Check feature flags and log their status
         LogFeatureStatus(configuration, logger, "HONUA_ADMIN_UI", "Admin UI");
         LogFeatureStatus(configuration, logger, "HONUA_OBSERVABILITY", "Observability");
@@ -43,17 +48,19 @@ internal static class ConfigurationValidationService
         {
             if (configuration.IsFeatureEnabled("DEV_AUTH"))
             {
-                warnings.Add("HONUA_DEV_AUTH is enabled. This should only be used in development environments.");
+                errors.Add("HONUA_DEV_AUTH is enabled. This should only be used in development environments.");
             }
 
             if (string.IsNullOrEmpty(configuration["HONUA_ADMIN_PASSWORD"]))
             {
-                warnings.Add("HONUA_ADMIN_PASSWORD is not set. Admin endpoints will require authentication in production.");
+                errors.Add("HONUA_ADMIN_PASSWORD is required in non-development environments.");
             }
         }
 
         // Log configuration summary
         LogConfigurationSummary(configuration, logger);
+
+        ValidateSecretReferences(configuration, errors, warnings, isDevelopment);
 
         // Log warnings
         foreach (var warning in warnings)
@@ -68,6 +75,166 @@ internal static class ConfigurationValidationService
         }
 
         return errors;
+    }
+
+    private static void ValidateSecretReferences(
+        IConfiguration configuration,
+        List<string> errors,
+        List<string> warnings,
+        bool isDevelopment)
+    {
+        foreach (var (path, allowedPrefixes) in _secretValidationRules)
+        {
+            var value = configuration[path];
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (IsEnvironmentVariableSet(path))
+            {
+                continue;
+            }
+
+            if (IsSecretReference(value, allowedPrefixes))
+            {
+                continue;
+            }
+
+            var prefixes = string.Join(", ", allowedPrefixes.OrderBy(prefix => prefix).Select(prefix => $"{prefix}:"));
+            var message = $"Configuration value '{path}' should be supplied via a secret reference (supported prefixes: {prefixes}) " +
+                          "or environment variable instead of plain text.";
+
+            if (isDevelopment)
+            {
+                warnings.Add(message);
+            }
+            else
+            {
+                errors.Add(message);
+            }
+        }
+    }
+
+    private static DeploymentMode ResolveDeploymentMode(IConfiguration configuration, List<string> errors)
+    {
+        var rawValue = configuration[$"{DeploymentOptions.SectionName}:{nameof(DeploymentOptions.Mode)}"];
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return DeploymentMode.SingleInstance;
+        }
+
+        if (Enum.TryParse(rawValue, true, out DeploymentMode mode))
+        {
+            return mode;
+        }
+
+        errors.Add($"Deployment:Mode value '{rawValue}' is invalid. Allowed values: {string.Join(", ", Enum.GetNames<DeploymentMode>())}.");
+        return DeploymentMode.SingleInstance;
+    }
+
+    private static void ValidateDeploymentDependencies(
+        IConfiguration configuration,
+        DeploymentMode deploymentMode,
+        List<string> errors,
+        List<string> warnings)
+    {
+        if (deploymentMode != DeploymentMode.MultiNode)
+        {
+            return;
+        }
+
+        var redisConnection = configuration.GetConnectionString("redis")
+            ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
+        if (string.IsNullOrWhiteSpace(redisConnection))
+        {
+            errors.Add("Multi-node deployment requires ConnectionStrings__redis for shared cache and output cache.");
+        }
+
+        var cacheFallbackEnabled = configuration.GetValue<bool?>("Cache:EnableFallback") ?? true;
+        if (cacheFallbackEnabled)
+        {
+            warnings.Add("Cache:EnableFallback is enabled in multi-node mode. This can cause per-node cache divergence.");
+        }
+
+        var providerName = configuration.GetValue<string>("FileStorage:Provider")
+            ?? Environment.GetEnvironmentVariable("HONUA_STORAGE_PROVIDER");
+        var provider = ResolveStorageProvider(providerName, errors);
+
+        if (provider == StorageProvider.Local)
+        {
+            errors.Add("Multi-node deployment requires a shared cloud file storage provider. Set FileStorage:Provider to AwsS3 or AzureBlob.");
+        }
+
+        ValidateFileStorageConfiguration(configuration, provider, errors);
+    }
+
+    private static StorageProvider ResolveStorageProvider(string? providerName, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(providerName))
+        {
+            return StorageProvider.Local;
+        }
+
+        if (Enum.TryParse(providerName, true, out StorageProvider provider))
+        {
+            return provider;
+        }
+
+        errors.Add($"FileStorage:Provider value '{providerName}' is invalid. Allowed values: {string.Join(", ", Enum.GetNames<StorageProvider>())}.");
+        return StorageProvider.Local;
+    }
+
+    private static void ValidateFileStorageConfiguration(
+        IConfiguration configuration,
+        StorageProvider provider,
+        List<string> errors)
+    {
+        switch (provider)
+        {
+            case StorageProvider.AwsS3:
+                RequireSetting(configuration, "FileStorage:AwsS3:BucketName", errors);
+                RequireSetting(configuration, "FileStorage:AwsS3:Region", errors);
+                break;
+            case StorageProvider.AzureBlob:
+                RequireSetting(configuration, "FileStorage:AzureBlob:ConnectionString", errors);
+                RequireSetting(configuration, "FileStorage:AzureBlob:ContainerName", errors);
+                break;
+            case StorageProvider.Local:
+            default:
+                break;
+        }
+    }
+
+    private static void RequireSetting(IConfiguration configuration, string key, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(configuration[key]))
+        {
+            errors.Add($"'{key.Replace(":", "__", StringComparison.Ordinal)}' is required for the selected FileStorage provider.");
+        }
+    }
+
+    private static bool IsEnvironmentVariableSet(string path)
+    {
+        var envVarName = path.Replace(":", "__", StringComparison.Ordinal);
+        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(envVarName));
+    }
+
+    private static bool IsSecretReference(string value, FrozenSet<string> allowedPrefixes)
+    {
+        if (SecretReferenceResolver.IsEnvironmentReference(value))
+        {
+            return true;
+        }
+
+        var colonIndex = value.IndexOf(':');
+        if (colonIndex <= 0)
+        {
+            return false;
+        }
+
+        var prefix = value[..colonIndex];
+        return allowedPrefixes.Contains(prefix);
     }
 
     private static void LogFeatureStatus(IConfiguration configuration, ILogger logger, string featureName, string displayName)
@@ -85,6 +252,48 @@ internal static class ConfigurationValidationService
             hasConnection ? "configured" : "not configured",
             cacheEnabled ? "enabled" : "disabled");
     }
+
+    private enum StorageProvider
+    {
+        Local,
+        AwsS3,
+        AzureBlob
+    }
+
+    private static readonly FrozenSet<string> _envOnlyPrefixes = new[]
+        {
+            "env"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenSet<string> _connectionSecretPrefixes = new[]
+        {
+            "env",
+            "aws",
+            "azure",
+            "gcp"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<string, FrozenSet<string>> _secretValidationRules =
+        new Dictionary<string, FrozenSet<string>>(StringComparer.Ordinal)
+        {
+            ["HONUA_ADMIN_PASSWORD"] = _connectionSecretPrefixes,
+            ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
+            ["ConnectionStrings:redis"] = _envOnlyPrefixes,
+            ["Oidc:AzureAd:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:Google:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:Generic:ClientSecret"] = _envOnlyPrefixes,
+            ["FileStorage:AwsS3:AccessKeyId"] = _envOnlyPrefixes,
+            ["FileStorage:AwsS3:SecretAccessKey"] = _envOnlyPrefixes,
+            ["FileStorage:AzureBlob:ConnectionString"] = _envOnlyPrefixes,
+            ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
+            ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,
+            ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Url"] = _envOnlyPrefixes,
+            ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Headers:Authorization"] = _envOnlyPrefixes,
+            ["Monitoring:IntelligentAlerting:NotificationChannels:Sms:ApiKey"] = _envOnlyPrefixes
+        }
+        .ToFrozenDictionary(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -129,20 +338,38 @@ internal static partial class ConfigurationLog
     public static partial void ConfigurationError(ILogger logger, string message);
 
     /// <summary>
+    /// Log configuration error with exception.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4013,
+        Level = LogLevel.Error,
+        Message = "Configuration error: {Message}")]
+    public static partial void ConfigurationError(ILogger logger, string message, Exception exception);
+
+    /// <summary>
     /// Log successful configuration validation.
     /// </summary>
     [LoggerMessage(
         EventId = 4014,
         Level = LogLevel.Information,
-        Message = "Configuration validation completed successfully")]
-    public static partial void ConfigurationValidationSuccess(ILogger logger);
+        Message = "Configuration validation: {Message}")]
+    public static partial void ConfigurationValidated(ILogger logger, string message);
 
     /// <summary>
-    /// Log failed configuration validation.
+    /// Log configuration validation success.
     /// </summary>
     [LoggerMessage(
         EventId = 4015,
+        Level = LogLevel.Information,
+        Message = "All configuration options validated successfully")]
+    public static partial void ConfigurationValidationSucceeded(ILogger logger);
+
+    /// <summary>
+    /// Log configuration validation failure.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4016,
         Level = LogLevel.Error,
-        Message = "Configuration validation failed with {ErrorCount} error(s)")]
-    public static partial void ConfigurationValidationFailed(ILogger logger, int errorCount);
+        Message = "Configuration validation failed with {ErrorCount} errors: {ErrorDetails}")]
+    public static partial void ConfigurationValidationFailed(ILogger logger, int errorCount, string errorDetails);
 }

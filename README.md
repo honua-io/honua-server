@@ -18,28 +18,34 @@ Includes **file import** (GeoJSON, Shapefile, GeoPackage, CSV, KML) and a **GeoS
 
 ## Status
 
-This repo is in planning/Phase 0. The MVP scope below is planned and not yet implemented.
-
-Current endpoints:
+MVP endpoints are implemented and functional, but APIs are still stabilizing.
+Current entrypoints:
 - `/healthz/live`
 - `/healthz/ready`
+- `/api/v1/admin`
+- `/rest/services/{service}/FeatureServer`
+- `/ogc/features`
+- `/ogc/tiles`
+- `/odata`
+- `/tiles/{layerId}/{z}/{x}/{y}.mvt`
+- `/openapi.json`
 
-## Quick Start (Phase 0)
+## Quick Start
 
 ```bash
 dotnet run --project src/Honua.Server
 ```
 
-## Planned Quick Start (post-Phase 0)
+## Docker (optional)
 
-**Local Development (with Aspire, planned):**
+**Local Development (with Aspire):**
 ```bash
 cd src/Honua.AppHost
 dotnet run
 # Opens Aspire dashboard with Honua + PostgreSQL + Redis
 ```
 
-**Docker (planned):**
+**Docker:**
 ```bash
 docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres" \
@@ -47,13 +53,8 @@ docker run -p 8080:8080 \
   ghcr.io/honuaio/honua-server:latest
 ```
 
-Planned endpoints:
-- Admin UI: `/admin`
-- FeatureServer: `/rest/services/{service}/FeatureServer/{layer}/query`
-- OGC API Features landing: `/ogc/features`
-- OData v4: `/odata/v4/Layers('{layer}')/Features`
-
-## Planned MVP Scope
+## MVP Scope
+Some items are implemented now and others are still in progress; see `docs/ROADMAP.md` for current status.
 - PostGIS-only data source.
 - Full FeatureServer: query, applyEdits, add/update/delete, attachments, related records.
 - OGC API Features: collections/items, filters, bbox/geometry, POST/PUT/DELETE transactions.
@@ -71,6 +72,7 @@ Planned endpoints:
 - **.NET Aspire**: Local dev orchestration with dashboard (traces, logs, metrics, health).
 
 ## Deferred (post-MVP)
+- **Operational/enterprise**: audit logging/storage + compliance dashboards, secure-connection allowlist/audit, edge rate limiting templates (nginx/ALB/WAF).
 - **Beta:** Query caching, GeometryServer basics, MapServer export, OData `$expand`/`$apply`, OGC API Styles.
 - **GA:** OData `/$batch`, legacy OGC (WFS/WMS), layer-level RBAC, audit logging.
 - **Later:** Additional databases (SQL Server, MySQL, SQLite, DuckDB, warehouses, NoSQL, Oracle), additional file formats (FileGDB, MapInfo TAB — requires GDAL), additional outputs (KML export, Shapefile export, PNG/JPEG), object storage, AI features, CLI/agent tooling.

@@ -1,11 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Postgres.Features.Import;
@@ -17,39 +16,40 @@ namespace Honua.Postgres.Features.Import;
 /// </summary>
 internal sealed class CrsDetectionService : ICrsDetectionService
 {
-    private readonly string _connectionString;
-    private readonly ISchemaContext? _schemaContext;
+    private readonly IDatabaseConnectionProvider _connectionProvider;
 
     /// <summary>
     /// Common EPSG codes and their variations for quick lookup
     /// </summary>
-    private static readonly Dictionary<string, int> _wellKnownEpsgCodes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // WGS84 variants
-        ["WGS84"] = 4326,
-        ["WGS_84"] = 4326,
-        ["WGS 84"] = 4326,
-        ["EPSG:4326"] = 4326,
-        ["4326"] = 4326,
+    private static readonly FrozenDictionary<string, int> _wellKnownEpsgCodes =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            // WGS84 variants
+            ["WGS84"] = 4326,
+            ["WGS_84"] = 4326,
+            ["WGS 84"] = 4326,
+            ["EPSG:4326"] = 4326,
+            ["4326"] = 4326,
 
-        // Web Mercator variants
-        ["EPSG:3857"] = 3857,
-        ["3857"] = 3857,
-        ["GOOGLE_MERCATOR"] = 3857,
-        ["WEB_MERCATOR"] = 3857,
-        ["PSEUDO_MERCATOR"] = 3857,
+            // Web Mercator variants
+            ["EPSG:3857"] = 3857,
+            ["3857"] = 3857,
+            ["GOOGLE_MERCATOR"] = 3857,
+            ["WEB_MERCATOR"] = 3857,
+            ["PSEUDO_MERCATOR"] = 3857,
 
-        // NAD83 variants
-        ["NAD83"] = 4269,
-        ["NAD_83"] = 4269,
-        ["EPSG:4269"] = 4269,
-        ["4269"] = 4269,
+            // NAD83 variants
+            ["NAD83"] = 4269,
+            ["NAD_83"] = 4269,
+            ["EPSG:4269"] = 4269,
+            ["4269"] = 4269,
 
-        // State Plane common zones
-        ["EPSG:2154"] = 2154, // RGF93 / Lambert-93 (France)
-        ["EPSG:25832"] = 25832, // ETRS89 / UTM zone 32N (Europe)
-        ["EPSG:32633"] = 32633, // WGS 84 / UTM zone 33N
-    };
+            // State Plane common zones
+            ["EPSG:2154"] = 2154, // RGF93 / Lambert-93 (France)
+            ["EPSG:25832"] = 25832, // ETRS89 / UTM zone 32N (Europe)
+            ["EPSG:32633"] = 32633, // WGS 84 / UTM zone 33N
+        }
+        .ToFrozenDictionary();
 
     /// <summary>
     /// Regex patterns for extracting EPSG codes from various string formats
@@ -58,10 +58,9 @@ internal sealed class CrsDetectionService : ICrsDetectionService
         @"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{4,5})(?:""|])?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public CrsDetectionService(string connectionString, ISchemaContext? schemaContext = null)
+    public CrsDetectionService(IDatabaseConnectionProvider connectionProvider)
     {
-        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-        _schemaContext = schemaContext;
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }
 
     /// <inheritdoc />
@@ -281,9 +280,13 @@ internal sealed class CrsDetectionService : ICrsDetectionService
 
     private async Task<NpgsqlConnection> OpenConnectionAsync()
     {
-        var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync().ConfigureAwait(false);
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema).ConfigureAwait(false);
-        return connection;
+        var connection = await _connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
+        if (connection is NpgsqlConnection npgsqlConnection)
+        {
+            return npgsqlConnection;
+        }
+
+        await connection.DisposeAsync().ConfigureAwait(false);
+        throw new InvalidOperationException("Expected NpgsqlConnection for CRS detection.");
     }
 }

@@ -6,8 +6,8 @@ using System.Data.Common;
 using BenchmarkDotNet.Attributes;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.FeatureStore;
+using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite;
@@ -28,7 +28,7 @@ public class QueryBenchmarks
     private const int Srid = 4326;
 
     private NpgsqlDataSource _dataSource = null!;
-    private PostgresFeatureStore _featureStore = null!;
+    private PostgresFeatureStoreRefactored _featureStore = null!;
     private string _schemaName = string.Empty;
     private SpatialFilter _spatialFilter;
     private FeatureQuery _simpleWhereQuery;
@@ -51,11 +51,27 @@ public class QueryBenchmarks
         await SeedFeaturesAsync(connection, _schemaName, DefaultFeatureCount);
         await AnalyzeAsync(connection, _schemaName);
 
-        var pool = new DefaultObjectPoolProvider().CreateStringBuilderPool();
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.CreateStringBuilderPool();
+        var dictionaryPool = poolProvider.Create(new DictionaryPooledObjectPolicy());
         var connectionProvider = new BenchmarkConnectionProvider(_dataSource);
-        var performanceMonitor = new NoopPerformanceMonitor();
-        var logger = NullLogger<PostgresFeatureStore>.Instance;
-        _featureStore = new PostgresFeatureStore(connectionProvider, pool, performanceMonitor, logger, _schemaName);
+        var cacheLogger = NullLogger<FeatureCacheManager>.Instance;
+        var cacheManager = new FeatureCacheManager(connectionProvider, cacheLogger, _schemaName);
+        var geometryProcessor = new GeometryProcessor();
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _schemaName);
+        var dataAccessLogger = NullLogger<FeatureDataAccess>.Instance;
+        var dataAccess = new FeatureDataAccess(
+            connectionProvider,
+            geometryProcessor,
+            cacheManager,
+            dictionaryPool,
+            statementCache: null,
+            logger: dataAccessLogger,
+            performanceOptions: null,
+            limitsOptions: null,
+            performanceMonitor: null,
+            schemaName: _schemaName);
+        _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 
         _spatialFilter = SpatialFilter.Create(
             CreateBboxWkb(-157.95, 21.15, -157.45, 21.65),
@@ -255,31 +271,4 @@ public class QueryBenchmarks
         }
     }
 
-    private sealed class NoopPerformanceMonitor : IPerformanceMonitor
-    {
-        public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount) { }
-
-        public void RecordHttpRequest(string method, string endpoint, int statusCode, TimeSpan duration) { }
-
-        public void RecordActiveHttpRequestDelta(int delta) { }
-
-        public void RecordMemoryUsage(long allocatedBytes, int gen0Collections, int gen1Collections, int gen2Collections) { }
-
-        public void RecordCacheMetrics(string cacheType, string operation) { }
-
-        public void RecordTransactionDuration(TimeSpan duration, int operationCount, bool wasCommitted) { }
-
-        public IOperationScope StartOperation(string operationName) => new NoopOperationScope();
-
-        public void RecordCounter(string name, long value, IDictionary<string, string>? tags = null) { }
-
-        public void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null) { }
-    }
-
-    private sealed class NoopOperationScope : IOperationScope
-    {
-        public IOperationScope WithTag(string key, string value) => this;
-
-        public void Dispose() { }
-    }
 }

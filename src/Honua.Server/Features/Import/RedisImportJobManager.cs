@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
@@ -20,10 +21,11 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 {
     private readonly RedisJobQueue _jobQueue;
     private readonly RedisLeaderElection _leaderElection;
-    private readonly RedisProgressStore<EsriImportProgress> _progressStore;
+    private readonly IDistributedProgressStore<EsriImportProgress> _progressStore;
     private readonly RedisProgressStore<EsriImportRequest> _requestStore;
 
     public RedisImportJobManager(
+        IUniversalProgressStore universalProgressStore,
         IDistributedCache? distributedCache,
         ILogger<RedisImportJobManager> logger,
         IConnectionMultiplexer? redis = null)
@@ -32,8 +34,11 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 
         _jobQueue = new RedisJobQueue(distributedCache, redis, logger, "esri:import:queue");
         _leaderElection = new RedisLeaderElection(distributedCache, redis, logger, "esri:import:leader", instanceId);
-        _progressStore = new RedisProgressStore<EsriImportProgress>(
-            distributedCache, logger, "esri:import:progress:", EsriImportJsonContext.Default.EsriImportProgress);
+
+        // Use the universal progress store for progress tracking
+        _progressStore = new DistributedProgressStoreAdapter<EsriImportProgress>(universalProgressStore);
+
+        // Keep using Redis directly for request storage (not progress tracking)
         _requestStore = new RedisProgressStore<EsriImportRequest>(
             distributedCache, logger, "esri:import:request:", EsriImportJsonContext.Default.EsriImportRequest);
     }

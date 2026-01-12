@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -20,7 +21,7 @@ public sealed class TestLayerCatalog : ILayerCatalog
     private readonly ServiceDefinition _testService;
     private readonly LayerDefinition _testLayer;
 
-    public TestLayerCatalog()
+    public TestLayerCatalog(AccessPolicy? servicePolicy = null, AccessPolicy? layerPolicy = null)
     {
         // Create a test layer with minimal required fields
         var testFields = new[]
@@ -32,9 +33,10 @@ public sealed class TestLayerCatalog : ILayerCatalog
             new FieldDefinition("timestamp", FieldType.DateTime, null, true, null, "Timestamp")
         };
 
-        var spatialRef = new SpatialReference(4326); // WGS84
+        var spatialRef = SpatialReference.Create(4326); // WGS84
         var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
 
+        var layerMetadata = layerPolicy == null ? null : new CatalogMetadata { AccessPolicy = layerPolicy };
         _testLayer = new LayerDefinition(
             Id: 0,
             Name: "Test Layer",
@@ -45,9 +47,11 @@ public sealed class TestLayerCatalog : ILayerCatalog
             Extent: extent,
             MinScale: null,
             MaxScale: null,
-            DefaultVisibility: true);
+            DefaultVisibility: true,
+            Metadata: layerMetadata);
 
         // Create test service containing the test layer
+        var serviceMetadata = servicePolicy == null ? null : new CatalogMetadata { AccessPolicy = servicePolicy };
         _testService = new ServiceDefinition(
             Name: "test",
             Description: "Test service for integration tests",
@@ -56,7 +60,8 @@ public sealed class TestLayerCatalog : ILayerCatalog
             MaxRecordCount: 1000,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
-            ServiceExtent: extent);
+            ServiceExtent: extent,
+            Metadata: serviceMetadata);
     }
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)

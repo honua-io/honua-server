@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.Core.Features.Import.Domain;
 
 /// <summary>
@@ -126,39 +128,22 @@ public sealed record EsriLayerInfo
 }
 
 /// <summary>
-/// Represents a field definition from an ArcGIS layer.
+/// Represents a field definition from an ArcGIS layer, extending shared field metadata.
 /// </summary>
-public sealed record EsriFieldInfo
+public sealed record EsriFieldInfo : FieldDefinitionBase
 {
-    /// <summary>
-    /// The field name.
-    /// </summary>
-    public required string Name { get; init; }
-
-    /// <summary>
-    /// The Esri field type (e.g., "esriFieldTypeOID", "esriFieldTypeString", "esriFieldTypeDouble").
-    /// </summary>
-    public required string Type { get; init; }
-
-    /// <summary>
-    /// Human-readable alias for the field.
-    /// </summary>
-    public string? Alias { get; init; }
-
-    /// <summary>
-    /// Maximum length for string fields.
-    /// </summary>
-    public int? Length { get; init; }
-
-    /// <summary>
-    /// Whether the field can contain null values.
-    /// </summary>
-    public bool Nullable { get; init; } = true;
-
     /// <summary>
     /// Whether this is the ObjectID field.
     /// </summary>
     public bool IsObjectId => Type.Equals("esriFieldTypeOID", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Determines if this field represents a string type based on Esri type
+    /// </summary>
+    protected override bool IsStringType()
+    {
+        return Type.Equals("esriFieldTypeString", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -11,11 +12,11 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Tests for Polly resilience policies for database connections
 /// Validates retry behavior for transient connection errors
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.TestQuality)]
 public sealed class ResiliencePoliciesTests
 {
     [UnitTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public void GetConnectionRetryPolicy_ReturnsConfiguredPolicy()
     {
         // Act
@@ -34,7 +35,7 @@ public sealed class ResiliencePoliciesTests
     [InlineData("40P01", false)]  // deadlock_detected (should NOT retry)
     [InlineData("42P01", false)]  // undefined_table (should NOT retry)
     [InlineData("23505", false)]  // unique_violation (should NOT retry)
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task RetryPolicy_OnlyRetriesConnectionErrors(string sqlState, bool shouldRetry)
     {
         // Arrange
@@ -51,7 +52,7 @@ public sealed class ResiliencePoliciesTests
     }
 
     [UnitTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task RetryPolicy_RetriesTimeoutExceptions()
     {
         // Arrange
@@ -75,7 +76,7 @@ public sealed class ResiliencePoliciesTests
     }
 
     [UnitTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task RetryPolicy_SucceedsAfterRetry()
     {
         // Arrange
@@ -107,7 +108,7 @@ public sealed class ResiliencePoliciesTests
     }
 
     [UnitTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task RetryPolicy_UsesExponentialBackoff()
     {
         // Arrange
@@ -133,7 +134,7 @@ public sealed class ResiliencePoliciesTests
     }
 
     [UnitTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task RetryPolicy_CallsOnRetryCallback()
     {
         // Arrange
@@ -163,7 +164,7 @@ public sealed class ResiliencePoliciesTests
     }
 
     [UnitTest]
-    [Operation("Resilience")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task RetryPolicy_WorksWithoutOnRetryCallback()
     {
         // Arrange

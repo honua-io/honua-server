@@ -19,7 +19,9 @@ public class StreamingPerformanceTests : IDisposable
 
     public StreamingPerformanceTests()
     {
+#pragma warning disable CS0618 // Type or member is obsolete
         _testStore = new TestFeatureStore();
+#pragma warning restore CS0618 // Type or member is obsolete
         _testLayerId = 1;
 
         // Seed with test data

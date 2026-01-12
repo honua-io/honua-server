@@ -26,6 +26,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(StyleResponse))]
 [JsonSerializable(typeof(SuccessResponse))]
 [JsonSerializable(typeof(ValidationErrorResponse))]
+[JsonSerializable(typeof(Honua.Core.Features.Catalog.Domain.AccessPolicy))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

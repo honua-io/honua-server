@@ -3,9 +3,10 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
-using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcTiles.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -16,7 +17,7 @@ internal static class TileMatrixSetEndpoints
 {
     public static IEndpointRouteBuilder MapTileMatrixSetEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/ogc/tiles/tileMatrixSets", HandleGetTileMatrixSets)
+        var tileMatrixSets = endpoints.MapGet("/ogc/tiles/tileMatrixSets", HandleGetTileMatrixSets)
             .WithDisplayName("OGC API Tiles TileMatrixSets")
             .WithName("OgcTilesTileMatrixSets")
             .WithSummary("Get available tile matrix sets")
@@ -26,7 +27,7 @@ internal static class TileMatrixSetEndpoints
             .Produces<TileMatrixSetsList>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        endpoints.MapGet("/ogc/tiles/tileMatrixSets/{tileMatrixSetId}", HandleGetTileMatrixSet)
+        var tileMatrixSet = endpoints.MapGet("/ogc/tiles/tileMatrixSets/{tileMatrixSetId}", HandleGetTileMatrixSet)
             .WithDisplayName("OGC API Tiles TileMatrixSet")
             .WithName("OgcTilesTileMatrixSet")
             .WithSummary("Get tile matrix set definition")
@@ -41,26 +42,26 @@ internal static class TileMatrixSetEndpoints
 
     private static IResult HandleGetTileMatrixSets(HttpContext context, string? f)
     {
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
             return CreateFormatError(context, formatError);
         }
 
         var request = context.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var items = ImmutableArray.Create(OgcTilesUtilities.BuildWebMercatorQuadItem(baseUrl));
 
-        var links = OgcFeaturesUtilities.BuildFormatLinks(
+        var links = OgcCommonUtilities.BuildFormatLinks(
                 request,
                 $"{baseUrl}/ogc/tiles/tileMatrixSets",
                 outputFormat,
-                OgcFeaturesUtilities.MetadataFormats,
+                OgcCommonUtilities.MetadataFormats,
                 "Tile matrix sets")
             .ToBuilder();
 
@@ -76,7 +77,7 @@ internal static class TileMatrixSetEndpoints
             Links = links.ToImmutable()
         };
 
-        return OgcFeaturesUtilities.FormatMetadataResponse(response, OgcTilesJsonContext.Default.TileMatrixSetsList, outputFormat, "Tile matrix sets");
+        return OgcCommonUtilities.FormatMetadataResponse(response, OgcTilesJsonContext.Default.TileMatrixSetsList, outputFormat, "Tile matrix sets");
     }
 
     private static IResult HandleGetTileMatrixSet(
@@ -85,31 +86,31 @@ internal static class TileMatrixSetEndpoints
         string? f,
         IOptions<TileOptions> tileOptions)
     {
-        var validationError = OgcFeaturesUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcFeaturesUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
             return CreateFormatError(context, formatError);
         }
 
         if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
         {
-            return OgcErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
+            return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
         var definition = OgcTilesUtilities.BuildWebMercatorQuadDefinition(tileOptions.Value);
-        return OgcFeaturesUtilities.FormatMetadataResponse(definition, OgcTilesJsonContext.Default.TileMatrixSetDefinition, outputFormat, "Tile matrix set");
+        return OgcCommonUtilities.FormatMetadataResponse(definition, OgcTilesJsonContext.Default.TileMatrixSetDefinition, outputFormat, "Tile matrix set");
     }
 
     private static IResult CreateFormatError(HttpContext context, IResult? formatError)
     {
         if (formatError is BadRequest<string> badRequest)
         {
-            return OgcErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
         }
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
@@ -121,6 +122,6 @@ internal static class TileMatrixSetEndpoints
                 "Requested format is not acceptable.");
         }
 
-        return OgcErrorHelpers.CreateBadRequest(context, "Invalid format.");
+        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 }

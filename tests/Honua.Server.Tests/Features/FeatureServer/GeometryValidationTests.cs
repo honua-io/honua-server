@@ -31,7 +31,12 @@ public sealed class GeometryValidationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
-        _fixture.ReplaceService<IFeatureStore>(new TestFeatureStore());
+        var featureStore = new TestFeatureStore();
+        _fixture.ReplaceService<IFeatureReader>(featureStore);
+        _fixture.ReplaceService<IFeatureWriter>(featureStore);
+        _fixture.ReplaceService<ITileProvider>(featureStore);
+        _fixture.ReplaceService<IRelationshipStore>(featureStore);
+        _fixture.ReplaceService<IStreamingFeatureStore>(featureStore);
         await _fixture.InitializeAsync();
     }
 

@@ -4,14 +4,13 @@
 using System.Collections.Immutable;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.FeatureStore;
+using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using NSubstitute;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -24,7 +23,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
     private readonly ITestOutputHelper _output;
-    private PostgresFeatureStore _featureStore = null!;
+    private PostgresFeatureStoreRefactored _featureStore = null!;
     private string _schemaName = null!;
     private const int TestLayerId = 1;
 
@@ -39,16 +38,22 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(PostgresFeatureStoreTests));
 
         // Create feature store with the isolated schema
-        var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
+        var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource, () => _schemaName);
         var poolProvider = new DefaultObjectPoolProvider();
-        var stringBuilderPool = poolProvider.Create(new Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
-        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-        _featureStore = new PostgresFeatureStore(
+        var stringBuilderPool = poolProvider.Create(new Microsoft.Extensions.ObjectPool.StringBuilderPooledObjectPolicy());
+        var dictionaryPool = poolProvider.Create(new DictionaryPooledObjectPolicy());
+        var geometryProcessor = new GeometryProcessor();
+        var cacheManager = new FeatureCacheManager(connectionProvider, NullLogger<FeatureCacheManager>.Instance, _schemaName);
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _schemaName);
+        var dataAccess = new FeatureDataAccess(
             connectionProvider,
-            stringBuilderPool,
-            performanceMonitor,
-            NullLogger<PostgresFeatureStore>.Instance,
-            _schemaName);
+            geometryProcessor,
+            cacheManager,
+            dictionaryPool,
+            statementCache: null,
+            logger: NullLogger<FeatureDataAccess>.Instance,
+            schemaName: _schemaName);
+        _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 
         // Create test table structure
         await _fixture.ExecuteAsync("""
@@ -345,7 +350,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     public async Task ApplyEditsAsync_WithRollbackOnFailureProperty_BehaviorIsImplemented()
     {
         // This test verifies that the FeatureEditBatch rollbackOnFailure property
-        // is properly handled by the PostgresFeatureStore implementation
+        // is properly handled by the feature store implementation
 
         // Arrange
         var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));

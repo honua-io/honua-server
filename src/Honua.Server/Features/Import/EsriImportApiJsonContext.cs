@@ -4,6 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Features.Import;
 
@@ -19,8 +20,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(EsriLayerSummary[]))]
 [JsonSerializable(typeof(EsriStartImportRequest))]
 [JsonSerializable(typeof(EsriImportJobResponse))]
-[JsonSerializable(typeof(EsriCancelJobResponse))]
-[JsonSerializable(typeof(EsriActiveJobsResponse))]
+[JsonSerializable(typeof(EsriImportJobsResponse))]
+[JsonSerializable(typeof(EsriImportCancelResponse))]
 [JsonSerializable(typeof(EsriImportProgress))]
 [JsonSerializable(typeof(EsriImportProgress[]))]
 [JsonSerializable(typeof(EsriImportStatus))]
@@ -32,6 +33,10 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(EsriExtent))]
 [JsonSerializable(typeof(EsriImportRequest))]
 [JsonSerializable(typeof(EsriImportResult))]
+// Add unified progress support
+[JsonSerializable(typeof(IOperationProgress))]
+[JsonSerializable(typeof(OperationType))]
+[JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
 internal sealed partial class EsriImportApiJsonContext : JsonSerializerContext

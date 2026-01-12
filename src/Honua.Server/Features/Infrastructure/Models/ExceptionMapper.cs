@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Shared.Models;
 using Polly.CircuitBreaker;
@@ -134,6 +136,20 @@ internal static class ExceptionMapper
                 null
             ),
 
+            BadHttpRequestException => (
+                StatusCodes.Status400BadRequest,
+                "Bad Request",
+                "Invalid request body.",
+                null
+            ),
+
+            JsonException => (
+                StatusCodes.Status400BadRequest,
+                "Bad Request",
+                "Invalid JSON payload.",
+                null
+            ),
+
             UnauthorizedAccessException => (
                 StatusCodes.Status401Unauthorized,
                 "Unauthorized",
@@ -214,6 +230,7 @@ internal static class ExceptionMapper
             if (colonIndex > 0 && colonIndex < message.Length - 1)
             {
                 var errorPart = message[(colonIndex + 1)..].Trim();
+                errorPart = SanitizeCqlErrorDetail(errorPart);
                 // Limit length to prevent overly detailed messages
                 if (errorPart.Length > 200)
                 {
@@ -246,6 +263,19 @@ internal static class ExceptionMapper
 
         // Generic safe message for other parameter errors
         return "Invalid query parameter value.";
+    }
+
+    private static string SanitizeCqlErrorDetail(string errorPart)
+    {
+        if (string.IsNullOrWhiteSpace(errorPart))
+        {
+            return "Syntax error in filter expression.";
+        }
+
+        var sanitized = Regex.Replace(errorPart, @"\bSystem\.[\w\.]+", string.Empty, RegexOptions.IgnoreCase);
+        sanitized = sanitized.Replace("Exception", string.Empty, StringComparison.OrdinalIgnoreCase);
+        sanitized = Regex.Replace(sanitized, @"\s+", " ").Trim();
+        return string.IsNullOrWhiteSpace(sanitized) ? "Syntax error in filter expression." : sanitized;
     }
 }
 

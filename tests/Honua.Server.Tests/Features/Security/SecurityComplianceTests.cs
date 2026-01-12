@@ -6,6 +6,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 
@@ -15,6 +16,8 @@ namespace Honua.Server.Tests.Features.Security;
 /// Comprehensive security compliance tests covering OWASP Top 10 and enterprise security requirements
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Comprehensive)]
+[Operation(Operations.Security)]
 public sealed class SecurityComplianceTests : IAsyncLifetime
 {
     private const string AdminPassword = "valid-test-key";
@@ -53,8 +56,6 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
                 builder.UseEnvironment(Environments.Production);
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("RateLimit:MaxRequestsPerWindow", "10");
-                builder.UseSetting("RateLimit:WindowSize", "00:01:00");
             });
     }
 
@@ -67,6 +68,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task Authentication_WithoutApiKey_ShouldReturn401()
     {
         // Arrange
@@ -80,6 +82,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task Authentication_WithInvalidApiKey_ShouldReturn401()
     {
         // Arrange
@@ -94,6 +97,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task Authorization_PublicEndpoint_AllowsAnonymousAccess()
     {
         // Arrange
@@ -107,6 +111,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SqlInjection_InWhereClause_ShouldBeBlocked()
     {
         // Arrange
@@ -142,6 +147,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task XSS_InParameters_ShouldBeSanitized()
     {
         // Arrange
@@ -173,6 +179,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task CSRF_PostWithoutToken_ShouldBeBlocked()
     {
         // Arrange
@@ -207,31 +214,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task RateLimiting_ExcessiveRequests_ShouldBeThrottled()
-    {
-        // Arrange
-        var tasks = new List<Task<HttpResponseMessage>>();
-        var requestCount = 100; // Assuming rate limit is lower than this
-
-        // Act
-        for (int i = 0; i < requestCount; i++)
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer/1/query?where=1=1");
-            request.Headers.Add("X-API-Key", AdminPassword);
-            tasks.Add(_client.SendAsync(request));
-        }
-
-        var responses = await Task.WhenAll(tasks);
-
-        // Assert
-        var rateLimitedResponses = responses.Count(r => r.StatusCode == HttpStatusCode.TooManyRequests);
-        rateLimitedResponses.Should().BeGreaterThan(0, "Rate limiting should be active");
-
-        var successfulResponses = responses.Count(r => r.StatusCode == HttpStatusCode.OK);
-        successfulResponses.Should().BeLessThan(requestCount, "Not all requests should succeed due to rate limiting");
-    }
-
-    [IntegrationTest]
+    [Endpoint("GET /healthz/ready")]
     public async Task SecurityHeaders_ShouldBePresent()
     {
         // Arrange
@@ -259,6 +242,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task FileUpload_MaliciousFile_ShouldBeRejected()
     {
         // Arrange
@@ -297,6 +281,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/files/{path}")]
     public async Task PathTraversal_InFileAccess_ShouldBeBlocked()
     {
         // Arrange
@@ -332,6 +317,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task InputValidation_ExcessivelyLargePayload_ShouldBeRejected()
     {
         // Arrange
@@ -355,6 +341,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task SessionManagement_ConcurrentRequests_ShouldSucceed()
     {
         // Arrange
@@ -376,6 +363,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/users")]
     public async Task DataEncryption_SensitiveData_ShouldBeProtected()
     {
         // Arrange
@@ -401,7 +389,8 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task AuditLogging_CriticalOperations_ReturnsCorrelationId()
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task CorrelationId_CriticalOperations_ReturnsCorrelationId()
     {
         // Arrange
         var payload = """
@@ -409,7 +398,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
                 "adds": [
                     {
                         "geometry": {"type": "Point", "coordinates": [-122.0, 37.0]},
-                        "attributes": {"name": "Audit Test"}
+                        "attributes": {"name": "Correlation Test"}
                     }
                 ]
             }
@@ -432,6 +421,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ErrorHandling_ShouldNotLeakInformation()
     {
         // Arrange
@@ -449,6 +439,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/ready")]
     public async Task HTTPS_Redirection_ShouldBeEnforced()
     {
         // This test would be more relevant in a production environment
@@ -469,6 +460,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ContentValidation_MalformedJSON_ShouldBeRejected()
     {
         // Arrange

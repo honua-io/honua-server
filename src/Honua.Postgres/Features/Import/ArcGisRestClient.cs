@@ -231,7 +231,8 @@ internal sealed partial class ArcGisRestClient
         return new ResiliencePolicyOptions
         {
             MaxRetryAttempts = Math.Max(0, maxRetries),
-            BaseDelay = TimeSpan.FromSeconds(1)
+            BaseDelay = TimeSpan.FromSeconds(1),
+            JitterPercentage = 0.2
         };
     }
 

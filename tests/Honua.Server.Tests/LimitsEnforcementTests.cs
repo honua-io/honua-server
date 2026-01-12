@@ -268,7 +268,8 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         };
 
         // Act
-        var errors = LimitsOptionsValidator.Validate(validLimits);
+        var result = new LimitsOptionsValidator().Validate(Options.DefaultName, validLimits);
+        var errors = result.Failures ?? Array.Empty<string>();
 
         // Assert
         errors.Should().BeEmpty();
@@ -288,7 +289,8 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         };
 
         // Act
-        var errors = LimitsOptionsValidator.Validate(invalidLimits);
+        var result = new LimitsOptionsValidator().Validate(Options.DefaultName, invalidLimits);
+        var errors = result.Failures ?? Array.Empty<string>();
 
         // Assert
         errors.Should().NotBeEmpty();
@@ -308,7 +310,8 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         };
 
         // Act
-        var errors = LimitsOptionsValidator.Validate(invalidLimits);
+        var result = new LimitsOptionsValidator().Validate(Options.DefaultName, invalidLimits);
+        var errors = result.Failures ?? Array.Empty<string>();
 
         // Assert
         errors.Should().NotBeEmpty();
@@ -328,7 +331,8 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         };
 
         // Act
-        var errors = LimitsOptionsValidator.Validate(invalidLimits);
+        var result = new LimitsOptionsValidator().Validate(Options.DefaultName, invalidLimits);
+        var errors = result.Failures ?? Array.Empty<string>();
 
         // Assert
         errors.Should().NotBeEmpty();

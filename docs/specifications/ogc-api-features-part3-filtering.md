@@ -13,24 +13,24 @@ This OGC standard extends OGC API - Features - Part 1: Core with enhanced filter
 **Requirement**: Servers must support query parameters matching queryable properties for all simple-valued queryables.
 **Status**: Queryable properties are accepted as query parameters and combined with other filters via AND
 
-### 3. **Filter** ✅ IMPLEMENTED
+### 3. **Filter** ⚠️ PARTIAL
 **Requirements**:
 - `filter`: Specifies the filter expression ✅
 - `filter-lang`: Identifies the language (default: `cql2-text`, also supports `cql2-json`) ✅
 - `filter-crs`: Specifies coordinate reference system ✅
 
-### 4. **Features Filter** ✅ IMPLEMENTED
+### 4. **Features Filter** ⚠️ PARTIAL
 **Requirement**: Binds the Filter requirements class to OGC API - Features - Part 1
-**Status**: Filters work on `/collections/{collectionId}/items` endpoint
+**Status**: Filters work on `/collections/{collectionId}/items` endpoint, but function coverage is limited
 
 ## Critical Filtering Logic ✅ IMPLEMENTED
 "Other filter predicates supported by the server (e.g. `bbox`, `datetime`, etc.) SHALL be logically connected with the `AND` operator when mixed in a request with the `filter` parameter."
 
 ## Remaining Implementation Items
-None (full CQL2 operator coverage implemented)
+- Complete CQL2 function/operator coverage to claim filter conformance classes.
 
 ## Current Implementation Status
-- ✅ CQL2-Text and CQL2-JSON filtering
+- ✅ CQL2-Text and CQL2-JSON filtering for supported functions
 - ✅ Combined with bbox/datetime/queryable filters using AND logic
 - ✅ Proper error handling for invalid filters
 - ✅ Queryables discovery endpoint with JSON Schema

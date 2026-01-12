@@ -4,6 +4,8 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
@@ -21,12 +23,14 @@ internal static partial class ImportEndpoints
     }
 
     /// <summary>
-    /// Map file import endpoints to the web application
+    /// Map file import endpoints to the web application with formal API versioning
     /// </summary>
     public static void MapImportEndpoints(this WebApplication app)
     {
-        // Primary v1 routes at /api/v1/admin/import
-        RouteGroupBuilder v1Group = app.MapGroup("/api/v1/admin/import")
+        // Primary v1 routes at /api/v1/admin/import with formal versioning
+        var v1Group = app.MapGroup("/api/v{version:apiVersion}/admin/import")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
             .WithTags("Import")
             .RequireAdminAuthorization();
 
@@ -36,7 +40,7 @@ internal static partial class ImportEndpoints
     /// <summary>
     /// Map import routes to a route group
     /// </summary>
-    private static void MapImportRoutes(RouteGroupBuilder group, bool isV1)
+    private static void MapImportRoutes(IEndpointRouteBuilder group, bool isV1)
     {
         var nameSuffix = isV1 ? "V1" : "";
 
@@ -60,23 +64,41 @@ internal static partial class ImportEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .DisableAntiforgery(); // For file uploads
 
+        // Get upload progress
+        _ = group.Map("/uploads/{uploadId}/progress", HandleGetUploadProgress)
+            .WithName($"GetUploadProgress{nameSuffix}")
+            .WithSummary("Get the progress of a file upload operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        // Cancel upload
+        _ = group.Map("/uploads/{uploadId}/cancel", HandleCancelUpload)
+            .WithName($"CancelUpload{nameSuffix}")
+            .WithSummary("Cancel a running file upload operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        // Get all active uploads
+        _ = group.Map("/uploads", HandleGetActiveUploads)
+            .WithName($"GetActiveUploads{nameSuffix}")
+            .WithSummary("Get all active file upload operations")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        // Get active import jobs
+        _ = group.Map("/jobs", HandleGetActiveJobs)
+            .WithName($"GetActiveImportJobs{nameSuffix}")
+            .WithSummary("Get all active import jobs")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         // Get import job status
-        _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
+        _ = group.Map("/jobs/{jobId}", HandleGetImportJobStatus)
             .WithName($"GetImportJobStatus{nameSuffix}")
-            .WithSummary("Get the status of a background import job")
+            .WithSummary("Get the status of an import job")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Cancel import job
-        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelJob)
+        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelImportJob)
             .WithName($"CancelImportJob{nameSuffix}")
-            .WithSummary("Cancel a running background import job")
+            .WithSummary("Cancel a running import job")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
-
-        // Get all active import jobs
-        _ = group.Map("/jobs", HandleGetActiveJobs)
-            .WithName($"GetActiveImportJobs{nameSuffix}")
-            .WithSummary("Get all active background import jobs")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Get import limits configuration
         _ = group.Map("/limits", HandleGetLimits)
@@ -270,19 +292,37 @@ internal static partial class ImportEndpoints
             int targetSrid = int.TryParse(form["TargetSrid"], out int tgt) ? tgt : 4326;
             bool overwriteExisting = bool.TryParse(form["OverwriteExisting"], out bool overwrite) && overwrite;
             bool forceBackground = bool.TryParse(form["ForceBackground"], out bool forceBg) && forceBg;
+            bool trackProgress = bool.TryParse(form["TrackProgress"], out bool track) && track;
 
             // Check if file should be processed in background
             var limits = importService.Limits;
             var shouldQueueBackground = forceBackground || file.Length > limits.BackgroundJobThresholdBytes;
 
             // First, upload file to cloud storage for better handling of large files
-            var cloudStorage = context.RequestServices.GetService<Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage>();
+            var cloudStorage = context.RequestServices.GetService<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
             string? cloudFileId = null;
+            string? uploadId = null;
 
             if (cloudStorage != null && (shouldQueueBackground || file.Length > 10 * 1024 * 1024)) // Use cloud storage for files > 10MB
             {
                 using Stream uploadStream = file.OpenReadStream();
-                var uploadRequest = new Honua.Core.Features.FileStorage.Domain.FileUploadRequest
+                uploadId = Guid.NewGuid().ToString();
+
+                // Set up progress tracking if requested
+                IProgress<UploadProgress>? progressReporter = null;
+                if (trackProgress)
+                {
+                    var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
+                    if (progressStore != null)
+                    {
+                        progressReporter = new Progress<UploadProgress>(async progress =>
+                        {
+                            await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                        });
+                    }
+                }
+
+                var uploadRequest = new Honua.Core.Features.Infrastructure.Domain.FileUploadRequest
                 {
                     Content = uploadStream,
                     FileName = safeFileName,
@@ -290,6 +330,8 @@ internal static partial class ImportEndpoints
                     SizeBytes = file.Length,
                     TimeToLive = TimeSpan.FromDays(1), // Temporary storage for processing
                     Folder = "imports",
+                    Progress = progressReporter,
+                    UploadId = uploadId,
                     Metadata = new Dictionary<string, string>
                     {
                         ["tableName"] = tableName,
@@ -360,8 +402,9 @@ internal static partial class ImportEndpoints
                     {
                         JobId = jobId,
                         Message = "File queued for background processing",
-                        StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
-                        CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel"
+                        StatusUrl = $"/api/v1/admin/operations/{jobId}",
+                        CancelUrl = $"/api/v1/admin/operations/{jobId}/cancel",
+                        UploadId = uploadId // Include upload ID for progress tracking
                     };
 
                     IResult result = Results.Json(response, ImportJsonContext.Default.BackgroundImportResponse, statusCode: StatusCodes.Status202Accepted);
@@ -402,120 +445,6 @@ internal static partial class ImportEndpoints
         }
     }
 
-    /// <summary>
-    /// Get the status of a background import job
-    /// </summary>
-    private static async Task HandleGetJobStatus(HttpContext context)
-    {
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
-        var jobId = context.GetRouteValue("jobId")?.ToString();
-        if (string.IsNullOrEmpty(jobId))
-        {
-            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
-            return;
-        }
-
-        var jobService = context.RequestServices.GetService<IImportJobService>();
-        if (jobService == null)
-        {
-            await WriteErrorAsync(context, "Background import service not available", StatusCodes.Status503ServiceUnavailable);
-            return;
-        }
-
-        CancellationToken cancellationToken = context.RequestAborted;
-        var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
-
-        if (progress == null)
-        {
-            await WriteErrorAsync(context, "Job not found", StatusCodes.Status404NotFound);
-            return;
-        }
-
-        IResult result = Results.Json(progress, ImportJsonContext.Default.ImportProgress);
-        await result.ExecuteAsync(context);
-    }
-
-    /// <summary>
-    /// Cancel a running background import job
-    /// </summary>
-    private static async Task HandleCancelJob(HttpContext context)
-    {
-        if (!HttpMethods.IsPost(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
-        var jobId = context.GetRouteValue("jobId")?.ToString();
-        if (string.IsNullOrEmpty(jobId))
-        {
-            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
-            return;
-        }
-
-        var jobService = context.RequestServices.GetService<IImportJobService>();
-        if (jobService == null)
-        {
-            await WriteErrorAsync(context, "Background import service not available", StatusCodes.Status503ServiceUnavailable);
-            return;
-        }
-
-        CancellationToken cancellationToken = context.RequestAborted;
-        var cancelled = await jobService.CancelJobAsync(jobId, cancellationToken);
-
-        if (!cancelled)
-        {
-            await WriteErrorAsync(context, "Job not found or already completed", StatusCodes.Status404NotFound);
-            return;
-        }
-
-        var response = new CancelJobResponse { JobId = jobId, Message = "Job cancelled" };
-        IResult result = Results.Json(response, ImportJsonContext.Default.CancelJobResponse);
-        await result.ExecuteAsync(context);
-    }
-
-    /// <summary>
-    /// Get all active background import jobs
-    /// </summary>
-    private static async Task HandleGetActiveJobs(HttpContext context)
-    {
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
-        var jobService = context.RequestServices.GetService<IImportJobService>();
-        if (jobService == null)
-        {
-            await WriteErrorAsync(context, "Background import service not available", StatusCodes.Status503ServiceUnavailable);
-            return;
-        }
-
-        CancellationToken cancellationToken = context.RequestAborted;
-        var jobs = await jobService.GetActiveJobsAsync(cancellationToken);
-
-        var response = new ActiveJobsResponse { Jobs = jobs.ToArray() };
-        IResult result = Results.Json(response, ImportJsonContext.Default.ActiveJobsResponse);
-        await result.ExecuteAsync(context);
-    }
 
     /// <summary>
     /// Get current import configuration limits
@@ -537,6 +466,268 @@ internal static partial class ImportEndpoints
 
         IResult result = Results.Json(limits, ImportJsonContext.Default.ImportLimits);
         await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Get the progress of a file upload operation
+    /// </summary>
+    private static async Task HandleGetUploadProgress(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var uploadId = context.GetRouteValue("uploadId")?.ToString();
+        if (string.IsNullOrEmpty(uploadId))
+        {
+            await WriteErrorAsync(context, "Upload ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            await WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        CancellationToken cancellationToken = context.RequestAborted;
+        var progress = await cloudStorage.GetUploadProgressAsync(uploadId, cancellationToken);
+
+        if (progress == null)
+        {
+            await WriteErrorAsync(context, "Upload not found", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        IResult result = Results.Json(progress, ImportJsonContext.Default.UploadProgress);
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Cancel a running file upload operation
+    /// </summary>
+    private static async Task HandleCancelUpload(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var uploadId = context.GetRouteValue("uploadId")?.ToString();
+        if (string.IsNullOrEmpty(uploadId))
+        {
+            await WriteErrorAsync(context, "Upload ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            await WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        CancellationToken cancellationToken = context.RequestAborted;
+        var cancelled = await cloudStorage.CancelUploadAsync(uploadId, cancellationToken);
+
+        if (!cancelled)
+        {
+            await WriteErrorAsync(context, "Upload not found or already completed", StatusCodes.Status404NotFound);
+            return;
+        }
+
+        var response = new CancelUploadResponse { UploadId = uploadId, Message = "Upload cancelled" };
+        IResult result = Results.Json(response, ImportJsonContext.Default.CancelUploadResponse);
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Get all active file upload operations
+    /// </summary>
+    private static async Task HandleGetActiveUploads(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            await WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        CancellationToken cancellationToken = context.RequestAborted;
+        var uploads = await cloudStorage.GetActiveUploadsAsync(cancellationToken);
+
+        var response = new ActiveUploadsResponse { Uploads = uploads.ToArray() };
+        IResult result = Results.Json(response, ImportJsonContext.Default.ActiveUploadsResponse);
+        await result.ExecuteAsync(context);
+    }
+
+    /// <summary>
+    /// Get all active import jobs
+    /// </summary>
+    private static async Task HandleGetActiveJobs(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var jobService = context.RequestServices.GetService<IImportJobService>();
+        if (jobService == null)
+        {
+            await WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        try
+        {
+            CancellationToken cancellationToken = context.RequestAborted;
+            var jobs = await jobService.GetActiveJobsAsync(cancellationToken);
+
+            var response = new ActiveImportJobsResponse { Jobs = jobs.ToArray() };
+            IResult result = Results.Json(response, ImportJsonContext.Default.ActiveImportJobsResponse);
+            await result.ExecuteAsync(context);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, "jobs", ex);
+            await WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    /// <summary>
+    /// Get a specific import job status
+    /// </summary>
+    private static async Task HandleGetImportJobStatus(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var jobId = context.GetRouteValue("jobId")?.ToString();
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var jobService = context.RequestServices.GetService<IImportJobService>();
+        if (jobService == null)
+        {
+            await WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        try
+        {
+            CancellationToken cancellationToken = context.RequestAborted;
+            var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
+
+            if (progress == null)
+            {
+                await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+                return;
+            }
+
+            IResult result = Results.Json(progress, ImportJsonContext.Default.ImportProgress);
+            await result.ExecuteAsync(context);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, jobId, ex);
+            await WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    /// <summary>
+    /// Cancel a running import job
+    /// </summary>
+    private static async Task HandleCancelImportJob(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        var jobId = context.GetRouteValue("jobId")?.ToString();
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var jobService = context.RequestServices.GetService<IImportJobService>();
+        if (jobService == null)
+        {
+            await WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
+        try
+        {
+            CancellationToken cancellationToken = context.RequestAborted;
+            var cancelled = await jobService.CancelJobAsync(jobId, cancellationToken);
+
+            if (!cancelled)
+            {
+                await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+                return;
+            }
+
+            var response = new CancelImportJobResponse
+            {
+                JobId = jobId,
+                Message = "Import job cancellation requested"
+            };
+
+            IResult result = Results.Json(response, ImportJsonContext.Default.CancelImportJobResponse);
+            await result.ExecuteAsync(context);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, jobId, ex);
+            await WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
+        }
     }
 
     private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
@@ -625,17 +816,23 @@ internal sealed record BackgroundImportResponse
     /// URL to cancel the import job
     /// </summary>
     public required string CancelUrl { get; init; }
+
+    /// <summary>
+    /// Upload ID for tracking file upload progress (optional)
+    /// </summary>
+    public string? UploadId { get; init; }
 }
 
+
 /// <summary>
-/// Response for cancel job endpoint
+/// Response for cancel upload request
 /// </summary>
-internal sealed record CancelJobResponse
+internal sealed record CancelUploadResponse
 {
     /// <summary>
-    /// The job ID that was cancelled
+    /// Upload identifier that was cancelled
     /// </summary>
-    public required string JobId { get; init; }
+    public required string UploadId { get; init; }
 
     /// <summary>
     /// Confirmation message
@@ -644,12 +841,39 @@ internal sealed record CancelJobResponse
 }
 
 /// <summary>
-/// Response containing list of active import jobs
+/// Response containing all active uploads
 /// </summary>
-internal sealed record ActiveJobsResponse
+internal sealed record ActiveUploadsResponse
 {
     /// <summary>
-    /// List of active import job progress records
+    /// List of active upload operations
+    /// </summary>
+    public required UploadProgress[] Uploads { get; init; }
+}
+
+/// <summary>
+/// Response containing all active import jobs
+/// </summary>
+internal sealed record ActiveImportJobsResponse
+{
+    /// <summary>
+    /// List of active import jobs
     /// </summary>
     public required ImportProgress[] Jobs { get; init; }
+}
+
+/// <summary>
+/// Response for cancel import job request
+/// </summary>
+internal sealed record CancelImportJobResponse
+{
+    /// <summary>
+    /// Job identifier that was cancelled
+    /// </summary>
+    public required string JobId { get; init; }
+
+    /// <summary>
+    /// Confirmation message
+    /// </summary>
+    public required string Message { get; init; }
 }

@@ -10,6 +10,7 @@ namespace Honua.Core.Features.Infrastructure.Resilience;
 /// </summary>
 public static class ResiliencePolicyFactory
 {
+    /// <inheritdoc/>
     public static IAsyncPolicy CreateStandardPolicy(
         PolicyBuilder builder,
         ResiliencePolicyOptions? options = null,
@@ -34,6 +35,7 @@ public static class ResiliencePolicyFactory
         return Policy.WrapAsync(circuitPolicy, retryPolicy);
     }
 
+    /// <inheritdoc/>
     public static IAsyncPolicy<TResult> CreateStandardPolicy<TResult>(
         PolicyBuilder<TResult> builder,
         ResiliencePolicyOptions? options = null,

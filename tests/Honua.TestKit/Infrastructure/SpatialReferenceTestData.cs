@@ -60,6 +60,47 @@ public static class SpatialReferenceTestData
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
+    public static async Task<(double X, double Y)?> GetGeometryCoordinatesAsync(
+        PostgresFixture fixture,
+        string schemaName,
+        long objectId,
+        int layerId,
+        int? targetSrid = null)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = targetSrid.HasValue
+            ? """
+            SELECT ST_X(ST_Transform(geometry, @targetSrid)), ST_Y(ST_Transform(geometry, @targetSrid))
+            FROM features
+            WHERE objectid = @objectId AND layer_id = @layerId;
+            """
+            : """
+            SELECT ST_X(geometry), ST_Y(geometry)
+            FROM features
+            WHERE objectid = @objectId AND layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("objectId", objectId);
+        command.Parameters.AddWithValue("layerId", layerId);
+        if (targetSrid.HasValue)
+        {
+            command.Parameters.AddWithValue("targetSrid", targetSrid.Value);
+        }
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        if (reader.IsDBNull(0) || reader.IsDBNull(1))
+        {
+            return null;
+        }
+
+        return (reader.GetDouble(0), reader.GetDouble(1));
+    }
+
     public static async Task CleanupAsync(PostgresFixture fixture, string schemaName)
     {
         var sql = $"""

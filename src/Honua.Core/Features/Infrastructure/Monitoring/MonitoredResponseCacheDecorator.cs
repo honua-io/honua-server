@@ -21,6 +21,12 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<MonitoredResponseCacheDecorator> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MonitoredResponseCacheDecorator"/> class.
+    /// </summary>
+    /// <param name="innerCache">The underlying response cache implementation to decorate.</param>
+    /// <param name="performanceMonitor">The performance monitor for tracking cache metrics.</param>
+    /// <param name="logger">The logger for diagnostic information.</param>
     public MonitoredResponseCacheDecorator(
         IResponseCache innerCache,
         IPerformanceMonitor performanceMonitor,

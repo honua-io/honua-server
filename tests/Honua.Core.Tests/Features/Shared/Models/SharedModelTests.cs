@@ -107,7 +107,7 @@ public class SharedModelTests
         var extent = FeatureExtent.Create(-180.0, -90.0, 180.0, 90.0, 4326);
 
         // Act
-        var bbox = extent.ToBoundingBox();
+        var bbox = ExtentExtensions.ToBoundingBox(extent);
 
         // Assert
         bbox.Should().BeEquivalentTo(_expectedBbox);
@@ -143,6 +143,36 @@ public class SharedModelTests
         extent.MaxX.Should().Be(180.0);
         extent.MaxY.Should().Be(90.0);
         extent.SpatialReference.Should().Be(4326);
+    }
+
+    [Fact]
+    public void BoundingBox_WithAntimeridianCrossing_IsValidAndContainsRanges()
+    {
+        var crossing = BoundingBox.Create(170, -10, -170, 10, 4326);
+        var east = BoundingBox.Create(175, -5, 179, 5, 4326);
+        var west = BoundingBox.Create(-179, -5, -175, 5, 4326);
+        var middle = BoundingBox.Create(-50, -5, -40, 5, 4326);
+
+        crossing.IsAntimeridianCrossing.Should().BeTrue();
+        crossing.IsValid.Should().BeTrue();
+        crossing.Width.Should().BeApproximately(20, 1e-9);
+        crossing.Contains(east).Should().BeTrue();
+        crossing.Contains(west).Should().BeTrue();
+        crossing.Intersects(middle).Should().BeFalse();
+    }
+
+    [Fact]
+    public void BoundingBox_Intersection_PreservesAntimeridianCrossing()
+    {
+        var crossing = BoundingBox.Create(170, -10, -170, 10, 4326);
+        var tighter = BoundingBox.Create(175, -5, -175, 5, 4326);
+
+        var intersection = crossing.Intersection(tighter);
+
+        intersection.Should().NotBeNull();
+        intersection!.Value.IsAntimeridianCrossing.Should().BeTrue();
+        intersection.Value.MinX.Should().Be(175);
+        intersection.Value.MaxX.Should().Be(-175);
     }
 
     [Fact]

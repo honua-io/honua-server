@@ -22,7 +22,6 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private const int TestLayerId = 0;
-    private const string PendingErrorHandling = "Pending OData error handling parity (#200).";
 
     public async Task InitializeAsync()
     {
@@ -43,7 +42,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})?$filter=invalid_syntax");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQuery");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
     [IntegrationTest]
@@ -85,7 +84,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         await AssertODataErrorAsync(response);
     }
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})?$filter=(ObjectId eq 1")]
     public async Task Filter_UnbalancedParentheses_ReturnsBadRequest()
@@ -111,7 +110,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         await AssertODataErrorAsync(response);
     }
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})?$filter=nonexistent_field eq 'value'")]
     public async Task Filter_NonExistentField_ReturnsBadRequest()
@@ -136,7 +135,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQueryOption");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
     [IntegrationTest]
@@ -147,7 +146,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQueryOption");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
     [IntegrationTest]
@@ -180,7 +179,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?unsupported=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQueryOption");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
     #endregion
@@ -195,7 +194,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=invalid-field");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQuery");
+        await AssertODataErrorAsync(response, "BadRequest");
 
         var message = await GetODataErrorMessageAsync(response);
         message.Should().Contain("Invalid field name in $orderby");
@@ -217,58 +216,71 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     #endregion
 
-    #region Unsupported Functions
+    #region Supported Functions
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("GET /odata/Features({layerId})?$filter=substring(name, 1, 3) eq 'San'")]
-    public async Task Filter_UnsupportedStringFunction_ReturnsBadRequest()
+    [Endpoint("GET /odata/Features({layerId})?$filter=substring(name, 0, 3) eq 'San'")]
+    public async Task Filter_SubstringFunction_ReturnsMatches()
     {
-        var filter = "substring(name, 1, 3) eq 'San'";
+        var filter = "substring(name, 0, 3) eq 'San'";
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var features = await ParseFeaturesAsync(response);
+        features.Should().HaveCount(3);
+        foreach (var feature in features)
+        {
+            var attrs = ParseAttributes(feature);
+            attrs.GetProperty("name").GetString().Should().StartWith("San");
+        }
     }
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("GET /odata/Features({layerId})?$filter=year(created_at) eq 2020")]
-    public async Task Filter_UnsupportedDateFunction_ReturnsBadRequest()
+    [Endpoint("GET /odata/Features({layerId})?$filter=year(datetime'2020-01-01T00:00:00Z') eq 2020")]
+    public async Task Filter_YearFunction_ReturnsMatches()
     {
-        var filter = "year(created_at) eq 2020";
+        var filter = "year(datetime'2020-01-01T00:00:00Z') eq 2020";
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var features = await ParseFeaturesAsync(response);
+        features.Should().HaveCount(15);
     }
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})?$filter=tolower(name) eq 'san francisco'")]
-    public async Task Filter_UnsupportedCaseFunction_ReturnsBadRequest()
+    public async Task Filter_ToLowerFunction_ReturnsMatches()
     {
         var filter = "tolower(name) eq 'san francisco'";
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var features = await ParseFeaturesAsync(response);
+        features.Should().ContainSingle();
+        var attrs = ParseAttributes(features[0]);
+        attrs.GetProperty("name").GetString().Should().Be("San Francisco");
     }
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("GET /odata/Features({layerId})?$filter=concat(name, state) eq 'test'")]
-    public async Task Filter_UnsupportedConcatFunction_ReturnsBadRequest()
+    [Endpoint("GET /odata/Features({layerId})?$filter=concat(name, state) eq 'San FranciscoCalifornia'")]
+    public async Task Filter_ConcatFunction_ReturnsMatches()
     {
-        var filter = "concat(name, state) eq 'test'";
+        var filter = "concat(name, state) eq 'San FranciscoCalifornia'";
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var features = await ParseFeaturesAsync(response);
+        features.Should().ContainSingle();
+        var attrs = ParseAttributes(features[0]);
+        attrs.GetProperty("name").GetString().Should().Be("San Francisco");
     }
 
     #endregion
@@ -346,13 +358,13 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     #region Invalid CRUD Payloads
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("POST /odata/Features({layerId}) with invalid JSON")]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid JSON")]
     public async Task Create_InvalidJson_ReturnsBadRequest()
     {
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent("{ invalid json }", Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -360,24 +372,28 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("POST /odata/Features({layerId}) with invalid geometry WKB")]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry WKB")]
     public async Task Create_InvalidGeometryWkb_ReturnsBadRequest()
     {
         var payload = new
         {
-            Geometry = "not-valid-base64-wkb",
+            Geometry = new
+            {
+                type = "Point",
+                coordinates = "invalid"
+            },
             Attributes = new { name = "Test" }
         };
 
         var json = JsonSerializer.Serialize(payload);
         var response = await _fixture.Client.PostAsync(
-            $"/odata/Features({TestLayerId})",
+            $"/odata/Layers({TestLayerId})/Features",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("PATCH /odata/Features({layerId},{objectId}) with invalid JSON")]
     public async Task Update_InvalidJson_ReturnsBadRequest()
@@ -422,7 +438,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     #region Type Mismatch Errors
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})?$filter=population eq 'not_a_number'")]
     public async Task Filter_TypeMismatchNumeric_ReturnsBadRequest()
@@ -435,7 +451,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         await AssertODataErrorAsync(response);
     }
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})?$filter=is_capital eq 'not_a_bool'")]
     public async Task Filter_TypeMismatchBoolean_ReturnsBadRequest()
@@ -460,7 +476,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$apply");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQueryOption");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
     [IntegrationTest]
@@ -472,10 +488,10 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQueryOption");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})/$apply?$apply=aggregate(nonexistent with sum as Total)")]
     public async Task Apply_NonExistentField_ReturnsBadRequest()
@@ -499,7 +515,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$search");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "InvalidQueryOption");
+        await AssertODataErrorAsync(response, "BadRequest");
     }
 
     #endregion
@@ -533,7 +549,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [IntegrationTest(Skip = PendingErrorHandling)]
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /odata/$batch with invalid URL in request")]
     public async Task Batch_InvalidRequestUrl_ReturnsErrorInResponse()
@@ -572,7 +588,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("OData error format validation")]
+    [Endpoint("GET /odata/Features({layerId})?$top=-1")]
     public async Task Error_HasCorrectODataV4Format()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
@@ -620,7 +636,34 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     {
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
-        return document.RootElement.GetProperty("error").GetProperty("message").GetString() ?? string.Empty;
+        var errorElement = document.RootElement.GetProperty("error");
+        if (errorElement.TryGetProperty("details", out var detailsElement) &&
+            detailsElement.ValueKind == JsonValueKind.Array &&
+            detailsElement.GetArrayLength() > 0)
+        {
+            var firstDetail = detailsElement[0];
+            if (firstDetail.TryGetProperty("message", out var messageElement))
+            {
+                return messageElement.GetString() ?? string.Empty;
+            }
+        }
+
+        return errorElement.GetProperty("message").GetString() ?? string.Empty;
+    }
+
+    private static async Task<List<JsonElement>> ParseFeaturesAsync(HttpResponseMessage response)
+    {
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        return document.RootElement.GetProperty("value")
+            .EnumerateArray()
+            .Select(e => e.Clone())
+            .ToList();
+    }
+
+    private static JsonElement ParseAttributes(JsonElement feature)
+    {
+        return ODataTestHelpers.ParseAttributes(feature);
     }
 
     #endregion

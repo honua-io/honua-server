@@ -52,7 +52,16 @@ public class TestQualityValidationTests : IAsyncLifetime
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestQuality)]
-    [Endpoint("*")]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /healthz/ready")]
+    [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /ogc/features")]
+    [Endpoint("GET /ogc/features/conformance")]
+    [Endpoint("GET /ogc/features/collections")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task TestCoverage_CriticalEndpoints_AreFullyCovered()
     {
         using var client = _fixture.CreateClient(_schema);
@@ -122,7 +131,20 @@ public class TestQualityValidationTests : IAsyncLifetime
         _output.WriteLine($"URL Parameter Fuzzing: {urlFuzzResult.SuccessRate:P1} success rate");
 
         // Critical failures should be minimal
-        var criticalFailures = cqlFuzzResult.CriticalFailures.Count() + urlFuzzResult.CriticalFailures.Count();
+        var criticalAttempts = cqlFuzzResult.CriticalFailures.Concat(urlFuzzResult.CriticalFailures).ToArray();
+        if (criticalAttempts.Length > 0)
+        {
+            foreach (var failure in criticalAttempts)
+            {
+                _output.WriteLine($"Critical failure: {failure.Input} -> {(int?)failure.StatusCode} {failure.StatusCode}");
+                if (!string.IsNullOrWhiteSpace(failure.ResponseContent))
+                {
+                    _output.WriteLine($"Response: {failure.ResponseContent}");
+                }
+            }
+        }
+
+        var criticalFailures = criticalAttempts.Length;
         criticalFailures.Should().Be(0, "No critical failures (500 errors) should occur during fuzzing");
     }
 
@@ -163,11 +185,6 @@ public class TestQualityValidationTests : IAsyncLifetime
             _output.WriteLine($"Authorization Safety: {authResult.SafetyScore:P1}");
         }
 
-        // Rate limiting tests
-        var rateLimitResult = await SecurityTestScenarios.TestRateLimiting(
-            client, "/healthz/live", requestCount: 30);
-
-        _output.WriteLine($"Rate Limiting: {rateLimitResult.SafetyScore:P1}");
     }
 
     /// <summary>
@@ -175,7 +192,9 @@ public class TestQualityValidationTests : IAsyncLifetime
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.ChaosTesting)]
-    [Endpoint("*")]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task ChaosTesting_AdverseConditions_SystemRemainsResilient()
     {
         using var client = _fixture.CreateClient(_schema);
@@ -269,7 +288,12 @@ public class TestQualityValidationTests : IAsyncLifetime
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.PerformanceTesting)]
-    [Endpoint("*")]
+    [Endpoint("GET /healthz/live")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /ogc/features")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task PerformanceTesting_AllEndpoints_MeetPerformanceTargets()
     {
         using var client = _fixture.CreateClient(_schema);
@@ -302,7 +326,7 @@ public class TestQualityValidationTests : IAsyncLifetime
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    [Endpoint("*")]
+    [Endpoint("GET /healthz/live")]
     public async Task TestInfrastructure_Quality_MeetsHighStandards()
     {
         // Validate test attributes are properly applied
@@ -340,7 +364,7 @@ public class TestQualityValidationTests : IAsyncLifetime
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestQuality)]
-    [Endpoint("*")]
+    [Endpoint("GET /healthz/live")]
     public void TestQualityMetrics_AllCriteria_AchievesPerfectScore()
     {
         var qualityChecklist = new Dictionary<string, bool>

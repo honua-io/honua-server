@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Postgres.Features.Catalog;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
@@ -13,6 +14,8 @@ namespace Honua.Server.Tests;
 /// Integration tests for PostgresLayerCatalog using real PostgreSQL database.
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public class PostgresLayerCatalogTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
@@ -46,7 +49,8 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 min_scale double precision,
                 max_scale double precision,
                 default_visibility boolean NOT NULL DEFAULT true,
-                extent geometry
+                extent geometry,
+                metadata jsonb
             );
 
             -- Layer fields table
@@ -70,7 +74,8 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 max_record_count integer NOT NULL DEFAULT 1000,
                 supported_formats text[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                 capabilities text[] NOT NULL DEFAULT '{Query,Extract}',
-                service_extent geometry
+                service_extent geometry,
+                metadata jsonb
             );
 
             -- Service-layer mapping table
@@ -118,7 +123,7 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.Equal("test_points", layer.Name);
         Assert.Equal("Test point features", layer.Description);
         Assert.Equal(GeometryType.Point, layer.GeometryType);
-        Assert.Equal(4326, layer.SpatialReference.Srid);
+        Assert.Equal(4326, layer.SpatialReference.Wkid);
         Assert.True(layer.DefaultVisibility);
         Assert.Equal(3, layer.Fields.Length); // id, name, category fields
 
@@ -170,7 +175,7 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.NotNull(service);
         Assert.Equal("TestService", service.Name);
         Assert.Equal("Test GeoServices service", service.Description);
-        Assert.Equal(4326, service.SpatialReference.Srid);
+        Assert.Equal(4326, service.SpatialReference.Wkid);
         Assert.Equal(500, service.MaxRecordCount);
         Assert.Equal(2, service.SupportedFormats.Length);
         Assert.Contains("JSON", service.SupportedFormats);

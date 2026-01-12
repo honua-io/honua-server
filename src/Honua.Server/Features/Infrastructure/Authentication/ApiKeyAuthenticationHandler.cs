@@ -1,13 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
+using Honua.Core.Features.Security.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
 /// <summary>
@@ -20,58 +23,69 @@ internal sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    IOptions<ApiKeyAuthenticationOptions> authOptions) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    ApiKeyAuthenticationDependencies dependencies) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     private const string ApiKeyHeader = "X-API-Key";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
 
-    private readonly ApiKeyAuthenticationOptions _authOptions = authOptions?.Value ?? throw new ArgumentNullException(nameof(authOptions));
+    private readonly ApiKeyAuthenticationOptions _authOptions = dependencies?.Options ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly IConnectionSecretResolver? _secretResolver = dependencies.SecretResolver;
 
     /// <summary>
     /// Handles API key authentication with development bypass support
     /// </summary>
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Check for development bypass modes
         if (IsDevelopmentBypassEnabled())
         {
             AuthenticationLog.DevelopmentBypassEnabled(Logger);
-            return Task.FromResult(CreateSuccessfulAuthenticationResult("dev-bypass"));
+            return CreateSuccessfulAuthenticationResult("dev-bypass");
         }
 
         // Extract API key from header
         if (!Request.Headers.TryGetValue(ApiKeyHeader, out StringValues apiKeyValues))
         {
             AuthenticationLog.NoApiKeyFound(Logger, ApiKeyHeader);
-            return Task.FromResult(AuthenticateResult.NoResult());
+            return AuthenticateResult.NoResult();
         }
 
         string? providedApiKey = apiKeyValues.FirstOrDefault();
         if (string.IsNullOrEmpty(providedApiKey))
         {
             AuthenticationLog.EmptyApiKeyProvided(Logger, ApiKeyHeader);
-            return Task.FromResult(AuthenticateResult.NoResult());
+            return AuthenticateResult.NoResult();
         }
 
         // Get configured admin password
-        string? configuredPassword = _authOptions.AdminPassword;
+        string? configuredPassword;
+        try
+        {
+            configuredPassword = await ResolveAdminPasswordAsync(Context.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            AuthenticationLog.AdminPasswordResolutionFailed(Logger, ex);
+            Context.Items["AuthFailureMessage"] = "Admin authentication not configured";
+            return AuthenticateResult.Fail("Admin authentication not configured");
+        }
         if (string.IsNullOrEmpty(configuredPassword))
         {
             AuthenticationLog.NoAdminPasswordConfigured(Logger, AdminPasswordEnvVar);
             // Store the failure message for the challenge handler
             Context.Items["AuthFailureMessage"] = "Admin authentication not configured";
-            return Task.FromResult(AuthenticateResult.Fail("Admin authentication not configured"));
+            return AuthenticateResult.Fail("Admin authentication not configured");
         }
 
         // Perform constant-time comparison to prevent timing attacks
         if (!IsApiKeyValid(providedApiKey, configuredPassword))
         {
             AuthenticationLog.InvalidApiKeyProvided(Logger);
-            return Task.FromResult(AuthenticateResult.Fail("Invalid API key"));
+            return AuthenticateResult.Fail("Invalid API key");
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
-        return Task.FromResult(CreateSuccessfulAuthenticationResult("admin"));
+        return CreateSuccessfulAuthenticationResult("admin");
     }
 
     /// <summary>
@@ -109,13 +123,36 @@ internal sealed class ApiKeyAuthenticationHandler(
         byte[] configuredBytes = Encoding.UTF8.GetBytes(configuredKey);
 
         var maxLength = Math.Max(providedBytes.Length, configuredBytes.Length);
-        Span<byte> paddedProvided = maxLength <= 256 ? stackalloc byte[maxLength] : new byte[maxLength];
-        Span<byte> paddedConfigured = maxLength <= 256 ? stackalloc byte[maxLength] : new byte[maxLength];
+        byte[]? providedRental = null;
+        byte[]? configuredRental = null;
+        Span<byte> paddedProvided = maxLength <= 256
+            ? stackalloc byte[maxLength]
+            : (providedRental = ArrayPool<byte>.Shared.Rent(maxLength)).AsSpan(0, maxLength);
+        Span<byte> paddedConfigured = maxLength <= 256
+            ? stackalloc byte[maxLength]
+            : (configuredRental = ArrayPool<byte>.Shared.Rent(maxLength)).AsSpan(0, maxLength);
+
+        paddedProvided.Clear();
+        paddedConfigured.Clear();
 
         providedBytes.CopyTo(paddedProvided);
         configuredBytes.CopyTo(paddedConfigured);
 
         var matches = CryptographicOperations.FixedTimeEquals(paddedProvided, paddedConfigured);
+
+        CryptographicOperations.ZeroMemory(paddedProvided);
+        CryptographicOperations.ZeroMemory(paddedConfigured);
+
+        if (providedRental != null)
+        {
+            ArrayPool<byte>.Shared.Return(providedRental, clearArray: false);
+        }
+
+        if (configuredRental != null)
+        {
+            ArrayPool<byte>.Shared.Return(configuredRental, clearArray: false);
+        }
+
         return matches && providedBytes.Length == configuredBytes.Length;
     }
 
@@ -136,6 +173,28 @@ internal sealed class ApiKeyAuthenticationHandler(
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);
+    }
+
+    private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
+    {
+        var configuredPassword = _authOptions.AdminPassword;
+        if (string.IsNullOrWhiteSpace(configuredPassword))
+        {
+            return null;
+        }
+
+        if (_secretResolver == null)
+        {
+            return configuredPassword;
+        }
+
+        var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken);
+        if (!canResolve)
+        {
+            return configuredPassword;
+        }
+
+        return await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken);
     }
 
     /// <summary>

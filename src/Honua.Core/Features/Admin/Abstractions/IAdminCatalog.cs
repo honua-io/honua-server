@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Admin.Abstractions;
 
@@ -19,6 +20,7 @@ public interface IAdminCatalog
     /// <param name="description">Service description</param>
     /// <param name="spatialReference">Default spatial reference</param>
     /// <param name="maxRecordCount">Maximum records per query</param>
+    /// <param name="metadata">Optional catalog metadata</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Created service definition</returns>
     Task<ServiceDefinition> CreateServiceAsync(
@@ -26,6 +28,7 @@ public interface IAdminCatalog
         string description,
         SpatialReference spatialReference,
         int maxRecordCount = 1000,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -34,12 +37,14 @@ public interface IAdminCatalog
     /// <param name="name">Service name (identifier)</param>
     /// <param name="description">New description</param>
     /// <param name="maxRecordCount">New max record count</param>
+    /// <param name="metadata">Optional catalog metadata</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated service definition, null if not found</returns>
     Task<ServiceDefinition?> UpdateServiceAsync(
         string name,
         string? description = null,
         int? maxRecordCount = null,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -77,6 +82,7 @@ public interface IAdminCatalog
     /// <param name="schemaName">Database schema name</param>
     /// <param name="displayName">Display name for the layer</param>
     /// <param name="description">Layer description</param>
+    /// <param name="metadata">Optional catalog metadata</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Created layer definition</returns>
     Task<LayerDefinition> CreateLayerAsync(
@@ -84,6 +90,7 @@ public interface IAdminCatalog
         string schemaName,
         string displayName,
         string? description = null,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -95,6 +102,7 @@ public interface IAdminCatalog
     /// <param name="minScale">Minimum visibility scale</param>
     /// <param name="maxScale">Maximum visibility scale</param>
     /// <param name="defaultVisibility">Default visibility</param>
+    /// <param name="metadata">Optional catalog metadata</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated layer definition, null if not found</returns>
     Task<LayerDefinition?> UpdateLayerAsync(
@@ -104,6 +112,7 @@ public interface IAdminCatalog
         double? minScale = null,
         double? maxScale = null,
         bool? defaultVisibility = null,
+        CatalogMetadata? metadata = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

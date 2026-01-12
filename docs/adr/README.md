@@ -25,6 +25,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0017](0017-redis-caching-with-fallback.md) | Redis Caching with Fallback Strategy | Accepted | 2025-12 |
 | [0018](0018-source-generated-json-serialization.md) | Source-Generated JSON Serialization for AOT Compatibility | Accepted | 2025-12 |
 | [0019](0019-security-first-file-upload-design.md) | Security-First File Upload Design | Accepted | 2025-12 |
+| [0020](0020-mvp-operational-deferrals.md) | MVP Operational Deferrals | Accepted | 2025-12 |
+| [0021](0021-redis-usage-and-hybridcache-deferral.md) | Redis Usage and HybridCache Deferral | Accepted | 2025-12 |
 
 ## Template
 

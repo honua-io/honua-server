@@ -14,11 +14,13 @@ namespace Honua.Server.Features.Import;
 internal static partial class EsriImportEndpoints
 {
     /// <summary>
-    /// Map Esri import endpoints to the web application.
+    /// Map Esri import endpoints to the web application with formal API versioning.
     /// </summary>
     public static void MapEsriImportEndpoints(this WebApplication app)
     {
-        RouteGroupBuilder group = app.MapGroup("/api/v1/admin/import/esri")
+        var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/esri")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
             .WithTags("EsriImport")
             .RequireAdminAuthorization();
 
@@ -34,23 +36,23 @@ internal static partial class EsriImportEndpoints
             .WithSummary("Start importing a layer from an ArcGIS Server service")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
 
-        // Get import job status
-        _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
-            .WithName("GetEsriImportJobStatus")
-            .WithSummary("Get the status of an Esri import job")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
-
-        // Cancel an import job
-        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelJob)
-            .WithName("CancelEsriImportJob")
-            .WithSummary("Cancel a running Esri import job")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
-
-        // List all active import jobs
+        // List active jobs
         _ = group.Map("/jobs", HandleListJobs)
             .WithName("ListEsriImportJobs")
-            .WithSummary("List all active Esri import jobs")
+            .WithSummary("List active Esri import jobs")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+
+        // Get job status
+        _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
+            .WithName("GetEsriImportJobStatus")
+            .WithSummary("Get Esri import job status")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+
+        // Cancel job
+        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelJob)
+            .WithName("CancelEsriImportJob")
+            .WithSummary("Cancel an Esri import job")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
     }
 
     /// <summary>
@@ -126,6 +128,13 @@ internal static partial class EsriImportEndpoints
                 .ExecuteAsync(context);
         }
         catch (HttpRequestException ex)
+        {
+            Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
+            await WriteErrorAsync(context,
+                "Failed to connect to ArcGIS service.",
+                StatusCodes.Status502BadGateway);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
             await WriteErrorAsync(context,
@@ -248,8 +257,8 @@ internal static partial class EsriImportEndpoints
             {
                 JobId = jobId,
                 Message = "Import job queued for processing",
-                StatusUrl = $"/api/v1/admin/import/esri/jobs/{jobId}",
-                CancelUrl = $"/api/v1/admin/import/esri/jobs/{jobId}/cancel"
+                StatusUrl = $"/api/v1/admin/operations/{jobId}",
+                CancelUrl = $"/api/v1/admin/operations/{jobId}/cancel"
             };
 
             await Results.Json(response, EsriImportApiJsonContext.Default.EsriImportJobResponse,
@@ -264,7 +273,7 @@ internal static partial class EsriImportEndpoints
     }
 
     /// <summary>
-    /// Get the status of an import job.
+    /// Get Esri import job status.
     /// </summary>
     private static async Task HandleGetJobStatus(HttpContext context)
     {
@@ -275,7 +284,7 @@ internal static partial class EsriImportEndpoints
         }
 
         var jobId = context.GetRouteValue("jobId")?.ToString();
-        if (string.IsNullOrEmpty(jobId))
+        if (string.IsNullOrWhiteSpace(jobId))
         {
             await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
             return;
@@ -285,10 +294,9 @@ internal static partial class EsriImportEndpoints
         var jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
 
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-
         if (progress == null)
         {
-            await WriteErrorAsync(context, "Job not found", StatusCodes.Status404NotFound);
+            await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
             return;
         }
 
@@ -297,7 +305,7 @@ internal static partial class EsriImportEndpoints
     }
 
     /// <summary>
-    /// Cancel an import job.
+    /// Cancel an Esri import job.
     /// </summary>
     private static async Task HandleCancelJob(HttpContext context)
     {
@@ -308,7 +316,7 @@ internal static partial class EsriImportEndpoints
         }
 
         var jobId = context.GetRouteValue("jobId")?.ToString();
-        if (string.IsNullOrEmpty(jobId))
+        if (string.IsNullOrWhiteSpace(jobId))
         {
             await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
             return;
@@ -318,44 +326,36 @@ internal static partial class EsriImportEndpoints
         var jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
 
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-
         if (progress == null)
         {
-            await WriteErrorAsync(context, "Job not found", StatusCodes.Status404NotFound);
+            await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
             return;
         }
 
-        if (progress.Status is EsriImportStatus.Completed or EsriImportStatus.Failed or EsriImportStatus.Cancelled)
-        {
-            await WriteErrorAsync(context, "Job is already completed or cancelled", StatusCodes.Status400BadRequest);
-            return;
-        }
-
-        // Mark as cancelled
         var cancelledProgress = progress with
         {
             Status = EsriImportStatus.Cancelled,
             CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Cancelled by user"
+            CurrentPhase = "Cancellation requested"
         };
 
-        await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress,
-            TimeSpan.FromHours(24), cancellationToken);
+        await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromHours(24), cancellationToken);
+        await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken);
 
         Log.ImportJobCancelled(GetLogger(context), jobId);
 
-        var response = new EsriCancelJobResponse
+        var response = new EsriImportCancelResponse
         {
             JobId = jobId,
-            Message = "Job cancellation requested"
+            Message = "Import job cancellation requested"
         };
 
-        await Results.Json(response, EsriImportApiJsonContext.Default.EsriCancelJobResponse)
+        await Results.Json(response, EsriImportApiJsonContext.Default.EsriImportCancelResponse)
             .ExecuteAsync(context);
     }
 
     /// <summary>
-    /// List all active import jobs.
+    /// List active Esri import jobs.
     /// </summary>
     private static async Task HandleListJobs(HttpContext context)
     {
@@ -369,23 +369,19 @@ internal static partial class EsriImportEndpoints
         var jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
 
         var jobIds = await jobManager.ProgressStore.GetActiveJobIdsAsync(cancellationToken);
-        var jobs = new List<EsriImportProgress>();
+        var jobs = new List<EsriImportProgress>(jobIds.Count);
 
         foreach (var jobId in jobIds)
         {
             var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-            if (progress != null &&
-                progress.Status is EsriImportStatus.Queued or EsriImportStatus.Discovering
-                    or EsriImportStatus.RetrievingFeatures or EsriImportStatus.CreatingTable
-                    or EsriImportStatus.InsertingFeatures or EsriImportStatus.Publishing)
+            if (progress != null)
             {
                 jobs.Add(progress);
             }
         }
 
-        var response = new EsriActiveJobsResponse { Jobs = jobs.ToArray() };
-
-        await Results.Json(response, EsriImportApiJsonContext.Default.EsriActiveJobsResponse)
+        var response = new EsriImportJobsResponse { Jobs = jobs.ToArray() };
+        await Results.Json(response, EsriImportApiJsonContext.Default.EsriImportJobsResponse)
             .ExecuteAsync(context);
     }
 
@@ -609,28 +605,28 @@ internal sealed record EsriImportJobResponse
 }
 
 /// <summary>
-/// Response when a job is cancelled.
+/// Response containing active Esri import jobs.
 /// </summary>
-internal sealed record EsriCancelJobResponse
+internal sealed record EsriImportJobsResponse
 {
     /// <summary>
-    /// Job ID.
+    /// List of active jobs.
+    /// </summary>
+    public required EsriImportProgress[] Jobs { get; init; }
+}
+
+/// <summary>
+/// Response for cancel Esri import job request.
+/// </summary>
+internal sealed record EsriImportCancelResponse
+{
+    /// <summary>
+    /// Job identifier that was cancelled.
     /// </summary>
     public required string JobId { get; init; }
 
     /// <summary>
-    /// Status message.
+    /// Confirmation message.
     /// </summary>
     public required string Message { get; init; }
-}
-
-/// <summary>
-/// Response listing active jobs.
-/// </summary>
-internal sealed record EsriActiveJobsResponse
-{
-    /// <summary>
-    /// Active jobs.
-    /// </summary>
-    public EsriImportProgress[] Jobs { get; init; } = [];
 }

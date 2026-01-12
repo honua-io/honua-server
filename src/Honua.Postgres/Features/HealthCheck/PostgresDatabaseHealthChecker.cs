@@ -3,9 +3,6 @@
 
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
-using Microsoft.Extensions.Configuration;
-using Npgsql;
 
 namespace Honua.Postgres.Features.HealthCheck;
 
@@ -16,30 +13,22 @@ namespace Honua.Postgres.Features.HealthCheck;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed class PostgresDatabaseHealthChecker(IConfiguration configuration, ISchemaContext? schemaContext = null) : IDatabaseHealthChecker
+internal sealed class PostgresDatabaseHealthChecker(IDatabaseConnectionProvider connectionProvider) : IDatabaseHealthChecker
 {
-    private readonly string? _connectionString = configuration.GetConnectionString("honua");
-    private readonly ISchemaContext? _schemaContext = schemaContext;
+    private readonly IDatabaseConnectionProvider _connectionProvider =
+        connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
     /// <summary>
     /// Checks PostgreSQL database connectivity and responsiveness
     /// </summary>
     public async Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_connectionString))
-        {
-            return true; // No database configured - considered healthy for development
-        }
-
         try
         {
-            await using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
-
-            // Execute a simple query to verify database is responsive with timeout
-            await using var command = new NpgsqlCommand("SELECT 1", connection);
-            command.CommandTimeout = 5; // 5-second timeout for health checks
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1";
+            command.CommandTimeout = 5;
             _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
             return true;

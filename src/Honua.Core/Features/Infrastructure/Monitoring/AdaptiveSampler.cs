@@ -12,12 +12,14 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// Adaptive sampler that dynamically adjusts tracing sampling rates based on
 /// system load, error rates, and operation importance.
 /// Provides intelligent tracing with minimal performance overhead for production environments.
+/// Integrates with smart sampling rules for business-aware sampling decisions.
 /// </summary>
 public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
 {
     private readonly AdaptiveSamplingOptions _options;
     private readonly ISystemMetricsCollector _metricsCollector;
     private readonly ILogger<AdaptiveSampler> _logger;
+    private readonly ISmartSamplingRules? _smartSamplingRules;
     private readonly Timer _evaluationTimer;
     private readonly Random _random = new();
 
@@ -30,11 +32,13 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     public AdaptiveSampler(
         IOptions<AdaptiveSamplingOptions> options,
         ISystemMetricsCollector metricsCollector,
-        ILogger<AdaptiveSampler> logger)
+        ILogger<AdaptiveSampler> logger,
+        ISmartSamplingRules? smartSamplingRules = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _metricsCollector = metricsCollector ?? throw new ArgumentNullException(nameof(metricsCollector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _smartSamplingRules = smartSamplingRules;
 
         Volatile.Write(ref _currentSamplingRate, _options.BaseSamplingRate);
 
@@ -84,6 +88,41 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         }
 
         return shouldSample;
+    }
+
+    /// <summary>
+    /// Determines if a specific operation should be sampled using smart sampling rules
+    /// and adaptive logic with rich context information.
+    /// </summary>
+    public bool ShouldSample(SamplingContext context)
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        // First, try smart sampling rules if available
+        if (_smartSamplingRules != null)
+        {
+            var smartDecision = _smartSamplingRules.EvaluateSampling(context);
+
+            if (smartDecision.ShouldSample.HasValue)
+            {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    Log.SmartSamplingDecision(_logger,
+                        context.OperationName ?? "unknown",
+                        smartDecision.ShouldSample.Value,
+                        smartDecision.Reason,
+                        smartDecision.ConfidenceScore);
+                }
+
+                return smartDecision.ShouldSample.Value;
+            }
+        }
+
+        // Fallback to standard adaptive sampling
+        return ShouldSample(context.OperationName ?? "unknown", ActivityKind.Internal);
     }
 
     /// <summary>
@@ -251,6 +290,9 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         };
     }
 
+    /// <summary>
+    /// Releases all resources used by the <see cref="AdaptiveSampler"/>.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed)
@@ -319,6 +361,17 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
             Level = LogLevel.Information,
             Message = "Adaptive sampler disposed")]
         public static partial void AdaptiveSamplerDisposed(ILogger logger);
+
+        [LoggerMessage(
+            EventId = 7,
+            Level = LogLevel.Debug,
+            Message = "Smart sampling decision for {OperationName}: shouldSample={ShouldSample}, reason={Reason}, confidence={ConfidenceScore:F2}")]
+        public static partial void SmartSamplingDecision(
+            ILogger logger,
+            string operationName,
+            bool shouldSample,
+            string reason,
+            double confidenceScore);
     }
 }
 
@@ -331,6 +384,12 @@ public interface IAdaptiveSampler
     /// Determines whether an operation should be traced.
     /// </summary>
     bool ShouldSample(string operationName, ActivityKind activityKind = ActivityKind.Internal);
+
+    /// <summary>
+    /// Determines whether an operation should be traced using smart sampling rules
+    /// and rich context information.
+    /// </summary>
+    bool ShouldSample(SamplingContext context);
 
     /// <summary>
     /// Gets the current effective sampling rate.

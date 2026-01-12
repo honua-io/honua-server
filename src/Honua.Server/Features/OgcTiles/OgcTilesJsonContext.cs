@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -28,11 +28,13 @@ namespace Honua.Server.Features.OgcTiles;
 [JsonSerializable(typeof(TileSetsList))]
 [JsonSerializable(typeof(TileSetItem))]
 [JsonSerializable(typeof(TileSet))]
+[JsonSerializable(typeof(TileMatrixSetLimit))]
 [JsonSerializable(typeof(TileMatrixSetsList))]
 [JsonSerializable(typeof(TileMatrixSetItem))]
 [JsonSerializable(typeof(TileMatrixSetDefinition))]
 [JsonSerializable(typeof(TileMatrix))]
 [JsonSerializable(typeof(ImmutableArray<TileSetItem>))]
+[JsonSerializable(typeof(ImmutableArray<TileMatrixSetLimit>))]
 [JsonSerializable(typeof(ImmutableArray<TileMatrixSetItem>))]
 [JsonSerializable(typeof(ImmutableArray<TileMatrix>))]
 internal sealed partial class OgcTilesJsonContext : JsonSerializerContext

@@ -2,12 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Postgres.Features.FeatureStore;
 
@@ -24,55 +28,66 @@ internal static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null)
     {
-        // Register object pools for performance optimization
-        services.AddSingleton<ObjectPool<StringBuilder>>(provider =>
-        {
-            var poolProvider = provider.GetRequiredService<ObjectPoolProvider>();
-            return poolProvider.Create(new Services.StringBuilderPooledObjectPolicy());
-        });
+        var poolProvider = new DefaultObjectPoolProvider();
 
-        services.AddSingleton<ObjectPool<Dictionary<string, object?>>>(provider =>
-        {
-            var poolProvider = provider.GetRequiredService<ObjectPoolProvider>();
-            return poolProvider.Create(new DictionaryPooledObjectPolicy());
-        });
+        // Register object pools for performance optimization
+        services.AddSingleton<ObjectPool<StringBuilder>>(_ =>
+            poolProvider.Create(new Services.StringBuilderPooledObjectPolicy()));
+
+        services.AddSingleton<ObjectPool<Dictionary<string, object?>>>(_ =>
+            poolProvider.Create(new DictionaryPooledObjectPolicy()));
 
         // Register core feature store services
-        services.AddSingleton<IGeometryProcessor>(provider =>
-            new GeometryProcessor());
+        services.AddSingleton<IGeometryProcessor>(_ => new GeometryProcessor());
 
-        services.AddSingleton<IFeatureCacheManager>(provider =>
+        services.AddScoped<IFeatureCacheManager>(provider =>
         {
-            var connectionProvider = provider.GetRequiredService<Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>();
+            var connectionProvider = provider.GetRequiredService<IDatabaseConnectionProvider>();
             var logger = provider.GetRequiredService<ILogger<FeatureCacheManager>>();
             return new FeatureCacheManager(connectionProvider, logger, schemaName);
         });
 
-        services.AddSingleton<IFeatureQueryBuilder>(provider =>
+        services.AddScoped<IFeatureQueryBuilder>(provider =>
         {
             var stringBuilderPool = provider.GetRequiredService<ObjectPool<StringBuilder>>();
             var geometryProcessor = provider.GetRequiredService<IGeometryProcessor>();
             return new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, schemaName);
         });
 
-        services.AddSingleton<IFeatureDataAccess>(provider =>
+        services.AddScoped<IFeatureDataAccess>(provider =>
         {
-            var connectionProvider = provider.GetRequiredService<Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>();
+            var connectionProvider = provider.GetRequiredService<IDatabaseConnectionProvider>();
             var geometryProcessor = provider.GetRequiredService<IGeometryProcessor>();
             var cacheManager = provider.GetRequiredService<IFeatureCacheManager>();
             var dictionaryPool = provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>();
             var statementCache = provider.GetService<PreparedStatementCache>();
             var logger = provider.GetRequiredService<ILogger<FeatureDataAccess>>();
-            return new FeatureDataAccess(connectionProvider, geometryProcessor, cacheManager, dictionaryPool, statementCache, logger, schemaName);
+            var performanceOptions = provider.GetService<IOptions<PerformanceMonitoringOptions>>();
+            var limitsOptions = provider.GetService<IOptions<LimitsOptions>>();
+            var performanceMonitor = provider.GetService<IPerformanceMonitor>();
+            return new FeatureDataAccess(
+                connectionProvider,
+                geometryProcessor,
+                cacheManager,
+                dictionaryPool,
+                statementCache,
+                logger,
+                performanceOptions,
+                limitsOptions,
+                performanceMonitor,
+                schemaName);
         });
 
         // Register the main feature store implementation
-        services.AddSingleton<PostgresFeatureStoreRefactored>();
+        services.AddScoped<PostgresFeatureStoreRefactored>();
 
-        // Optionally, you can register it as the primary implementation
-        services.AddSingleton<IFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
-        services.AddSingleton<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
-        services.AddSingleton<IStreamingFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        // Register segregated interfaces
+        services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
 
         return services;
     }

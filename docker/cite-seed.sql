@@ -13,21 +13,23 @@ WITH layer AS (
     INSERT INTO honua.layers (
         layer_name,
         description,
-        table_name,
-        geometry_type,
-        srid,
-        extent,
-        default_visibility
-    )
-    VALUES (
-        'CITE Features',
-        'Seeded features for OGC API Features conformance tests',
-        'features',
-        'Point',
-        4326,
-        ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-        TRUE
-    )
+    table_name,
+    geometry_type,
+    srid,
+    extent,
+    default_visibility,
+    metadata
+)
+VALUES (
+    'CITE Features',
+    'Seeded features for OGC API Features conformance tests',
+    'features',
+    'Point',
+    4326,
+    ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+    TRUE,
+    '{"accessPolicy":{"allowAnonymous":true}}'::jsonb
+)
     RETURNING layer_id
 )
 INSERT INTO features (layer_id, geometry, attributes)

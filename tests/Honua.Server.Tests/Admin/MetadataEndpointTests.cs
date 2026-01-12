@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Protocol(Protocols.Admin)]
 [Collection("Database")]
+[Operation(Operations.Configuration)]
 public sealed class MetadataEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -351,6 +352,7 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
     // ========================================================================
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/services")]
     public async Task CreateService_WithEmptyName_ReturnsBadRequest()
     {
         // Arrange
@@ -373,6 +375,7 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/layers")]
     public async Task CreateLayer_WithMissingTableName_ReturnsBadRequest()
     {
         // Arrange
@@ -395,6 +398,7 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/layers")]
     public async Task CreateLayer_WithMissingDisplayName_ReturnsBadRequest()
     {
         // Arrange

@@ -33,7 +33,7 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// The caching layer only optimizes execution, not query construction.
 /// </para>
 /// </remarks>
-internal sealed partial class CachingDatabaseConnectionProvider : IDatabaseConnectionProvider
+internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;

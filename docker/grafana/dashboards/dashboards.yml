@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: honua
+    orgId: 1
+    folder: Honua
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

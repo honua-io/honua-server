@@ -1,168 +1,111 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics.CodeAnalysis;
-
 namespace Honua.Core.Configuration;
 
 /// <summary>
 /// Validates LimitsOptions configuration to ensure consistent and safe limits.
 /// Performs cross-property validation beyond individual DataAnnotations.
 /// </summary>
-public static class LimitsOptionsValidator
+public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
 {
     /// <summary>
     /// Validates the complete limits configuration, including cross-property rules.
     /// </summary>
     /// <param name="limits">The limits configuration to validate</param>
-    /// <returns>List of validation errors, empty if valid</returns>
-    public static List<string> Validate(LimitsOptions limits)
+    /// <param name="failures">List to add validation errors to</param>
+    protected override void ValidateOptions(LimitsOptions limits, List<string> failures)
     {
-        var errors = new List<string>();
-
         // Validate individual objects using DataAnnotations
-        ValidateDataAnnotations(limits, errors, nameof(LimitsOptions));
-        ValidateDataAnnotations(limits.Query, errors, nameof(limits.Query));
-        ValidateDataAnnotations(limits.Geometry, errors, nameof(limits.Geometry));
-        ValidateDataAnnotations(limits.Edits, errors, nameof(limits.Edits));
-        ValidateDataAnnotations(limits.Attachments, errors, nameof(limits.Attachments));
-        ValidateDataAnnotations(limits.Tiles, errors, nameof(limits.Tiles));
-        ValidateDataAnnotations(limits.Connections, errors, nameof(limits.Connections));
+        ValidateDataAnnotations(limits.Query, failures, nameof(limits.Query));
+        ValidateDataAnnotations(limits.Geometry, failures, nameof(limits.Geometry));
+        ValidateDataAnnotations(limits.Edits, failures, nameof(limits.Edits));
+        ValidateDataAnnotations(limits.Attachments, failures, nameof(limits.Attachments));
+        ValidateDataAnnotations(limits.Tiles, failures, nameof(limits.Tiles));
+        ValidateDataAnnotations(limits.Connections, failures, nameof(limits.Connections));
 
         // Cross-property validation rules
-        ValidateQueryLimits(limits.Query, errors);
-        ValidateTileLimits(limits.Tiles, errors);
-        ValidateEditLimits(limits.Edits, errors);
-        ValidateAttachmentLimits(limits.Attachments, errors);
-        ValidateConnectionLimits(limits.Connections, errors);
-
-        return errors;
+        ValidateQueryLimits(limits.Query, failures);
+        ValidateTileLimits(limits.Tiles, failures);
+        ValidateEditLimits(limits.Edits, failures);
+        ValidateAttachmentLimits(limits.Attachments, failures);
+        ValidateConnectionLimits(limits.Connections, failures);
     }
 
-    /// <summary>
-    /// Validates an object using its DataAnnotations attributes.
-    /// </summary>
-    [UnconditionalSuppressMessage("AOT", "IL2026:RequiresUnreferencedCode",
-        Justification = "DataAnnotations validation is only used at startup for configuration validation")]
-    private static void ValidateDataAnnotations(object obj, List<string> errors, string propertyPath)
-    {
-        var context = new ValidationContext(obj);
-        var results = new List<ValidationResult>();
-
-        if (!Validator.TryValidateObject(obj, context, results, true))
-        {
-            foreach (var result in results)
-            {
-                var memberName = result.MemberNames.FirstOrDefault() ?? "Unknown";
-                errors.Add($"{propertyPath}.{memberName}: {result.ErrorMessage}");
-            }
-        }
-    }
 
     /// <summary>
     /// Validates query limits for logical consistency.
     /// </summary>
-    private static void ValidateQueryLimits(QueryLimits query, List<string> errors)
+    private static void ValidateQueryLimits(QueryLimits query, List<string> failures)
     {
         // DefaultRecordCount must not exceed MaxRecordCount
-        if (query.DefaultRecordCount > query.MaxRecordCount)
-        {
-            errors.Add($"Query.DefaultRecordCount ({query.DefaultRecordCount}) must not exceed MaxRecordCount ({query.MaxRecordCount})");
-        }
+        ValidateLogicalOrder(query.DefaultRecordCount, query.MaxRecordCount, "Query.DefaultRecordCount", "Query.MaxRecordCount", failures);
 
         // Validate bbox area if specified
-        if (query.MaxBboxAreaSqKm.HasValue && query.MaxBboxAreaSqKm.Value <= 0)
+        if (query.MaxBboxAreaSqKm.HasValue)
         {
-            errors.Add("Query.MaxBboxAreaSqKm must be positive when specified");
+            ValidateRange(query.MaxBboxAreaSqKm.Value, 0.1, double.MaxValue, "Query.MaxBboxAreaSqKm", failures);
         }
 
         // Validate QueryTimeout range (5 seconds to 2 minutes)
-        if (query.QueryTimeout < TimeSpan.FromSeconds(5) || query.QueryTimeout > TimeSpan.FromMinutes(2))
-        {
-            errors.Add("Query.QueryTimeout must be between 5 seconds and 2 minutes");
-        }
+        ValidateTimeSpan(query.QueryTimeout, TimeConstants.FiveSecondsTimeSpan, TimeConstants.TwoMinutesTimeSpan, "Query.QueryTimeout", failures);
     }
 
     /// <summary>
     /// Validates tile limits for logical consistency.
     /// </summary>
-    private static void ValidateTileLimits(TileLimits tiles, List<string> errors)
+    private static void ValidateTileLimits(TileLimits tiles, List<string> failures)
     {
         // MinTileZoom must not exceed MaxTileZoom
-        if (tiles.MinTileZoom > tiles.MaxTileZoom)
-        {
-            errors.Add($"Tiles.MinTileZoom ({tiles.MinTileZoom}) must not exceed MaxTileZoom ({tiles.MaxTileZoom})");
-        }
+        ValidateLogicalOrder(tiles.MinTileZoom, tiles.MaxTileZoom, "Tiles.MinTileZoom", "Tiles.MaxTileZoom", failures);
 
         // Validate zoom range bounds
-        if (tiles.MinTileZoom < 0)
-        {
-            errors.Add("Tiles.MinTileZoom must be non-negative");
-        }
-
-        if (tiles.MaxTileZoom > 24)
-        {
-            errors.Add("Tiles.MaxTileZoom must not exceed 24 (maximum supported zoom level)");
-        }
+        ValidateRange(tiles.MinTileZoom, 0, int.MaxValue, "Tiles.MinTileZoom", failures);
+        ValidateRange(tiles.MaxTileZoom, 0, 24, "Tiles.MaxTileZoom", failures);
 
         // Validate TileTimeout range (1 second to 1 minute)
-        if (tiles.TileTimeout < TimeSpan.FromSeconds(1) || tiles.TileTimeout > TimeSpan.FromMinutes(1))
-        {
-            errors.Add("Tiles.TileTimeout must be between 1 second and 1 minute");
-        }
+        ValidateTimeSpan(tiles.TileTimeout, TimeConstants.OneSecondTimeSpan, TimeConstants.OneMinuteTimeSpan, "Tiles.TileTimeout", failures);
     }
 
     /// <summary>
     /// Validates edit limits for logical consistency.
     /// </summary>
-    private static void ValidateEditLimits(EditLimits edits, List<string> errors)
+    private static void ValidateEditLimits(EditLimits edits, List<string> failures)
     {
         // MaxFeaturesPerEdit should be reasonable compared to MaxEditsPerTransaction
-        if (edits.MaxFeaturesPerEdit > edits.MaxEditsPerTransaction)
-        {
-            errors.Add($"Edits.MaxFeaturesPerEdit ({edits.MaxFeaturesPerEdit}) should not exceed MaxEditsPerTransaction ({edits.MaxEditsPerTransaction})");
-        }
+        ValidateLogicalOrder(edits.MaxFeaturesPerEdit, edits.MaxEditsPerTransaction, "Edits.MaxFeaturesPerEdit", "Edits.MaxEditsPerTransaction", failures);
 
         // Validate payload size is reasonable
-        if (edits.MaxPayloadSize < 1048576) // 1MB minimum
-        {
-            errors.Add("Edits.MaxPayloadSize must be at least 1MB");
-        }
+        ValidateFileSize(edits.MaxPayloadSize, FileSizeConstants.OneMB, long.MaxValue, "Edits.MaxPayloadSize", failures);
     }
 
     /// <summary>
     /// Validates attachment limits for logical consistency.
     /// </summary>
-    private static void ValidateAttachmentLimits(AttachmentLimits attachments, List<string> errors)
+    private static void ValidateAttachmentLimits(AttachmentLimits attachments, List<string> failures)
     {
         // MaxAttachmentSize * MaxAttachmentsPerFeature should not exceed MaxTotalAttachmentSize
         var maxTheoreticalTotal = attachments.MaxAttachmentSize * attachments.MaxAttachmentsPerFeature;
         if (maxTheoreticalTotal > attachments.MaxTotalAttachmentSize)
         {
-            errors.Add($"Attachments: MaxAttachmentSize ({attachments.MaxAttachmentSize:N0}) * MaxAttachmentsPerFeature ({attachments.MaxAttachmentsPerFeature}) " +
-                      $"exceeds MaxTotalAttachmentSize ({attachments.MaxTotalAttachmentSize:N0})");
+            failures.Add($"Attachments: MaxAttachmentSize ({attachments.MaxAttachmentSize:N0}) * MaxAttachmentsPerFeature ({attachments.MaxAttachmentsPerFeature}) " +
+                        $"exceeds MaxTotalAttachmentSize ({attachments.MaxTotalAttachmentSize:N0})");
         }
 
         // Validate MIME types format
-        if (string.IsNullOrWhiteSpace(attachments.AllowedMimeTypes))
-        {
-            errors.Add("Attachments.AllowedMimeTypes cannot be empty");
-        }
-        else
+        ValidateRequiredString(attachments.AllowedMimeTypes, "Attachments.AllowedMimeTypes", failures);
+
+        if (!string.IsNullOrWhiteSpace(attachments.AllowedMimeTypes))
         {
             var mimeTypes = attachments.AllowedMimeTypes.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            if (mimeTypes.Length == 0)
-            {
-                errors.Add("Attachments.AllowedMimeTypes must contain at least one MIME type");
-            }
+            ValidateCollectionCount(mimeTypes, 1, int.MaxValue, "Attachments.AllowedMimeTypes", failures);
 
             foreach (var mimeType in mimeTypes)
             {
                 var trimmed = mimeType.Trim();
                 if (string.IsNullOrEmpty(trimmed) || !IsValidMimeType(trimmed))
                 {
-                    errors.Add($"Attachments.AllowedMimeTypes contains invalid MIME type: '{mimeType}'");
+                    failures.Add($"Attachments.AllowedMimeTypes contains invalid MIME type: '{mimeType}'");
                 }
             }
         }
@@ -210,12 +153,9 @@ public static class LimitsOptionsValidator
     /// <summary>
     /// Validates connection limits for logical consistency.
     /// </summary>
-    private static void ValidateConnectionLimits(ConnectionLimits connections, List<string> errors)
+    private static void ValidateConnectionLimits(ConnectionLimits connections, List<string> failures)
     {
         // Validate RequestTimeout range (10 seconds to 10 minutes)
-        if (connections.RequestTimeout < TimeSpan.FromSeconds(10) || connections.RequestTimeout > TimeSpan.FromMinutes(10))
-        {
-            errors.Add("Connections.RequestTimeout must be between 10 seconds and 10 minutes");
-        }
+        ValidateTimeSpan(connections.RequestTimeout, TimeConstants.TenSecondsTimeSpan, TimeConstants.TenMinutesTimeSpan, "Connections.RequestTimeout", failures);
     }
 }

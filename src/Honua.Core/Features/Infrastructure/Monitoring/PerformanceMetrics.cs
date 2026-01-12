@@ -140,6 +140,14 @@ internal sealed class PerformanceMetrics
         "ratio",
         "Cache hit ratio as a percentage");
 
+    /// <summary>
+    /// Histogram for cache operation latency by type and operation.
+    /// </summary>
+    public static readonly Histogram<double> CacheOperationLatency = Meter.CreateHistogram<double>(
+        "honua_cache_operation_duration_ms",
+        "ms",
+        "Cache operation latency by cache type and operation");
+
     #endregion
 
     #region Operation Metrics
@@ -159,6 +167,50 @@ internal sealed class PerformanceMetrics
         "honua_operation_total",
         "operations",
         "Total number of operations executed");
+
+    #endregion
+
+    #region Geometry Metrics
+
+    /// <summary>
+    /// Histogram for geometry processing operation duration.
+    /// </summary>
+    public static readonly Histogram<double> GeometryOperationDuration = Meter.CreateHistogram<double>(
+        "honua_geometry_operation_duration_ms",
+        "ms",
+        "Duration of geometry processing operations in milliseconds");
+
+    /// <summary>
+    /// Counter for geometry operations.
+    /// </summary>
+    public static readonly Counter<long> GeometryOperationCount = Meter.CreateCounter<long>(
+        "honua_geometry_operation_total",
+        "operations",
+        "Total number of geometry processing operations");
+
+    /// <summary>
+    /// Histogram for geometry complexity (coordinate count).
+    /// </summary>
+    public static readonly Histogram<int> GeometryComplexity = Meter.CreateHistogram<int>(
+        "honua_geometry_complexity_coordinates",
+        "coordinates",
+        "Number of coordinates in processed geometries");
+
+    /// <summary>
+    /// Counter for geometry transformation operations.
+    /// </summary>
+    public static readonly Counter<long> GeometryTransformationCount = Meter.CreateCounter<long>(
+        "honua_geometry_transformation_total",
+        "transformations",
+        "Total number of geometry coordinate transformations");
+
+    /// <summary>
+    /// Histogram for geometry transformation duration.
+    /// </summary>
+    public static readonly Histogram<double> GeometryTransformationDuration = Meter.CreateHistogram<double>(
+        "honua_geometry_transformation_duration_ms",
+        "ms",
+        "Duration of geometry coordinate transformations in milliseconds");
 
     #endregion
 
@@ -519,11 +571,38 @@ public static class StreamingMetrics
 /// </summary>
 public sealed record MetricSnapshot
 {
+    /// <summary>
+    /// The timestamp when this snapshot was taken.
+    /// </summary>
     public DateTimeOffset Timestamp { get; init; }
+
+    /// <summary>
+    /// Current memory usage in megabytes.
+    /// </summary>
     public double MemoryUsageMB { get; init; }
+
+    /// <summary>
+    /// Current performance score (0-100 scale).
+    /// </summary>
     public int PerformanceScore { get; init; }
+
+    /// <summary>
+    /// Current security score (0-100 scale).
+    /// </summary>
     public int SecurityScore { get; init; }
+
+    /// <summary>
+    /// Number of active concurrent users.
+    /// </summary>
     public int ActiveUsers { get; init; }
+
+    /// <summary>
+    /// Current throughput in megabytes per second.
+    /// </summary>
     public double ThroughputMBps { get; init; }
+
+    /// <summary>
+    /// Current error rate as a percentage (0.0-1.0).
+    /// </summary>
     public double ErrorRate { get; init; }
 }

@@ -65,7 +65,7 @@ public sealed class PostgresFixture : IAsyncLifetime
 
                 await using var conn = await _sharedDataSource.OpenConnectionAsync();
                 await using var cmd = conn.CreateCommand();
-                cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS unaccent;";
+                cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
                 await cmd.ExecuteNonQueryAsync();
 
                 _sharedInitialized = true;

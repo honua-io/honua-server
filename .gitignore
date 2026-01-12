@@ -228,6 +228,14 @@ docs/temp/
 *.local.json
 appsettings.Development.json
 !appsettings.Development.json.template
+cite-results/cite-session-*/
+cite-tiles-results/cite-tiles-session-*/
+cite-results/*
+!cite-results/cite-summary.md
+!cite-results/conformance.json
+cite-tiles-results/*
+!cite-tiles-results/cite-summary.md
+!cite-tiles-results/conformance.json
 
 # Environment files (keep examples, ignore actual configs)
 .env
@@ -241,6 +249,9 @@ appsettings.Development.json
 .serena/
 .claude/plans/
 
+# Local Python test environment
+.venv-tests/
+
 # Benchmark artifacts
 benchmarks/**/BenchmarkDotNet.Artifacts/
 
@@ -249,3 +260,8 @@ benchmarks/**/BenchmarkDotNet.Artifacts/
 
 # Coverage
 coverage*/
+
+# Local runtime/test artifacts
+tmp/
+src/Honua.Server/tmp/
+src/Honua.Server/attachments/

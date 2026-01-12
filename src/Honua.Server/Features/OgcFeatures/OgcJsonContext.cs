@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 
 namespace Honua.Server.Features.OgcFeatures;
@@ -35,6 +36,12 @@ namespace Honua.Server.Features.OgcFeatures;
 [JsonSerializable(typeof(QueryablesSchema))]
 [JsonSerializable(typeof(JsonSchemaProperty))]
 [JsonSerializable(typeof(ImmutableDictionary<string, JsonSchemaProperty>))]
+[JsonSerializable(typeof(BatchRequest))]
+[JsonSerializable(typeof(BatchOperation))]
+[JsonSerializable(typeof(BatchOperationResponse))]
+[JsonSerializable(typeof(BatchOperationResult))]
+[JsonSerializable(typeof(List<BatchOperation>))]
+[JsonSerializable(typeof(List<BatchOperationResult>))]
 internal sealed partial class OgcJsonContext : JsonSerializerContext
 {
 }

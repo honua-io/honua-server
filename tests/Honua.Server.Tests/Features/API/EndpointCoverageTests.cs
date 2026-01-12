@@ -35,7 +35,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
-    [Operation("ServiceInfo")]
+    [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer")]
     public async Task FeatureServer_GetServiceInfo_ShouldReturnServiceMetadata()
     {
@@ -54,7 +54,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
-    [Operation("LayerInfo")]
+    [Operation(Operations.GetLayerInfo)]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     public async Task FeatureServer_GetLayerInfo_ShouldReturnLayerMetadata()
     {
@@ -74,7 +74,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
-    [Operation("Query")]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}/query")]
     public async Task FeatureServer_Query_WithBasicParameters_ShouldReturnFeatures()
     {
@@ -92,7 +92,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
-    [Operation("Query")]
+    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceName}/FeatureServer/{layerId}/query")]
     public async Task FeatureServer_QueryPost_WithComplexFilter_ShouldReturnFilteredFeatures()
     {
@@ -119,7 +119,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
-    [Operation("ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceName}/FeatureServer/{layerId}/applyEdits")]
     public async Task FeatureServer_ApplyEdits_WithNewFeature_ShouldCreateFeature()
     {
@@ -165,7 +165,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
-    [Operation("ServiceDocument")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /odata")]
     public async Task OData_GetServiceDocument_ShouldReturnMetadata()
     {
@@ -180,7 +180,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
-    [Operation("Metadata")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /odata/$metadata")]
     public async Task OData_GetMetadata_ShouldReturnSchema()
     {
@@ -194,7 +194,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
-    [Operation("Query")]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task OData_QueryFeatures_ShouldReturnODataFormat()
     {
@@ -212,7 +212,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
-    [Operation("Filter")]
+    [Operation(Operations.ODataFilter)]
     [Endpoint("GET /odata/Features({layerId})?$filter={expression}")]
     public async Task OData_QueryWithFilter_ShouldApplyFilter()
     {
@@ -229,7 +229,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
-    [Operation("Batch")]
+    [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task OData_BatchRequest_ShouldProcessMultipleOperations()
     {
@@ -266,7 +266,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
-    [Operation("LandingPage")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features")]
     public async Task OgcApi_GetLandingPage_ShouldReturnApiInfo()
     {
@@ -284,7 +284,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
-    [Operation("Conformance")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/conformance")]
     public async Task OgcApi_GetConformance_ShouldReturnConformanceClasses()
     {
@@ -301,7 +301,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
-    [Operation("Collections")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/collections")]
     public async Task OgcApi_GetCollections_ShouldReturnCollectionList()
     {
@@ -318,7 +318,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
-    [Operation("Collection")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task OgcApi_GetCollection_ShouldReturnCollectionMetadata()
     {
@@ -336,7 +336,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
-    [Operation("Features")]
+    [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task OgcApi_GetFeatures_ShouldReturnGeoJSON()
     {
@@ -354,7 +354,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiFeatures)]
-    [Operation("Feature")]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task OgcApi_GetFeature_ShouldReturnSingleFeature()
     {
@@ -376,7 +376,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.Mvt)]
-    [Operation("Tile")]
+    [Operation(Operations.GetTile)]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task MVT_GetTile_ShouldReturnProtobuf()
     {
@@ -393,7 +393,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(Protocols.OgcApiTiles)]
-    [Operation("Tilesets")]
+    [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/tiles/tiles")]
     public async Task OgcTiles_GetTilesets_ShouldReturnTilesetList()
     {
@@ -413,7 +413,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     #region Health Check Tests
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.LivenessCheck)]
     [Endpoint("GET /healthz/live")]
     public async Task Health_GetLiveness_ShouldReturnHealthy()
     {
@@ -427,7 +427,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.ReadinessCheck)]
     [Endpoint("GET /healthz/ready")]
     public async Task Health_GetReadiness_ShouldReturnReady()
     {
@@ -445,7 +445,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     #region Admin API Tests
 
     [IntegrationTest]
-    [Operation("Admin")]
+    [Operation(Operations.TableDiscovery)]
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task Admin_GetTables_ShouldReturnTableList()
     {
@@ -464,7 +464,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Admin")]
+    [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/admin/metadata/layers")]
     public async Task Admin_CreateLayer_ShouldCreateNewLayer()
     {
@@ -491,7 +491,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     #region Import API Tests
 
     [IntegrationTest]
-    [Operation("Import")]
+    [Operation(Operations.Import)]
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_UploadFile_ShouldAcceptValidFormats()
     {
@@ -526,7 +526,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Import")]
+    [Operation(Operations.Import)]
     [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
     public async Task Import_GetJobStatus_ShouldReturnJobStatus()
     {
@@ -545,7 +545,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     #region Error Handling Tests
 
     [IntegrationTest]
-    [Operation("ErrorHandling")]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/nonexistent/FeatureServer")]
     public async Task ErrorHandling_NonexistentService_ShouldReturn404()
     {
@@ -557,7 +557,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("ErrorHandling")]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/test/FeatureServer/99999")]
     public async Task ErrorHandling_NonexistentLayer_ShouldReturn404()
     {
@@ -569,7 +569,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("ErrorHandling")]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/test/FeatureServer/1/query?where=invalid")]
     public async Task ErrorHandling_InvalidQuery_ShouldReturn400()
     {

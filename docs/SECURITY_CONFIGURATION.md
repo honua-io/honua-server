@@ -1,0 +1,124 @@
+# Security Configuration
+
+This guide covers secret management, OIDC hardening, and proxy-related security settings.
+
+Audit logging and compliance storage are post-MVP and not available in the current build.
+
+## Secret Management
+
+Avoid storing secrets directly in `appsettings*.json`. Use secret references whenever possible.
+
+### Supported Secret References
+
+- **Environment variables**: `env:VARIABLE_NAME`
+- **AWS Secrets Manager**: `aws:secretsmanager:<secret-id>?versionStage=...&versionId=...`
+- **Azure Key Vault**: `azure:keyvault:<vault>:<secret>[:<version>]`
+- **GCP Secret Manager**: `gcp:secretmanager:<project>:<secret>[:<version>]`
+- **Custom providers** (connection strings and admin password): Implement `IConnectionSecretResolver` and register in the Postgres security extensions.
+
+Production startup validation rejects plaintext secrets in configuration files. Supply secrets via environment variables or `env:` references.
+
+Secret payloads may be stored as:
+- a raw connection string
+- JSON with `connectionString` / `ConnectionString`
+- JSON with `username`, `password`, `host`, and `dbname`/`database` (optional `port`)
+
+### Provider Credential Requirements
+
+- **AWS Secrets Manager**: `AWS_REGION`/`AWS_DEFAULT_REGION` (or secret ARN) plus credentials from
+  `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, ECS task metadata, or EC2 IMDS. Optional `AWS_SESSION_TOKEN`.
+- **Azure Key Vault**: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` or Managed Identity.
+- **GCP Secret Manager**: `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) or GCE metadata token.
+  If the project is omitted from the ref, set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_PROJECT`.
+
+### Examples
+
+```bash
+# Default connection string via env reference
+ConnectionStrings__DefaultConnection=env:HONUA_DB_URL
+HONUA_DB_URL="Host=...;Database=...;Username=...;Password=..."
+
+# Default connection string via AWS Secrets Manager
+ConnectionStrings__DefaultConnection=aws:secretsmanager:prod-db-credentials
+
+# Default connection string via Azure Key Vault
+ConnectionStrings__DefaultConnection=azure:keyvault:honua-vault:prod-db-credentials
+
+# Default connection string via GCP Secret Manager
+ConnectionStrings__DefaultConnection=gcp:secretmanager:honua-prod:db-credentials:latest
+
+# Admin API key via env reference
+HONUA_ADMIN_PASSWORD=env:HONUA_ADMIN_PASSWORD_VALUE
+HONUA_ADMIN_PASSWORD_VALUE="super-secret"
+
+# OIDC client secret via env reference
+Oidc__Generic__ClientSecret=env:OIDC_CLIENT_SECRET
+OIDC_CLIENT_SECRET="oidc-secret"
+
+# Redis connection string via env reference
+ConnectionStrings__redis=env:HONUA_REDIS_URL
+HONUA_REDIS_URL="localhost:6379"
+```
+
+### Secure Connection Registry
+
+Admin endpoints support secret references for managed connections (`SecretRef`/`SecretType`).
+The registry uses the same secret resolver pipeline as `DefaultConnection`.
+
+## OIDC Token Replay Protection
+
+Enable token replay protection to reject repeated use of the same JWT.
+
+```json
+{
+  "Oidc": {
+    "TokenValidation": {
+      "EnableTokenReplayProtection": true,
+      "TokenReplayCacheDuration": "00:10:00"
+    }
+  }
+}
+```
+
+- **Cache scope**: Uses `IMemoryCache` (per instance). In multi-instance deployments, add a shared cache or external replay detection.
+- **Token IDs**: Uses `jti` when present, otherwise the raw token hash.
+
+## Forwarded Headers and Public Base URL
+
+When running behind a reverse proxy/load balancer:
+
+```json
+{
+  "ForwardedHeaders": {
+    "Enabled": true,
+    "ForwardLimit": 1,
+    "KnownProxies": ["10.0.0.10"]
+  },
+  "Public": {
+    "BaseUrl": "https://api.honua.example.com"
+  }
+}
+```
+
+- **`ForwardedHeaders`** controls trusted proxy header processing.
+- **`Public:BaseUrl`** (or `PUBLIC_BASE_URL`) forces correct link generation in OGC/OData responses.
+- **Rate limiting** should be enforced at the edge (nginx/ALB/API gateway); see ADR-0004 for the decision.
+- **Standalone deployments** should keep forwarded headers disabled.
+
+## Storage and Monitoring Secrets
+
+Use environment references for any storage or monitoring credentials:
+
+```bash
+# File storage secrets (future providers)
+FileStorage__AwsS3__AccessKeyId=env:HONUA_S3_KEY_ID
+FileStorage__AwsS3__SecretAccessKey=env:HONUA_S3_SECRET
+FileStorage__AzureBlob__ConnectionString=env:HONUA_AZURE_BLOB_CONN
+
+# Monitoring alerting secrets
+Monitoring__IntelligentAlerting__NotificationChannels__Email__Password=env:HONUA_SMTP_PASSWORD
+Monitoring__IntelligentAlerting__NotificationChannels__Slack__WebhookUrl=env:HONUA_SLACK_WEBHOOK
+Monitoring__IntelligentAlerting__NotificationChannels__Webhook__Url=env:HONUA_ALERT_WEBHOOK
+Monitoring__IntelligentAlerting__NotificationChannels__Webhook__Headers__Authorization=env:HONUA_ALERT_WEBHOOK_AUTH
+Monitoring__IntelligentAlerting__NotificationChannels__Sms__ApiKey=env:HONUA_SMS_API_KEY
+```

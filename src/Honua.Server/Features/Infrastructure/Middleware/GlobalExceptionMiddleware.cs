@@ -50,27 +50,36 @@ internal sealed class GlobalExceptionMiddleware(
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        // Use centralized ExceptionMapper for consistent mapping and sanitization
-        var result = ExceptionMapper.Map(exception, _includeDebugDetails);
-
-        // Build detail message, optionally including debug info
-        var detail = result.Detail;
-        if (!string.IsNullOrEmpty(result.DebugInfo))
-        {
-            detail = $"{detail} (Debug: {result.DebugInfo})";
-        }
-
         // Add correlation ID header for traceability
         context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
+
+        // Use standardized error handling system
+        var errorResponse = StandardErrorResponse.FromException(exception, _includeDebugDetails);
+
+        // Prepare formatter options with debug info if enabled
+        var options = new ErrorResponseFormatterOptions
+        {
+            IncludeDebugInfo = _includeDebugDetails
+        };
 
         // Handle ServiceUnavailable with Retry-After header
         if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
         {
             context.Response.Headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString();
+            options = new ErrorResponseFormatterOptions
+            {
+                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
+                IncludeDebugInfo = options.IncludeDebugInfo,
+                ContentType = options.ContentType,
+                AdditionalHeaders = new Dictionary<string, string>
+                {
+                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString()
+                }
+            };
         }
 
-        // Use ProtocolErrorWriter to format response appropriately for the protocol
-        await ProtocolErrorWriter.WriteErrorAsync(context, result.StatusCode, result.Title, detail);
+        // Use standardized error formatter for protocol-appropriate response
+        await StandardErrorResponseFormatter.WriteErrorAsync(context, errorResponse, options);
     }
 }
 

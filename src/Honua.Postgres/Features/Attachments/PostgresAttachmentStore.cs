@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Honua.Postgres.Features.Attachments;
@@ -19,17 +22,20 @@ namespace Honua.Postgres.Features.Attachments;
 internal sealed class PostgresAttachmentStore : IAttachmentStore
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ICloudFileStorage _fileStorage;
+    private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly string _tableName;
-    private readonly string _storageBasePath;
 
-    public PostgresAttachmentStore(IDatabaseConnectionProvider connectionProvider, string? schemaName = null, string? storageBasePath = null)
+    public PostgresAttachmentStore(
+        IDatabaseConnectionProvider connectionProvider,
+        ICloudFileStorage fileStorage,
+        ILogger<PostgresAttachmentStore> logger,
+        string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tableName = string.IsNullOrEmpty(schemaName) ? "attachments" : $"{schemaName}.attachments";
-        _storageBasePath = storageBasePath ?? Path.Combine(Directory.GetCurrentDirectory(), "attachments");
-
-        // Ensure storage directory exists
-        Directory.CreateDirectory(_storageBasePath);
     }
 
     public async Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
@@ -134,7 +140,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
     {
-        // First get the storage path to delete the physical file
+        // First get the storage key to delete the stored file
         var attachment = await GetAsync(layerId, featureId, attachmentId, cancellationToken);
         if (attachment == null)
         {
@@ -154,15 +160,29 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
 
         var deletedRows = await command.ExecuteNonQueryAsync(cancellationToken);
 
-        // Delete the physical file if database record was deleted
+        // Delete the stored file if database record was deleted
         if (deletedRows > 0)
         {
-            // Validate path stays within storage base (path traversal prevention)
-            var fullPath = Path.GetFullPath(Path.Combine(_storageBasePath, attachment.Value.StoragePath));
-            if (fullPath.StartsWith(_storageBasePath, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
+            try
             {
-                File.Delete(fullPath);
+                var deleted = await _fileStorage.DeleteAsync(attachment.Value.StoragePath, cancellationToken);
+                if (!deleted)
+                {
+                    AttachmentLog.AttachmentFileMissing(
+                        _logger,
+                        attachment.Value.StoragePath,
+                        layerId,
+                        featureId);
+                }
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                AttachmentLog.AttachmentFileDeleteFailed(
+                    _logger,
+                    ex,
+                    attachment.Value.StoragePath);
+            }
+
             return true;
         }
 
@@ -173,35 +193,23 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
     {
         // Sanitize filename to prevent path traversal attacks
         var sanitizedFilename = SanitizeFileName(filename);
-        var fileExtension = Path.GetExtension(sanitizedFilename);
+        var folder = BuildAttachmentFolder(layerId, featureId);
+        var sizeBytes = content.CanSeek ? content.Length : (long?)null;
 
-        // Generate storage path using only validated components
-        // Using GUID ensures no user-controlled path components
-        var storagePath = $"{layerId}/{featureId}/{Guid.NewGuid()}{fileExtension}";
-
-        // Validate that the full path stays within the storage base
-        var fullPath = Path.GetFullPath(Path.Combine(_storageBasePath, storagePath));
-        if (!fullPath.StartsWith(_storageBasePath, StringComparison.OrdinalIgnoreCase))
+        var uploadResult = await _fileStorage.UploadAsync(new FileUploadRequest
         {
-            throw new InvalidOperationException("Path traversal attack detected");
-        }
+            Content = content,
+            FileName = sanitizedFilename,
+            ContentType = contentType,
+            SizeBytes = sizeBytes,
+            Folder = folder
+        }, cancellationToken);
 
-        // Ensure directory exists
-        var directory = Path.GetDirectoryName(fullPath)!;
-        Directory.CreateDirectory(directory);
-
-        // Save file to storage
-        long fileSize;
-        await using (var fileStream = new FileStream(fullPath, new FileStreamOptions
+        if (!uploadResult.Success || uploadResult.File == null)
         {
-            Mode = FileMode.Create,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        }))
-        {
-            await content.CopyToAsync(fileStream, cancellationToken);
-            fileSize = fileStream.Length;
+            var message = uploadResult.ErrorMessage ?? "Attachment upload failed.";
+            AttachmentLog.AttachmentUploadFailed(_logger, layerId, featureId, message);
+            throw new InvalidOperationException(message);
         }
 
         // Create attachment record
@@ -209,10 +217,10 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             id: 0, // Will be assigned by database
             featureId: featureId,
             layerId: layerId,
-            filename: filename,
-            contentType: contentType,
-            size: fileSize,
-            storagePath: storagePath,
+            filename: sanitizedFilename,
+            contentType: uploadResult.File.ContentType,
+            size: uploadResult.File.SizeBytes,
+            storagePath: uploadResult.File.FileId,
             keywords: keywords);
 
         try
@@ -221,16 +229,13 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         }
         catch
         {
-            if (File.Exists(fullPath))
+            try
             {
-                try
-                {
-                    File.Delete(fullPath);
-                }
-                catch
-                {
-                    // Best effort cleanup: ignore file delete failures to preserve original exception.
-                }
+                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
             }
 
             throw;
@@ -245,26 +250,12 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             return null;
         }
 
-        // Validate that the storage path stays within the storage base (path traversal prevention)
-        var fullPath = Path.GetFullPath(Path.Combine(_storageBasePath, attachment.Value.StoragePath));
-        if (!fullPath.StartsWith(_storageBasePath, StringComparison.OrdinalIgnoreCase))
-        {
-            // Log this as a security issue - storage path in DB may have been tampered with
-            throw new InvalidOperationException("Invalid storage path detected");
-        }
-
-        if (!File.Exists(fullPath))
+        var fileStream = await _fileStorage.DownloadAsync(attachment.Value.StoragePath, cancellationToken);
+        if (fileStream == null)
         {
             return null;
         }
 
-        var fileStream = new FileStream(fullPath, new FileStreamOptions
-        {
-            Mode = FileMode.Open,
-            Access = FileAccess.Read,
-            Share = FileShare.Read,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
         return AttachmentContent.Create(attachment.Value, fileStream);
     }
 
@@ -308,6 +299,15 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         }
 
         return string.IsNullOrWhiteSpace(sanitized) ? "sanitized_file" : sanitized;
+    }
+
+    private static string BuildAttachmentFolder(int layerId, long featureId)
+    {
+        return string.Join(
+            '/',
+            "attachments",
+            layerId.ToString(CultureInfo.InvariantCulture),
+            featureId.ToString(CultureInfo.InvariantCulture));
     }
 
     private static async Task<Attachment> ReadAttachmentAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)

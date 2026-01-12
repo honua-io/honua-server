@@ -7,7 +7,11 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.ObjectPool;
+using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
@@ -44,11 +48,13 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         _stringBuilderPool = stringBuilderPool ?? throw new ArgumentNullException(nameof(stringBuilderPool));
         _geometryProcessor = geometryProcessor ?? throw new ArgumentNullException(nameof(geometryProcessor));
 
-        var tableNameOnly = "features";
-        _tableName = string.IsNullOrEmpty(schemaName) ? tableNameOnly : $"{schemaName}.{tableNameOnly}";
+        _tableName = DatabaseSchema.GetFeaturesTableName(schemaName);
     }
 
-    public CoreParameterizedQuery BuildSelectQuery(int layerId, FeatureQuery query)
+    public CoreParameterizedQuery BuildSelectQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var spatialFilter = query.SpatialFilter;
         var isKnnQuery = spatialFilter.HasValue &&
@@ -60,12 +66,12 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            BuildSelectClause(sql, query, isKnnQuery, spatialFilter, ref paramIndex);
+            BuildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
             AppendOrderByClause(sql, query);
-            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, ref paramIndex);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
             AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -76,7 +82,10 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildSelectGmlQuery(int layerId, FeatureQuery query)
+    public CoreParameterizedQuery BuildSelectGmlQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var spatialFilter = query.SpatialFilter;
         var isKnnQuery = spatialFilter.HasValue &&
@@ -88,12 +97,12 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            BuildGmlSelectClause(sql, query, isKnnQuery, spatialFilter, ref paramIndex);
+            BuildGmlSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
             AppendOrderByClause(sql, query);
-            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, ref paramIndex);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
             AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -104,18 +113,21 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildCountQuery(int layerId, FeatureQuery query)
+    public CoreParameterizedQuery BuildCountQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
         try
         {
-            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {_tableName} WHERE layer_id = $1");
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
             var paramIndex = 2;
             var parameters = new List<object>();
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -125,7 +137,10 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildOptimizedSelectQuery(int layerId, FeatureQuery query)
+    public CoreParameterizedQuery BuildOptimizedSelectQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
         try
@@ -133,28 +148,26 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(GeometryStorageType.Geometry, query);
+            var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query);
 
             sql.Append(CultureInfo.InvariantCulture, $@"
-                SELECT objectid, {geometrySelect}, attributes, COUNT(*) OVER() as total_count
+                SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as total_count
                 FROM {_tableName}
-                WHERE layer_id = $1");
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
             AppendOrderByClause(sql, query);
 
             if (query.Limit.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
-                parameters.Add(query.Limit.Value);
             }
 
             if (query.Offset.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
-                parameters.Add(query.Offset.Value);
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -165,7 +178,10 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildOptimizedSelectGmlQuery(int layerId, FeatureQuery query)
+    public CoreParameterizedQuery BuildOptimizedSelectGmlQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
         try
@@ -173,28 +189,26 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            var geometrySelect = _geometryProcessor.GetGeometryGmlExpression(GeometryStorageType.Geometry, query);
+            var geometrySelect = _geometryProcessor.GetGeometryGmlExpression(geometryStorageType, query);
 
             sql.Append(CultureInfo.InvariantCulture, $@"
-                SELECT objectid, {geometrySelect} AS geometry, attributes, COUNT(*) OVER() as total_count
+                SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as total_count
                 FROM {_tableName}
-                WHERE layer_id = $1");
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
             AppendOrderByClause(sql, query);
 
             if (query.Limit.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
-                parameters.Add(query.Limit.Value);
             }
 
             if (query.Offset.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
-                parameters.Add(query.Offset.Value);
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -205,10 +219,13 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildExtentQuery(int layerId, FeatureQuery? query)
+    public CoreParameterizedQuery BuildExtentQuery(
+        int layerId,
+        FeatureQuery? query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var effectiveQuery = query ?? new FeatureQuery();
-        var extentExpression = _geometryProcessor.GetGeometryOperand(GeometryStorageType.Geometry, null, effectiveQuery.SpatialReferenceSrid);
+        var extentExpression = _geometryProcessor.GetGeometryOperand(geometryStorageType, null, effectiveQuery.SpatialReferenceSrid);
 
         if (effectiveQuery.OutputSrid.HasValue &&
             effectiveQuery.SpatialReferenceSrid.HasValue &&
@@ -226,14 +243,14 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             FROM (
                 SELECT ST_Extent({extentExpression}) as extent
                 FROM {_tableName}
-                WHERE layer_id = $1 AND {extentExpression} IS NOT NULL");
+                WHERE {DatabaseSchema.LayerIdColumn} = $1 AND {extentExpression} IS NOT NULL");
 
             var paramIndex = 2;
             var parameters = new List<object>();
 
             AppendWhereClause(sql, effectiveQuery, ref paramIndex, parameters);
             AppendTemporalFilter(sql, effectiveQuery, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, effectiveQuery, ref paramIndex);
+            AppendSpatialFilter(sql, effectiveQuery, geometryStorageType, ref paramIndex);
 
             sql.Append(") AS extent_query");
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -244,41 +261,123 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildMvtTileQuery(int layerId, int x, int y, int z, FeatureQuery? query, string? tileBuffer = null)
+    public CoreParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, FieldType fieldType)
+    {
+        if (!IsValidFieldName(fieldName))
+        {
+            throw new ArgumentException($"Invalid field name for temporal extent: {fieldName}", nameof(fieldName));
+        }
+
+        var attributeValue = DatabaseSchema.BuildJsonPath(fieldName);
+        var fieldExpression = fieldType switch
+        {
+            FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
+            FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+            _ => attributeValue
+        };
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT MIN({fieldExpression}) AS min_value, MAX({fieldExpression}) AS max_value
+            FROM {_tableName}
+            WHERE {DatabaseSchema.LayerIdColumn} = $1
+              AND {fieldExpression} IS NOT NULL");
+
+            return new CoreParameterizedQuery(sql.ToString(), new List<object>());
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    public CoreParameterizedQuery BuildMvtTileQuery(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        TileOptions tileOptions,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
         try
         {
             var paramIndex = 1;
             var parameters = new List<object>();
-            var buffer = string.IsNullOrEmpty(tileBuffer) ? "ST_TileEnvelope($2, $3, $4)" : tileBuffer;
+            var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
+            if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue &&
+                query.Value.SpatialReferenceSrid.Value != 3857)
+            {
+                geometryOperand = $"ST_Transform({geometryOperand}, 3857)";
+            }
 
-            var geometryOperand = _geometryProcessor.GetGeometryOperand(GeometryStorageType.Geometry, "f.geometry", query?.SpatialReferenceSrid);
+            var tileBounds = TileMath.GetTileBounds(x, y, z);
+            var tileWidth = tileBounds.XMax - tileBounds.XMin;
+            var tileExtent = tileOptions.TileExtent > 0 ? tileOptions.TileExtent : 4096;
+            var bufferMapUnits = tileOptions.TileBuffer > 0
+                ? (tileOptions.TileBuffer / (double)tileExtent) * tileWidth
+                : 0d;
 
-            sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT ST_AsMVT(tile, 'layer', 4096, 'geom') AS mvt
-            FROM (
-                SELECT
-                    objectid,
-                    attributes,
-                    ST_AsMVTGeom(
-                        {geometryOperand},
-                        {buffer}
-                    ) AS geom
-                FROM {_tableName} f
-                WHERE layer_id = ${paramIndex++}");
+            var tileEnvelope = "ST_TileEnvelope($2, $3, $4)";
+            var tileEnvelopeWithBuffer = "ST_Expand(ST_TileEnvelope($2, $3, $4), $5)";
 
             parameters.Add(layerId);
+            parameters.Add(z);
+            parameters.Add(x);
+            parameters.Add(y);
+            parameters.Add(bufferMapUnits);
+            parameters.Add(tileExtent);
+            parameters.Add(tileOptions.TileBuffer);
+            paramIndex = 8;
+
+            var geometryForTile = geometryOperand;
+            if (z <= tileOptions.SimplifyZoom)
+            {
+                var simplifyTolerance = TileMath.GetSimplificationTolerance(z);
+                if (simplifyTolerance > 0)
+                {
+                    var simplifyParam = $"${paramIndex++}";
+                    parameters.Add(simplifyTolerance);
+                    geometryForTile = $"ST_SimplifyPreserveTopology({geometryForTile}, {simplifyParam})";
+                }
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+            SELECT ST_AsMVT(tile, 'layer', $6, 'geom') AS mvt
+            FROM (
+                SELECT
+                    {DatabaseSchema.ObjectIdColumn},
+                    {DatabaseSchema.AttributesColumn},
+                    ST_AsMVTGeom(
+                        {geometryForTile},
+                        {tileEnvelope},
+                        $6,
+                        $7
+                    ) AS geom
+                FROM {_tableName} f
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             if (query != null)
             {
                 AppendWhereClause(sql, (FeatureQuery)query, ref paramIndex, parameters);
                 AppendTemporalFilter(sql, (FeatureQuery)query, ref paramIndex, parameters);
-                AppendSpatialFilter(sql, (FeatureQuery)query, ref paramIndex);
+                AppendSpatialFilter(sql, (FeatureQuery)query, geometryStorageType, ref paramIndex);
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+                    AND ST_Intersects({geometryOperand}, {tileEnvelopeWithBuffer})");
+
+            if (tileOptions.MaxFeaturesPerTile > 0)
+            {
+                var limitParam = $"${paramIndex++}";
+                parameters.Add(tileOptions.MaxFeaturesPerTile);
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }
 
             sql.Append(@"
-                    AND ST_Intersects(f.geometry, ST_TileEnvelope($2, $3, $4))
                 ) AS tile");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -292,46 +391,48 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
     private void BuildSelectClause(
         StringBuilder sql,
         FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
         bool isKnnQuery,
         SpatialFilter? spatialFilter,
         ref int paramIndex)
     {
-        var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(GeometryStorageType.Geometry, query);
+        var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query);
 
         if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
-            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(GeometryStorageType.Geometry, query.SpatialReferenceSrid);
+            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT objectid, {geometrySelect}, attributes, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE layer_id = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
         else
         {
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT objectid, {geometrySelect}, attributes FROM {_tableName} WHERE layer_id = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 
     private void BuildGmlSelectClause(
         StringBuilder sql,
         FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
         bool isKnnQuery,
         SpatialFilter? spatialFilter,
         ref int paramIndex)
     {
-        var geometrySelect = _geometryProcessor.GetGeometryGmlExpression(GeometryStorageType.Geometry, query);
+        var geometrySelect = _geometryProcessor.GetGeometryGmlExpression(geometryStorageType, query);
 
         if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
-            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(GeometryStorageType.Geometry, query.SpatialReferenceSrid);
+            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT objectid, {geometrySelect} AS geometry, attributes, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE layer_id = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
         else
         {
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT objectid, {geometrySelect} AS geometry, attributes FROM {_tableName} WHERE layer_id = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
     }
 
@@ -339,9 +440,10 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
     {
         var geometryExpression = _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
 
-        if (query.SpatialReferenceSrid.HasValue && query.SpatialReferenceSrid.Value != 4326)
+        var wgs84Srid = SpatialReference.WGS84.Wkid;
+        if (query.SpatialReferenceSrid.HasValue && query.SpatialReferenceSrid.Value != wgs84Srid)
         {
-            geometryExpression = $"ST_Transform({geometryExpression}, 4326)";
+            geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
         }
 
         return $"{geometryExpression}::geography";
@@ -387,7 +489,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
                 placeholders[i] = $"${paramIndex + i}";
             }
 
-            sql.Append(CultureInfo.InvariantCulture, $" AND objectid = ANY(ARRAY[{string.Join(", ", placeholders)}])");
+            sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.ObjectIdColumn} = ANY(ARRAY[{string.Join(", ", placeholders)}])");
 
             foreach (var objectId in objectIds)
             {
@@ -409,8 +511,8 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         var fieldName = filter.PropertyName;
         var valueExpression = filter.PropertyType switch
         {
-            TemporalPropertyType.Date => $"NULLIF(attributes->>'{fieldName}', '')::date",
-            _ => $"NULLIF(attributes->>'{fieldName}', '')::timestamptz"
+            TemporalPropertyType.Date => $"NULLIF({DatabaseSchema.BuildJsonPath(fieldName)}, '')::date",
+            _ => $"NULLIF({DatabaseSchema.BuildJsonPath(fieldName)}, '')::timestamptz"
         };
 
         string? predicate = null;
@@ -451,7 +553,11 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
     }
 
-    private void AppendSpatialFilter(StringBuilder sql, FeatureQuery query, ref int paramIndex)
+    private void AppendSpatialFilter(
+        StringBuilder sql,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        ref int paramIndex)
     {
         if (!query.SpatialFilter.HasValue)
         {
@@ -459,8 +565,8 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         }
 
         var filter = query.SpatialFilter.Value;
-        var geometryOperand = _geometryProcessor.GetGeometryOperand(GeometryStorageType.Geometry, layerSrid: query.SpatialReferenceSrid);
-        var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(GeometryStorageType.Geometry, query.SpatialReferenceSrid);
+        var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
+        var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
         string? filterGeometry = null;
 
         switch (filter.SpatialRelationship)
@@ -585,6 +691,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         bool isKnnQuery,
         SpatialFilter? spatialFilter,
         FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
         ref int paramIndex)
     {
         if (!isKnnQuery || !spatialFilter.HasValue)
@@ -592,9 +699,17 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             return;
         }
 
-        var geometryOperand = _geometryProcessor.GetGeometryOperand(GeometryStorageType.Geometry, layerSrid: query.SpatialReferenceSrid);
-        var filterGeometry = _geometryProcessor.BuildSpatialFilterGeometryExpression(spatialFilter.Value, query, ref paramIndex);
-        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {geometryOperand} <-> {filterGeometry}");
+        if (ShouldUseGeodesicKnn(geometryStorageType, query))
+        {
+            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
+            var filterGeometry = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            sql.Append(CultureInfo.InvariantCulture, $" ORDER BY ST_Distance({geographyOperand}, {filterGeometry})");
+            return;
+        }
+
+        var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
+        var filterGeometryPlanar = _geometryProcessor.BuildSpatialFilterGeometryExpression(spatialFilter.Value, query, ref paramIndex);
+        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {geometryOperand} <-> {filterGeometryPlanar}");
     }
 
     private static void AppendPagination(StringBuilder sql, bool isKnnQuery, FeatureQuery query, SpatialFilter? spatialFilter, ref int paramIndex)
@@ -630,9 +745,9 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
         var fieldLower = fieldName.ToLowerInvariant();
 
-        if (fieldLower is "objectid" or "object_id" or "id")
+        if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt or DatabaseSchema.IdColumn)
         {
-            return "objectid";
+            return DatabaseSchema.ObjectIdColumn;
         }
 
         if (fieldLower is "created_at" or "updated_at")
@@ -640,14 +755,14 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             return fieldLower;
         }
 
-        if (fieldLower is "layerid" or "layer_id")
+        if (fieldLower is DatabaseSchema.LayerIdColumnAlt or DatabaseSchema.LayerIdColumn)
         {
-            return "layer_id";
+            return DatabaseSchema.LayerIdColumn;
         }
 
         if (orderBy.FieldType.HasValue)
         {
-            var attributeValue = $"attributes->>'{fieldName}'";
+            var attributeValue = DatabaseSchema.BuildJsonPath(fieldName);
             return orderBy.FieldType.Value switch
             {
                 FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
@@ -664,10 +779,10 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             };
         }
 
-        return $"attributes->>'{fieldName}'";
+        return DatabaseSchema.BuildJsonPath(fieldName);
     }
 
-    private static bool IsValidFieldName(string fieldName)
+    internal static bool IsValidFieldName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
         {
@@ -677,7 +792,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         return Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant);
     }
 
-    private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
+    internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
         var startingParamIndex = paramIndex;
 
@@ -704,7 +819,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         return result;
     }
 
-    private static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
+    internal static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
     {
         var dangerousPattern = FindDangerousPattern(whereClause);
         if (dangerousPattern != null)
@@ -776,19 +891,22 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         if (jsonPathIndex >= 0)
         {
             var baseField = fieldName[..jsonPathIndex];
-            if (!baseField.Equals("attributes", StringComparison.OrdinalIgnoreCase))
+            if (!baseField.Equals(DatabaseSchema.AttributesColumn, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(UnsupportedWhereClauseMessage);
             }
 
             isAttributeField = true;
-            return $"attributes{fieldName[jsonPathIndex..]}";
+            return $"{DatabaseSchema.AttributesColumn}{fieldName[jsonPathIndex..]}";
         }
 
         isAttributeField = fieldName.ToLowerInvariant() switch
         {
-            "objectid" => false,
-            "object_id" => false,
+            DatabaseSchema.ObjectIdColumn => false,
+            DatabaseSchema.ObjectIdColumnAlt => false,
+            DatabaseSchema.LayerIdColumnAlt => false,
+            DatabaseSchema.LayerIdColumn => false,
+            DatabaseSchema.GeometryColumn => false,
             "created_at" => false,
             "updated_at" => false,
             _ => true
@@ -796,11 +914,14 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
         return fieldName.ToLowerInvariant() switch
         {
-            "objectid" => "objectid",
-            "object_id" => "objectid",
+            DatabaseSchema.ObjectIdColumn => DatabaseSchema.ObjectIdColumn,
+            DatabaseSchema.ObjectIdColumnAlt => DatabaseSchema.ObjectIdColumn,
+            DatabaseSchema.LayerIdColumnAlt => DatabaseSchema.LayerIdColumn,
+            DatabaseSchema.LayerIdColumn => DatabaseSchema.LayerIdColumn,
+            DatabaseSchema.GeometryColumn => DatabaseSchema.GeometryColumn,
             "created_at" => "created_at",
             "updated_at" => "updated_at",
-            _ => $"(attributes->>'{fieldName}')"
+            _ => $"({DatabaseSchema.BuildJsonPath(fieldName)})"
         };
     }
 
@@ -908,6 +1029,16 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private static bool IsIdentifierChar(char value) =>
         char.IsLetterOrDigit(value) || value == '_';
+
+    private static bool ShouldUseGeodesicKnn(CoreGeometryStorageType geometryStorageType, FeatureQuery query)
+    {
+        if (geometryStorageType == CoreGeometryStorageType.Geography)
+        {
+            return true;
+        }
+
+        return query.SpatialReferenceSrid.HasValue && query.SpatialReferenceSrid.Value == SpatialReference.WGS84.Wkid;
+    }
 
     private static string? FindDangerousPattern(string whereClause)
     {

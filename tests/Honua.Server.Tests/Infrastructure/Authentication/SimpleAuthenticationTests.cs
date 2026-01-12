@@ -21,7 +21,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public SimpleAuthenticationTests(ITestOutputHelper output)
     {
         _output = output;
-        _factory = new WebApplicationFactory<Program>()
+        _factory = new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 // Configure test-specific settings
@@ -76,7 +76,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public async Task DevelopmentBypass_NoPassword_ShouldAllowAccess()
     {
         // Arrange - Development environment with no password
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
@@ -103,7 +103,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     public async Task ExplicitDevBypass_Production_ShouldBeRejected()
     {
         // Arrange - Explicitly enable development bypass in production
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");

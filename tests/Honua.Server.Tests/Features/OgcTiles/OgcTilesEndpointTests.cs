@@ -4,12 +4,15 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.OgcTiles;
 
@@ -38,6 +41,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
         var landingPage = await response.Content.ReadFromJsonAsync<LandingPage>();
         landingPage.Should().NotBeNull();
+        landingPage!.Supports3d.Should().BeFalse();
         landingPage!.Links.Should().NotBeEmpty();
 
         var links = landingPage.Links.ToArray();
@@ -110,6 +114,25 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_WithTemporalFields_AdvertisesTemporalExtent()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0");
+
+        response.Be200Ok();
+
+        var collection = await response.Content.ReadFromJsonAsync<CollectionInfo>();
+        collection.Should().NotBeNull();
+        collection!.Extent.Should().NotBeNull();
+        collection.Extent!.Temporal.Should().NotBeNull();
+        collection.Extent.Temporal!.Interval.Should().NotBeEmpty();
+        collection.Extent.Temporal.Interval[0].Length.Should().Be(2);
+        collection.Extent.Temporal.Interval[0][0].Should().Be("2022-12-31T23:00:00Z");
+        collection.Extent.Temporal.Interval[0][1].Should().Be("2024-10-15T00:00:00Z");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles/tiles")]
     public async Task GetDatasetTilesets_ReturnsTilesetsList()
     {
@@ -122,12 +145,29 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tilesets.Should().NotBeNull();
         tilesets!.Tilesets.Should().NotBeEmpty();
         tilesets.Tilesets.First().Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
+        tilesets.Tilesets.First().Links.Should().Contain(l => l.Href.Contains("collections=", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
     public async Task GetDatasetTileset_ReturnsTilesetMetadata()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad?collections=0");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
+        tileset.Should().NotBeNull();
+        tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
+        tileset.Links.Should().Contain(l => l.Rel == "item");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
+    public async Task GetDatasetTileset_WithoutCollections_ReturnsTilesetMetadata()
     {
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad");
 
@@ -169,6 +209,12 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tileset.Should().NotBeNull();
         tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
         tileset.Links.Should().Contain(l => l.Rel == "item");
+
+        var tileOptions = _fixture.Services.GetRequiredService<IOptions<TileOptions>>().Value;
+        var minZoom = Math.Max(0, tileOptions.MinZoom);
+        var maxZoom = Math.Max(minZoom, tileOptions.MaxZoom);
+        tileset.TileMatrixSetLimits.Should().NotBeNull();
+        tileset.TileMatrixSetLimits!.Value.Should().HaveCount(maxZoom - minZoom + 1);
     }
 
     [IntegrationTest]
@@ -184,6 +230,39 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         {
             response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Mvt);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetTile_WithUnsupportedCrs_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?crs=EPSG:4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
+    public async Task GetTile_WithSubset_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?subset=E(0:1)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
+    public async Task GetTile_WithDatetime_ReturnsMvtOrNoContent()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0?datetime=2023-01-02T00:00:00Z");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
     }
 
     [IntegrationTest]

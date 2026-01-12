@@ -7,6 +7,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
@@ -15,6 +16,8 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for file import endpoints
 /// </summary>
 [Collection("Database")]
+[Protocol(Protocols.Admin)]
+[Operation(Operations.Import)]
 public class ImportEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -157,6 +160,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/preview")]
     public async Task PreviewFile_WithEmptyFile_ReturnsBadRequest()
     {
         // Arrange
@@ -177,6 +181,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/preview")]
     public async Task PreviewFile_WithUnsupportedFormat_ReturnsBadRequest()
     {
         // Arrange
@@ -299,6 +304,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_WithInvalidTableName_ReturnsBadRequest()
     {
         // Arrange
@@ -326,6 +332,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_WithMissingTableName_ReturnsBadRequest()
     {
         // Arrange

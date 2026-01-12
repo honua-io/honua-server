@@ -2,11 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Security;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 
@@ -23,27 +28,42 @@ internal sealed class ODataCrudLog;
 /// </summary>
 internal sealed partial class ODataCrudService
 {
-    private readonly ILayerCatalog _layerCatalog;
-    private readonly IFeatureStore _featureStore;
+    private readonly IResourceValidator _resourceValidator;
+    private readonly IFeatureReader _featureReader;
+    private readonly IFeatureWriter _featureWriter;
+    private readonly IGeometryService _geometryService;
+    private readonly ICrsRegistry _crsRegistry;
+    private readonly IETagService _etagService;
+    private readonly FeatureMutationValidator _mutationValidator;
     private readonly ILogger<ODataCrudLog> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataCrudService"/> class.
     /// </summary>
     public ODataCrudService(
-        ILayerCatalog layerCatalog,
-        IFeatureStore featureStore,
+        IResourceValidator resourceValidator,
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
+        IETagService etagService,
+        FeatureMutationValidator mutationValidator,
         ILogger<ODataCrudLog> logger)
     {
-        _layerCatalog = layerCatalog;
-        _featureStore = featureStore;
+        _resourceValidator = resourceValidator;
+        _featureReader = featureReader;
+        _featureWriter = featureWriter;
+        _geometryService = geometryService;
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
+        _mutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
         _logger = logger;
     }
 
     /// <summary>
     /// Retrieves a single feature by its ID with proper validation and error handling.
     /// </summary>
-    public async Task<ODataCrudResult<ODataFeatureResponse>> GetFeatureAsync(
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
         string baseUrl,
@@ -52,194 +72,247 @@ internal sealed partial class ODataCrudService
         try
         {
             // Verify layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            if (!layerResult.IsValid)
             {
-                return ODataCrudResult<ODataFeatureResponse>.NotFound($"Layer {layerId} not found");
+                return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
             }
 
             // Get the feature
-            var feature = await _featureStore.GetAsync(layerId, objectId, cancellationToken);
+            var feature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
             if (feature == null)
             {
-                return ODataCrudResult<ODataFeatureResponse>.NotFound($"Feature {objectId} not found in layer {layerId}");
+                return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
             }
 
             // Feature is guaranteed to be non-null after the null check
             var featureValue = feature.Value;
-            var response = new ODataFeatureResponse
-            {
-                Context = $"{baseUrl}/odata/$metadata#Features/$entity",
-                ObjectId = featureValue.Id,
-                LayerId = layerId,
-                Geometry = featureValue.Geometry != null ? Convert.ToBase64String(featureValue.Geometry) : null,
-                Attributes = SerializeAttributes(featureValue.Attributes)
-            };
+            var layer = layerResult.Resource!;
+            var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+                _crsRegistry,
+                layer.SpatialReference.ToSrid(),
+                cancellationToken);
+            var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                _geometryService,
+                featureValue.Geometry,
+                layer.SpatialReference.ToSrid(),
+                axisOrder);
+            var attributes = ODataAttributeSerializer.Serialize(featureValue.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, featureValue, geometry, attributes);
+            var etag = ComputeFeatureEtag(layerId, featureValue, geometry, attributes);
 
-            return ODataCrudResult<ODataFeatureResponse>.Success(response, featureValue.Id.ToString());
+            return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag);
         }
         catch (Exception ex)
         {
             Log.GetFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<ODataFeatureResponse>.Error("An error occurred processing the OData request");
+            return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred processing the OData request");
         }
     }
 
     /// <summary>
     /// Creates a new feature with validation and geometry processing.
     /// </summary>
-    public async Task<ODataCrudResult<ODataFeatureResponse>> CreateFeatureAsync(
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
         int layerId,
-        ODataFeatureRequest request,
+        ParsedFeaturePayload payload,
         string baseUrl,
         CancellationToken cancellationToken = default)
     {
         try
         {
             // Verify layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            if (!layerResult.IsValid)
             {
-                return ODataCrudResult<ODataFeatureResponse>.NotFound($"Layer {layerId} not found");
+                return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
             }
+
+            var layer = layerResult.Resource!;
 
             // Parse and validate geometry if provided
-            var geometryResult = ProcessGeometry(request.Geometry);
+            var geometryResult = await ProcessGeometryAsync(payload.Geometry, layer.SpatialReference.ToSrid(), cancellationToken);
             if (!geometryResult.IsValid)
             {
-                return ODataCrudResult<ODataFeatureResponse>.BadRequest(geometryResult.ErrorMessage!);
+                return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
             }
 
-            var attributesResult = layer.ValidateAttributes(
-                request.Attributes,
+            var attributesResult = _mutationValidator.ValidateAttributes(
+                layer,
+                payload.Attributes,
                 ValidationExtensions.AttributeValidationMode.Strict);
             if (!attributesResult.IsValid)
             {
-                return ODataCrudResult<ODataFeatureResponse>.BadRequest(attributesResult.ErrorMessage ?? "Invalid attributes.");
+                return ODataCrudResult<Dictionary<string, object?>>.BadRequest(attributesResult.ErrorMessage ?? "Invalid attributes.");
             }
 
-            var attributes = attributesResult.Value!;
+            var validatedAttributes = attributesResult.Value!;
 
             // Create the feature
-            var newFeature = Feature.Create(0, geometryResult.Geometry, attributes);
-            var createdFeature = await _featureStore.CreateAsync(layerId, newFeature, cancellationToken);
+            var newFeature = Feature.Create(0, geometryResult.Geometry, validatedAttributes);
+            var createdFeature = await _featureWriter.CreateAsync(layerId, newFeature, cancellationToken);
 
-            var response = new ODataFeatureResponse
-            {
-                Context = $"{baseUrl}/odata/$metadata#Features/$entity",
-                ObjectId = createdFeature.Id,
-                LayerId = layerId,
-                Geometry = createdFeature.Geometry != null ? Convert.ToBase64String(createdFeature.Geometry) : null,
-                Attributes = SerializeAttributes(createdFeature.Attributes)
-            };
+            var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+                _crsRegistry,
+                layer.SpatialReference.ToSrid(),
+                cancellationToken);
+            var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                _geometryService,
+                createdFeature.Geometry,
+                layer.SpatialReference.ToSrid(),
+                axisOrder);
+            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
+            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
 
-            var locationHeader = $"{baseUrl}/odata/Features({layerId},{createdFeature.Id})";
-            return ODataCrudResult<ODataFeatureResponse>.Created(response, createdFeature.Id.ToString(), locationHeader);
+            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Id})";
+            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader);
         }
         catch (ResourceConflictException ex)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
-            return ODataCrudResult<ODataFeatureResponse>.Conflict("A conflicting feature already exists.");
+            return ODataCrudResult<Dictionary<string, object?>>.Conflict("A conflicting feature already exists.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
+        {
+            Log.CreateFeatureFailed(_logger, layerId, ex);
+            return ODataCrudResult<Dictionary<string, object?>>.BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
-            return ODataCrudResult<ODataFeatureResponse>.Error("An error occurred creating the feature");
+            return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred creating the feature");
         }
     }
 
     /// <summary>
     /// Updates an existing feature with partial update support (PATCH semantics).
     /// </summary>
-    public async Task<ODataCrudResult<ODataFeatureResponse>> UpdateFeatureAsync(
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
-        ODataFeatureRequest request,
+        ParsedFeaturePayload payload,
         string baseUrl,
+        string? ifMatch,
+        string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
         try
         {
             // Verify layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            if (!layerResult.IsValid)
             {
-                return ODataCrudResult<ODataFeatureResponse>.NotFound($"Layer {layerId} not found");
+                return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
             }
 
+            var layer = layerResult.Resource!;
+
             // Get existing feature to merge with update
-            var existingFeature = await _featureStore.GetAsync(layerId, objectId, cancellationToken);
+            var existingFeature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
             if (existingFeature == null)
             {
-                return ODataCrudResult<ODataFeatureResponse>.NotFound($"Feature {objectId} not found in layer {layerId}");
+                return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
             }
 
             // Feature is guaranteed to be non-null after the null check
             var existingFeatureValue = existingFeature.Value;
 
-            // Process geometry - use existing if not provided in update
-            byte[]? geometry = existingFeatureValue.Geometry;
-            if (!string.IsNullOrWhiteSpace(request.Geometry))
+            var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+                _crsRegistry,
+                layer.SpatialReference.ToSrid(),
+                cancellationToken);
+            var currentGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                _geometryService,
+                existingFeatureValue.Geometry,
+                layer.SpatialReference.ToSrid(),
+                axisOrder);
+            var currentAttributes = ODataAttributeSerializer.Serialize(existingFeatureValue.Attributes);
+            var currentEtag = ComputeFeatureEtag(layerId, existingFeatureValue, currentGeometry, currentAttributes);
+
+            if (!string.IsNullOrWhiteSpace(ifMatch) &&
+                !_etagService.MatchesPrecondition(ifMatch, currentEtag))
             {
-                var geometryResult = ProcessGeometry(request.Geometry);
+                return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
+                    "ETag does not match the current resource.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ifNoneMatch) &&
+                !_etagService.IsModified(ifNoneMatch, currentEtag))
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
+                    "Resource has not changed.");
+            }
+
+            // Process geometry - use existing if not provided in update
+            byte[]? geometryBytes = existingFeatureValue.Geometry;
+            if (payload.Geometry != null)
+            {
+                var geometryResult = await ProcessGeometryAsync(payload.Geometry, layer.SpatialReference.ToSrid(), cancellationToken);
                 if (!geometryResult.IsValid)
                 {
-                    return ODataCrudResult<ODataFeatureResponse>.BadRequest(geometryResult.ErrorMessage!);
+                    return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
                 }
-                geometry = geometryResult.Geometry;
+                geometryBytes = geometryResult.Geometry;
             }
 
             // Merge attributes - new values override existing (PATCH semantics)
-            var attributes = new Dictionary<string, object?>(existingFeatureValue.Attributes, StringComparer.OrdinalIgnoreCase);
-            if (request.Attributes != null)
+            var mergedAttributes = new Dictionary<string, object?>(existingFeatureValue.Attributes, StringComparer.OrdinalIgnoreCase);
+            if (payload.Attributes.Count > 0)
             {
-                var attributesResult = layer.ValidateAttributes(
-                    request.Attributes,
+                var attributesResult = _mutationValidator.ValidateAttributes(
+                    layer,
+                    payload.Attributes,
                     ValidationExtensions.AttributeValidationMode.Strict);
                 if (!attributesResult.IsValid)
                 {
-                    return ODataCrudResult<ODataFeatureResponse>.BadRequest(
+                    return ODataCrudResult<Dictionary<string, object?>>.BadRequest(
                         attributesResult.ErrorMessage ?? "Invalid attributes.");
                 }
 
                 foreach (var kvp in attributesResult.Value!)
                 {
-                    attributes[kvp.Key] = kvp.Value;
+                    mergedAttributes[kvp.Key] = kvp.Value;
                 }
             }
 
             // Update the feature
             var updatedFeature = Feature.Create(
                 objectId,
-                geometry,
-                attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
-            var result = await _featureStore.UpdateAsync(layerId, updatedFeature, cancellationToken);
+                geometryBytes,
+                mergedAttributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
+            var result = await _featureWriter.UpdateAsync(layerId, updatedFeature, cancellationToken);
 
-            var response = new ODataFeatureResponse
-            {
-                Context = $"{baseUrl}/odata/$metadata#Features/$entity",
-                ObjectId = result.Id,
-                LayerId = layerId,
-                Geometry = result.Geometry != null ? Convert.ToBase64String(result.Geometry) : null,
-                Attributes = SerializeAttributes(result.Attributes)
-            };
+            var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                _geometryService,
+                result.Geometry,
+                layer.SpatialReference.ToSrid(),
+                axisOrder);
+            var serializedAttributes = ODataAttributeSerializer.Serialize(result.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, result, responseGeometry, serializedAttributes);
+            var etag = ComputeFeatureEtag(layerId, result, responseGeometry, serializedAttributes);
 
-            return ODataCrudResult<ODataFeatureResponse>.Success(response, result.Id.ToString());
+            return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag);
         }
         catch (ResourceNotFoundException ex)
         {
             Log.UpdateFeatureNotFound(_logger, layerId, objectId, ex);
-            return ODataCrudResult<ODataFeatureResponse>.NotFound($"Feature {objectId} not found in layer {layerId}");
+            return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
         }
         catch (ResourceConflictException ex)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<ODataFeatureResponse>.Conflict("The update conflicted with existing data.");
+            return ODataCrudResult<Dictionary<string, object?>>.Conflict("The update conflicted with existing data.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
+        {
+            Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
+            return ODataCrudResult<Dictionary<string, object?>>.BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<ODataFeatureResponse>.Error("An error occurred updating the feature");
+            return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred updating the feature");
         }
     }
 
@@ -249,19 +322,51 @@ internal sealed partial class ODataCrudService
     public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
+        string? ifMatch,
+        string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
         try
         {
             // Verify layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            if (!layerResult.IsValid)
             {
-                return ODataCrudResult<object>.NotFound($"Layer {layerId} not found");
+                return CreateLayerErrorResult<object>(layerResult, layerId);
+            }
+
+            var existingFeature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+            if (!existingFeature.HasValue)
+            {
+                return ODataCrudResult<object>.NotFound($"Feature {objectId} not found in layer {layerId}");
+            }
+
+            var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+                _crsRegistry,
+                layerResult.Resource!.SpatialReference.ToSrid(),
+                cancellationToken);
+            var currentGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                _geometryService,
+                existingFeature.Value.Geometry,
+                layerResult.Resource!.SpatialReference.ToSrid(),
+                axisOrder);
+            var currentAttributes = ODataAttributeSerializer.Serialize(existingFeature.Value.Attributes);
+            var currentEtag = ComputeFeatureEtag(layerId, existingFeature.Value, currentGeometry, currentAttributes);
+
+            if (!string.IsNullOrWhiteSpace(ifMatch) &&
+                !_etagService.MatchesPrecondition(ifMatch, currentEtag))
+            {
+                return ODataCrudResult<object>.PreconditionFailed("ETag does not match the current resource.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ifNoneMatch) &&
+                !_etagService.IsModified(ifNoneMatch, currentEtag))
+            {
+                return ODataCrudResult<object>.PreconditionFailed("Resource has not changed.");
             }
 
             // Delete the feature
-            var deleted = await _featureStore.DeleteAsync(layerId, objectId, cancellationToken);
+            var deleted = await _featureWriter.DeleteAsync(layerId, objectId, cancellationToken);
             if (!deleted)
             {
                 return ODataCrudResult<object>.NotFound($"Feature {objectId} not found in layer {layerId}");
@@ -276,102 +381,68 @@ internal sealed partial class ODataCrudService
         }
     }
 
-    /// <summary>
-    /// Processes and validates geometry data from Base64 WKB string.
-    /// </summary>
-    private static GeometryProcessingResult ProcessGeometry(string? geometryBase64)
+    private static ODataCrudResult<T> CreateLayerErrorResult<T>(
+        ResourceValidationResult<LayerDefinition> result,
+        int layerId)
     {
-        if (string.IsNullOrWhiteSpace(geometryBase64))
+        var message = result.ErrorMessage ?? $"Layer {layerId} not found";
+        return result.ErrorCode == ResourceValidationError.InvalidIdentifier
+            ? ODataCrudResult<T>.BadRequest(message)
+            : ODataCrudResult<T>.NotFound(message);
+    }
+
+    /// <summary>
+    /// Processes and validates geometry data from OData spatial payload.
+    /// </summary>
+    private async Task<GeometryProcessingResult> ProcessGeometryAsync(
+        ODataSpatialGeometry? geometry,
+        int defaultSrid,
+        CancellationToken cancellationToken)
+    {
+        var crsResolution = await ODataCrsUtilities.TryResolveGeometryCrsAsync(
+            _crsRegistry,
+            geometry,
+            defaultSrid,
+            cancellationToken);
+        if (!crsResolution.IsValid)
+        {
+            return GeometryProcessingResult.Invalid(crsResolution.ErrorMessage ?? "Unsupported geometry CRS.");
+        }
+
+        var conversion = ODataGeometryConverter.ConvertGeometryToWkb(
+            _geometryService,
+            geometry,
+            defaultSrid,
+            crsResolution.Definition);
+        if (!conversion.IsSuccess)
+        {
+            return GeometryProcessingResult.Invalid(conversion.ErrorMessage ?? "Invalid geometry.");
+        }
+
+        if (conversion.Wkb == null)
         {
             return GeometryProcessingResult.Valid(null);
         }
 
-        try
+        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(conversion.Wkb, cancellationToken);
+        if (!geometryValidation.IsValid)
         {
-            var geometry = Convert.FromBase64String(geometryBase64);
-
-            // Validate WKB geometry
-            var validationResult = WkbValidation.Validate(geometry);
-            if (!validationResult.IsValid)
-            {
-                return GeometryProcessingResult.Invalid($"Invalid geometry: {validationResult.ErrorMessage}");
-            }
-
-            return GeometryProcessingResult.Valid(geometry);
+            return GeometryProcessingResult.Invalid($"Invalid geometry: {geometryValidation.ErrorMessage}");
         }
-        catch (FormatException)
-        {
-            return GeometryProcessingResult.Invalid("Geometry must be a valid Base64-encoded WKB string");
-        }
+
+        return GeometryProcessingResult.Valid(geometryValidation.Geometry);
     }
 
-    /// <summary>
-    /// Serializes feature attributes to JSON string format.
-    /// </summary>
-    private static string SerializeAttributes(IReadOnlyDictionary<string, object?> attributes)
+    private string ComputeFeatureEtag(
+        int layerId,
+        Feature feature,
+        ODataSpatialGeometry? geometry,
+        IReadOnlyDictionary<string, object?> attributes)
     {
-        var normalized = attributes.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
-        return System.Text.Json.JsonSerializer.Serialize(normalized, ODataJsonContext.Default.DictionaryStringObject);
-    }
-
-    /// <summary>
-    /// Normalizes values for OData serialization, handling JSON elements and collections.
-    /// </summary>
-    private static object? NormalizeODataValue(object? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        if (value is System.Text.Json.JsonElement element)
-        {
-            return ConvertJsonElement(element);
-        }
-
-        if (value is IReadOnlyDictionary<string, object?> readOnlyDict)
-        {
-            return readOnlyDict.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
-        }
-
-        if (value is IDictionary<string, object?> dict)
-        {
-            return dict.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
-        }
-
-        if (value is System.Collections.IEnumerable enumerable && value is not string)
-        {
-            var list = new List<object?>();
-            foreach (var item in enumerable)
-            {
-                list.Add(NormalizeODataValue(item));
-            }
-
-            return list.ToArray();
-        }
-
-        return value;
-    }
-
-    /// <summary>
-    /// Converts JsonElement to appropriate .NET type for serialization.
-    /// </summary>
-    private static object? ConvertJsonElement(System.Text.Json.JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            System.Text.Json.JsonValueKind.String => element.GetString(),
-            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                element.TryGetDouble(out var doubleVal) ? doubleVal :
-                element.GetDecimal(),
-            System.Text.Json.JsonValueKind.True => true,
-            System.Text.Json.JsonValueKind.False => false,
-            System.Text.Json.JsonValueKind.Null => null,
-            System.Text.Json.JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(prop => prop.Name, prop => ConvertJsonElement(prop.Value)),
-            System.Text.Json.JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToArray(),
-            _ => element.GetRawText()
-        };
+        var payload = ODataUtilityService.BuildFeaturePayload(layerId, feature, geometry, attributes);
+        var canonical = ODataUtilityService.NormalizeForEtag(payload);
+        var json = JsonSerializer.SerializeToUtf8Bytes(canonical);
+        return _etagService.ComputeETag(json);
     }
 
     /// <summary>
@@ -443,6 +514,9 @@ internal sealed record ODataCrudResult<T>
 
     public static ODataCrudResult<T> Conflict(string message)
         => new() { IsSuccess = false, StatusCode = 409, ErrorMessage = message };
+
+    public static ODataCrudResult<T> PreconditionFailed(string message)
+        => new() { IsSuccess = false, StatusCode = 412, ErrorMessage = message };
 
     public static ODataCrudResult<T> Error(string message)
         => new() { IsSuccess = false, StatusCode = 500, ErrorMessage = message };

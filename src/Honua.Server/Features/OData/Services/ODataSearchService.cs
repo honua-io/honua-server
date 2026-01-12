@@ -3,10 +3,13 @@
 
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OData.Models;
 
@@ -23,20 +26,32 @@ internal sealed class ODataSearchLog;
 /// </summary>
 internal sealed partial class ODataSearchService
 {
-    private readonly ILayerCatalog _layerCatalog;
-    private readonly IFeatureStore _featureStore;
+    private readonly IResourceValidator _resourceValidator;
+    private readonly IFeatureReader _featureReader;
+    private readonly IRelationshipStore _relationshipStore;
+    private readonly IStreamingFeatureStore _streamingFeatureStore;
+    private readonly IGeometryService _geometryService;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly ODataQueryService _queryService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataSearchService"/> class.
     /// </summary>
     public ODataSearchService(
-        ILayerCatalog layerCatalog,
-        IFeatureStore featureStore,
+        IResourceValidator resourceValidator,
+        IFeatureReader featureReader,
+        IRelationshipStore relationshipStore,
+        IStreamingFeatureStore streamingFeatureStore,
+        IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
         ODataQueryService queryService)
     {
-        _layerCatalog = layerCatalog;
-        _featureStore = featureStore;
+        _resourceValidator = resourceValidator;
+        _featureReader = featureReader;
+        _relationshipStore = relationshipStore;
+        _streamingFeatureStore = streamingFeatureStore;
+        _geometryService = geometryService;
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _queryService = queryService;
     }
 
@@ -58,8 +73,19 @@ internal sealed partial class ODataSearchService
         }
 
         // Verify layer exists
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken)
-            ?? throw new ResourceNotFoundException($"Layer {layerId} not found");
+        var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+        if (!layerResult.IsValid)
+        {
+            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
+            if (layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            {
+                throw new ArgumentException(message);
+            }
+
+            throw new ResourceNotFoundException(message);
+        }
+
+        var layer = layerResult.Resource!;
 
         // Build a text search query using PostgreSQL full-text search
         var searchTerms = ParseSearchExpression(searchExpression);
@@ -72,20 +98,43 @@ internal sealed partial class ODataSearchService
             Offset = skip
         };
 
-        var result = await _featureStore.QueryAsync(layerId, query, cancellationToken);
+        var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+        var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+            _crsRegistry,
+            layer.SpatialReference.ToSrid(),
+            cancellationToken);
 
         // Convert features to OData format
-        var featuresData = result.Items.Select(f => new Dictionary<string, object?>
+        var featuresData = result.Items.Select(feature =>
         {
-            ["ObjectId"] = f.Id,
-            ["LayerId"] = layerId,
-            ["Geometry"] = f.Geometry != null ? Convert.ToBase64String(f.Geometry) : null,
-            ["Attributes"] = SerializeAttributes(f.Attributes)
+            var dict = new Dictionary<string, object?>
+            {
+                ["ObjectId"] = feature.Id,
+                ["LayerId"] = layerId,
+                ["Geometry"] = ODataGeometryConverter.ConvertWkbToGeometry(
+                    _geometryService,
+                    feature.Geometry,
+                    layer.SpatialReference.ToSrid(),
+                    axisOrder)
+            };
+
+            var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
+            foreach (var (key, value) in attributes)
+            {
+                if (ODataUtilityService.IsReservedFeatureProperty(key))
+                {
+                    continue;
+                }
+
+                dict[key] = value;
+            }
+
+            return dict;
         }).ToArray();
 
         return new ODataSearchResult
         {
-            Context = $"{baseUrl}/odata/$metadata#Features",
+            Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features"),
             Count = count == true ? result.TotalCount : null,
             Value = featuresData.Cast<object>().ToArray()
         };
@@ -107,12 +156,70 @@ internal sealed partial class ODataSearchService
         }
 
         // Verify layer exists
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken)
-            ?? throw new ResourceNotFoundException($"Layer {layerId} not found");
+        var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+        if (!layerResult.IsValid)
+        {
+            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
+            if (layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            {
+                throw new ArgumentException(message);
+            }
+
+            throw new ResourceNotFoundException(message);
+        }
+
+        var layer = layerResult.Resource!;
+        var aggregation = ODataAggregationHandler.ParseApplyExpression(applyExpression);
+        ValidateAggregationFields(aggregation, layer);
 
         // Use existing aggregation handler for processing
-        var handler = new ODataAggregationHandler(_featureStore, _queryService);
-        return await handler.ProcessAggregationAsync(layerId, applyExpression, filter, baseUrl, cancellationToken);
+        var handler = new ODataAggregationHandler(_featureReader, _streamingFeatureStore, _queryService);
+        return await handler.ProcessAggregationAsync(layerId, layer, applyExpression, filter, baseUrl, cancellationToken);
+    }
+
+    private static void ValidateAggregationFields(ParsedAggregation aggregation, LayerDefinition layer)
+    {
+        if (aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
+        {
+            if (aggregation.Aggregates.HasValue)
+            {
+                foreach (var aggregate in aggregation.Aggregates.Value)
+                {
+                    if (aggregate.Field == "*")
+                    {
+                        continue;
+                    }
+
+                    if (!FieldExists(layer, aggregate.Field))
+                    {
+                        throw new ArgumentException($"Unknown field '{aggregate.Field}' in $apply.");
+                    }
+                }
+            }
+
+            if (aggregation.Type == AggregationType.GroupBy && aggregation.GroupByFields.HasValue)
+            {
+                foreach (var field in aggregation.GroupByFields.Value)
+                {
+                    if (!FieldExists(layer, field))
+                    {
+                        throw new ArgumentException($"Unknown field '{field}' in $apply.");
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool FieldExists(LayerDefinition layer, string field)
+    {
+        if (field.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+            field.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
+            field.Equals("geometry", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return layer.Fields.Any(f => f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -273,14 +380,30 @@ internal sealed partial class ODataSearchService
         // Find matching relationships
         foreach (var relationship in layer.LayerRelationships)
         {
-            if (!relationshipNames.Contains(relationship.Name))
+            var sanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name);
+            if (!relationshipNames.Contains(relationship.Name) &&
+                !relationshipNames.Contains(sanitizedName))
             {
                 continue;
             }
 
+            var relatedLayerResult = await _resourceValidator.ValidateLayerAsync(
+                relationship.RelatedLayerId,
+                cancellationToken);
+            if (!relatedLayerResult.IsValid || relatedLayerResult.Resource == null)
+            {
+                continue;
+            }
+
+            var relatedLayer = relatedLayerResult.Resource;
+            var relatedAxisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
+                _crsRegistry,
+                relatedLayer.SpatialReference.ToSrid(),
+                cancellationToken);
+
             // Query related features
             var relatedQuery = RelatedQuery.ForObjects(objectIds, relationship);
-            var relatedResult = await _featureStore.QueryRelatedAsync(layer.Id, relatedQuery, cancellationToken);
+            var relatedResult = await _relationshipStore.QueryRelatedAsync(layer.Id, relatedQuery, cancellationToken);
 
             // Group related features by origin object ID
             foreach (var feature in relatedResult.Items)
@@ -298,7 +421,7 @@ internal sealed partial class ODataSearchService
                     int i => i,
                     string s when long.TryParse(s, out var parsed) => parsed,
                     System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.Number => je.GetInt64(),
-                    _ => null
+                    _ => (long?)null
                 };
 
                 if (!originId.HasValue)
@@ -312,96 +435,35 @@ internal sealed partial class ODataSearchService
                     result[originId.Value] = relationsDict;
                 }
 
-                var relatedFeatureDict = new Dictionary<string, object?>
-                {
-                    ["ObjectId"] = feature.Id,
-                    ["Attributes"] = SerializeAttributes(feature.Attributes)
-                };
+                var relatedGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
+                    _geometryService,
+                    feature.Geometry,
+                    relatedLayer.SpatialReference.ToSrid(),
+                    relatedAxisOrder);
 
-                if (relationsDict.TryGetValue(relationship.Name, out var existingRelations))
+                var relatedAttributes = ODataAttributeSerializer.Serialize(feature.Attributes);
+                var relatedFeatureDict = ODataUtilityService.BuildFeaturePayload(
+                    relatedLayer.Id,
+                    feature,
+                    relatedGeometry,
+                    relatedAttributes);
+
+                var outputName = relationshipNames.Contains(relationship.Name) ? relationship.Name : sanitizedName;
+                if (relationsDict.TryGetValue(outputName, out var existingRelations))
                 {
                     var newRelations = new object?[existingRelations.Length + 1];
                     Array.Copy(existingRelations, newRelations, existingRelations.Length);
                     newRelations[existingRelations.Length] = relatedFeatureDict;
-                    relationsDict[relationship.Name] = newRelations;
+                    relationsDict[outputName] = newRelations;
                 }
                 else
                 {
-                    relationsDict[relationship.Name] = new object?[] { relatedFeatureDict };
+                    relationsDict[outputName] = new object?[] { relatedFeatureDict };
                 }
             }
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Serializes feature attributes to JSON string format.
-    /// </summary>
-    private static string SerializeAttributes(IReadOnlyDictionary<string, object?> attributes)
-    {
-        var normalized = attributes.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
-        return System.Text.Json.JsonSerializer.Serialize(normalized, ODataJsonContext.Default.DictionaryStringObject);
-    }
-
-    /// <summary>
-    /// Normalizes values for OData serialization, handling JSON elements and collections.
-    /// </summary>
-    private static object? NormalizeODataValue(object? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        if (value is System.Text.Json.JsonElement element)
-        {
-            return ConvertJsonElement(element);
-        }
-
-        if (value is IReadOnlyDictionary<string, object?> readOnlyDict)
-        {
-            return readOnlyDict.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
-        }
-
-        if (value is IDictionary<string, object?> dict)
-        {
-            return dict.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
-        }
-
-        if (value is System.Collections.IEnumerable enumerable && value is not string)
-        {
-            var list = new List<object?>();
-            foreach (var item in enumerable)
-            {
-                list.Add(NormalizeODataValue(item));
-            }
-
-            return list.ToArray();
-        }
-
-        return value;
-    }
-
-    /// <summary>
-    /// Converts JsonElement to appropriate .NET type for serialization.
-    /// </summary>
-    private static object? ConvertJsonElement(System.Text.Json.JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            System.Text.Json.JsonValueKind.String => element.GetString(),
-            System.Text.Json.JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                element.TryGetDouble(out var doubleVal) ? doubleVal :
-                element.GetDecimal(),
-            System.Text.Json.JsonValueKind.True => true,
-            System.Text.Json.JsonValueKind.False => false,
-            System.Text.Json.JsonValueKind.Null => null,
-            System.Text.Json.JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(prop => prop.Name, prop => ConvertJsonElement(prop.Value)),
-            System.Text.Json.JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToArray(),
-            _ => element.GetRawText()
-        };
     }
 
     /// <summary>

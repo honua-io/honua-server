@@ -122,6 +122,7 @@ The Honua Server has been enhanced with production-ready CI/CD pipeline, deploym
 ### Alert Rules
 
 Alert rules live in the telemetry backend and should map directly to runbooks and SLOs.
+Sample Prometheus rules are available in `docker/prometheus/alerts.yml` for the scale-test stack.
 
 ## Secret Management Excellence
 

@@ -9,6 +9,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Memory;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Postgres.Features.Import;
 
@@ -49,6 +50,8 @@ internal sealed class StreamingGeoJsonReader
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var buffer = MemoryPool.RentByteArray(_limits.StreamBufferSize);
+        byte[]? leftoverBuffer = null;
+        var leftoverLength = 0;
         try
         {
             var jsonReaderState = new JsonReaderState(new JsonReaderOptions
@@ -57,7 +60,6 @@ internal sealed class StreamingGeoJsonReader
                 CommentHandling = JsonCommentHandling.Skip
             });
 
-            var leftover = ReadOnlyMemory<byte>.Empty;
             var featureCount = 0;
             var processingState = new JsonProcessingState();
 
@@ -67,21 +69,22 @@ internal sealed class StreamingGeoJsonReader
 
                 // Read more data from stream
                 var bytesRead = await stream.ReadAsync(buffer, cancellationToken);
-                if (bytesRead == 0 && leftover.IsEmpty)
+                if (bytesRead == 0 && leftoverLength == 0)
                     break;
 
                 // Combine leftover with new data
                 ReadOnlyMemory<byte> data;
-                if (leftover.IsEmpty)
+                byte[]? combinedBuffer = null;
+                if (leftoverLength == 0)
                 {
                     data = buffer.AsMemory(0, bytesRead);
                 }
                 else
                 {
-                    var combined = new byte[leftover.Length + bytesRead];
-                    leftover.CopyTo(combined);
-                    buffer.AsMemory(0, bytesRead).CopyTo(combined.AsMemory(leftover.Length));
-                    data = combined;
+                    combinedBuffer = MemoryPool.RentByteArray(leftoverLength + bytesRead);
+                    leftoverBuffer!.AsSpan(0, leftoverLength).CopyTo(combinedBuffer);
+                    buffer.AsSpan(0, bytesRead).CopyTo(combinedBuffer.AsSpan(leftoverLength, bytesRead));
+                    data = combinedBuffer.AsMemory(0, leftoverLength + bytesRead);
                 }
 
                 // Process chunk synchronously to avoid ref struct issues
@@ -99,30 +102,61 @@ internal sealed class StreamingGeoJsonReader
                     // Check feature limit
                     if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
                     {
-                        yield break;
+                        break;
                     }
                 }
 
-                // Keep unconsumed data for next iteration
-                if (consumed < data.Length)
+                var remaining = data.Length - consumed;
+                if (remaining > 0)
                 {
-                    leftover = data.Slice(consumed).ToArray();
+                    if (leftoverBuffer == null || leftoverBuffer.Length < remaining)
+                    {
+                        if (leftoverBuffer != null)
+                        {
+                            MemoryPool.ReturnByteArray(leftoverBuffer, clearArray: false);
+                        }
+
+                        leftoverBuffer = MemoryPool.RentByteArray(remaining);
+                    }
+
+                    data.Span.Slice(consumed, remaining).CopyTo(leftoverBuffer);
+                    leftoverLength = remaining;
                 }
                 else
                 {
-                    leftover = ReadOnlyMemory<byte>.Empty;
+                    if (leftoverBuffer != null)
+                    {
+                        MemoryPool.ReturnByteArray(leftoverBuffer, clearArray: false);
+                        leftoverBuffer = null;
+                    }
+
+                    leftoverLength = 0;
+                }
+
+                if (combinedBuffer != null)
+                {
+                    MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+                }
+
+                if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
+                {
+                    break;
                 }
 
                 // If we've finished processing the features array, break
                 if (processingState.IsComplete)
                 {
-                    yield break;
+                    break;
                 }
             }
         }
         finally
         {
             MemoryPool.ReturnByteArray(buffer);
+            if (leftoverBuffer != null)
+            {
+                MemoryPool.ReturnByteArray(leftoverBuffer, clearArray: false);
+            }
         }
     }
 
@@ -270,7 +304,7 @@ internal sealed class StreamingGeoJsonReader
             }
 
             // Parse geometry
-            Geometry? geometry = null;
+            NtsGeometry? geometry = null;
             if (root.TryGetProperty("geometry", out var geometryElement) &&
                 geometryElement.ValueKind != JsonValueKind.Null)
             {
@@ -311,7 +345,7 @@ internal sealed class StreamingGeoJsonReader
     /// <summary>
     /// Parse a GeoJSON geometry element into a NetTopologySuite Geometry.
     /// </summary>
-    private Geometry? ParseGeometry(JsonElement geometryElement)
+    private NtsGeometry? ParseGeometry(JsonElement geometryElement)
     {
         if (geometryElement.ValueKind == JsonValueKind.Null)
             return null;
@@ -329,7 +363,7 @@ internal sealed class StreamingGeoJsonReader
             if (geometryType == "GeometryCollection" &&
                 geometryElement.TryGetProperty("geometries", out var geometriesElement))
             {
-                var geometries = new List<Geometry>();
+                var geometries = new List<NtsGeometry>();
                 foreach (var geomElement in geometriesElement.EnumerateArray())
                 {
                     var geom = ParseGeometry(geomElement);

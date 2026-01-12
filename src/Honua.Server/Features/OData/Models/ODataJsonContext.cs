@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Server.Features.FeatureServer.Models;
 
 namespace Honua.Server.Features.OData.Models;
 
@@ -23,6 +22,9 @@ namespace Honua.Server.Features.OData.Models;
 [JsonSerializable(typeof(ErrorDetail[]))]
 [JsonSerializable(typeof(ODataFeatureRequest))]
 [JsonSerializable(typeof(ODataFeatureResponse))]
+[JsonSerializable(typeof(ODataSpatialGeometry))]
+[JsonSerializable(typeof(ODataSpatialCrs))]
+[JsonSerializable(typeof(ODataSpatialCrsProperties))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
@@ -34,7 +36,6 @@ namespace Honua.Server.Features.OData.Models;
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
-[JsonSerializable(typeof(QueryParameters))]
 // Batch operation types
 [JsonSerializable(typeof(ODataBatchRequest))]
 [JsonSerializable(typeof(ODataBatchRequestItem))]

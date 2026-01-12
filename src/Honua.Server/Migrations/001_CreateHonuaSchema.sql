@@ -78,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(l
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
+CREATE INDEX IF NOT EXISTS idx_features_geography ON features USING GIST ((ST_Transform(geometry, 4326)::geography));
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
 
 -- Comments for documentation

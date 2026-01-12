@@ -37,10 +37,9 @@ internal sealed class ODataQuerySearchService
         int? resultRecordCount,
         int? resultOffset,
         LayerDefinition layer,
-        out SpatialFilter? spatialFilter,
         out string? error)
     {
-        return _queryService.BuildFeatureQuery(filter, orderby, resultRecordCount, resultOffset, layer, out spatialFilter, out error);
+        return _queryService.BuildFeatureQuery(filter, orderby, resultRecordCount, resultOffset, layer, out error);
     }
 
     /// <summary>

@@ -77,6 +77,10 @@ jobs:
             exit 1
           fi
 
+      - name: Validate advertised conformance classes
+        run: |
+          bash ./scripts/validate-ogc-conformance.sh --results cite-results
+
       - name: Parse CITE results
         id: parse-results
         run: |

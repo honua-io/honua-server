@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -32,6 +34,12 @@ internal sealed class GeometryService : IGeometryService
     private static readonly WKTReader _wktReader = new();
     private static readonly GeoJsonReader _geoJsonReader = new();
     private static readonly GeoJsonWriter _geoJsonWriter = new();
+    private readonly GeometryLimits _geometryLimits;
+
+    public GeometryService(IOptions<LimitsOptions> limitsOptions)
+    {
+        _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+    }
 
     /// <inheritdoc />
     public (bool HasZ, bool HasM) DetectZM(byte[]? wkb)
@@ -79,7 +87,8 @@ internal sealed class GeometryService : IGeometryService
                 return null;
             }
 
-            return _geoJsonWriter.Write(geometry);
+            var processed = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits);
+            return processed == null ? null : _geoJsonWriter.Write(processed);
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
@@ -128,7 +137,7 @@ internal sealed class GeometryService : IGeometryService
 
             return writer.Write(geometry);
         }
-        catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
+        catch (Exception ex) when (ex is ParseException or FormatException or JsonException or Newtonsoft.Json.JsonReaderException)
         {
             throw new ArgumentException($"Invalid GeoJSON format: {ex.Message}", ex);
         }
@@ -215,60 +224,76 @@ internal sealed class GeometryService : IGeometryService
     /// This approach handles cases where geometries have mixed coordinates or where
     /// NaN is used as a placeholder for missing dimensions.
     /// </remarks>
-    private static (bool HasZ, bool HasM) DetectZMFromGeometry(Geometry? geometry)
+    internal static (bool HasZ, bool HasM) DetectZMFromGeometry(Geometry? geometry)
     {
         if (geometry == null || geometry.IsEmpty)
         {
             return (false, false);
         }
+        var hasZ = false;
+        var hasM = false;
 
-        // For geometry collections, recurse into first non-empty geometry
-        if (geometry is GeometryCollection collection && collection.NumGeometries > 0)
+        foreach (var sequence in EnumerateCoordinateSequences(geometry))
         {
-            for (var i = 0; i < collection.NumGeometries; i++)
+            for (var i = 0; i < sequence.Count; i++)
             {
-                var child = collection.GetGeometryN(i);
-                if (!child.IsEmpty)
+                if (!hasZ && !double.IsNaN(sequence.GetOrdinate(i, Ordinate.Z)))
                 {
-                    return DetectZMFromGeometry(child);
+                    hasZ = true;
+                }
+
+                if (!hasM && !double.IsNaN(sequence.GetOrdinate(i, Ordinate.M)))
+                {
+                    hasM = true;
+                }
+
+                if (hasZ && hasM)
+                {
+                    return (true, true);
                 }
             }
-            return (false, false);
         }
-
-        // Get the coordinate sequence from the geometry
-        var sequence = GetCoordinateSequence(geometry);
-        if (sequence == null || sequence.Count == 0)
-        {
-            return (false, false);
-        }
-
-        // Check for Z and M values by examining coordinate sequence
-        // Use first coordinate for detection (consistent with NTS behavior)
-        var hasZ = !double.IsNaN(sequence.GetZ(0));
-        var hasM = !double.IsNaN(sequence.GetM(0));
 
         return (hasZ, hasM);
     }
 
-    /// <summary>
-    /// Gets the coordinate sequence from a geometry for Z/M detection.
-    /// </summary>
-    private static CoordinateSequence? GetCoordinateSequence(Geometry geometry)
+    private static IEnumerable<CoordinateSequence> EnumerateCoordinateSequences(Geometry geometry)
     {
-        return geometry switch
+        if (geometry.IsEmpty)
         {
-            Point point => point.CoordinateSequence,
-            LineString lineString => lineString.CoordinateSequence,
-            Polygon polygon when polygon.ExteriorRing != null => polygon.ExteriorRing.CoordinateSequence,
-            MultiPoint multiPoint when multiPoint.NumGeometries > 0 =>
-                ((Point)multiPoint.GetGeometryN(0)).CoordinateSequence,
-            MultiLineString multiLineString when multiLineString.NumGeometries > 0 =>
-                ((LineString)multiLineString.GetGeometryN(0)).CoordinateSequence,
-            MultiPolygon multiPolygon when multiPolygon.NumGeometries > 0 =>
-                ((Polygon)multiPolygon.GetGeometryN(0)).ExteriorRing?.CoordinateSequence,
-            _ => null
-        };
+            yield break;
+        }
+
+        switch (geometry)
+        {
+            case Point point:
+                yield return point.CoordinateSequence;
+                yield break;
+            case LineString lineString:
+                yield return lineString.CoordinateSequence;
+                yield break;
+            case Polygon polygon:
+                if (polygon.ExteriorRing != null)
+                {
+                    yield return polygon.ExteriorRing.CoordinateSequence;
+                }
+
+                for (var i = 0; i < polygon.NumInteriorRings; i++)
+                {
+                    yield return polygon.GetInteriorRingN(i).CoordinateSequence;
+                }
+
+                yield break;
+            case GeometryCollection collection:
+                for (var i = 0; i < collection.NumGeometries; i++)
+                {
+                    foreach (var sequence in EnumerateCoordinateSequences(collection.GetGeometryN(i)))
+                    {
+                        yield return sequence;
+                    }
+                }
+                yield break;
+        }
     }
 
     /// <summary>

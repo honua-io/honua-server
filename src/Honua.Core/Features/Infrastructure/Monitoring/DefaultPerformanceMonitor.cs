@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
@@ -14,13 +15,20 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This implementation provides comprehensive performance monitoring using the .NET Metrics API
 /// and integrates with OpenTelemetry for telemetry export.
 /// </remarks>
-internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider
+internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider, IHttpRequestMetricsSnapshotProvider
 {
     private readonly ConcurrentDictionary<string, CacheOperationCounters> _cacheCounters = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gcLock = new();
     private long _lastGen0Collections = -1;
     private long _lastGen1Collections = -1;
     private long _lastGen2Collections = -1;
+    private readonly RequestMetricsAggregator _requestMetrics;
+
+    public DefaultPerformanceMonitor(IOptions<PerformanceMonitoringOptions>? options = null)
+    {
+        var slowThresholdMs = options?.Value.SlowRequestThreshold.TotalMilliseconds ?? 1000.0;
+        _requestMetrics = new RequestMetricsAggregator(slowThresholdMs);
+    }
 
     /// <inheritdoc />
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
@@ -48,12 +56,14 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
 
         PerformanceMetrics.HttpRequestDuration.Record(duration.TotalMilliseconds, tags);
         PerformanceMetrics.HttpRequestCount.Add(1, tags);
+        _requestMetrics.RecordRequest(statusCode, duration.TotalMilliseconds);
     }
 
     /// <inheritdoc />
     public void RecordActiveHttpRequestDelta(int delta)
     {
         PerformanceMetrics.ActiveHttpRequests.Add(delta);
+        _requestMetrics.RecordActiveDelta(delta);
     }
 
     /// <inheritdoc />
@@ -167,6 +177,12 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
             TotalEvictions = totalEvictions,
             Types = types
         };
+    }
+
+    /// <inheritdoc />
+    public HttpRequestMetricsSnapshot GetHttpRequestMetricsSnapshot()
+    {
+        return _requestMetrics.Snapshot();
     }
 
     /// <inheritdoc />
@@ -286,6 +302,115 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
                 Misses = Interlocked.Read(ref _misses),
                 Evictions = Interlocked.Read(ref _evictions)
             };
+        }
+    }
+
+    private sealed class RequestMetricsAggregator
+    {
+        private const int SampleSize = 512;
+        private readonly double _slowThresholdMs;
+        private readonly double[] _latencySamples = new double[SampleSize];
+        private int _latencyIndex = -1;
+        private long _totalRequests;
+        private long _totalServerErrors;
+        private long _totalClientErrors;
+        private long _totalDurationMicros;
+        private long _maxDurationMicros;
+        private long _slowRequestCount;
+        private int _activeRequests;
+
+        public RequestMetricsAggregator(double slowThresholdMs)
+        {
+            _slowThresholdMs = slowThresholdMs > 0 ? slowThresholdMs : 1000.0;
+        }
+
+        public void RecordRequest(int statusCode, double durationMs)
+        {
+            Interlocked.Increment(ref _totalRequests);
+
+            if (statusCode >= 500)
+            {
+                Interlocked.Increment(ref _totalServerErrors);
+            }
+            else if (statusCode >= 400)
+            {
+                Interlocked.Increment(ref _totalClientErrors);
+            }
+
+            var durationMicros = (long)Math.Round(durationMs * 1000.0);
+            Interlocked.Add(ref _totalDurationMicros, durationMicros);
+            UpdateMax(ref _maxDurationMicros, durationMicros);
+
+            if (durationMs >= _slowThresholdMs)
+            {
+                Interlocked.Increment(ref _slowRequestCount);
+            }
+
+            var index = Interlocked.Increment(ref _latencyIndex);
+            _latencySamples[index % SampleSize] = durationMs;
+        }
+
+        public void RecordActiveDelta(int delta)
+        {
+            Interlocked.Add(ref _activeRequests, delta);
+        }
+
+        public HttpRequestMetricsSnapshot Snapshot()
+        {
+            var totalRequests = Interlocked.Read(ref _totalRequests);
+            var totalDurationMicros = Interlocked.Read(ref _totalDurationMicros);
+            var avgDurationMs = totalRequests > 0
+                ? (totalDurationMicros / 1000.0) / totalRequests
+                : 0.0;
+
+            var maxDurationMs = Interlocked.Read(ref _maxDurationMicros) / 1000.0;
+            var p95 = CalculateP95();
+
+            return new HttpRequestMetricsSnapshot
+            {
+                TotalRequests = totalRequests,
+                TotalServerErrors = Interlocked.Read(ref _totalServerErrors),
+                TotalClientErrors = Interlocked.Read(ref _totalClientErrors),
+                ActiveRequests = Volatile.Read(ref _activeRequests),
+                AvgDurationMs = avgDurationMs,
+                MaxDurationMs = maxDurationMs,
+                P95DurationMs = p95,
+                SlowRequestCount = Interlocked.Read(ref _slowRequestCount),
+                SlowRequestThresholdMs = _slowThresholdMs
+            };
+        }
+
+        private double CalculateP95()
+        {
+            var snapshot = new double[_latencySamples.Length];
+            Array.Copy(_latencySamples, snapshot, snapshot.Length);
+
+            var values = snapshot.Where(value => value > 0).ToArray();
+            if (values.Length == 0)
+            {
+                return 0.0;
+            }
+
+            Array.Sort(values);
+            var index = (int)Math.Ceiling(values.Length * 0.95) - 1;
+            if (index < 0)
+            {
+                index = 0;
+            }
+
+            return values[index];
+        }
+
+        private static void UpdateMax(ref long target, long value)
+        {
+            long current;
+            while ((current = Volatile.Read(ref target)) < value)
+            {
+                if (Interlocked.CompareExchange(ref target, value, current) == current)
+                {
+                    break;
+                }
+            }
         }
     }
 }

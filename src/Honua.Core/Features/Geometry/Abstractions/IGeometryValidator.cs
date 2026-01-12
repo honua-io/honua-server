@@ -28,7 +28,7 @@ public interface IGeometryValidator
     GeometryValidationResult ValidateWkb(byte[]? wkb);
 
     /// <summary>
-    /// Validates geometry topology using PostGIS functions.
+    /// Validates geometry topology using the configured topology validator.
     /// Layer 3 validation: topological validation.
     /// </summary>
     /// <param name="wkb">The WKB bytes to validate.</param>
@@ -37,7 +37,7 @@ public interface IGeometryValidator
     Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Attempts to repair an invalid geometry using ST_MakeValid().
+    /// Attempts to repair an invalid geometry.
     /// </summary>
     /// <param name="wkb">The invalid WKB bytes to repair.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

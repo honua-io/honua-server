@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Logging;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Infrastructure;
@@ -12,11 +13,11 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Tests for structured logging with Serilog and source generators
 /// Validates AOT-compatible logging methods and event IDs
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.TestQuality)]
 public sealed class StructuredLoggingTests
 {
     [UnitTest]
-    [Operation("Logging")]
+    [Operation(Operations.TestInfrastructure)]
     public void QueryExecuted_WithValidParameters_LogsCorrectly()
     {
         // Arrange
@@ -33,7 +34,7 @@ public sealed class StructuredLoggingTests
     }
 
     [UnitTest]
-    [Operation("Logging")]
+    [Operation(Operations.TestInfrastructure)]
     public void ApplicationStarting_WithValidParameters_LogsCorrectly()
     {
         // Arrange
@@ -50,7 +51,7 @@ public sealed class StructuredLoggingTests
     }
 
     [UnitTest]
-    [Operation("Logging")]
+    [Operation(Operations.TestInfrastructure)]
     public void DatabaseMigrationFailed_WithException_LogsCorrectly()
     {
         // Arrange
@@ -74,7 +75,7 @@ public sealed class StructuredLoggingTests
     [InlineData(3001, "Performance warnings")]
     [InlineData(4001, "Infrastructure operations")]
     [InlineData(5001, "Errors")]
-    [Operation("Logging")]
+    [Operation(Operations.TestInfrastructure)]
     public void EventIds_AreInCorrectRanges(int eventId, string category)
     {
         // Assert event ID ranges are correctly categorized
@@ -99,7 +100,7 @@ public sealed class StructuredLoggingTests
     }
 
     [UnitTest]
-    [Operation("Logging")]
+    [Operation(Operations.TestInfrastructure)]
     public void DatabaseMigrationsStarting_LogsWithCorrectEventId()
     {
         // Arrange
@@ -115,7 +116,7 @@ public sealed class StructuredLoggingTests
     }
 
     [UnitTest]
-    [Operation("Logging")]
+    [Operation(Operations.TestInfrastructure)]
     public void StructuredLogging_HasSourceGeneratedMethods_ForAotCompatibility()
     {
         // This test validates that all logging methods are source-generated (not reflection-based)

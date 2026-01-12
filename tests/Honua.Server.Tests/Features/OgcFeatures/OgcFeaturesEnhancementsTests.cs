@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.OgcFeatures;
 /// </summary>
 [Collection("Database")]
 [Protocol(Protocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
 public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -226,7 +227,24 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("4 or 6");
+        content.Should().Contain("4 comma-separated values");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_With3dBbox_ReturnsBadRequest()
+    {
+        // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz)
+        var invalidBbox = "-180,-90,-10,180,90,10";
+
+        // Act
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={invalidBbox}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("3D bounding boxes are not supported");
     }
 
     [IntegrationTest]
@@ -261,6 +279,25 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("coordinates are out of valid range");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithDatelineCrossingBbox_ReturnsResults()
+    {
+        // Arrange - Crosses antimeridian (minX > maxX) while still covering sample data
+        var bbox = "170,-90,-50,90";
+
+        // Act
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
     }
 
     #endregion

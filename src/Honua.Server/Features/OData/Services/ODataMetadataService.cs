@@ -4,6 +4,7 @@
 using System.Text;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.OData.Services;
@@ -60,12 +61,14 @@ internal sealed partial class ODataMetadataService
     /// <summary>
     /// Generates the OData metadata document, attempting dynamic generation first with fallback to static.
     /// </summary>
-    public async Task<string> GenerateMetadataDocumentAsync(CancellationToken cancellationToken = default)
+    public async Task<string> GenerateMetadataDocumentAsync(
+        IEnumerable<LayerDefinition>? layers = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
-            return GenerateODataMetadata(layers.ToArray());
+            var resolvedLayers = layers ?? await _layerCatalog.ListLayersAsync(cancellationToken);
+            return GenerateODataMetadata(resolvedLayers.ToArray());
         }
         catch (Exception ex)
         {
@@ -83,8 +86,14 @@ internal sealed partial class ODataMetadataService
         var sb = new StringBuilder();
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""");
         sb.AppendLine("""<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">""");
+        sb.AppendLine("""  <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/csdl/vocabularies/Org.OData.Capabilities.V1.xml">""");
+        sb.AppendLine("""    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>""");
+        sb.AppendLine("""  </edmx:Reference>""");
         sb.AppendLine("  <edmx:DataServices>");
         sb.AppendLine("""    <Schema Namespace="Honua" xmlns="http://docs.oasis-open.org/odata/ns/edm">""");
+
+        var (geometryEdmType, geometrySridAttribute) = ResolveGeometryEdmType(layers);
+        var relationshipNames = CollectRelationshipNames(layers);
 
         // Base Layer entity type
         sb.AppendLine("      <EntityType Name=\"Layer\">");
@@ -95,48 +104,68 @@ internal sealed partial class ODataMetadataService
         sb.AppendLine("        <Property Name=\"Name\" Type=\"Edm.String\"/>");
         sb.AppendLine("        <Property Name=\"Description\" Type=\"Edm.String\"/>");
         sb.AppendLine("        <Property Name=\"GeometryType\" Type=\"Edm.String\"/>");
+        sb.AppendLine("        <Property Name=\"Srid\" Type=\"Edm.Int32\"/>");
+        sb.AppendLine("        <NavigationProperty Name=\"Features\" Type=\"Collection(Honua.Feature)\"/>");
         sb.AppendLine("      </EntityType>");
 
         // Base Feature entity type
-        sb.AppendLine("      <EntityType Name=\"Feature\">");
+        sb.AppendLine("      <EntityType Name=\"Feature\" OpenType=\"true\">");
         sb.AppendLine("        <Key>");
+        sb.AppendLine("          <PropertyRef Name=\"LayerId\"/>");
         sb.AppendLine("          <PropertyRef Name=\"ObjectId\"/>");
         sb.AppendLine("        </Key>");
-        sb.AppendLine("        <Property Name=\"ObjectId\" Type=\"Edm.Int64\" Nullable=\"false\"/>");
         sb.AppendLine("        <Property Name=\"LayerId\" Type=\"Edm.Int32\" Nullable=\"false\"/>");
-        sb.AppendLine("        <Property Name=\"Geometry\" Type=\"Edm.Binary\"/>");
-        sb.AppendLine("        <Property Name=\"Attributes\" Type=\"Edm.String\"/>");
-        sb.AppendLine("      </EntityType>");
-
-        // Generate specific entity types for each layer with their fields
-        foreach (var layer in layers)
+        sb.AppendLine("        <Property Name=\"ObjectId\" Type=\"Edm.Int64\" Nullable=\"false\"/>");
+        sb.AppendLine($"        <Property Name=\"Geometry\" Type=\"{geometryEdmType}\"{geometrySridAttribute}/>");
+        foreach (var relationshipName in relationshipNames)
         {
-            var safeLayerName = SanitizeEntityTypeName(layer.Name);
-            sb.AppendLine($"      <EntityType Name=\"{safeLayerName}Feature\" BaseType=\"Honua.Feature\">");
-
-            foreach (var field in layer.AttributeFields)
-            {
-                var edmType = MapFieldTypeToEdm(field.Type);
-                var nullable = field.Nullable ? "true" : "false";
-                sb.AppendLine($"        <Property Name=\"{field.Name}\" Type=\"{edmType}\" Nullable=\"{nullable}\"/>");
-            }
-
-            sb.AppendLine("      </EntityType>");
+            sb.AppendLine($"        <NavigationProperty Name=\"{relationshipName}\" Type=\"Collection(Honua.Feature)\"/>");
         }
+        sb.AppendLine("      </EntityType>");
 
         // Entity container with entity sets
         sb.AppendLine("      <EntityContainer Name=\"Container\">");
-        sb.AppendLine("        <EntitySet Name=\"Layers\" EntityType=\"Honua.Layer\"/>");
-        sb.AppendLine("        <EntitySet Name=\"Features\" EntityType=\"Honua.Feature\"/>");
-
-        // Generate layer-specific entity sets
-        foreach (var layer in layers)
+        sb.AppendLine("        <EntitySet Name=\"Features\" EntityType=\"Honua.Feature\">");
+        foreach (var relationshipName in relationshipNames)
         {
-            var safeLayerName = SanitizeEntityTypeName(layer.Name);
-            sb.AppendLine($"        <EntitySet Name=\"{safeLayerName}\" EntityType=\"Honua.{safeLayerName}Feature\"/>");
+            sb.AppendLine($"          <NavigationPropertyBinding Path=\"{relationshipName}\" Target=\"Features\"/>");
         }
+        sb.AppendLine("        </EntitySet>");
+        sb.AppendLine("        <EntitySet Name=\"Layers\" EntityType=\"Honua.Layer\">");
+        sb.AppendLine("          <NavigationPropertyBinding Path=\"Features\" Target=\"Features\"/>");
+        sb.AppendLine("        </EntitySet>");
 
         sb.AppendLine("      </EntityContainer>");
+        sb.AppendLine("      <Annotations Target=\"Honua.Container/Features\">");
+        sb.AppendLine("        <Annotation Term=\"Capabilities.FilterRestrictions\">");
+        sb.AppendLine("          <Record>");
+        sb.AppendLine("            <PropertyValue Property=\"Filterable\" Bool=\"true\"/>");
+        sb.AppendLine("            <PropertyValue Property=\"RequiresFilter\" Bool=\"true\"/>");
+        sb.AppendLine("            <PropertyValue Property=\"RequiredProperties\">");
+        sb.AppendLine("              <Collection>");
+        sb.AppendLine("                <PropertyPath>LayerId</PropertyPath>");
+        sb.AppendLine("              </Collection>");
+        sb.AppendLine("            </PropertyValue>");
+        sb.AppendLine("          </Record>");
+        sb.AppendLine("        </Annotation>");
+        sb.AppendLine("        <Annotation Term=\"Capabilities.SearchRestrictions\">");
+        sb.AppendLine("          <Record>");
+        sb.AppendLine("            <PropertyValue Property=\"Searchable\" Bool=\"true\"/>");
+        sb.AppendLine("          </Record>");
+        sb.AppendLine("        </Annotation>");
+        sb.AppendLine("        <Annotation Term=\"Capabilities.ExpandRestrictions\">");
+        sb.AppendLine("          <Record>");
+        sb.AppendLine("            <PropertyValue Property=\"Expandable\" Bool=\"true\"/>");
+        sb.AppendLine("          </Record>");
+        sb.AppendLine("        </Annotation>");
+        sb.AppendLine("      </Annotations>");
+        sb.AppendLine("      <Annotations Target=\"Honua.Container/Layers\">");
+        sb.AppendLine("        <Annotation Term=\"Capabilities.FilterRestrictions\">");
+        sb.AppendLine("          <Record>");
+        sb.AppendLine("            <PropertyValue Property=\"Filterable\" Bool=\"true\"/>");
+        sb.AppendLine("          </Record>");
+        sb.AppendLine("        </Annotation>");
+        sb.AppendLine("      </Annotations>");
         sb.AppendLine("    </Schema>");
         sb.AppendLine("  </edmx:DataServices>");
         sb.AppendLine("</edmx:Edmx>");
@@ -152,6 +181,9 @@ internal sealed partial class ODataMetadataService
         return """
             <?xml version="1.0" encoding="utf-8"?>
             <edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+                <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/csdl/vocabularies/Org.OData.Capabilities.V1.xml">
+                    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
+                </edmx:Reference>
                 <edmx:DataServices>
                     <Schema Namespace="Honua" xmlns="http://docs.oasis-open.org/odata/ns/edm">
                         <EntityType Name="Layer">
@@ -161,20 +193,48 @@ internal sealed partial class ODataMetadataService
                             <Property Name="Id" Type="Edm.Int32" Nullable="false"/>
                             <Property Name="Name" Type="Edm.String"/>
                             <Property Name="Description" Type="Edm.String"/>
+                            <Property Name="GeometryType" Type="Edm.String"/>
+                            <Property Name="Srid" Type="Edm.Int32"/>
+                            <NavigationProperty Name="Features" Type="Collection(Honua.Feature)"/>
                         </EntityType>
-                        <EntityType Name="Feature">
+                        <EntityType Name="Feature" OpenType="true">
                             <Key>
+                                <PropertyRef Name="LayerId"/>
                                 <PropertyRef Name="ObjectId"/>
                             </Key>
-                            <Property Name="ObjectId" Type="Edm.Int64" Nullable="false"/>
                             <Property Name="LayerId" Type="Edm.Int32" Nullable="false"/>
-                            <Property Name="Geometry" Type="Edm.Binary"/>
-                            <Property Name="Attributes" Type="Edm.String"/>
+                            <Property Name="ObjectId" Type="Edm.Int64" Nullable="false"/>
+                            <Property Name="Geometry" Type="Edm.Geometry" SRID="variable"/>
                         </EntityType>
                         <EntityContainer Name="Container">
-                            <EntitySet Name="Layers" EntityType="Honua.Layer"/>
+                            <EntitySet Name="Layers" EntityType="Honua.Layer">
+                                <NavigationPropertyBinding Path="Features" Target="Features"/>
+                            </EntitySet>
                             <EntitySet Name="Features" EntityType="Honua.Feature"/>
                         </EntityContainer>
+                        <Annotations Target="Honua.Container/Features">
+                            <Annotation Term="Capabilities.FilterRestrictions">
+                                <Record>
+                                    <PropertyValue Property="Filterable" Bool="true"/>
+                                    <PropertyValue Property="RequiresFilter" Bool="true"/>
+                                    <PropertyValue Property="RequiredProperties">
+                                        <Collection>
+                                            <PropertyPath>LayerId</PropertyPath>
+                                        </Collection>
+                                    </PropertyValue>
+                                </Record>
+                            </Annotation>
+                            <Annotation Term="Capabilities.SearchRestrictions">
+                                <Record>
+                                    <PropertyValue Property="Searchable" Bool="true"/>
+                                </Record>
+                            </Annotation>
+                            <Annotation Term="Capabilities.ExpandRestrictions">
+                                <Record>
+                                    <PropertyValue Property="Expandable" Bool="true"/>
+                                </Record>
+                            </Annotation>
+                        </Annotations>
                     </Schema>
                 </edmx:DataServices>
             </edmx:Edmx>
@@ -210,7 +270,7 @@ internal sealed partial class ODataMetadataService
     /// <summary>
     /// Maps a FieldType to an OData EDM type.
     /// </summary>
-    private static string MapFieldTypeToEdm(FieldType fieldType)
+    private static string MapFieldTypeToEdm(FieldType fieldType, string geometryEdmType)
     {
         return fieldType switch
         {
@@ -223,13 +283,51 @@ internal sealed partial class ODataMetadataService
             FieldType.DateTime => "Edm.DateTimeOffset",
             FieldType.Date => "Edm.Date",
             FieldType.Time => "Edm.TimeOfDay",
-            FieldType.Geometry => "Edm.Binary",
+            FieldType.Geometry => geometryEdmType,
             FieldType.Json => "Edm.String",
             FieldType.Binary => "Edm.Binary",
             FieldType.Uuid => "Edm.Guid",
             _ => "Edm.String"
         };
     }
+
+    private static (string GeometryEdmType, string SridAttribute) ResolveGeometryEdmType(LayerDefinition[] layers)
+    {
+        if (layers.Length == 0)
+        {
+            return ("Edm.Geography", " SRID=\"4326\"");
+        }
+
+        var distinctSrids = layers.Select(layer => layer.SpatialReference.Wkid).Distinct().ToArray();
+        if (distinctSrids.Length == 1)
+        {
+            var srid = distinctSrids[0];
+            var geometryEdmType = srid == SpatialReference.WGS84.Wkid ? "Edm.Geography" : "Edm.Geometry";
+            var sridAttribute = $" SRID=\"{srid}\"";
+            return (geometryEdmType, sridAttribute);
+        }
+
+        return ("Edm.Geometry", " SRID=\"variable\"");
+    }
+
+    private static string[] CollectRelationshipNames(LayerDefinition[] layers)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in layers)
+        {
+            foreach (var relationship in layer.LayerRelationships)
+            {
+                var name = ODataUtilityService.SanitizeIdentifier(relationship.Name);
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    names.Add(name);
+                }
+            }
+        }
+
+        return names.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
 
     /// <summary>
     /// Logging methods for OData metadata operations.

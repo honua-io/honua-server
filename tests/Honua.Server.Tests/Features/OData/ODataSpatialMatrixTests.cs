@@ -22,8 +22,6 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private const int TestLayerId = 0;
-    private const string PendingSpatialFilterSupport = "Pending OData spatial filter parity (#200).";
-
     // Test data object IDs from odata.yaml
     private const long SanFranciscoId = 1;      // -122.4194, 37.7749
     private const long LosAngelesId = 2;        // -118.2437, 34.0522
@@ -254,7 +252,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         objectIds.Should().Contain(SanDiegoId);
     }
 
-    [IntegrationTest(Skip = PendingSpatialFilterSupport)]
+    [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects() or geo.distance()")]
     public async Task Spatial_OrCombination_ReturnsUnion()
@@ -346,7 +344,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         objectIds.Should().NotContain(VirtualCityId);
     }
 
-    [IntegrationTest(Skip = PendingSpatialFilterSupport)]
+    [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=Geometry eq null")]
     public async Task Filter_GeometryEqualsNull_ReturnsNullGeometries()
@@ -362,7 +360,7 @@ public sealed class ODataSpatialMatrixTests : IAsyncLifetime
         features[0].GetProperty("ObjectId").GetInt64().Should().Be(VirtualCityId);
     }
 
-    [IntegrationTest(Skip = PendingSpatialFilterSupport)]
+    [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=Geometry ne null")]
     public async Task Filter_GeometryNotEqualsNull_ExcludesNullGeometries()

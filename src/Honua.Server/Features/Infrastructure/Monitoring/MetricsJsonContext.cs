@@ -16,6 +16,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 [JsonSerializable(typeof(HealthMetrics))]
 [JsonSerializable(typeof(PerformanceMetricsResponse))]
 [JsonSerializable(typeof(SystemInfo))]
+[JsonSerializable(typeof(HttpRequestMetrics))]
 [JsonSerializable(typeof(DatabaseMetrics))]
 [JsonSerializable(typeof(DatabaseOperationMetrics))]
 [JsonSerializable(typeof(CacheMetrics))]

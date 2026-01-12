@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
+using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,7 +16,6 @@ using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
@@ -24,7 +23,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// Comprehensive integration tests for PostgreSQL feature store operations
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.FeatureServer)]
+[Protocol(Protocols.TestQuality)]
 public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private const int PointsLayerId = 11001;
@@ -84,11 +83,15 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 min_scale DOUBLE PRECISION,
                 max_scale DOUBLE PRECISION,
                 default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+                metadata JSONB,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
 
             ALTER TABLE honua.layers
                 ADD COLUMN IF NOT EXISTS table_schema TEXT NOT NULL DEFAULT current_schema();
+
+            ALTER TABLE honua.layers
+                ADD COLUMN IF NOT EXISTS metadata JSONB;
             """;
 
         await _fixture.ExecuteAsync(createCatalogSql);
@@ -170,8 +173,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Query")]
-    [Endpoint("PostgreSQL FeatureStore Query")]
+    [Operation(Operations.Query)]
     public async Task Query_WithSimpleFilter_ShouldReturnMatchingFeatures()
     {
         // Arrange
@@ -187,8 +189,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Query")]
-    [Endpoint("PostgreSQL FeatureStore Complex Query")]
+    [Operation(Operations.Query)]
     public async Task Query_WithComplexFilter_ShouldReturnCorrectResults()
     {
         // Arrange
@@ -214,8 +215,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Query")]
-    [Endpoint("PostgreSQL FeatureStore Spatial Query")]
+    [Operation(Operations.Query)]
     public async Task Query_WithSpatialFilter_ShouldReturnFeaturesInBounds()
     {
         // Arrange
@@ -235,8 +235,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Count")]
-    [Endpoint("PostgreSQL FeatureStore Count")]
+    [Operation(Operations.Query)]
     public async Task Count_WithFilter_ShouldReturnCorrectCount()
     {
         // Arrange
@@ -252,8 +251,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Get")]
-    [Endpoint("PostgreSQL FeatureStore Get Single")]
+    [Operation(Operations.GetById)]
     public async Task Get_WithValidId_ShouldReturnFeature()
     {
         // Arrange
@@ -272,8 +270,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Get")]
-    [Endpoint("PostgreSQL FeatureStore Get Nonexistent")]
+    [Operation(Operations.GetById)]
     public async Task Get_WithInvalidId_ShouldReturnNull()
     {
         // Arrange
@@ -287,8 +284,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Create")]
-    [Endpoint("PostgreSQL FeatureStore Create")]
+    [Operation(Operations.Create)]
     public async Task Create_WithNewFeature_ShouldInsertSuccessfully()
     {
         // Arrange
@@ -314,8 +310,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Update")]
-    [Endpoint("PostgreSQL FeatureStore Update")]
+    [Operation(Operations.Update)]
     public async Task Update_ExistingFeature_ShouldModifySuccessfully()
     {
         // Arrange
@@ -344,8 +339,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Delete")]
-    [Endpoint("PostgreSQL FeatureStore Delete")]
+    [Operation(Operations.Delete)]
     public async Task Delete_ExistingFeature_ShouldRemoveSuccessfully()
     {
         // Arrange
@@ -364,8 +358,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("ApplyEdits")]
-    [Endpoint("PostgreSQL FeatureStore Batch Operations")]
+    [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WithMixedOperations_ShouldExecuteAllSuccessfully()
     {
         // Arrange
@@ -408,8 +401,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Stream")]
-    [Endpoint("PostgreSQL FeatureStore Streaming")]
+    [Operation(Operations.Query)]
     public async Task Stream_LargeResultSet_ShouldStreamEfficiently()
     {
         // Arrange
@@ -433,8 +425,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Query")]
-    [Endpoint("PostgreSQL FeatureStore Pagination")]
+    [Operation(Operations.Query)]
     public async Task Query_WithPagination_ShouldReturnPagedResults()
     {
         // Arrange
@@ -456,8 +447,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation("Query")]
-    [Endpoint("PostgreSQL FeatureStore Geometry Types")]
+    [Operation(Operations.Query)]
     public async Task Query_DifferentGeometryTypes_ShouldHandleAllTypes()
     {
         // Arrange
@@ -482,19 +472,25 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         lineResult.Items.First().Geometry.Should().NotBeNull();
     }
 
-    private PostgresFeatureStore CreateFeatureStore()
+    private PostgresFeatureStoreRefactored CreateFeatureStore()
     {
-        var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource);
+        var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource, () => _testSchema);
         var poolProvider = new DefaultObjectPoolProvider();
-        var stringBuilderPool = poolProvider.Create(new Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
-        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-
-        return new PostgresFeatureStore(
+        var stringBuilderPool = poolProvider.Create(new Microsoft.Extensions.ObjectPool.StringBuilderPooledObjectPolicy());
+        var dictionaryPool = poolProvider.Create(new DictionaryPooledObjectPolicy());
+        var geometryProcessor = new GeometryProcessor();
+        var cacheManager = new FeatureCacheManager(connectionProvider, NullLogger<FeatureCacheManager>.Instance, _testSchema);
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _testSchema);
+        var dataAccess = new FeatureDataAccess(
             connectionProvider,
-            stringBuilderPool,
-            performanceMonitor,
-            NullLogger<PostgresFeatureStore>.Instance,
-            _testSchema);
+            geometryProcessor,
+            cacheManager,
+            dictionaryPool,
+            statementCache: null,
+            logger: NullLogger<FeatureDataAccess>.Instance,
+            schemaName: _testSchema);
+
+        return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
     }
 
     private static int GetLayerId(string tableName)

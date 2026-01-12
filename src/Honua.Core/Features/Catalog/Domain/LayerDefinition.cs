@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
@@ -21,6 +22,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="DefaultVisibility">Whether layer is visible by default</param>
 /// <param name="Relationships">Relationships defined for this layer (optional)</param>
 /// <param name="SupportsAttachments">Whether this layer supports file attachments (default true)</param>
+/// <param name="Metadata">Optional catalog metadata for access policy and extensions</param>
 public record LayerDefinition(
     int Id,
     string Name,
@@ -33,7 +35,8 @@ public record LayerDefinition(
     double? MaxScale = null,
     bool DefaultVisibility = true,
     Relationship[]? Relationships = null,
-    bool SupportsAttachments = true)
+    bool SupportsAttachments = true,
+    CatalogMetadata? Metadata = null)
 {
     /// <summary>
     /// The geometry field definition (if layer has geometry)

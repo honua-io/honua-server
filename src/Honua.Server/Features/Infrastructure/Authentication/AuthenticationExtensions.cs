@@ -21,23 +21,41 @@ public static class AuthenticationExtensions
     public const string AdminPolicy = "Admin";
 
     /// <summary>
+    /// Authorization policy name for admin access (alias for legacy endpoints)
+    /// </summary>
+    public const string AdminPolicyAlias = "AdminPolicy";
+
+    /// <summary>
     /// Adds API key authentication and authorization services
     /// </summary>
     public static IServiceCollection AddApiKeyAuthentication(this IServiceCollection services)
     {
+        services.AddScoped<ApiKeyAuthenticationDependencies>();
+
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyScheme,
                 options => { });
 
-        // Add authorization with admin policy
-        _ = services.AddAuthorization(options => options.AddPolicy(AdminPolicy, policy =>
+        // Add authorization policies
+        _ = services.AddAuthorization(options =>
+        {
+            options.AddPolicy(AdminPolicy, policy =>
             {
                 _ = policy.RequireAuthenticatedUser();
                 _ = policy.RequireRole("admin");
                 policy.AuthenticationSchemes.Add(ApiKeyScheme);
-            }));
+            });
+
+            options.AddPolicy(AdminPolicyAlias, policy =>
+            {
+                _ = policy.RequireAuthenticatedUser();
+                _ = policy.RequireRole("admin");
+                policy.AuthenticationSchemes.Add(ApiKeyScheme);
+            });
+
+        });
 
         return services;
     }

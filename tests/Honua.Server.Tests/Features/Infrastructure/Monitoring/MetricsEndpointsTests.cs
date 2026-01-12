@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -13,7 +14,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// Integration tests for metrics endpoints functionality.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.MetricsApi)]
+[Protocol(Protocols.Health)]
 public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -29,12 +30,12 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetHealthMetrics)]
-    [Endpoint("GET /api/metrics/health")]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /api/v1/metrics/health")]
     public async Task GetHealthMetrics_ShouldReturnBasicHealthData()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/metrics/health");
+        var response = await _fixture.Client.GetAsync("/api/v1/metrics/health");
         var content = await response.Content.ReadAsStringAsync();
         var allowHeader = response.Headers.TryGetValues("Allow", out var allowValues)
             ? string.Join(", ", allowValues)
@@ -56,12 +57,12 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetPerformanceMetrics)]
-    [Endpoint("GET /api/metrics/performance")]
+    [Operation(Operations.Performance)]
+    [Endpoint("GET /api/v1/metrics/performance")]
     public async Task GetPerformanceMetrics_ShouldRequireAuthentication()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/metrics/performance");
+        var response = await _fixture.Client.GetAsync("/api/v1/metrics/performance");
         var content = await response.Content.ReadAsStringAsync();
         var allowHeader = response.Headers.TryGetValues("Allow", out var allowValues)
             ? string.Join(", ", allowValues)
@@ -83,16 +84,20 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
             Assert.True(perfMetrics.Memory.AllocatedBytes > 0, "Memory should be allocated");
             Assert.NotNull(perfMetrics.SystemInfo);
             Assert.True(perfMetrics.SystemInfo.ProcessorCount > 0, "Should have processors");
+            Assert.NotNull(perfMetrics.Http);
+            Assert.True(perfMetrics.Http.TotalRequests >= 0, "Total requests should be non-negative");
+            Assert.True(perfMetrics.Http.ActiveRequests >= 0, "Active requests should be non-negative");
+            Assert.True(perfMetrics.Http.AvgDurationMs >= 0, "Avg duration should be non-negative");
         }
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetDatabaseMetrics)]
-    [Endpoint("GET /api/metrics/database")]
+    [Operation(Operations.Performance)]
+    [Endpoint("GET /api/v1/metrics/database")]
     public async Task GetDatabaseMetrics_ShouldReturnDatabaseStats()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/metrics/database");
+        var response = await _fixture.Client.GetAsync("/api/v1/metrics/database");
 
         // Assert
         if (response.StatusCode == HttpStatusCode.OK)
@@ -110,12 +115,12 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetCacheMetrics)]
-    [Endpoint("GET /api/metrics/cache")]
+    [Operation(Operations.Cache)]
+    [Endpoint("GET /api/v1/metrics/cache")]
     public async Task GetCacheMetrics_ShouldReturnCacheStats()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/metrics/cache");
+        var response = await _fixture.Client.GetAsync("/api/v1/metrics/cache");
 
         // Assert
         if (response.StatusCode == HttpStatusCode.OK)
@@ -132,12 +137,12 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetMemoryMetrics)]
-    [Endpoint("GET /api/metrics/memory")]
+    [Operation(Operations.Performance)]
+    [Endpoint("GET /api/v1/metrics/memory")]
     public async Task GetMemoryMetrics_ShouldReturnMemoryStats()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/api/metrics/memory");
+        var response = await _fixture.Client.GetAsync("/api/v1/metrics/memory");
 
         // Assert
         if (response.StatusCode == HttpStatusCode.OK)
@@ -226,23 +231,4 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         Assert.Equal(0.0, metrics.HitRatio);
     }
 
-    /// <summary>
-    /// Test protocols for the metrics endpoints tests.
-    /// </summary>
-    public static class Protocols
-    {
-        public const string MetricsApi = "MetricsApi";
-    }
-
-    /// <summary>
-    /// Test operations for the metrics endpoints tests.
-    /// </summary>
-    public static class Operations
-    {
-        public const string GetHealthMetrics = "GetHealthMetrics";
-        public const string GetPerformanceMetrics = "GetPerformanceMetrics";
-        public const string GetDatabaseMetrics = "GetDatabaseMetrics";
-        public const string GetCacheMetrics = "GetCacheMetrics";
-        public const string GetMemoryMetrics = "GetMemoryMetrics";
-    }
 }

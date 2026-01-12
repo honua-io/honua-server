@@ -3,6 +3,7 @@
 
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Performance;
 
@@ -17,6 +18,8 @@ namespace Honua.Server.Tests.Performance;
 [Trait("Category", "Integration")]
 [Trait("Category", "Performance")]
 [Collection("Database")]
+[Protocol(Protocols.TestQuality)]
+[Operation(Operations.PerformanceTesting)]
 public sealed class QueryPlanVerificationTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fixture = new();

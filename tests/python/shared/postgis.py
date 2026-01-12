@@ -292,6 +292,7 @@ class PostGISFixture:
                         supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                         capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
                         service_extent GEOMETRY,
+                        metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
@@ -312,6 +313,7 @@ class PostGISFixture:
                         min_scale DOUBLE PRECISION,
                         max_scale DOUBLE PRECISION,
                         default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+                        metadata JSONB,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -364,15 +366,28 @@ class PostGISFixture:
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS honua.relationships (
+                        id SERIAL PRIMARY KEY,
                         layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
                         relationship_id INT NOT NULL,
                         name TEXT NOT NULL,
-                        related_layer_id INT NOT NULL REFERENCES honua.layers(layer_id),
+                        related_layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
                         relationship_type TEXT NOT NULL,
                         origin_foreign_key TEXT NOT NULL,
                         destination_foreign_key TEXT NOT NULL,
                         description TEXT,
-                        PRIMARY KEY (layer_id, relationship_id)
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        CONSTRAINT relationships_layer_relationship_unique UNIQUE(layer_id, relationship_id),
+                        CONSTRAINT relationships_valid_ids CHECK(layer_id >= 0 AND related_layer_id >= 0 AND relationship_id > 0),
+                        CONSTRAINT relationships_valid_fields CHECK(
+                            LENGTH(name) > 0 AND LENGTH(name) <= 128 AND
+                            LENGTH(relationship_type) > 0 AND LENGTH(relationship_type) <= 64 AND
+                            LENGTH(origin_foreign_key) > 0 AND LENGTH(origin_foreign_key) <= 128 AND
+                            LENGTH(destination_foreign_key) > 0 AND LENGTH(destination_foreign_key) <= 128
+                        ),
+                        CONSTRAINT relationships_valid_type CHECK(
+                            relationship_type IN ('esriRelRoleOrigin', 'esriRelRoleDestination', 'esriRelRoleAny')
+                        )
                     );
                     """
                 )
@@ -432,6 +447,7 @@ class PostGISFixture:
                         table_name,
                         geometry_type,
                         srid,
+                        extent,
                         default_visibility
                     )
                     VALUES (
@@ -440,8 +456,9 @@ class PostGISFixture:
                         'Default layer for integration tests',
                         current_schema(),
                         'features',
-                        'GeometryCollection',
+                        'Point',
                         4326,
+                        ST_MakeEnvelope(-180, -90, 180, 90, 4326),
                         true
                     )
                     ON CONFLICT (layer_id) DO NOTHING;

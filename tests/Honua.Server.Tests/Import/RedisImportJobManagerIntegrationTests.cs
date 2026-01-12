@@ -1,0 +1,122 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
+using Honua.Server.Features.Import;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using StackExchange.Redis;
+
+namespace Honua.Server.Tests.Import;
+
+/// <summary>
+/// Redis integration tests for distributed import job coordination.
+/// </summary>
+[Collection("Redis")]
+[Protocol(Protocols.Admin)]
+[Operation(Operations.Import)]
+[Operation(Operations.TestInfrastructure)]
+public sealed class RedisImportJobManagerIntegrationTests
+{
+    private readonly RedisFixture _redis;
+
+    public RedisImportJobManagerIntegrationTests(RedisFixture redis)
+    {
+        _redis = redis;
+    }
+
+    [IntegrationTest]
+    public async Task JobQueue_WithRedis_RoundTrips()
+    {
+        var queueKey = $"test:queue:{Guid.NewGuid():N}";
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
+        var queue = new RedisJobQueue(null, multiplexer, NullLogger.Instance, queueKey);
+
+        await queue.EnqueueAsync("job-1");
+        var length = await queue.GetQueueLengthAsync();
+        length.Should().Be(1);
+
+        var job = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
+        job.Should().Be("job-1");
+
+        var finalLength = await queue.GetQueueLengthAsync();
+        finalLength.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task LeaderElection_AllowsSingleLeader()
+    {
+        var lockKey = $"test:leader:{Guid.NewGuid():N}";
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
+        var electionA = new RedisLeaderElection(null, multiplexer, NullLogger.Instance, lockKey, "instance-a");
+        var electionB = new RedisLeaderElection(null, multiplexer, NullLogger.Instance, lockKey, "instance-b");
+
+        try
+        {
+            var acquiredA = await electionA.TryAcquireLeadershipAsync();
+            var acquiredB = await electionB.TryAcquireLeadershipAsync();
+
+            acquiredA.Should().BeTrue();
+            acquiredB.Should().BeFalse();
+
+            await electionA.ReleaseLeadershipAsync();
+
+            var acquiredBAfter = await electionB.TryAcquireLeadershipAsync();
+            acquiredBAfter.Should().BeTrue();
+        }
+        finally
+        {
+            electionA.Dispose();
+            electionB.Dispose();
+        }
+    }
+
+    [IntegrationTest]
+    public async Task RequestStore_WithRedis_PersistsAndRetrieves()
+    {
+        using var provider = BuildRedisServices();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+        var keyPrefix = $"test:request:{Guid.NewGuid():N}:";
+        var store = new RedisProgressStore<EsriImportRequest>(
+            cache,
+            NullLogger.Instance,
+            keyPrefix,
+            EsriImportJsonContext.Default.EsriImportRequest);
+
+        var request = new EsriImportRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 1,
+            TableName = "test_table",
+            AutoPublish = false
+        };
+
+        await store.SetProgressAsync("job-1", request, TimeSpan.FromMinutes(5));
+
+        var loaded = await store.GetProgressAsync("job-1");
+
+        loaded.Should().NotBeNull();
+        loaded.Should().BeEquivalentTo(request);
+
+        await store.DeleteProgressAsync("job-1");
+        var deleted = await store.GetProgressAsync("job-1");
+        deleted.Should().BeNull();
+    }
+
+    private ServiceProvider BuildRedisServices()
+    {
+        var services = new ServiceCollection();
+        services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = _redis.ConnectionString;
+            options.InstanceName = string.Empty;
+        });
+
+        return services.BuildServiceProvider();
+    }
+}

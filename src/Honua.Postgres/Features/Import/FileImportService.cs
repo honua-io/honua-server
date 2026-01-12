@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
@@ -24,10 +25,10 @@ internal sealed class FileImportService : IFileImportService
     private readonly string _connectionString;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ISchemaContext? _schemaContext;
-    private readonly Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? _cloudStorage;
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
 
     public FileImportService(string connectionString, ICrsDetectionService crsDetectionService, ISchemaContext? schemaContext = null,
-        Honua.Core.Features.FileStorage.Abstractions.ICloudFileStorage? cloudStorage = null)
+        Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -41,16 +42,18 @@ internal sealed class FileImportService : IFileImportService
     /// <summary>
     /// Supported file extensions mapped to formats
     /// </summary>
-    private static readonly Dictionary<string, SupportedFileFormat> _fileExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [".geojson"] = SupportedFileFormat.GeoJson,
-        [".json"] = SupportedFileFormat.GeoJson,
-        [".kml"] = SupportedFileFormat.Kml,
-        [".wkt"] = SupportedFileFormat.Wkt,
-        [".shp"] = SupportedFileFormat.Shapefile,
-        [".gpkg"] = SupportedFileFormat.GeoPackage,
-        [".gpx"] = SupportedFileFormat.Gpx
-    };
+    private static readonly FrozenDictionary<string, SupportedFileFormat> _fileExtensions =
+        new Dictionary<string, SupportedFileFormat>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".geojson"] = SupportedFileFormat.GeoJson,
+            [".json"] = SupportedFileFormat.GeoJson,
+            [".kml"] = SupportedFileFormat.Kml,
+            [".wkt"] = SupportedFileFormat.Wkt,
+            [".shp"] = SupportedFileFormat.Shapefile,
+            [".gpkg"] = SupportedFileFormat.GeoPackage,
+            [".gpx"] = SupportedFileFormat.Gpx
+        }
+        .ToFrozenDictionary();
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
@@ -699,6 +702,8 @@ internal sealed class FileImportService : IFileImportService
         // Use stored functions with parameters to keep SQL text static and safe.
         await ExecuteInsertStatements(connection, tableName, features, sourceSrid, targetSrid, wkbWriter, cancellationToken);
 
+        await AnalyzeTableAsync(connection, tableName, cancellationToken);
+
         return features.Count();
     }
 
@@ -803,6 +808,18 @@ internal sealed class FileImportService : IFileImportService
 
         using var command = new NpgsqlCommand(CreateImportTableSql, connection);
         command.Parameters.AddWithValue("table_name", allowedTableName);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task AnalyzeTableAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var allowedTableName = GetAllowedTableName(tableName);
+        var sql = $"ANALYZE {allowedTableName}";
+
+        using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

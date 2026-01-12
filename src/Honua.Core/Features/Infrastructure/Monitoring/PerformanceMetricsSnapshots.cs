@@ -26,6 +26,17 @@ public interface ICacheMetricsSnapshotProvider
 }
 
 /// <summary>
+/// Provides access to HTTP request performance metrics snapshots.
+/// </summary>
+public interface IHttpRequestMetricsSnapshotProvider
+{
+    /// <summary>
+    /// Gets a snapshot of HTTP request performance metrics.
+    /// </summary>
+    HttpRequestMetricsSnapshot GetHttpRequestMetricsSnapshot();
+}
+
+/// <summary>
 /// Snapshot of database performance metrics.
 /// </summary>
 public sealed record DatabasePerformanceMetricsSnapshot
@@ -122,6 +133,57 @@ public sealed record CacheTypeMetricsSnapshot
     /// Number of evictions for this type.
     /// </summary>
     public long Evictions { get; init; }
+}
+
+/// <summary>
+/// Snapshot of HTTP request performance metrics.
+/// </summary>
+public sealed record HttpRequestMetricsSnapshot
+{
+    /// <summary>
+    /// Total number of HTTP requests processed.
+    /// </summary>
+    public long TotalRequests { get; init; }
+
+    /// <summary>
+    /// Total number of server error responses (5xx).
+    /// </summary>
+    public long TotalServerErrors { get; init; }
+
+    /// <summary>
+    /// Total number of client error responses (4xx).
+    /// </summary>
+    public long TotalClientErrors { get; init; }
+
+    /// <summary>
+    /// Current number of active HTTP requests.
+    /// </summary>
+    public int ActiveRequests { get; init; }
+
+    /// <summary>
+    /// Average request duration in milliseconds.
+    /// </summary>
+    public double AvgDurationMs { get; init; }
+
+    /// <summary>
+    /// Maximum request duration in milliseconds.
+    /// </summary>
+    public double MaxDurationMs { get; init; }
+
+    /// <summary>
+    /// Estimated 95th percentile request duration in milliseconds.
+    /// </summary>
+    public double P95DurationMs { get; init; }
+
+    /// <summary>
+    /// Total number of slow requests.
+    /// </summary>
+    public long SlowRequestCount { get; init; }
+
+    /// <summary>
+    /// Threshold used for slow request classification in milliseconds.
+    /// </summary>
+    public double SlowRequestThresholdMs { get; init; }
 }
 
 /// <summary>

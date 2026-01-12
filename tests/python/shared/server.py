@@ -103,6 +103,19 @@ class HonuaServer:
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",
         })
+        # Provide deterministic test keys for connection encryption unless supplied.
+        env.setdefault(
+            "Security__ConnectionEncryption__MasterKey",
+            "test-master-key-that-is-at-least-32-characters-long-for-security",
+        )
+        env.setdefault(
+            "Security__ConnectionEncryption__Salt",
+            "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=",
+        )
+        env.setdefault(
+            "Limits__Attachments__AllowedMimeTypes",
+            "image/*,application/pdf,text/plain",
+        )
 
         configuration = os.getenv("HONUA_TEST_CONFIGURATION", "Debug")
 

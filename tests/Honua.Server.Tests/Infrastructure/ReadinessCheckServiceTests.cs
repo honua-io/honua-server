@@ -6,6 +6,7 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Infrastructure;
@@ -13,17 +14,16 @@ namespace Honua.Server.Tests.Infrastructure;
 /// <summary>
 /// Tests for ReadinessCheckService - validates separated health check orchestration logic
 /// </summary>
-[Protocol("Infrastructure")]
+[Protocol(Protocols.Health)]
 public sealed class ReadinessCheckServiceTests
 {
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithHealthyDatabase_ReturnsReady()
     {
         // Arrange
         var mockDatabaseChecker = new MockHealthyDatabaseChecker();
-        var mockLogger = new MockLogger<ReadinessCheckService>();
-        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger);
+        var service = CreateService(mockDatabaseChecker);
 
         // Act
         var result = await service.CheckReadinessAsync();
@@ -36,13 +36,12 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithUnhealthyDatabase_ReturnsNotReady()
     {
         // Arrange
         var mockDatabaseChecker = new MockUnhealthyDatabaseChecker();
-        var mockLogger = new MockLogger<ReadinessCheckService>();
-        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger);
+        var service = CreateService(mockDatabaseChecker);
 
         // Act
         var result = await service.CheckReadinessAsync();
@@ -55,14 +54,13 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithCacheHealthChecker_IncludesCacheStatus()
     {
         // Arrange
         var mockDatabaseChecker = new MockHealthyDatabaseChecker();
         var mockCacheChecker = new MockCacheHealthChecker(healthy: true, usingFallback: false);
-        var mockLogger = new MockLogger<ReadinessCheckService>();
-        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger, mockCacheChecker);
+        var service = CreateService(mockDatabaseChecker, mockCacheChecker);
 
         // Act
         var result = await service.CheckReadinessAsync();
@@ -72,14 +70,13 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithCacheInFallbackMode_StillReturnsReady()
     {
         // Arrange
         var mockDatabaseChecker = new MockHealthyDatabaseChecker();
         var mockCacheChecker = new MockCacheHealthChecker(healthy: true, usingFallback: true);
-        var mockLogger = new MockLogger<ReadinessCheckService>();
-        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger, mockCacheChecker);
+        var service = CreateService(mockDatabaseChecker, mockCacheChecker);
 
         // Act
         var result = await service.CheckReadinessAsync();
@@ -89,13 +86,12 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithDatabaseException_ReturnsNotReadyWithException()
     {
         // Arrange
         var mockDatabaseChecker = new MockExceptionDatabaseChecker();
-        var mockLogger = new MockLogger<ReadinessCheckService>();
-        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger);
+        var service = CreateService(mockDatabaseChecker);
 
         // Act
         var result = await service.CheckReadinessAsync();
@@ -109,13 +105,12 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithCancellation_PropagatesCancellation()
     {
         // Arrange
         var mockDatabaseChecker = new MockCancellationDatabaseChecker();
-        var mockLogger = new MockLogger<ReadinessCheckService>();
-        var service = new ReadinessCheckService(mockDatabaseChecker, mockLogger);
+        var service = CreateService(mockDatabaseChecker);
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -127,7 +122,7 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public void ReadinessResult_Ready_CreatesCorrectResult()
     {
         // Act
@@ -141,7 +136,7 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public void ReadinessResult_NotReady_CreatesCorrectResult()
     {
         // Arrange
@@ -158,7 +153,7 @@ public sealed class ReadinessCheckServiceTests
     }
 
     [UnitTest]
-    [Operation("HealthCheck")]
+    [Operation(Operations.HealthCheck)]
     public void ReadinessResult_NotReadyWithoutException_CreatesCorrectResult()
     {
         // Act
@@ -169,6 +164,21 @@ public sealed class ReadinessCheckServiceTests
         result.StatusCode.Should().Be(503);
         result.Message.Should().Be("Not Ready - Service unavailable");
         result.Exception.Should().BeNull();
+    }
+
+    private static ReadinessCheckService CreateService(
+        IDatabaseHealthChecker databaseChecker,
+        ICacheHealthChecker? cacheChecker = null,
+        MigrationState? migrationState = null)
+    {
+        var state = migrationState ?? new MigrationState();
+        state.MarkSucceeded();
+
+        return new ReadinessCheckService(
+            databaseChecker,
+            state,
+            new MockLogger<ReadinessCheckService>(),
+            cacheChecker);
     }
 }
 
