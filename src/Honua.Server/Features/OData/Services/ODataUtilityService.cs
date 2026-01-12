@@ -27,14 +27,14 @@ internal static class ODataUtilityService
     /// </summary>
     private const string ODataContentType = "application/json;odata.metadata=minimal";
 
-    private static readonly FrozenSet<string> AllowedFormats = new[]
+    private static readonly FrozenSet<string> _allowedFormats = new[]
         {
             "json",
             "application/json"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly FrozenSet<string> ReservedFeatureProperties = new[]
+    private static readonly FrozenSet<string> _reservedFeatureProperties = new[]
         {
             "ObjectId",
             "LayerId",
@@ -47,7 +47,7 @@ internal static class ODataUtilityService
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly FrozenSet<string> KeyProperties = new[]
+    private static readonly FrozenSet<string> _keyProperties = new[]
         {
             "ObjectId",
             "LayerId",
@@ -257,7 +257,7 @@ internal static class ODataUtilityService
 
     public static IReadOnlySet<string> GetAllowedFormats()
     {
-        return AllowedFormats;
+        return _allowedFormats;
     }
 
     /// <summary>
@@ -473,7 +473,7 @@ internal static class ODataUtilityService
             return true;
         }
 
-        return ReservedFeatureProperties.Contains(propertyName);
+        return _reservedFeatureProperties.Contains(propertyName);
     }
 
     public static bool IsKeyProperty(string? propertyName)
@@ -483,7 +483,7 @@ internal static class ODataUtilityService
             return false;
         }
 
-        return KeyProperties.Contains(propertyName);
+        return _keyProperties.Contains(propertyName);
     }
 
     public static string SanitizeIdentifier(string name)

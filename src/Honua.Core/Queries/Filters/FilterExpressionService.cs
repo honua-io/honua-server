@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Queries.Filters.OData;

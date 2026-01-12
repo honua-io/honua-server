@@ -4,7 +4,6 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 

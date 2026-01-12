@@ -3,8 +3,8 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Validation;
 

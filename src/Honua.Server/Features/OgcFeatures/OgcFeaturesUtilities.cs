@@ -77,7 +77,7 @@ internal static class OgcFeaturesUtilities
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     public const string AtomNamespace = "http://www.w3.org/2005/Atom";
 
-    private static readonly ImmutableArray<string> DefaultCrsIdentifiers =
+    private static readonly ImmutableArray<string> _defaultCrsIdentifiers =
         ImmutableArray.Create(Crs84Uri, Epsg4326Uri, Epsg3857Uri);
 
     /// <summary>
@@ -103,7 +103,7 @@ internal static class OgcFeaturesUtilities
         CancellationToken cancellationToken)
     {
         var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
-        foreach (var crsIdentifier in DefaultCrsIdentifiers)
+        foreach (var crsIdentifier in _defaultCrsIdentifiers)
         {
             var definition = await crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
             if (definition.HasValue)
