@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createInterface } from 'node:readline';
 
 const projectRoot = resolve(__dirname, '..', '..');
 const pythonScript = resolve(projectRoot, 'tests', 'python', 'shared', 'js_test_server.py');
@@ -45,7 +44,8 @@ async function readBootstrapLine(
   child: ReturnType<typeof spawn>,
   stderrBuffer: string[],
 ): Promise<string> {
-  if (!child.stdout) {
+  const stdout = child.stdout;
+  if (!stdout) {
     throw new Error('Bootstrap process did not provide stdout.');
   }
 
@@ -54,28 +54,52 @@ async function readBootstrapLine(
       reject(new Error('Timed out waiting for JS test server bootstrap.'));
     }, 120000);
 
+    let buffer = '';
+
+    const onStderr = (chunk: Buffer | string) => {
+      stderrBuffer.push(chunk.toString());
+    };
+
+    const onError = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+
+    const onExit = (code: number | null) => {
+      cleanup();
+      reject(new Error(`Bootstrap process exited early with code ${code}.`));
+    };
+
+    const onStdout = (chunk: Buffer | string) => {
+      buffer += chunk.toString();
+      const newlineIndex = buffer.indexOf('\n');
+      if (newlineIndex === -1) {
+        return;
+      }
+      const line = buffer.slice(0, newlineIndex);
+      cleanup();
+      resolve(line);
+    };
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      stdout.off('data', onStdout);
+      stdout.off('error', onError);
+      child.off('error', onError);
+      child.off('exit', onExit);
+      if (child.stderr) {
+        child.stderr.off('data', onStderr);
+      }
+    };
+
     if (child.stderr) {
-      child.stderr.on('data', chunk => {
-        stderrBuffer.push(chunk.toString());
-      });
+      child.stderr.on('data', onStderr);
     }
 
-    child.once('error', err => {
-      clearTimeout(timeoutId);
-      reject(err);
-    });
-
-    child.once('exit', code => {
-      clearTimeout(timeoutId);
-      reject(new Error(`Bootstrap process exited early with code ${code}.`));
-    });
-
-    const rl = createInterface({ input: child.stdout });
-    rl.once('line', line => {
-      clearTimeout(timeoutId);
-      rl.close();
-      resolve(line);
-    });
+    child.once('error', onError);
+    child.once('exit', onExit);
+    stdout.on('data', onStdout);
+    stdout.once('error', onError);
   });
 }
 
