@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 [Protocol(Protocols.Infrastructure)]
 public sealed class StandardErrorHelpersTests : IAsyncLifetime
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
@@ -145,7 +145,7 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         context.Response.StatusCode.Should().Be(400);
 
         var responseBody = GetResponseBody(context);
-        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
+        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError.Should().NotBeNull();
         odataError!.Error.Code.Should().Be("BadRequest");
@@ -336,7 +336,7 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         context.Response.StatusCode.Should().Be(400);
 
         var responseBody = GetResponseBody(context);
-        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
+        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError.Should().NotBeNull();
         odataError!.Error.Details.Should().HaveCountGreaterOrEqualTo(6); // Main message + 3 validation details + correlation metadata

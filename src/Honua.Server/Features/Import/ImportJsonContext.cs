@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Import;

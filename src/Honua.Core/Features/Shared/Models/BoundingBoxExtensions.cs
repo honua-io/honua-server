@@ -184,10 +184,10 @@ public static class BoundingBoxExtensions
     public static BoundingBox ToWebMercatorApproximate(this BoundingBox boundingBox)
     {
         // Simple Web Mercator approximation (for display only, not precision mapping)
-        const double EarthRadius = 6378137; // WGS84 semi-major axis
+        const double earthRadius = 6378137; // WGS84 semi-major axis
 
-        static double LonToWebMercatorX(double lon) => lon * Math.PI / 180.0 * EarthRadius;
-        static double LatToWebMercatorY(double lat) => Math.Log(Math.Tan(Math.PI / 4 + lat * Math.PI / 360.0)) * EarthRadius;
+        static double LonToWebMercatorX(double lon) => lon * Math.PI / 180.0 * earthRadius;
+        static double LatToWebMercatorY(double lat) => Math.Log(Math.Tan(Math.PI / 4 + lat * Math.PI / 360.0)) * earthRadius;
 
         return BoundingBox.Create(
             LonToWebMercatorX(boundingBox.MinX),

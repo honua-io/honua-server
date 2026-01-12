@@ -16,7 +16,7 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class VerticalSliceIsolationTests
 {
-    private static readonly string[] FeatureNames =
+    private static readonly string[] _featureNames =
     {
         "Admin",
         "FeatureServer",
@@ -36,7 +36,7 @@ public sealed class VerticalSliceIsolationTests
         var serverAssembly = typeof(EndpointRegistry).Assembly;
         var violations = new List<string>();
 
-        foreach (var featureName in FeatureNames.Where(f => f is not ("Infrastructure" or "Ogc")))
+        foreach (var featureName in _featureNames.Where(f => f is not ("Infrastructure" or "Ogc")))
         {
             var featureTypes = GetTypesInFeature(serverAssembly, featureName);
             var illegalReferences = FindCrossFeatureReferences(featureTypes, featureName);
@@ -118,7 +118,7 @@ public sealed class VerticalSliceIsolationTests
                 {
                     violations.Add($"Type {type.FullName} is in feature namespace '{featureName}' " +
                                  $"which doesn't match expected feature naming patterns. " +
-                                 $"Expected one of: {string.Join(", ", FeatureNames)}");
+                                 $"Expected one of: {string.Join(", ", _featureNames)}");
                 }
             }
         }
@@ -137,7 +137,7 @@ public sealed class VerticalSliceIsolationTests
     private static List<string> FindCrossFeatureReferences(Type[] featureTypes, string currentFeature)
     {
         var violations = new List<string>();
-        var otherFeatures = FeatureNames.Where(f => f != currentFeature && f is not ("Infrastructure" or "Ogc")).ToArray();
+        var otherFeatures = _featureNames.Where(f => f != currentFeature && f is not ("Infrastructure" or "Ogc")).ToArray();
 
         foreach (var type in featureTypes)
         {
@@ -228,7 +228,7 @@ public sealed class VerticalSliceIsolationTests
     private static bool IsValidFeatureName(string featureName)
     {
         // Allow exact matches with our feature list
-        if (FeatureNames.Contains(featureName, StringComparer.OrdinalIgnoreCase))
+        if (_featureNames.Contains(featureName, StringComparer.OrdinalIgnoreCase))
             return true;
 
         // Allow Infrastructure sub-modules (e.g., Infrastructure.Authentication)

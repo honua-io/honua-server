@@ -3,8 +3,8 @@
 
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.OgcFeatures.Services;
 using Microsoft.Extensions.Options;

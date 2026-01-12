@@ -66,9 +66,11 @@ public class QueryBenchmarks
             cacheManager,
             dictionaryPool,
             statementCache: null,
-            dataAccessLogger,
+            logger: dataAccessLogger,
             performanceOptions: null,
-            _schemaName);
+            limitsOptions: null,
+            performanceMonitor: null,
+            schemaName: _schemaName);
         _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 
         _spatialFilter = SpatialFilter.Create(

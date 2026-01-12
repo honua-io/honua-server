@@ -10,8 +10,8 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.OutputCaching;
 

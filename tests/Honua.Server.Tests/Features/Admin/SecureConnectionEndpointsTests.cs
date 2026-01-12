@@ -33,7 +33,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public class SecureConnectionEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "secure-connection-admin-key";
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true
@@ -76,7 +76,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var jsonResponse = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary[]>>(jsonResponse, JsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary[]>>(jsonResponse, _jsonOptions);
 
         Assert.NotNull(apiResponse);
         Assert.True(apiResponse.Success);
@@ -115,7 +115,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             SslMode = "Require"
         };
 
-        var jsonContent = JsonSerializer.Serialize(request, JsonOptions);
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
@@ -125,7 +125,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary>>(responseJson, JsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
         Assert.True(apiResponse.Success);
@@ -158,7 +158,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             SslMode = "Require"
         };
 
-        var jsonContent = JsonSerializer.Serialize(request, JsonOptions);
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
@@ -168,7 +168,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary>>(responseJson, JsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
         Assert.True(apiResponse.Success);
@@ -195,7 +195,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             SslMode = "Require"
         };
 
-        var jsonContent = JsonSerializer.Serialize(request, JsonOptions);
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
@@ -229,7 +229,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionDetail>>(responseJson, JsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionDetail>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
         Assert.True(apiResponse.Success);
@@ -280,7 +280,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<ConnectionTestResult>>(responseJson, JsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<ConnectionTestResult>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
         Assert.True(apiResponse.Success);
@@ -300,7 +300,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<EncryptionValidationResult>>(responseJson, JsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<EncryptionValidationResult>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
         Assert.True(apiResponse.Success);
@@ -326,7 +326,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             SslMode = "Require"
         };
 
-        var jsonContent = JsonSerializer.Serialize(firstRequest, JsonOptions);
+        var jsonContent = JsonSerializer.Serialize(firstRequest, _jsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var firstResponse = await _client.PostAsync("/api/v1/admin/connections", content);
@@ -360,7 +360,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             SslMode = "Require"
         };
 
-        var jsonContent = JsonSerializer.Serialize(request, JsonOptions);
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act

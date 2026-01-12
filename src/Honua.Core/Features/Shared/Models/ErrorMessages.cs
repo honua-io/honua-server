@@ -39,48 +39,48 @@ Field = "Field '{0}' not found in layer '{1}'.";
 Resource = "The requested resource was not found.";
         public const string         /// <inheritdoc/>
 ResourceGeneric = "{0} not found";
-        private static readonly CompositeFormat ServiceFormat = CompositeFormat.Parse(Service);
-        private static readonly CompositeFormat LayerFormat = CompositeFormat.Parse(Layer);
-        private static readonly CompositeFormat LayerInServiceFormat = CompositeFormat.Parse(LayerInService);
-        private static readonly CompositeFormat CollectionFormat = CompositeFormat.Parse(Collection);
-        private static readonly CompositeFormat FieldFormat = CompositeFormat.Parse(Field);
-        private static readonly CompositeFormat ResourceGenericFormat = CompositeFormat.Parse(ResourceGeneric);
+        private static readonly CompositeFormat _serviceFormat = CompositeFormat.Parse(Service);
+        private static readonly CompositeFormat _layerFormat = CompositeFormat.Parse(Layer);
+        private static readonly CompositeFormat _layerInServiceFormat = CompositeFormat.Parse(LayerInService);
+        private static readonly CompositeFormat _collectionFormat = CompositeFormat.Parse(Collection);
+        private static readonly CompositeFormat _fieldFormat = CompositeFormat.Parse(Field);
+        private static readonly CompositeFormat _resourceGenericFormat = CompositeFormat.Parse(ResourceGeneric);
 
         /// <summary>
         /// Formats service not found message
         /// </summary>
         public static string FormatService(string serviceId) =>
-            string.Format(CultureInfo.InvariantCulture, ServiceFormat, serviceId);
+            string.Format(CultureInfo.InvariantCulture, _serviceFormat, serviceId);
 
         /// <summary>
         /// Formats layer not found message
         /// </summary>
         public static string FormatLayer(int layerId) =>
-            string.Format(CultureInfo.InvariantCulture, LayerFormat, layerId);
+            string.Format(CultureInfo.InvariantCulture, _layerFormat, layerId);
 
         /// <summary>
         /// Formats layer not found in service message
         /// </summary>
         public static string FormatLayerInService(int layerId, string serviceId) =>
-            string.Format(CultureInfo.InvariantCulture, LayerInServiceFormat, layerId, serviceId);
+            string.Format(CultureInfo.InvariantCulture, _layerInServiceFormat, layerId, serviceId);
 
         /// <summary>
         /// Formats collection not found message
         /// </summary>
         public static string FormatCollection(string collectionId) =>
-            string.Format(CultureInfo.InvariantCulture, CollectionFormat, collectionId);
+            string.Format(CultureInfo.InvariantCulture, _collectionFormat, collectionId);
 
         /// <summary>
         /// Formats field not found message
         /// </summary>
         public static string FormatField(string fieldName, string layerName) =>
-            string.Format(CultureInfo.InvariantCulture, FieldFormat, fieldName, layerName);
+            string.Format(CultureInfo.InvariantCulture, _fieldFormat, fieldName, layerName);
 
         /// <summary>
         /// Formats generic resource not found message
         /// </summary>
         public static string FormatResource(string resource) =>
-            string.Format(CultureInfo.InvariantCulture, ResourceGenericFormat, resource);
+            string.Format(CultureInfo.InvariantCulture, _resourceGenericFormat, resource);
     }
 
     /// <summary>
@@ -120,7 +120,7 @@ CollectionIdRequired = "Collection ID is required.";
 ServiceIdRequired = "Service ID is required.";
         public const string         /// <inheritdoc/>
 CollectionIdInvalid = "Collection '{0}' is invalid.";
-        private static readonly CompositeFormat CollectionIdInvalidFormat = CompositeFormat.Parse(CollectionIdInvalid);
+        private static readonly CompositeFormat _collectionIdInvalidFormat = CompositeFormat.Parse(CollectionIdInvalid);
 
         /// <summary>
         /// Formats range validation message
@@ -144,7 +144,7 @@ CollectionIdInvalid = "Collection '{0}' is invalid.";
         /// Formats collection ID invalid message
         /// </summary>
         public static string FormatCollectionIdInvalid(string collectionId) =>
-            string.Format(CultureInfo.InvariantCulture, CollectionIdInvalidFormat, collectionId);
+            string.Format(CultureInfo.InvariantCulture, _collectionIdInvalidFormat, collectionId);
     }
 
     /// <summary>
@@ -303,20 +303,20 @@ UnauthorizedOperation = "Unauthorized to perform {0}";
 InvalidToken = "Invalid or expired authentication token.";
         public const string         /// <inheritdoc/>
 TokenRequired = "Authentication token is required.";
-        private static readonly CompositeFormat ForbiddenFormat = CompositeFormat.Parse(Forbidden);
-        private static readonly CompositeFormat UnauthorizedOperationFormat = CompositeFormat.Parse(UnauthorizedOperation);
+        private static readonly CompositeFormat _forbiddenFormat = CompositeFormat.Parse(Forbidden);
+        private static readonly CompositeFormat _unauthorizedOperationFormat = CompositeFormat.Parse(UnauthorizedOperation);
 
         /// <summary>
         /// Formats forbidden operation message
         /// </summary>
         public static string FormatForbidden(string operation) =>
-            string.Format(CultureInfo.InvariantCulture, ForbiddenFormat, operation);
+            string.Format(CultureInfo.InvariantCulture, _forbiddenFormat, operation);
 
         /// <summary>
         /// Formats unauthorized operation message
         /// </summary>
         public static string FormatUnauthorized(string operation) =>
-            string.Format(CultureInfo.InvariantCulture, UnauthorizedOperationFormat, operation);
+            string.Format(CultureInfo.InvariantCulture, _unauthorizedOperationFormat, operation);
     }
 
     /// <summary>
@@ -400,34 +400,34 @@ TokenRequired = "Authentication token is required.";
         /// Required parameter missing error message
         /// </summary>
         public const string RequiredParameterMissing = "A required parameter was not provided.";
-        private static readonly CompositeFormat InvalidSpatialParametersFormat = CompositeFormat.Parse(InvalidSpatialParameters);
-        private static readonly CompositeFormat InvalidTemporalParametersFormat = CompositeFormat.Parse(InvalidTemporalParameters);
-        private static readonly CompositeFormat InvalidTimeParameterFormatValue = CompositeFormat.Parse(InvalidTimeParameter);
-        private static readonly CompositeFormat InvalidTimeParameterFormatFormat = CompositeFormat.Parse(InvalidTimeParameterFormat);
+        private static readonly CompositeFormat _invalidSpatialParametersFormat = CompositeFormat.Parse(InvalidSpatialParameters);
+        private static readonly CompositeFormat _invalidTemporalParametersFormat = CompositeFormat.Parse(InvalidTemporalParameters);
+        private static readonly CompositeFormat _invalidTimeParameterFormatValue = CompositeFormat.Parse(InvalidTimeParameter);
+        private static readonly CompositeFormat _invalidTimeParameterFormatFormat = CompositeFormat.Parse(InvalidTimeParameterFormat);
 
         /// <summary>
         /// Formats invalid spatial parameters message
         /// </summary>
         public static string FormatInvalidSpatialParameters(string details) =>
-            string.Format(CultureInfo.InvariantCulture, InvalidSpatialParametersFormat, details);
+            string.Format(CultureInfo.InvariantCulture, _invalidSpatialParametersFormat, details);
 
         /// <summary>
         /// Formats invalid temporal parameters message
         /// </summary>
         public static string FormatInvalidTemporalParameters(string details) =>
-            string.Format(CultureInfo.InvariantCulture, InvalidTemporalParametersFormat, details);
+            string.Format(CultureInfo.InvariantCulture, _invalidTemporalParametersFormat, details);
 
         /// <summary>
         /// Formats invalid time parameter message
         /// </summary>
         public static string FormatInvalidTimeParameter(string details) =>
-            string.Format(CultureInfo.InvariantCulture, InvalidTimeParameterFormatValue, details);
+            string.Format(CultureInfo.InvariantCulture, _invalidTimeParameterFormatValue, details);
 
         /// <summary>
         /// Formats invalid time parameter format message
         /// </summary>
         public static string FormatInvalidTimeParameterFormat(string timeValue) =>
-            string.Format(CultureInfo.InvariantCulture, InvalidTimeParameterFormatFormat, timeValue);
+            string.Format(CultureInfo.InvariantCulture, _invalidTimeParameterFormatFormat, timeValue);
     }
 
     /// <summary>

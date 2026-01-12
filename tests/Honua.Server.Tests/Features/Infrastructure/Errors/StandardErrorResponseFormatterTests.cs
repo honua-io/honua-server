@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 [Protocol(Protocols.Infrastructure)]
 public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
@@ -59,7 +59,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         context.Response.Headers["OData-Version"].ToString().Should().Be("4.0");
 
         var responseBody = GetResponseBody(context);
-        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
+        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError.Should().NotBeNull();
         odataError!.Error.Code.Should().Be("BadRequest");
@@ -197,7 +197,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         responseBody.Should().NotContain("database connection failed");
         responseBody.Should().NotContain("Internal system error");
 
-        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
+        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
         odataError!.Error.Message.Should().Be("Bad Request"); // Sanitized message
     }
 
@@ -226,7 +226,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
 
         // Assert
         var responseBody = GetResponseBody(context);
-        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
+        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError!.Error.Details.Should().NotBeNull();
         odataError.Error.Details!.Should().Contain(d => d.Message.Contains("NullReferenceException"));
@@ -316,7 +316,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         context.Response.StatusCode.Should().Be(404);
 
         var responseBody = GetResponseBody(context);
-        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, JsonOptions);
+        var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError!.Error.Code.Should().Be("ResourceNotFound");
         odataError.Error.Message.Should().Be("Not Found");
