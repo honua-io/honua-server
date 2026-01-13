@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.OgcFeatures;
+using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -160,7 +163,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             HttpMethod.Post,
             $"/ogc/features/collections/{TestCollectionId}/items")
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/geo+json")
+            Content = new StringContent(json, Encoding.UTF8, new MediaTypeHeaderValue("application/geo+json"))
         };
         request.Headers.TryAddWithoutValidation("Content-Crs", "CRS84");
 

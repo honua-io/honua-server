@@ -123,6 +123,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
             new CrsDetectionService(serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
+        services.AddHostedService<PostgresCrsWarmupService>();
 
         // Register import limits configuration
         services.AddSingleton(serviceProvider =>
@@ -159,6 +160,7 @@ internal static class ServiceCollectionExtensions
 
             return new StreamingFileImportService(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ICrsDetectionService>(),
                 performanceMonitor,
                 logger,
                 limits,

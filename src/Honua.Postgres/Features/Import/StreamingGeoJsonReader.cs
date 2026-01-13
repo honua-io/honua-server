@@ -232,12 +232,12 @@ internal sealed class StreamingGeoJsonReader
                         if (featureBuffer != null)
                         {
                             BufferFeatureBytes(featureEnd);
-                            feature = ParseFeature(featureBuffer.WrittenSpan);
+                            feature = ParseFeature(featureBuffer.WrittenMemory);
                         }
                         else
                         {
-                            var featureSpan = data.Span.Slice(featureStartIndex, featureEnd - featureStartIndex);
-                            feature = ParseFeature(featureSpan);
+                            var featureMemory = data.Slice(featureStartIndex, featureEnd - featureStartIndex);
+                            feature = ParseFeature(featureMemory);
                         }
 
                         if (feature != null)
@@ -289,7 +289,7 @@ internal sealed class StreamingGeoJsonReader
     /// <summary>
     /// Parse a single GeoJSON feature from a byte span.
     /// </summary>
-    private Feature? ParseFeature(ReadOnlySpan<byte> featureJson)
+    private Feature? ParseFeature(ReadOnlyMemory<byte> featureJson)
     {
         try
         {

@@ -44,9 +44,9 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         _containerClient.CreateIfNotExists();
     }
 
-    public CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
+    public override CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
-    public async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -222,7 +222,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
     }
 
-    public async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -239,7 +239,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
     }
 
 
-    public async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -261,7 +261,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
     }
 
-    public async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -293,7 +293,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
     }
 
-    public async Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -302,7 +302,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         return exists.Value;
     }
 
-    public async Task<IReadOnlyList<CloudFile>> ListFilesAsync(
+    public override async Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
         CancellationToken cancellationToken = default)
@@ -343,7 +343,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         return results;
     }
 
-    public async Task<string?> GetPresignedUrlAsync(
+    public override async Task<string?> GetPresignedUrlAsync(
         string fileId,
         TimeSpan? expiresIn = null,
         CancellationToken cancellationToken = default)
@@ -374,7 +374,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         return blobClient.GenerateSasUri(sasBuilder).ToString();
     }
 
-    public Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
+    public override Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
         string fileName,
         string contentType,
         TimeSpan? expiresIn = null,
@@ -410,7 +410,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         return Task.FromResult<(string Url, string FileId)?>((url, objectKey));
     }
 
-    public async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var prefix = CloudStoragePath.BuildPrefix(null, _options.BlobPrefix);

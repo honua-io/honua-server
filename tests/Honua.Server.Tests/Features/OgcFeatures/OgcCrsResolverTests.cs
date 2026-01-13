@@ -38,7 +38,7 @@ public sealed class OgcCrsResolverTests
     [Theory]
     [InlineData("CRS84")]
     [InlineData("OGC:CRS84")]
-    [UnitTest]
+    [Trait("Category", "Unit")]
     public void TryResolveCrs_WithCrs84Aliases_ReturnsDefinition(string alias)
     {
         var supportedCrs = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase)

@@ -486,12 +486,12 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             geometryProcessor,
             cacheManager,
             dictionaryPool,
-            statementCache: null,
-            logger: NullLogger<FeatureDataAccess>.Instance,
-            performanceOptions: null,
-            limitsOptions: null,
-            performanceMonitor: null,
-            schemaName: _testSchema));
+            StatementCache: null,
+            Logger: NullLogger<FeatureDataAccess>.Instance,
+            PerformanceOptions: null,
+            LimitsOptions: null,
+            PerformanceMonitor: null,
+            SchemaName: _testSchema));
 
         return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
     }

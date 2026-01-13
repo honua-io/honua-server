@@ -8,7 +8,6 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Core.Features.Tiles;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore;

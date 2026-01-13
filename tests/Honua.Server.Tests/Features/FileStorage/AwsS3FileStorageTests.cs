@@ -26,7 +26,7 @@ public sealed class AwsS3FileStorageTests
     private const string ServiceUrlEnv = "HONUA_TEST_S3_SERVICE_URL";
     private const string ForcePathStyleEnv = "HONUA_TEST_S3_FORCE_PATH_STYLE";
 
-    [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv)]
+    [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
     public async Task UploadDownloadDelete_RoundTripsContent()
     {
         var storage = await CreateStorageAsync();

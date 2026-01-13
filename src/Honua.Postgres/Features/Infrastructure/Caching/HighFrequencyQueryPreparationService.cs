@@ -1,9 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Generic;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -39,12 +37,12 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
     private readonly PreparedStatementCache _statementCache;
     private readonly ILogger<HighFrequencyQueryPreparationService> _logger;
     private readonly QueryCacheOptions _options;
-    private readonly IReadOnlyList<HighPriorityQuery> _highPriorityQueries;
+    private readonly HighPriorityQuery[] _highPriorityQueries;
 
     /// <summary>
     /// High-priority queries that should be prepared immediately
     /// </summary>
-    private static IReadOnlyList<HighPriorityQuery> BuildHighPriorityQueries(string featuresTableName)
+    private static HighPriorityQuery[] BuildHighPriorityQueries(string featuresTableName)
     {
         return new[]
         {
@@ -147,7 +145,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
             return;
         }
 
-        HighFrequencyQueryPreparationLog.PreparationStarting(_logger, _highPriorityQueries.Count);
+        HighFrequencyQueryPreparationLog.PreparationStarting(_logger, _highPriorityQueries.Length);
 
         try
         {

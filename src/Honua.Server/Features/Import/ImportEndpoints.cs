@@ -128,7 +128,7 @@ internal static partial class ImportEndpoints
         {
             [".geojson"] = "GeoJSON - Web-standard JSON format",
             [".json"] = "JSON - May contain GeoJSON data",
-            [".shp"] = "Shapefile - vector format (requires .shx, .dbf)",
+            [".zip"] = "Zipped Shapefile - contains .shp/.dbf/.shx/.prj components",
             [".gpkg"] = "GeoPackage - OGC SQLite-based format",
             [".gpx"] = "GPX - GPS Exchange format",
             [".kml"] = "KML - Keyhole Markup Language (Google Earth)",
@@ -188,6 +188,14 @@ internal static partial class ImportEndpoints
         }
 
         var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+        var extension = Path.GetExtension(safeFileName);
+        if (string.Equals(extension, ".shp", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         SupportedFileFormat? format = importService.DetectFormat(safeFileName);
         if (format == null)
         {
@@ -277,6 +285,14 @@ internal static partial class ImportEndpoints
         }
 
         var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
+        var extension = Path.GetExtension(safeFileName);
+        if (string.Equals(extension, ".shp", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         SupportedFileFormat? format = importService.DetectFormat(safeFileName);
         if (format == null)
         {

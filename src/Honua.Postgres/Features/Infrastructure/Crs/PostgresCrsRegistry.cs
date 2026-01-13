@@ -23,13 +23,17 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
     private static readonly CrsDefinition _crs84Definition =
         new(Crs84Uri, 4326, AxisOrder.EastNorth, true);
+    private static readonly CrsDefinition _epsg4326Definition =
+        new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true);
+    private static readonly CrsDefinition _epsg3857Definition =
+        new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false);
     private static readonly TimeSpan _cacheRetention = TimeSpan.FromHours(24);
     private const int MaxCacheEntries = 10000;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresCrsRegistry> _logger;
-    private readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
-    private readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
+    private static readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
 
     public PostgresCrsRegistry(IDatabaseConnectionProvider connectionProvider, ILogger<PostgresCrsRegistry> logger)
     {
@@ -60,7 +64,6 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         {
             var entry = new CrsCacheEntry(_crs84Definition, now);
             _identifierCache.TryAdd(normalized, entry);
-            _sridCache.TryAdd(_crs84Definition.Srid, entry);
             CleanupCacheIfNeeded(now);
             return _crs84Definition;
         }
@@ -92,10 +95,24 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         {
             if (!IsCacheExpired(cached, now))
             {
-                return cached.Definition;
+                if (!string.Equals(cached.Definition.Uri, Crs84Uri, StringComparison.OrdinalIgnoreCase))
+                {
+                    return cached.Definition;
+                }
+
+                _sridCache.TryRemove(srid, out _);
             }
 
             _sridCache.TryRemove(srid, out _);
+        }
+
+        if (TryGetBuiltInDefinition(srid, out var builtInDefinition))
+        {
+            var entry = new CrsCacheEntry(builtInDefinition, now);
+            _sridCache.TryAdd(srid, entry);
+            _identifierCache.TryAdd(builtInDefinition.Uri, entry);
+            CleanupCacheIfNeeded(now);
+            return builtInDefinition;
         }
 
         var definition = await LoadFromSpatialRefSysAsync(srid, cancellationToken).ConfigureAwait(false);
@@ -174,18 +191,22 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
                 .OpenConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
             await using var command = new NpgsqlCommand(
-                "SELECT srtext FROM spatial_ref_sys WHERE srid = @srid LIMIT 1",
+                "SELECT srtext, proj4text FROM public.spatial_ref_sys WHERE srid = @srid LIMIT 1",
                 connection);
             command.Parameters.AddWithValue("@srid", srid);
 
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            if (result is not string srtext)
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 return null;
             }
 
-            var isGeographic = DetermineIsGeographic(srid, srtext);
-            var axisOrder = DetermineAxisOrder(srtext, isGeographic);
+            var srtext = reader["srtext"] as string;
+            var proj4text = reader["proj4text"] as string;
+            var wkt = srtext ?? proj4text;
+
+            var isGeographic = DetermineIsGeographic(srid, wkt);
+            var axisOrder = DetermineAxisOrder(wkt, isGeographic);
             var uri = FormattableString.Invariant($"{EpsgUriPrefix}{srid}");
             return new CrsDefinition(uri, srid, axisOrder, isGeographic);
         }
@@ -395,6 +416,22 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
            direction.Equals("south", StringComparison.OrdinalIgnoreCase) ||
            direction.Equals("northing", StringComparison.OrdinalIgnoreCase) ||
            direction.Equals("southing", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryGetBuiltInDefinition(int srid, out CrsDefinition definition)
+    {
+        switch (srid)
+        {
+            case 4326:
+                definition = _epsg4326Definition;
+                return true;
+            case 3857:
+                definition = _epsg3857Definition;
+                return true;
+            default:
+                definition = default;
+                return false;
+        }
+    }
 
     private static partial class Log
     {

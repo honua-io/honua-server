@@ -53,9 +53,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         _client = CreateClient(_options);
     }
 
-    public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
+    public override CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
-    public async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -240,7 +240,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
     }
 
-    public async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -256,7 +256,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     }
 
 
-    public async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -274,7 +274,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return deleted;
     }
 
-    public async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -306,7 +306,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
     }
 
-    public async Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -321,7 +321,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
     }
 
-    public async Task<IReadOnlyList<CloudFile>> ListFilesAsync(
+    public override async Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
         CancellationToken cancellationToken = default)
@@ -354,7 +354,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return results;
     }
 
-    public async Task<string?> GetPresignedUrlAsync(
+    public override async Task<string?> GetPresignedUrlAsync(
         string fileId,
         TimeSpan? expiresIn = null,
         CancellationToken cancellationToken = default)
@@ -377,7 +377,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return _client.GetPreSignedURL(request);
     }
 
-    public Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
+    public override Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
         string fileName,
         string contentType,
         TimeSpan? expiresIn = null,
@@ -407,7 +407,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return Task.FromResult<(string Url, string FileId)?>((url, objectKey));
     }
 
-    public async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var prefix = CloudStoragePath.BuildPrefix(null, _options.KeyPrefix);
@@ -481,6 +481,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
     private static Dictionary<string, string> ToMetadataDictionary(MetadataCollection metadata)
     {
+        const string metadataPrefix = "x-amz-meta-";
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var key in metadata.Keys)
         {
@@ -492,7 +493,10 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             var value = metadata[key];
             if (!string.IsNullOrEmpty(value))
             {
-                result[key] = value;
+                var normalizedKey = key.StartsWith(metadataPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? key[metadataPrefix.Length..]
+                    : key;
+                result[normalizedKey] = value;
             }
         }
 

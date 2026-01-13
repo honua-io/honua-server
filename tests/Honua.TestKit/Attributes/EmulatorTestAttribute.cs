@@ -14,11 +14,33 @@ namespace Honua.TestKit.Attributes;
 [TraitDiscoverer("Honua.TestKit.Attributes.EmulatorTestDiscoverer", "Honua.TestKit")]
 public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
 {
+    private static readonly Dictionary<string, string> DefaultEmulatorValues =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["HONUA_TEST_S3_BUCKET"] = "honua-test",
+            ["HONUA_TEST_S3_REGION"] = "us-east-1",
+            ["HONUA_TEST_S3_ACCESS_KEY"] = "test",
+            ["HONUA_TEST_S3_SECRET_KEY"] = "test",
+            ["HONUA_TEST_S3_SERVICE_URL"] = "http://localhost:4566",
+            ["HONUA_TEST_S3_FORCE_PATH_STYLE"] = "true",
+            ["HONUA_TEST_AZURE_BLOB_CONNECTION_STRING"] = "UseDevelopmentStorage=true",
+            ["HONUA_TEST_AZURE_BLOB_CONTAINER"] = "honua-test"
+        };
+
     public EmulatorTestAttribute(params string[] requiredEnvironmentVariables)
     {
         if (requiredEnvironmentVariables.Length == 0)
         {
             return;
+        }
+
+        foreach (var name in requiredEnvironmentVariables)
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)) &&
+                DefaultEmulatorValues.TryGetValue(name, out var defaultValue))
+            {
+                Environment.SetEnvironmentVariable(name, defaultValue);
+            }
         }
 
         var missing = requiredEnvironmentVariables

@@ -1,21 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using FluentAssertions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using Xunit;
 
 namespace Honua.Postgres.Tests.Features.Infrastructure.Crs;
 
 [Collection("Database")]
 public sealed class PostgresCrsRegistryTests : IAsyncLifetime
 {
-    private const int TestSrid = 999001;
+    private const int TestSrid = 998999;
     private readonly PostgresFixture _fixture = new();
     private PostgresCrsRegistry? _registry;
 

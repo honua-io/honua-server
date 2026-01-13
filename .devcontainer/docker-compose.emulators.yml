@@ -13,15 +13,25 @@ services:
       - "4566:4566"
     volumes:
       - localstack_data:/var/lib/localstack
+    networks:
+      - honua-dev
+      - default
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.31.0
-    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data --loose"
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data --loose --skipApiVersionCheck"
     ports:
       - "10000:10000"
     volumes:
       - azurite_data:/data
+    networks:
+      - honua-dev
+      - default
 
 volumes:
   localstack_data:
   azurite_data:
+
+networks:
+  honua-dev:
+    driver: bridge

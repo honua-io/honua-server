@@ -9,7 +9,6 @@ using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
-using Xunit;
 
 namespace Honua.Server.Tests.Features.OData;
 

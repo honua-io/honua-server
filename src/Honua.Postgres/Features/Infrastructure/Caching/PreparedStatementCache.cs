@@ -154,7 +154,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 return cachedClone;
             }
 
-            if (TryRemoveCachedStatement(cacheKey, out var removed))
+            if (TryRemoveCachedStatement(cacheKey, out var removed) && removed != null)
             {
                 removed.Dispose();
             }
@@ -278,7 +278,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 return cachedClone;
             }
 
-            if (TryRemoveCachedStatement(cacheKey, out var removed))
+            if (TryRemoveCachedStatement(cacheKey, out var removed) && removed != null)
             {
                 removed.Dispose();
             }
@@ -347,7 +347,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
         foreach (var key in keysToRemove)
         {
-            if (TryRemoveCachedStatement(key, out var statement))
+            if (TryRemoveCachedStatement(key, out var statement) && statement != null)
             {
                 statement.Dispose();
                 removedCount++;
@@ -495,7 +495,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             .Select(kvp => kvp.Key)
             .FirstOrDefault();
 
-        if (lruKey != default && TryRemoveCachedStatement(lruKey, out var removed))
+        if (lruKey != default && TryRemoveCachedStatement(lruKey, out var removed) && removed != null)
         {
             removed.Dispose();
 
@@ -518,7 +518,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
             foreach (var key in expiredKeys)
             {
-                if (TryRemoveCachedStatement(key, out var expired))
+                if (TryRemoveCachedStatement(key, out var expired) && expired != null)
                 {
                     expired.Dispose();
                 }

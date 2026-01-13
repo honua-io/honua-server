@@ -44,10 +44,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public CloudStorageProvider Provider => CloudStorageProvider.Local;
+    public override CloudStorageProvider Provider => CloudStorageProvider.Local;
 
     /// <inheritdoc />
-    public async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
+    public override async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -233,7 +233,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -254,7 +254,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -303,7 +303,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -312,7 +312,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
@@ -321,7 +321,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<CloudFile>> ListFilesAsync(
+    public override Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
         CancellationToken cancellationToken = default)
@@ -336,7 +336,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public Task<string?> GetPresignedUrlAsync(
+    public override Task<string?> GetPresignedUrlAsync(
         string fileId,
         TimeSpan? expiresIn = null,
         CancellationToken cancellationToken = default)
@@ -355,7 +355,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
+    public override Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
         string fileName,
         string contentType,
         TimeSpan? expiresIn = null,
@@ -383,7 +383,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     }
 
     /// <inheritdoc />
-    public async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var expiredFiles = _fileIndex.Values

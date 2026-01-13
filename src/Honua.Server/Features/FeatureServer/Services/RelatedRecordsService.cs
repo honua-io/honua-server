@@ -52,6 +52,7 @@ internal interface IRelatedRecordsService
     /// <param name="result">Query result containing related features</param>
     /// <param name="objectIds">Original object IDs</param>
     /// <param name="relationship">Relationship definition</param>
+    /// <param name="objectIdFieldName">Field name used for object identifiers</param>
     /// <param name="returnGeometry">Whether to include geometry in response</param>
     /// <param name="outputSrid">Output spatial reference identifier</param>
     /// <param name="outFields">Fields to include in response</param>

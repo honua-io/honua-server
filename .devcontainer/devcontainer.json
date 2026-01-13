@@ -1,7 +1,7 @@
 {
   "name": "Honua Server Development",
   "dockerComposeFile": [
-    "../docker-compose.yml",
+    "docker-compose.dev.yml",
     "docker-compose.emulators.yml"
   ],
   "service": "honua",
@@ -56,11 +56,7 @@
 
   // Container configuration
   "overrideCommand": false,
-  "mounts": [
-    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-    "source=honua-dev-nuget,target=/home/vscode/.nuget,type=volume",
-    "source=honua-dev-cache,target=/home/vscode/.cache,type=volume"
-  ],
+  "mounts": [],
 
   // Environment variables
   "containerEnv": {

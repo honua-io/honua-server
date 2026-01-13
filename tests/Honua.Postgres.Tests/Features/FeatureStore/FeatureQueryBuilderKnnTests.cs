@@ -4,7 +4,6 @@
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
-using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
 
 namespace Honua.Postgres.Tests.Features.FeatureStore;
@@ -25,7 +24,7 @@ public sealed class FeatureQueryBuilderKnnTests
             SpatialFilter = SpatialFilter.CreateKnnFilter(new byte[] { 1, 2, 3 }, count: 5, srid: 4269)
         };
 
-        var result = queryBuilder.BuildSelectQuery(layerId: 1, query, CoreGeometryStorageType.Geometry);
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
 
         result.Sql.Should().Contain("ORDER BY ST_Distance(");
         result.Sql.Should().Contain("::geography");

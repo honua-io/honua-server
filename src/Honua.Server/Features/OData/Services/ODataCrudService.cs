@@ -55,13 +55,13 @@ internal sealed partial class ODataCrudService
     {
         ArgumentNullException.ThrowIfNull(dependencies);
 
-        _resourceValidator = dependencies.ResourceValidator ?? throw new ArgumentNullException(nameof(dependencies.ResourceValidator));
-        _featureReader = dependencies.FeatureReader ?? throw new ArgumentNullException(nameof(dependencies.FeatureReader));
-        _featureWriter = dependencies.FeatureWriter ?? throw new ArgumentNullException(nameof(dependencies.FeatureWriter));
-        _geometryService = dependencies.GeometryService ?? throw new ArgumentNullException(nameof(dependencies.GeometryService));
-        _crsRegistry = dependencies.CrsRegistry ?? throw new ArgumentNullException(nameof(dependencies.CrsRegistry));
-        _etagService = dependencies.ETagService ?? throw new ArgumentNullException(nameof(dependencies.ETagService));
-        _mutationValidator = dependencies.MutationValidator ?? throw new ArgumentNullException(nameof(dependencies.MutationValidator));
+        _resourceValidator = dependencies.ResourceValidator ?? throw new ArgumentNullException(nameof(dependencies), "ResourceValidator is required.");
+        _featureReader = dependencies.FeatureReader ?? throw new ArgumentNullException(nameof(dependencies), "FeatureReader is required.");
+        _featureWriter = dependencies.FeatureWriter ?? throw new ArgumentNullException(nameof(dependencies), "FeatureWriter is required.");
+        _geometryService = dependencies.GeometryService ?? throw new ArgumentNullException(nameof(dependencies), "GeometryService is required.");
+        _crsRegistry = dependencies.CrsRegistry ?? throw new ArgumentNullException(nameof(dependencies), "CrsRegistry is required.");
+        _etagService = dependencies.ETagService ?? throw new ArgumentNullException(nameof(dependencies), "ETagService is required.");
+        _mutationValidator = dependencies.MutationValidator ?? throw new ArgumentNullException(nameof(dependencies), "MutationValidator is required.");
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

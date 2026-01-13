@@ -58,13 +58,13 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     {
         ArgumentNullException.ThrowIfNull(dependencies);
 
-        _connectionProvider = dependencies.ConnectionProvider ?? throw new ArgumentNullException(nameof(dependencies.ConnectionProvider));
-        _geometryProcessor = dependencies.GeometryProcessor ?? throw new ArgumentNullException(nameof(dependencies.GeometryProcessor));
-        _cacheManager = dependencies.CacheManager ?? throw new ArgumentNullException(nameof(dependencies.CacheManager));
-        _dictionaryPool = dependencies.DictionaryPool ?? throw new ArgumentNullException(nameof(dependencies.DictionaryPool));
+        _connectionProvider = dependencies.ConnectionProvider ?? throw new ArgumentNullException(nameof(dependencies), "ConnectionProvider is required.");
+        _geometryProcessor = dependencies.GeometryProcessor ?? throw new ArgumentNullException(nameof(dependencies), "GeometryProcessor is required.");
+        _cacheManager = dependencies.CacheManager ?? throw new ArgumentNullException(nameof(dependencies), "CacheManager is required.");
+        _dictionaryPool = dependencies.DictionaryPool ?? throw new ArgumentNullException(nameof(dependencies), "DictionaryPool is required.");
         _statementCache = dependencies.StatementCache;
         _performanceMonitor = dependencies.PerformanceMonitor;
-        _logger = dependencies.Logger ?? throw new ArgumentNullException(nameof(dependencies.Logger));
+        _logger = dependencies.Logger ?? throw new ArgumentNullException(nameof(dependencies), "Logger is required.");
         _slowQueryThresholdMs = (dependencies.PerformanceOptions?.Value.SlowRequestThreshold ?? TimeSpan.FromSeconds(1))
             .TotalMilliseconds;
 
