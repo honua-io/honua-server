@@ -8,9 +8,9 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 
 namespace Honua.Postgres.Features.Security;
 
@@ -31,6 +31,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
 {
     private readonly IDatabaseConnectionProvider _defaultProvider;
     private readonly ISecureConnectionResolver _secureResolver;
+    private readonly SecureConnectionDataSourceCache _dataSourceCache;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SecureConnectionAwareDatabaseProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
@@ -65,6 +66,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     public SecureConnectionAwareDatabaseProvider(
         IDatabaseConnectionProvider defaultProvider,
         ISecureConnectionResolver secureResolver,
+        SecureConnectionDataSourceCache dataSourceCache,
         IConfiguration configuration,
         ILogger<SecureConnectionAwareDatabaseProvider> logger,
         ISchemaContext? schemaContext = null,
@@ -72,6 +74,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     {
         _defaultProvider = defaultProvider ?? throw new ArgumentNullException(nameof(defaultProvider));
         _secureResolver = secureResolver ?? throw new ArgumentNullException(nameof(secureResolver));
+        _dataSourceCache = dataSourceCache ?? throw new ArgumentNullException(nameof(dataSourceCache));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaContext = schemaContext;
@@ -104,13 +107,12 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
             var connectionString = await _secureResolver.ResolveConnectionStringAsync(
                 _namedConnectionToUse, cancellationToken);
 
-            var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync(cancellationToken);
+            var dataSource = _dataSourceCache.GetOrCreate(connectionString);
+            var connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
 
-            DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
-
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);
+            DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
             return connection;
         }

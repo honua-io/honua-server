@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.FeatureServer.Models;
@@ -94,7 +93,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Object ID field name used across the service
     /// </summary>
-    public string ObjectIdField { get; init; } = "DatabaseSchema.ObjectIdColumn";
+    public string ObjectIdField { get; init; } = FieldNames.ObjectId;
 
     /// <summary>
     /// Global ID field name (if used)
@@ -576,7 +575,7 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Object ID field name for the layer
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = "DatabaseSchema.ObjectIdColumn";
+    public string ObjectIdFieldName { get; init; } = FieldNames.ObjectId;
 
     /// <summary>
     /// Object IDs returned by the query (when returnIdsOnly=true)
@@ -1028,7 +1027,7 @@ public sealed class GeoJsonFeature
     public GeoJsonGeometry? Geometry { get; init; }
 
     /// <summary>
-    /// Feature ID (typically the DatabaseSchema.ObjectIdColumn)
+    /// Feature ID (typically the objectid field)
     /// </summary>
     public object? Id { get; init; }
 }
@@ -1282,7 +1281,7 @@ public sealed class RelatedRecords
     /// <summary>
     /// Object ID field name
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = "DatabaseSchema.ObjectIdColumn";
+    public string ObjectIdFieldName { get; init; } = FieldNames.ObjectId;
 
     /// <summary>
     /// Global ID field name (if used)

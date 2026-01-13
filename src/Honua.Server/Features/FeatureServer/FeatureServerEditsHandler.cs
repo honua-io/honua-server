@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
@@ -467,7 +468,7 @@ internal sealed class FeatureServerEditsHandler(
 
         foreach (var entry in attributes)
         {
-            if (string.Equals(entry.Key, "objectid", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
             {
                 return FeatureServerValueParser.TryConvertToLong(entry.Value, out objectId);
             }

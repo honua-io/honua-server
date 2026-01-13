@@ -117,13 +117,11 @@ Honua/
 │   └── terraform/
 │       ├── modules/
 │       │   ├── aws-ecs/           # AWS ECS/Fargate
-│       │   ├── azure-aca/         # Azure Container Apps
-│       │   └── gcp-cloudrun/      # Google Cloud Run
+│       │   └── azure-aca/         # Azure Container Apps
 │       │
 │       └── examples/
 │           ├── aws/               # Complete AWS example
-│           ├── azure/             # Complete Azure example
-│           └── gcp/               # Complete GCP example
+│           └── azure/             # Complete Azure example
 │
 ├── scripts/
 │   ├── check-perf-regression.py   # Benchmark regression checker
@@ -135,14 +133,13 @@ Honua/
 │   │   └── release.yml            # Publish images
 │   └── perf-baseline.json         # Benchmark baseline for regression
 │
-└── docs/
-    ├── api/                       # API documentation
-    ├── architecture/              # Architecture decisions
-    └── deployment/                # Deployment guides
+    └── docs/
+        ├── api/                       # API documentation
+        ├── architecture/              # Architecture decisions
+        └── deployment/                # Deployment guides
         ├── kubernetes.md          # Helm install guide
         ├── aws.md                 # AWS ECS/Fargate guide
-        ├── azure.md               # Azure Container Apps guide
-        └── gcp.md                 # GCP Cloud Run guide
+        └── azure.md               # Azure Container Apps guide
 ```
 
 ### Key Architectural Principles
@@ -2281,15 +2278,14 @@ Critical paths include:
 
 ### Phase 4.5: Deployment Templates
 
-**Goal:** Production-ready deployment options for Kubernetes and major cloud providers.
+**Goal:** Production-ready deployment options for Kubernetes plus AWS and Azure.
 
 | Task | Deliverable |
 |------|-------------|
 | **Helm chart** | Complete K8s deployment with configurable values |
 | **AWS Terraform** | ECS/Fargate module with RDS PostgreSQL, ALB, secrets |
 | **Azure Terraform** | Container Apps module with Azure Database for PostgreSQL |
-| **GCP Terraform** | Cloud Run module with Cloud SQL PostgreSQL |
-| **Examples** | Complete working examples for each cloud |
+| **Examples** | Complete working examples for AWS and Azure |
 | **Documentation** | Step-by-step deployment guides for each platform |
 
 **Helm Chart Features:**
@@ -2305,9 +2301,9 @@ Critical paths include:
 **Terraform Module Features:**
 - VPC/network setup (or use existing)
 - Managed PostgreSQL with PostGIS
-- Container service (ECS/Container Apps/Cloud Run)
+- Container service (ECS/Container Apps)
 - Load balancer with TLS termination
-- Secrets management (Secrets Manager/Key Vault/Secret Manager)
+- Secrets management (Secrets Manager/Key Vault)
 - IAM/RBAC for least-privilege access
 - Optional Redis for caching
 - Outputs for connection strings and endpoints
@@ -2317,7 +2313,6 @@ Critical paths include:
 - [ ] `helm test` passes (connectivity, health checks)
 - [ ] AWS Terraform applies cleanly, Honua accessible via ALB
 - [ ] Azure Terraform applies cleanly, Honua accessible via Container Apps endpoint
-- [ ] GCP Terraform applies cleanly, Honua accessible via Cloud Run URL
 - [ ] Each deployment connects to managed PostgreSQL with PostGIS
 - [ ] OIDC authentication works in all deployment scenarios
 - [ ] Deployment guides tested by someone other than author
@@ -2388,7 +2383,7 @@ Critical paths include:
 - [ ] OIDC authentication works (Azure AD, Google, generic provider)
 - [ ] Single Docker container deploys and runs
 - [ ] Helm chart deploys to Kubernetes
-- [ ] Terraform modules deploy to AWS, Azure, and GCP
+- [ ] Terraform modules deploy to AWS and Azure
 - [ ] Redis cache works when configured (in-memory fallback otherwise)
 
 ### Quality
@@ -2409,7 +2404,7 @@ Critical paths include:
 
 - [ ] README with quick start
 - [ ] API documentation (OpenAPI)
-- [ ] Deployment guides (Kubernetes, AWS, Azure, GCP)
+- [ ] Deployment guides (Kubernetes, AWS, Azure)
 - [ ] Architecture decisions recorded
 
 ---

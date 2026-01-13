@@ -57,7 +57,6 @@ public sealed class TestLayerCatalog : ILayerCatalog
             Description: "Test service for integration tests",
             Layers: new[] { _testLayer },
             SpatialReference: spatialRef,
-            MaxRecordCount: 1000,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
             ServiceExtent: extent,

@@ -31,11 +31,13 @@ internal sealed partial class TestSchemaMiddleware
             if (!_schemaNameRegex.IsMatch(schemaName))
             {
                 Log.InvalidSchemaHeader(_logger, schemaName);
-                await ProtocolErrorWriter.WriteErrorAsync(
-                    context,
+                var errorResponse = new StandardErrorResponse(
                     StatusCodes.Status400BadRequest,
                     "Invalid test schema header.",
                     $"Schema '{schemaName}' is not a valid identifier.");
+                await StandardErrorResponseFormatter
+                    .FormatError(context, errorResponse)
+                    .ExecuteAsync(context);
                 return;
             }
 

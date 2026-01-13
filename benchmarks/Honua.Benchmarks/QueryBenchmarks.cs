@@ -60,7 +60,7 @@ public class QueryBenchmarks
         var geometryProcessor = new GeometryProcessor();
         var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _schemaName);
         var dataAccessLogger = NullLogger<FeatureDataAccess>.Instance;
-        var dataAccess = new FeatureDataAccess(
+        var dataAccess = new FeatureDataAccess(new FeatureDataAccessDependencies(
             connectionProvider,
             geometryProcessor,
             cacheManager,
@@ -70,7 +70,7 @@ public class QueryBenchmarks
             performanceOptions: null,
             limitsOptions: null,
             performanceMonitor: null,
-            schemaName: _schemaName);
+            schemaName: _schemaName));
         _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 
         _spatialFilter = SpatialFilter.Create(

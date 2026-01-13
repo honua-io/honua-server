@@ -220,7 +220,33 @@ public class PostgresSqlFilterTranslatorTests
         var result = _translator.Translate(spatial, _layer);
 
         // Assert
-        result.Sql.Should().StartWith("ST_DWithin(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1), @p2)");
+        result.Sql.Should().Be("ST_DWithin(\"geom\"::geometry::geography, ST_GeomFromWKB(@p0, @p1)::geography, @p2)");
+        result.Parameters.Should().HaveCount(3);
+        result.Parameters[2].Should().Be(100);
+    }
+
+    [Fact]
+    public void Translate_SpatialDistancePredicate_WithNonWgs84GeographicLayer_TransformsToWgs84()
+    {
+        // Arrange
+        var layer = _layer with
+        {
+            SpatialReference = SpatialReference.Create(4269, null, null, null, "GEOGCS[\"NAD83\"]")
+        };
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4269, "POINT(1 2)");
+        var distance = new Literal(100, LiteralType.Number);
+        var spatial = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            geometry,
+            distance);
+
+        // Act
+        var result = _translator.Translate(spatial, layer);
+
+        // Assert
+        result.Sql.Should().Be("ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2)");
         result.Parameters.Should().HaveCount(3);
         result.Parameters[2].Should().Be(100);
     }

@@ -14,7 +14,6 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="Description">Human-readable service description</param>
 /// <param name="Layers">Layers available in this service</param>
 /// <param name="SpatialReference">Default coordinate system for the service</param>
-/// <param name="MaxRecordCount">Maximum number of features returned in a single query</param>
 /// <param name="SupportedFormats">Query response formats supported by the service</param>
 /// <param name="Capabilities">Operations supported by the service</param>
 /// <param name="ServiceExtent">Overall spatial extent of all service data</param>
@@ -24,7 +23,6 @@ public record ServiceDefinition(
     string Description,
     LayerDefinition[] Layers,
     SpatialReference SpatialReference,
-    int MaxRecordCount = 1000,
     string[] SupportedFormats = default!,
     string[] Capabilities = default!,
     FeatureExtent? ServiceExtent = null,
@@ -197,12 +195,6 @@ public record ServiceDefinition(
 
         if (Name?.Length > 64)
             errors.Add("Service name cannot exceed 64 characters");
-
-        if (MaxRecordCount <= 0)
-            errors.Add("MaxRecordCount must be positive");
-
-        if (MaxRecordCount > 10000)
-            errors.Add("MaxRecordCount should not exceed 10000 for performance");
 
         if (Layers.Length == 0)
             errors.Add("Service must have at least one layer");

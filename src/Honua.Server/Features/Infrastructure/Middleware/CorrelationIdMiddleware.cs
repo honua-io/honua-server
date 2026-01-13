@@ -123,7 +123,7 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         // Collection ID for OGC API Features
         if (routeValues.TryGetValue("collectionId", out var collectionId) && collectionId != null)
         {
-            activity.SetTag(HonuaTelemetry.Tags.LayerId, collectionId.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId.ToString());
         }
 
         // Tile coordinates for MVT tile requests
@@ -145,13 +145,18 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
     {
         var value = path.Value ?? string.Empty;
 
+        if (value.StartsWith("/ogc/tiles", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.OgcTiles;
+        }
+
         if (value.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/tiles", StringComparison.OrdinalIgnoreCase))
         {
             return HonuaTelemetry.Protocols.FeatureServer;
         }
 
-        if (value.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) ||
+        if (value.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/collections", StringComparison.OrdinalIgnoreCase))
         {
             return HonuaTelemetry.Protocols.OgcFeatures;

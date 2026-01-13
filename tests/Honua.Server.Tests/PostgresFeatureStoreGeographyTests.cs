@@ -42,14 +42,17 @@ public sealed class PostgresFeatureStoreGeographyTests : IAsyncLifetime
         var geometryProcessor = new GeometryProcessor();
         var cacheManager = new FeatureCacheManager(connectionProvider, NullLogger<FeatureCacheManager>.Instance, _schemaName);
         var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _schemaName);
-        var dataAccess = new FeatureDataAccess(
+        var dataAccess = new FeatureDataAccess(new FeatureDataAccessDependencies(
             connectionProvider,
             geometryProcessor,
             cacheManager,
             dictionaryPool,
             statementCache: null,
             logger: NullLogger<FeatureDataAccess>.Instance,
-            schemaName: _schemaName);
+            performanceOptions: null,
+            limitsOptions: null,
+            performanceMonitor: null,
+            schemaName: _schemaName));
         _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 
         await _fixture.ExecuteAsync("""

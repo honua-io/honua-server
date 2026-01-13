@@ -129,6 +129,24 @@ internal static class OgcFeaturesUtilities
     {
         var trimmed = crs.Trim();
 
+        if (trimmed.Equals(Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            return Crs84Uri;
+        }
+
+        const string ogcUrnPrefix = "urn:ogc:def:crs:OGC:";
+        if (trimmed.StartsWith(ogcUrnPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = trimmed[ogcUrnPrefix.Length..];
+            if (suffix.EndsWith(":CRS84", StringComparison.OrdinalIgnoreCase) ||
+                suffix.Equals("CRS84", StringComparison.OrdinalIgnoreCase))
+            {
+                return Crs84Uri;
+            }
+        }
+
         if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
         {
             var code = trimmed[5..];

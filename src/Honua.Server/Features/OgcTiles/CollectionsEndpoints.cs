@@ -105,8 +105,8 @@ internal static class CollectionsEndpoints
         catch (Exception ex)
         {
             OgcTilesCollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500,
-                "Internal server error",
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
                 "An error occurred while retrieving collections.");
         }
     }
@@ -180,8 +180,8 @@ internal static class CollectionsEndpoints
         catch (Exception ex)
         {
             OgcTilesCollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500,
-                "Internal server error",
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
                 "An error occurred while retrieving the collection.");
         }
     }
@@ -230,7 +230,7 @@ internal static class CollectionsEndpoints
         SpatialExtent? spatialExtent = null;
         if (layer.Extent != null)
         {
-            var extentCrsIdentifier = layer.SpatialReference.ToOgcCrs();
+            var extentCrsIdentifier = layer.Extent.Value.SpatialReference.ToOgcCrs();
             var extentDefinition = await crsRegistry.ResolveAsync(extentCrsIdentifier, cancellationToken);
             spatialExtent = new SpatialExtent
             {
@@ -281,11 +281,7 @@ internal static class CollectionsEndpoints
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                statusCodeResult.StatusCode.Value,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");

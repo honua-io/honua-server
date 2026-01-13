@@ -6,6 +6,8 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Services;
 using Microsoft.Extensions.Options;
@@ -20,6 +22,14 @@ internal static class ODataServiceCollectionExtensions
 
         services.AddScoped<ODataMetadataService>();
         services.AddScoped<ODataQueryService>();
+        services.AddScoped(sp => new ODataCrudDependencies(
+            sp.GetRequiredService<IResourceValidator>(),
+            sp.GetRequiredService<IFeatureReader>(),
+            sp.GetRequiredService<IFeatureWriter>(),
+            sp.GetRequiredService<IGeometryService>(),
+            sp.GetRequiredService<ICrsRegistry>(),
+            sp.GetRequiredService<IETagService>(),
+            sp.GetRequiredService<FeatureMutationValidator>()));
         services.AddScoped<ODataCrudService>();
         services.AddScoped<ODataSearchService>();
         services.AddScoped<ODataQuerySearchService>();

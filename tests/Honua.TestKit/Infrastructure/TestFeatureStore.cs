@@ -1085,7 +1085,15 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return Task.FromResult(QueryResult<Feature>.Empty());
     }
 
-    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    public Task<byte[]?> GetMvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        Honua.Core.Features.Tiles.TileOptions tileOptions,
+        Honua.Core.Configuration.TileLimits tileLimits,
+        CancellationToken cancellationToken = default)
     {
         // Return a simple mock MVT tile for testing
         if (!_layerFeatures.TryGetValue(layerId, out var features) || features.Count == 0)
@@ -1102,11 +1110,5 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         };
 
         return Task.FromResult<byte[]?>(mockMvt);
-    }
-
-    public Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query, Honua.Core.Features.Tiles.TileOptions tileOptions, CancellationToken cancellationToken = default)
-    {
-        // Call the existing method - tile options are used by the real PostgreSQL implementation but not needed for test mocks
-        return GetMvtTileAsync(layerId, x, y, z, query, cancellationToken);
     }
 }

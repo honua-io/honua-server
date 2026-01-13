@@ -60,6 +60,7 @@ internal interface IRelatedRecordsService
         QueryResult<Feature> result,
         long[] objectIds,
         Relationship relationship,
+        string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
         ImmutableArray<string>? outFields);
@@ -151,6 +152,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         QueryResult<Feature> result,
         long[] objectIds,
         Relationship relationship,
+        string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
         ImmutableArray<string>? outFields)
@@ -192,6 +194,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                 RelatedRecords = hasRelatedFeatures && relatedFeatures!.Count > 0
                     ? new RelatedRecords
                     {
+                        ObjectIdFieldName = objectIdFieldName,
                         SpatialReference = spatialReference,
                         Features = [.. relatedFeatures!.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFieldSet, _geometryLimits))]
                     }

@@ -31,11 +31,6 @@ public sealed record CreateServiceRequest
     public int SpatialReferenceSrid { get; init; } = 4326;
 
     /// <summary>
-    /// Maximum records returned per query (default: 1000)
-    /// </summary>
-    public int MaxRecordCount { get; init; } = 1000;
-
-    /// <summary>
     /// Optional access policy for the service.
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
@@ -50,11 +45,6 @@ public sealed record UpdateServiceRequest
     /// New description (optional)
     /// </summary>
     public string? Description { get; init; }
-
-    /// <summary>
-    /// New max record count (optional)
-    /// </summary>
-    public int? MaxRecordCount { get; init; }
 
     /// <summary>
     /// Updated access policy for the service (optional).
@@ -81,11 +71,6 @@ public sealed record ServiceResponse
     /// Spatial reference SRID
     /// </summary>
     public required int SpatialReferenceSrid { get; init; }
-
-    /// <summary>
-    /// Maximum records per query
-    /// </summary>
-    public required int MaxRecordCount { get; init; }
 
     /// <summary>
     /// Number of layers in service

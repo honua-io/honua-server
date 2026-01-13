@@ -69,8 +69,7 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
         {
             Name = $"test_service_{Guid.NewGuid():N}",
             Description = "Test service created by integration test",
-            SpatialReferenceSrid = 4326,
-            MaxRecordCount = 1000
+            SpatialReferenceSrid = 4326
         };
 
         var content = new StringContent(

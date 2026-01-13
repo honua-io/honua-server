@@ -35,9 +35,12 @@ internal sealed partial class ODataAdvancedQueryHandler(
     {
         try
         {
-            Log.ApplyRequested(_logger, layerId);
+            ODataLog.ApplyRequested(_logger, layerId);
 
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Apply);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.Apply);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -111,9 +114,12 @@ internal sealed partial class ODataAdvancedQueryHandler(
     {
         try
         {
-            Log.SearchRequested(_logger, layerId);
+            ODataLog.SearchRequested(_logger, layerId);
 
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Search);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.Search);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -124,29 +130,20 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", "$search parameter is required.");
             }
 
-            if (!ODataParsingUtilities.TryParseOptionalInt(top, "$top", out var topValue, out var parseError))
+            if (!ODataRequestValidation.TryParsePaging(
+                context,
+                _validationService,
+                top,
+                skip,
+                count,
+                out var paging,
+                out var pagingError))
             {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
+                return pagingError!;
             }
 
-            if (!ODataParsingUtilities.TryParseOptionalInt(skip, "$skip", out var skipValue, out parseError))
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            }
-
-            if (!ODataParsingUtilities.TryParseOptionalBool(count, "$count", out var countValue, out parseError))
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            }
-
-            var paginationResult = _validationService.ValidateAndNormalizePagination(skipValue, topValue);
-            if (!paginationResult.IsValid)
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption",
-                    paginationResult.ErrorMessage ?? "Invalid OData query.");
-            }
-
-            var pagination = paginationResult.Value!;
+            var pagination = paging!.Pagination;
+            var countValue = paging.Count;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
             var layerResult = await resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
@@ -196,34 +193,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
     }
 
-    private IResult? ValidateAllowedParameters(
-        HttpContext context,
-        IReadOnlySet<string> allowedParameters)
-    {
-        var validationResult = _validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
-        }
-
-        return null;
-    }
-
-
     /// <summary>
     /// Logging methods for OData advanced query operations.
     /// </summary>
     private static partial class Log
     {
-        [LoggerMessage(EventId = 3015, Level = LogLevel.Information, Message = "OData $apply aggregation requested for layer {LayerId}.")]
-        public static partial void ApplyRequested(ILogger logger, int layerId);
-
-        [LoggerMessage(EventId = 3016, Level = LogLevel.Information, Message = "OData $search requested for layer {LayerId}.")]
-        public static partial void SearchRequested(ILogger logger, int layerId);
-
         [LoggerMessage(EventId = 3017, Level = LogLevel.Warning, Message = "Invalid OData $apply expression for layer {LayerId}.")]
         public static partial void InvalidApplyExpression(ILogger logger, int layerId, Exception exception);
 

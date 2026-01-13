@@ -25,7 +25,6 @@ This plan orders the remaining open tickets by dependency and risk. It is intent
 - #31 Helm chart for Kubernetes
 - #32 AWS Terraform module
 - #33 Azure Terraform module
-- #34 GCP Terraform module
 - #196 Environment-first configuration
 - #194 OpenTelemetry tracing
 

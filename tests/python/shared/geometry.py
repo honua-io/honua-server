@@ -16,21 +16,28 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from shapely import wkt as shapely_wkt
 from shapely.geometry import (
-    GeometryCollection,
     LineString,
     MultiLineString,
     MultiPoint,
-    MultiPolygon,
     Point,
-    Polygon,
     mapping,
     shape,
 )
 
+
+def _load_geometry_fixtures() -> dict[str, Any]:
+    fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "geometry-fixtures.json"
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+_GEOMETRY_FIXTURES = _load_geometry_fixtures()
+_FIXTURE_GEOMETRIES = _GEOMETRY_FIXTURES["geometries"]
+_BASE_LON = _GEOMETRY_FIXTURES["base"]["lon"]
+_BASE_LAT = _GEOMETRY_FIXTURES["base"]["lat"]
 
 @dataclass
 class TestGeometry:
@@ -125,11 +132,35 @@ class GeometryGenerator:
     """
 
     # Base coordinates for test data (San Francisco area)
-    BASE_LON = -122.4194
-    BASE_LAT = 37.7749
+    BASE_LON = _BASE_LON
+    BASE_LAT = _BASE_LAT
+
+    def _from_fixture(self, key: str, name: str | None = None) -> TestGeometry:
+        fixture = _FIXTURE_GEOMETRIES[key]
+        geojson = fixture["geojson"]
+        is_null = fixture.get("isNull", False) or geojson is None
+        geometry_type = fixture.get("geometryType", "Unknown")
+        has_holes = fixture.get("hasHoles", False)
+        is_multi = fixture.get("isMulti", False)
+        resolved_name = name or fixture.get("defaultName", key)
+
+        wkt = "" if is_null else shape(geojson).wkt
+
+        return TestGeometry(
+            name=resolved_name,
+            geojson=geojson,
+            wkt=wkt,
+            geometry_type=geometry_type,
+            has_holes=has_holes,
+            is_multi=is_multi,
+            is_null=is_null,
+        )
 
     def point(self, name: str = "test_point", lon: float = None, lat: float = None) -> TestGeometry:
         """Generate a Point geometry."""
+        if lon is None and lat is None:
+            return self._from_fixture("point", name)
+
         lon = lon or self.BASE_LON
         lat = lat or self.BASE_LAT
         geom = Point(lon, lat)
@@ -142,6 +173,9 @@ class GeometryGenerator:
 
     def multipoint(self, name: str = "test_multipoint", count: int = 3) -> TestGeometry:
         """Generate a MultiPoint geometry."""
+        if count == 3:
+            return self._from_fixture("multipoint", name)
+
         points = [(self.BASE_LON + i * 0.01, self.BASE_LAT + i * 0.01) for i in range(count)]
         geom = MultiPoint(points)
         return TestGeometry(
@@ -154,6 +188,9 @@ class GeometryGenerator:
 
     def linestring(self, name: str = "test_linestring", points: int = 4) -> TestGeometry:
         """Generate a LineString geometry."""
+        if points == 4:
+            return self._from_fixture("linestring", name)
+
         coords = [(self.BASE_LON + i * 0.01, self.BASE_LAT + i * 0.005) for i in range(points)]
         geom = LineString(coords)
         return TestGeometry(
@@ -165,6 +202,9 @@ class GeometryGenerator:
 
     def multilinestring(self, name: str = "test_multilinestring", lines: int = 2) -> TestGeometry:
         """Generate a MultiLineString geometry."""
+        if lines == 2:
+            return self._from_fixture("multilinestring", name)
+
         all_lines = []
         for line_idx in range(lines):
             coords = [
@@ -183,176 +223,35 @@ class GeometryGenerator:
 
     def polygon_simple(self, name: str = "test_polygon_simple") -> TestGeometry:
         """Generate a simple Polygon without holes."""
-        exterior = [
-            (self.BASE_LON, self.BASE_LAT),
-            (self.BASE_LON + 0.01, self.BASE_LAT),
-            (self.BASE_LON + 0.01, self.BASE_LAT + 0.01),
-            (self.BASE_LON, self.BASE_LAT + 0.01),
-            (self.BASE_LON, self.BASE_LAT),  # Close the ring
-        ]
-        geom = Polygon(exterior)
-        return TestGeometry(
-            name=name,
-            geojson=mapping(geom),
-            wkt=geom.wkt,
-            geometry_type="Polygon",
-        )
+        return self._from_fixture("polygonSimple", name)
 
     def polygon_with_hole(self, name: str = "test_polygon_with_hole") -> TestGeometry:
         """Generate a Polygon with one hole."""
-        exterior = [
-            (self.BASE_LON, self.BASE_LAT),
-            (self.BASE_LON + 0.02, self.BASE_LAT),
-            (self.BASE_LON + 0.02, self.BASE_LAT + 0.02),
-            (self.BASE_LON, self.BASE_LAT + 0.02),
-            (self.BASE_LON, self.BASE_LAT),
-        ]
-        hole = [
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.005),
-            (self.BASE_LON + 0.015, self.BASE_LAT + 0.005),
-            (self.BASE_LON + 0.015, self.BASE_LAT + 0.015),
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.015),
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.005),
-        ]
-        geom = Polygon(exterior, [hole])
-        return TestGeometry(
-            name=name,
-            geojson=mapping(geom),
-            wkt=geom.wkt,
-            geometry_type="Polygon",
-            has_holes=True,
-        )
+        return self._from_fixture("polygonWithHole", name)
 
     def polygon_with_multiple_holes(
         self, name: str = "test_polygon_multiple_holes"
     ) -> TestGeometry:
         """Generate a Polygon with multiple holes."""
-        exterior = [
-            (self.BASE_LON, self.BASE_LAT),
-            (self.BASE_LON + 0.04, self.BASE_LAT),
-            (self.BASE_LON + 0.04, self.BASE_LAT + 0.04),
-            (self.BASE_LON, self.BASE_LAT + 0.04),
-            (self.BASE_LON, self.BASE_LAT),
-        ]
-        hole1 = [
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.005),
-            (self.BASE_LON + 0.015, self.BASE_LAT + 0.005),
-            (self.BASE_LON + 0.015, self.BASE_LAT + 0.015),
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.015),
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.005),
-        ]
-        hole2 = [
-            (self.BASE_LON + 0.025, self.BASE_LAT + 0.025),
-            (self.BASE_LON + 0.035, self.BASE_LAT + 0.025),
-            (self.BASE_LON + 0.035, self.BASE_LAT + 0.035),
-            (self.BASE_LON + 0.025, self.BASE_LAT + 0.035),
-            (self.BASE_LON + 0.025, self.BASE_LAT + 0.025),
-        ]
-        geom = Polygon(exterior, [hole1, hole2])
-        return TestGeometry(
-            name=name,
-            geojson=mapping(geom),
-            wkt=geom.wkt,
-            geometry_type="Polygon",
-            has_holes=True,
-        )
+        return self._from_fixture("polygonWithMultipleHoles", name)
 
     def multipolygon_simple(self, name: str = "test_multipolygon_simple") -> TestGeometry:
         """Generate a MultiPolygon without holes."""
-        poly1 = Polygon([
-            (self.BASE_LON, self.BASE_LAT),
-            (self.BASE_LON + 0.01, self.BASE_LAT),
-            (self.BASE_LON + 0.01, self.BASE_LAT + 0.01),
-            (self.BASE_LON, self.BASE_LAT + 0.01),
-            (self.BASE_LON, self.BASE_LAT),
-        ])
-        poly2 = Polygon([
-            (self.BASE_LON + 0.02, self.BASE_LAT),
-            (self.BASE_LON + 0.03, self.BASE_LAT),
-            (self.BASE_LON + 0.03, self.BASE_LAT + 0.01),
-            (self.BASE_LON + 0.02, self.BASE_LAT + 0.01),
-            (self.BASE_LON + 0.02, self.BASE_LAT),
-        ])
-        geom = MultiPolygon([poly1, poly2])
-        return TestGeometry(
-            name=name,
-            geojson=mapping(geom),
-            wkt=geom.wkt,
-            geometry_type="MultiPolygon",
-            is_multi=True,
-        )
+        return self._from_fixture("multipolygonSimple", name)
 
     def multipolygon_with_holes(
         self, name: str = "test_multipolygon_with_holes"
     ) -> TestGeometry:
         """Generate a MultiPolygon with holes in some polygons."""
-        # First polygon with a hole
-        exterior1 = [
-            (self.BASE_LON, self.BASE_LAT),
-            (self.BASE_LON + 0.02, self.BASE_LAT),
-            (self.BASE_LON + 0.02, self.BASE_LAT + 0.02),
-            (self.BASE_LON, self.BASE_LAT + 0.02),
-            (self.BASE_LON, self.BASE_LAT),
-        ]
-        hole1 = [
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.005),
-            (self.BASE_LON + 0.015, self.BASE_LAT + 0.005),
-            (self.BASE_LON + 0.015, self.BASE_LAT + 0.015),
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.015),
-            (self.BASE_LON + 0.005, self.BASE_LAT + 0.005),
-        ]
-        poly1 = Polygon(exterior1, [hole1])
-
-        # Second polygon without holes
-        poly2 = Polygon([
-            (self.BASE_LON + 0.03, self.BASE_LAT),
-            (self.BASE_LON + 0.04, self.BASE_LAT),
-            (self.BASE_LON + 0.04, self.BASE_LAT + 0.01),
-            (self.BASE_LON + 0.03, self.BASE_LAT + 0.01),
-            (self.BASE_LON + 0.03, self.BASE_LAT),
-        ])
-
-        geom = MultiPolygon([poly1, poly2])
-        return TestGeometry(
-            name=name,
-            geojson=mapping(geom),
-            wkt=geom.wkt,
-            geometry_type="MultiPolygon",
-            is_multi=True,
-            has_holes=True,
-        )
+        return self._from_fixture("multipolygonWithHoles", name)
 
     def geometry_collection(self, name: str = "test_geometry_collection") -> TestGeometry:
         """Generate a GeometryCollection with mixed geometry types."""
-        point = Point(self.BASE_LON, self.BASE_LAT)
-        line = LineString([
-            (self.BASE_LON + 0.01, self.BASE_LAT),
-            (self.BASE_LON + 0.02, self.BASE_LAT + 0.01),
-        ])
-        polygon = Polygon([
-            (self.BASE_LON + 0.03, self.BASE_LAT),
-            (self.BASE_LON + 0.04, self.BASE_LAT),
-            (self.BASE_LON + 0.04, self.BASE_LAT + 0.01),
-            (self.BASE_LON + 0.03, self.BASE_LAT + 0.01),
-            (self.BASE_LON + 0.03, self.BASE_LAT),
-        ])
-        geom = GeometryCollection([point, line, polygon])
-        return TestGeometry(
-            name=name,
-            geojson=mapping(geom),
-            wkt=geom.wkt,
-            geometry_type="GeometryCollection",
-        )
+        return self._from_fixture("geometryCollection", name)
 
     def null_geometry(self, name: str = "test_null_geometry") -> TestGeometry:
         """Generate a null geometry representation."""
-        return TestGeometry(
-            name=name,
-            geojson=None,
-            wkt="",
-            geometry_type="Null",
-            is_null=True,
-        )
+        return self._from_fixture("nullGeometry", name)
 
     def all_geometries(self) -> list[TestGeometry]:
         """Generate all supported geometry types for comprehensive testing."""
@@ -400,16 +299,4 @@ class GeometryGenerator:
 
 
 # Convenience list of all geometry type names
-ALL_GEOMETRY_TYPES = [
-    "Point",
-    "MultiPoint",
-    "LineString",
-    "MultiLineString",
-    "Polygon",
-    "Polygon_with_hole",
-    "Polygon_with_multiple_holes",
-    "MultiPolygon",
-    "MultiPolygon_with_holes",
-    "GeometryCollection",
-    "Null",
-]
+ALL_GEOMETRY_TYPES = _GEOMETRY_FIXTURES.get("geometryTypes", [])

@@ -63,8 +63,13 @@ internal static class CoreEndpoints
     /// <summary>
     /// Handles the OGC API Features landing page request
     /// </summary>
-    private static IResult HandleGetLandingPage(HttpContext context, string? f)
+    private static IResult HandleGetLandingPage(
+        HttpContext context,
+        string? f,
+        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
+        OgcFeaturesLog.LandingPageRequested(logger);
+
         var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
@@ -120,14 +125,20 @@ internal static class CoreEndpoints
             Links = links.ToImmutable()
         };
 
+        OgcFeaturesLog.LandingPageReturned(logger);
         return OgcCommonUtilities.FormatMetadataResponse(landingPage, OgcJsonContext.Default.LandingPage, outputFormat, "Landing page");
     }
 
     /// <summary>
     /// Handles the OGC API Features conformance declaration request
     /// </summary>
-    private static IResult HandleGetConformance(HttpContext context, string? f)
+    private static IResult HandleGetConformance(
+        HttpContext context,
+        string? f,
+        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
+        OgcFeaturesLog.ConformanceRequested(logger);
+
         var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
         {
@@ -171,6 +182,7 @@ internal static class CoreEndpoints
                 "Conformance declaration")
         };
 
+        OgcFeaturesLog.ConformanceReturned(logger, conformance.ConformsTo.Length);
         return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
     }
 
@@ -213,11 +225,7 @@ internal static class CoreEndpoints
             !acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase) &&
             !acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase))
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                StatusCodes.Status406NotAcceptable,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         // Serve pre-generated OpenAPI spec for AOT compatibility
@@ -261,11 +269,7 @@ internal static class CoreEndpoints
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                statusCodeResult.StatusCode.Value,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");

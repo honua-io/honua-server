@@ -6204,7 +6204,7 @@ Keep `appsettings.json` for defaults and structure only. All secrets via environ
 | RateLimit (app-level) | Externalized to edge |
 | Resilience (hedging/bulkhead) | Keep only circuit breaker |
 | Features (GeoETL, etc.) | All enterprise features |
-| Cloud (AWS/Azure/GCP) | Deferred |
+| Cloud (AWS/Azure) | Deferred |
 | Alerts | Deferred |
 | GitOps | Deferred |
 | MultiTenancy | Deferred |

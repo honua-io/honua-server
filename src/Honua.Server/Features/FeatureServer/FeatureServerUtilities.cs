@@ -169,7 +169,7 @@ internal static partial class FeatureServerEndpoints
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return candidate.Length == 1 ? candidate[0]! : "objectid";
+        return candidate.Length == 1 ? candidate[0]! : FieldNames.ObjectId;
     }
 
     /// <summary>
@@ -180,7 +180,7 @@ internal static partial class FeatureServerEndpoints
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo)
     {
-        var objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
         return new LayerResponse
         {

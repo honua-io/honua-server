@@ -18,7 +18,6 @@ This implementation provides a comprehensive secure connection management system
    - Environment variable resolver (development/simple deployments)
    - AWS Secrets Manager resolver (HTTP + SigV4, AOT-safe)
    - Azure Key Vault resolver (HTTP + OAuth, AOT-safe)
-   - GCP Secret Manager resolver (HTTP + JWT/metadata, AOT-safe)
    - Extensible to custom providers
 
 3. **Secure Connection Registry** (`ISecureConnectionRegistry`)
@@ -202,9 +201,6 @@ services.AddAwsSecretsManagerSupport(configuration);
 // Add Azure Key Vault support
 services.AddAzureKeyVaultSupport(configuration);
 
-// Add GCP Secret Manager support
-services.AddGcpSecretManagerSupport(configuration);
-
 // Add HashiCorp Vault support (custom resolver required)
 services.AddHashiCorpVaultSupport(configuration);
 ```
@@ -246,7 +242,7 @@ services.AddSingleton<IConnectionSecretResolver, CustomSecretResolver>();
 ✅ **Support for secret manager integration**
 - Pluggable secret resolver architecture
 - Environment variable support (development)
-- Built-in cloud secret managers (AWS, Azure, GCP)
+- Built-in cloud secret managers (AWS, Azure)
 
 ✅ **Key rotation capabilities**
 - Versioned encryption keys

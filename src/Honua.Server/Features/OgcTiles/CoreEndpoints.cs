@@ -170,11 +170,7 @@ internal static class CoreEndpoints
             !acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase) &&
             !acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase))
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                StatusCodes.Status406NotAcceptable,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         string? openApiContent = null;
@@ -215,11 +211,7 @@ internal static class CoreEndpoints
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                statusCodeResult.StatusCode.Value,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");

@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Performance;
 /// Performance tests for streaming feature operations
 /// </summary>
 [Collection("Performance")]
-public class StreamingPerformanceTests : IDisposable
+public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
 {
     private readonly TestFeatureStore _testStore;
     private readonly int _testLayerId;
@@ -24,8 +24,7 @@ public class StreamingPerformanceTests : IDisposable
 #pragma warning restore CS0618 // Type or member is obsolete
         _testLayerId = 1;
 
-        // Seed with test data
-        SeedLargeDataset().GetAwaiter().GetResult();
+        // Seed with test data in InitializeAsync to avoid sync-over-async.
     }
 
     [Fact]
@@ -240,6 +239,17 @@ public class StreamingPerformanceTests : IDisposable
 
             await _testStore.CreateAsync(_testLayerId, feature);
         }
+    }
+
+    public async Task InitializeAsync()
+    {
+        await SeedLargeDataset();
+    }
+
+    public Task DisposeAsync()
+    {
+        Dispose();
+        return Task.CompletedTask;
     }
 
     public void Dispose()

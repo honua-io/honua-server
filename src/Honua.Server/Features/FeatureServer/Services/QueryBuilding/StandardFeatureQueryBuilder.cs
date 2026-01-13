@@ -29,7 +29,7 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
             SqlFilter = effectiveSqlFilter,
             ObjectIds = hasObjectIds ? context.QueryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = context.QueryParams.ResultOffset,
-            Limit = context.QueryParams.ResultRecordCount ?? context.Service.MaxRecordCount,
+            Limit = context.QueryParams.ResultRecordCount,
             SpatialReferenceSrid = context.Layer.SpatialReference.ToSrid(),
             OutputSrid = context.OutputSrid,
             OrderBy = OrderByParsing.ParseFeatureServerOrderBy(

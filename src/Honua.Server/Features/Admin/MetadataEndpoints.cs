@@ -246,7 +246,6 @@ internal static partial class MetadataEndpoints
                 request.Name,
                 request.Description,
                 spatialReference,
-                request.MaxRecordCount,
                 metadata,
                 context.RequestAborted);
 
@@ -311,7 +310,6 @@ internal static partial class MetadataEndpoints
         var service = await adminCatalog.UpdateServiceAsync(
             name,
             request.Description,
-            request.MaxRecordCount,
             metadata,
             context.RequestAborted);
 
@@ -992,7 +990,6 @@ internal static partial class MetadataEndpoints
         Name = service.Name,
         Description = service.Description,
         SpatialReferenceSrid = service.SpatialReference.ToSrid(),
-        MaxRecordCount = service.MaxRecordCount,
         LayerCount = service.Layers.Length,
         LayerIds = service.Layers.Select(l => l.Id).ToArray(),
         AccessPolicy = service.Metadata?.AccessPolicy

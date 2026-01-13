@@ -13,7 +13,6 @@ Avoid storing secrets directly in `appsettings*.json`. Use secret references whe
 - **Environment variables**: `env:VARIABLE_NAME`
 - **AWS Secrets Manager**: `aws:secretsmanager:<secret-id>?versionStage=...&versionId=...`
 - **Azure Key Vault**: `azure:keyvault:<vault>:<secret>[:<version>]`
-- **GCP Secret Manager**: `gcp:secretmanager:<project>:<secret>[:<version>]`
 - **Custom providers** (connection strings and admin password): Implement `IConnectionSecretResolver` and register in the Postgres security extensions.
 
 Production startup validation rejects plaintext secrets in configuration files. Supply secrets via environment variables or `env:` references.
@@ -28,8 +27,6 @@ Secret payloads may be stored as:
 - **AWS Secrets Manager**: `AWS_REGION`/`AWS_DEFAULT_REGION` (or secret ARN) plus credentials from
   `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, ECS task metadata, or EC2 IMDS. Optional `AWS_SESSION_TOKEN`.
 - **Azure Key Vault**: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` or Managed Identity.
-- **GCP Secret Manager**: `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) or GCE metadata token.
-  If the project is omitted from the ref, set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_PROJECT`.
 
 ### Examples
 
@@ -43,9 +40,6 @@ ConnectionStrings__DefaultConnection=aws:secretsmanager:prod-db-credentials
 
 # Default connection string via Azure Key Vault
 ConnectionStrings__DefaultConnection=azure:keyvault:honua-vault:prod-db-credentials
-
-# Default connection string via GCP Secret Manager
-ConnectionStrings__DefaultConnection=gcp:secretmanager:honua-prod:db-credentials:latest
 
 # Admin API key via env reference
 HONUA_ADMIN_PASSWORD=env:HONUA_ADMIN_PASSWORD_VALUE

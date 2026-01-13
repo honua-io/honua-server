@@ -23,11 +23,13 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
     private static readonly CrsDefinition _crs84Definition =
         new(Crs84Uri, 4326, AxisOrder.EastNorth, true);
+    private static readonly TimeSpan _cacheRetention = TimeSpan.FromHours(24);
+    private const int MaxCacheEntries = 10000;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresCrsRegistry> _logger;
-    private readonly ConcurrentDictionary<int, CrsDefinition> _sridCache = new();
-    private readonly ConcurrentDictionary<string, CrsDefinition> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
+    private readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
 
     public PostgresCrsRegistry(IDatabaseConnectionProvider connectionProvider, ILogger<PostgresCrsRegistry> logger)
     {
@@ -42,15 +44,24 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             return _crs84Definition;
         }
 
+        var now = DateTimeOffset.UtcNow;
         var normalized = NormalizeIdentifier(crsIdentifier);
         if (_identifierCache.TryGetValue(normalized, out var cached))
         {
-            return cached;
+            if (!IsCacheExpired(cached, now))
+            {
+                return cached.Definition;
+            }
+
+            _identifierCache.TryRemove(normalized, out _);
         }
 
         if (string.Equals(normalized, Crs84Uri, StringComparison.OrdinalIgnoreCase))
         {
-            _identifierCache.TryAdd(normalized, _crs84Definition);
+            var entry = new CrsCacheEntry(_crs84Definition, now);
+            _identifierCache.TryAdd(normalized, entry);
+            _sridCache.TryAdd(_crs84Definition.Srid, entry);
+            CleanupCacheIfNeeded(now);
             return _crs84Definition;
         }
 
@@ -62,7 +73,8 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         var definition = await ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false);
         if (definition.HasValue)
         {
-            _identifierCache.TryAdd(normalized, definition.Value);
+            _identifierCache.TryAdd(normalized, new CrsCacheEntry(definition.Value, now));
+            CleanupCacheIfNeeded(now);
         }
 
         return definition;
@@ -75,16 +87,24 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             return null;
         }
 
+        var now = DateTimeOffset.UtcNow;
         if (_sridCache.TryGetValue(srid, out var cached))
         {
-            return cached;
+            if (!IsCacheExpired(cached, now))
+            {
+                return cached.Definition;
+            }
+
+            _sridCache.TryRemove(srid, out _);
         }
 
         var definition = await LoadFromSpatialRefSysAsync(srid, cancellationToken).ConfigureAwait(false);
         if (definition.HasValue)
         {
-            _sridCache.TryAdd(srid, definition.Value);
-            _identifierCache.TryAdd(definition.Value.Uri, definition.Value);
+            var entry = new CrsCacheEntry(definition.Value, now);
+            _sridCache.TryAdd(srid, entry);
+            _identifierCache.TryAdd(definition.Value.Uri, entry);
+            CleanupCacheIfNeeded(now);
         }
 
         return definition;
@@ -94,6 +114,57 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
     {
         return (await ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)).HasValue;
     }
+
+    private static bool IsCacheExpired(CrsCacheEntry entry, DateTimeOffset now)
+    {
+        return now - entry.CreatedAt > _cacheRetention;
+    }
+
+    private void CleanupCacheIfNeeded(DateTimeOffset now)
+    {
+        RemoveExpiredEntries(_sridCache, now);
+        RemoveExpiredEntries(_identifierCache, now);
+        TrimCache(_sridCache, MaxCacheEntries);
+        TrimCache(_identifierCache, MaxCacheEntries);
+    }
+
+    private static void RemoveExpiredEntries<TKey>(ConcurrentDictionary<TKey, CrsCacheEntry> cache, DateTimeOffset now)
+        where TKey : notnull
+    {
+        foreach (var (key, entry) in cache)
+        {
+            if (IsCacheExpired(entry, now))
+            {
+                cache.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private static void TrimCache<TKey>(ConcurrentDictionary<TKey, CrsCacheEntry> cache, int maxEntries)
+        where TKey : notnull
+    {
+        var overflow = cache.Count - maxEntries;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        var removed = 0;
+        foreach (var key in cache.Keys)
+        {
+            if (removed >= overflow)
+            {
+                break;
+            }
+
+            if (cache.TryRemove(key, out _))
+            {
+                removed++;
+            }
+        }
+    }
+
+    private sealed record CrsCacheEntry(CrsDefinition Definition, DateTimeOffset CreatedAt);
 
     private async Task<CrsDefinition?> LoadFromSpatialRefSysAsync(int srid, CancellationToken cancellationToken)
     {
@@ -114,7 +185,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             }
 
             var isGeographic = DetermineIsGeographic(srid, srtext);
-            var axisOrder = isGeographic ? AxisOrder.NorthEast : AxisOrder.EastNorth;
+            var axisOrder = DetermineAxisOrder(srtext, isGeographic);
             var uri = FormattableString.Invariant($"{EpsgUriPrefix}{srid}");
             return new CrsDefinition(uri, srid, axisOrder, isGeographic);
         }
@@ -205,6 +276,125 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             _ => false
         };
     }
+
+    private static AxisOrder DetermineAxisOrder(string? wkt, bool isGeographic)
+    {
+        if (!isGeographic)
+        {
+            return AxisOrder.EastNorth;
+        }
+
+        if (!string.IsNullOrWhiteSpace(wkt) && TryParseAxisOrder(wkt, out var axisOrder))
+        {
+            return axisOrder;
+        }
+
+        return AxisOrder.NorthEast;
+    }
+
+    private static bool TryParseAxisOrder(string wkt, out AxisOrder axisOrder)
+    {
+        axisOrder = default;
+        var directions = new List<string>(2);
+        var index = 0;
+
+        while (index < wkt.Length && directions.Count < 2)
+        {
+            var axisIndex = wkt.IndexOf("AXIS", index, StringComparison.OrdinalIgnoreCase);
+            if (axisIndex < 0)
+            {
+                break;
+            }
+
+            var bracketIndex = wkt.IndexOf('[', axisIndex);
+            if (bracketIndex < 0)
+            {
+                index = axisIndex + 4;
+                continue;
+            }
+
+            var position = bracketIndex + 1;
+            var inQuotes = false;
+
+            while (position < wkt.Length)
+            {
+                var c = wkt[position];
+                if (c == '"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                else if (!inQuotes && c == ',')
+                {
+                    position++;
+                    break;
+                }
+
+                position++;
+            }
+
+            if (position >= wkt.Length)
+            {
+                index = axisIndex + 4;
+                continue;
+            }
+
+            while (position < wkt.Length && char.IsWhiteSpace(wkt[position]))
+            {
+                position++;
+            }
+
+            var start = position;
+            while (position < wkt.Length)
+            {
+                var c = wkt[position];
+                if (c == ',' || c == ']' || char.IsWhiteSpace(c))
+                {
+                    break;
+                }
+                position++;
+            }
+
+            if (position > start)
+            {
+                directions.Add(wkt[start..position]);
+            }
+
+            index = position;
+        }
+
+        if (directions.Count < 2)
+        {
+            return false;
+        }
+
+        var first = directions[0];
+        var second = directions[1];
+        if (IsEastWest(first) && IsNorthSouth(second))
+        {
+            axisOrder = AxisOrder.EastNorth;
+            return true;
+        }
+
+        if (IsNorthSouth(first) && IsEastWest(second))
+        {
+            axisOrder = AxisOrder.NorthEast;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsEastWest(string direction)
+        => direction.Equals("east", StringComparison.OrdinalIgnoreCase) ||
+           direction.Equals("west", StringComparison.OrdinalIgnoreCase) ||
+           direction.Equals("easting", StringComparison.OrdinalIgnoreCase) ||
+           direction.Equals("westing", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsNorthSouth(string direction)
+        => direction.Equals("north", StringComparison.OrdinalIgnoreCase) ||
+           direction.Equals("south", StringComparison.OrdinalIgnoreCase) ||
+           direction.Equals("northing", StringComparison.OrdinalIgnoreCase) ||
+           direction.Equals("southing", StringComparison.OrdinalIgnoreCase);
 
     private static partial class Log
     {

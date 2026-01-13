@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
@@ -121,6 +122,51 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         coordinates.Should().HaveCount(2);
         coordinates[0].GetDouble().Should().Be(37.5);
         coordinates[1].GetDouble().Should().Be(-122.5);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCrs84Alias_ReturnsContentCrs()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?limit=1&crs=CRS84");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues!.First().Should().Contain(OgcFeaturesUtilities.Crs84Uri);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithContentCrsAlias_ReturnsCreated()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.5, 37.5]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "CRS84 alias feature"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{TestCollectionId}/items")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/geo+json")
+        };
+        request.Headers.TryAddWithoutValidation("Content-Crs", "CRS84");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
     [IntegrationTest]

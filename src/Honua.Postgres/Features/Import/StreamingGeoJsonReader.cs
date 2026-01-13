@@ -293,7 +293,7 @@ internal sealed class StreamingGeoJsonReader
     {
         try
         {
-            using var document = JsonDocument.Parse(featureJson.ToArray());
+            using var document = JsonDocument.Parse(featureJson);
             var root = document.RootElement;
 
             // Verify it's a Feature
@@ -459,13 +459,22 @@ internal sealed class StreamingGeoJsonReader
 
     private Coordinate ParseCoordinate(JsonElement coords)
     {
-        var coordArray = coords.EnumerateArray().ToArray();
-        var x = coordArray[0].GetDouble();
-        var y = coordArray[1].GetDouble();
-
-        if (coordArray.Length > 2)
+        var enumerator = coords.EnumerateArray();
+        if (!enumerator.MoveNext())
         {
-            var z = coordArray[2].GetDouble();
+            throw new FormatException("Coordinate must contain at least two values.");
+        }
+
+        var x = enumerator.Current.GetDouble();
+        if (!enumerator.MoveNext())
+        {
+            throw new FormatException("Coordinate must contain at least two values.");
+        }
+
+        var y = enumerator.Current.GetDouble();
+        if (enumerator.MoveNext())
+        {
+            var z = enumerator.Current.GetDouble();
             return new CoordinateZ(x, y, z);
         }
 

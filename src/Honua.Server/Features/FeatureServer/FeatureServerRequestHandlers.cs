@@ -26,9 +26,9 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler)
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
     {
-        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -49,6 +49,7 @@ internal static partial class FeatureServerEndpoints
             layerId,
             queryParams,
             context,
+            queryValidator,
             cancellationToken);
     }
 
@@ -56,9 +57,9 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler)
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
     {
-        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -87,6 +88,7 @@ internal static partial class FeatureServerEndpoints
             layerId,
             queryParams,
             context,
+            queryValidator,
             cancellationToken);
     }
 
@@ -327,11 +329,12 @@ internal static partial class FeatureServerEndpoints
         }
 
         var tileOptions = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
-        if (z < tileOptions.MinZoom || z > tileOptions.MaxZoom)
+        var tileLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        if (z < tileLimits.MinTileZoom || z > tileLimits.MaxTileZoom)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 $"Zoom level {z} is outside supported range",
-                [$"Supported zoom range is {tileOptions.MinZoom}-{tileOptions.MaxZoom}"]);
+                [$"Supported zoom range is {tileLimits.MinTileZoom}-{tileLimits.MaxTileZoom}"]);
         }
 
         var maxIndex = 1 << z;
@@ -397,6 +400,7 @@ internal static partial class FeatureServerEndpoints
             z,
             query,
             tileOptions,
+            tileLimits,
             cancellationToken);
 
         if (tileData == null || tileData.Length == 0)

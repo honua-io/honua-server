@@ -10,7 +10,6 @@ namespace Honua.Core.Features.Security.Abstractions;
 /// This interface supports integration with various secret management services:
 /// - Azure Key Vault
 /// - AWS Secrets Manager
-/// - GCP Secret Manager
 /// - HashiCorp Vault
 /// - Kubernetes Secrets
 /// - Custom secret providers
@@ -19,7 +18,6 @@ namespace Honua.Core.Features.Security.Abstractions;
 /// Examples:
 /// - "aws:secretsmanager:prod-db-credentials"
 /// - "azure:keyvault:my-vault:database-connection"
-/// - "gcp:secretmanager:my-project:database-connection"
 /// - "vault:secret/database/prod"
 /// </remarks>
 public interface IConnectionSecretResolver

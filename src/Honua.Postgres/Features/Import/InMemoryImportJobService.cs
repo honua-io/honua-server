@@ -61,7 +61,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             state = new ImportJobState
             {
                 Progress = progress,
-                Request = request,
+                TableName = request.TableName,
                 StartedAt = DateTimeOffset.UtcNow,
                 FileSize = fileSize,
                 Format = formatName
@@ -152,7 +152,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 state.Progress = state.Progress with { Status = ImportStatus.Processing };
-                ImportJobLog.JobStarted(_logger, jobId, state.Request.TableName, state.Format, state.FileSize);
+                ImportJobLog.JobStarted(_logger, jobId, state.TableName, state.Format, state.FileSize);
             }
 
             var progress = new Progress<ImportProgress>(p =>
@@ -183,12 +183,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
 
                 if (result.Success)
                 {
-                    ImportJobLog.JobCompleted(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                    ImportJobLog.JobCompleted(_logger, jobId, state.TableName, state.Format, state.FileSize,
                         result.FeatureCount, failedFeatures ?? 0, stopwatch.Elapsed.TotalMilliseconds);
                 }
                 else
                 {
-                    ImportJobLog.JobFailed(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                    ImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
                         errorMessage ?? "Import failed", stopwatch.Elapsed.TotalMilliseconds);
                 }
             }
@@ -204,7 +204,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     Status = ImportStatus.Cancelled,
                     CompletedAt = DateTimeOffset.UtcNow
                 };
-                ImportJobLog.JobCancelled(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                ImportJobLog.JobCancelled(_logger, jobId, state.TableName, state.Format, state.FileSize,
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
@@ -221,7 +221,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     CompletedAt = DateTimeOffset.UtcNow,
                     ErrorMessage = "Import failed."
                 };
-                ImportJobLog.JobFailed(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                ImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
                     errorMessage, stopwatch.Elapsed.TotalMilliseconds);
             }
         }
@@ -473,7 +473,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
     private sealed class ImportJobState
     {
         public required ImportProgress Progress { get; set; }
-        public required ImportRequest Request { get; init; }
+        public required string TableName { get; init; }
         public required DateTimeOffset StartedAt { get; init; }
         public required long FileSize { get; init; }
         public required string Format { get; init; }
@@ -555,7 +555,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
         var state = new ImportJobState
         {
-            Request = request,
+            TableName = request.TableName,
             StartedAt = DateTimeOffset.UtcNow,
             FileSize = fileSize,
             Format = formatName
@@ -647,7 +647,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     await _progressStore.SetProgressAsync(jobId, updatedProgress, TimeSpan.FromDays(1), cancellationToken);
                 }
 
-                UniversalImportJobLog.JobStarted(_logger, jobId, state.Request.TableName, state.Format, state.FileSize);
+                UniversalImportJobLog.JobStarted(_logger, jobId, state.TableName, state.Format, state.FileSize);
             }
 
             var progress = new Progress<ImportProgress>(async p =>
@@ -686,12 +686,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
                 if (result.Success)
                 {
-                    UniversalImportJobLog.JobCompleted(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                    UniversalImportJobLog.JobCompleted(_logger, jobId, state.TableName, state.Format, state.FileSize,
                         result.FeatureCount, failedFeatures ?? 0, stopwatch.Elapsed.TotalMilliseconds);
                 }
                 else
                 {
-                    UniversalImportJobLog.JobFailed(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                    UniversalImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
                         errorMessage ?? "Import failed", stopwatch.Elapsed.TotalMilliseconds);
                 }
             }
@@ -712,7 +712,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     await _progressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromDays(1), CancellationToken.None);
                 }
 
-                UniversalImportJobLog.JobCancelled(_logger, jobId, state.Request.TableName, state.Format, state.FileSize,
+                UniversalImportJobLog.JobCancelled(_logger, jobId, state.TableName, state.Format, state.FileSize,
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
@@ -910,7 +910,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
     private sealed class ImportJobState
     {
-        public required ImportRequest Request { get; init; }
+        public required string TableName { get; init; }
         public required DateTimeOffset StartedAt { get; init; }
         public required long FileSize { get; init; }
         public required string Format { get; init; }

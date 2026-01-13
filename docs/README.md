@@ -135,7 +135,7 @@ Note: When OIDC is enabled, the `/odata` endpoints require bearer token auth (Po
 ## 📈 Documentation Status
 
 ### Comprehensive Coverage
-- ✅ Architecture decisions documented (19 ADRs)
+- ✅ Architecture decisions documented (22 ADRs)
 - ✅ Development setup and contribution guidelines
 - ✅ Troubleshooting guides for common issues
 - ✅ Performance optimization strategies

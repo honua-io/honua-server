@@ -71,7 +71,6 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 service_name varchar(64) PRIMARY KEY,
                 description text NOT NULL,
                 srid integer NOT NULL DEFAULT 4326,
-                max_record_count integer NOT NULL DEFAULT 1000,
                 supported_formats text[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                 capabilities text[] NOT NULL DEFAULT '{Query,Extract}',
                 service_extent geometry,
@@ -176,7 +175,6 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.Equal("TestService", service.Name);
         Assert.Equal("Test GeoServices service", service.Description);
         Assert.Equal(4326, service.SpatialReference.Wkid);
-        Assert.Equal(500, service.MaxRecordCount);
         Assert.Equal(2, service.SupportedFormats.Length);
         Assert.Contains("JSON", service.SupportedFormats);
         Assert.Contains("GeoJSON", service.SupportedFormats);
@@ -310,8 +308,8 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
 
         // Insert test service
         await _fixture.ExecuteAsync("""
-            INSERT INTO services (service_name, description, srid, max_record_count, supported_formats, capabilities) VALUES
-            ('TestService', 'Test GeoServices service', 4326, 500, '{JSON,GeoJSON}', '{Query,Extract}');
+            INSERT INTO services (service_name, description, srid, supported_formats, capabilities) VALUES
+            ('TestService', 'Test GeoServices service', 4326, '{JSON,GeoJSON}', '{Query,Extract}');
             """, _schemaName);
 
         // Insert service-layer mappings

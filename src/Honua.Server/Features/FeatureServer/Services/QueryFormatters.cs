@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
@@ -101,7 +102,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         GeoServicesFeature[] features = result.Items
             .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
@@ -135,7 +136,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         GeoJsonFeature[] features = result.Items
             .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
@@ -145,7 +146,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             Features = features,
             Properties = new Dictionary<string, object?>
             {
-                ["objectIdFieldName"] = layer.PrimaryKeyField?.Name ?? "objectid",
+                ["objectIdFieldName"] = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId,
                 ["exceededTransferLimit"] = result.HasMoreResults,
                 ["totalFeatures"] = result.TotalCount
             }
@@ -199,7 +200,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         // Extract the ID from attributes if available
         // Normalize numeric values to ensure type consistency
         object? id = null;
-        if (properties.TryGetValue("objectid", out object? objectId))
+        if (properties.TryGetValue(FieldNames.ObjectId, out object? objectId))
         {
             // Normalize numeric types to avoid JsonElement vs primitive mismatches
             id = objectId switch
@@ -275,7 +276,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static void AddObjectIdAlias(Dictionary<string, object?> target, string objectIdFieldName)
     {
-        if (!objectIdFieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase))
+        if (!objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -525,7 +526,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
 
         // Start object
@@ -604,7 +605,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
         // Start GeoJSON FeatureCollection
         writer.WriteStartObject();

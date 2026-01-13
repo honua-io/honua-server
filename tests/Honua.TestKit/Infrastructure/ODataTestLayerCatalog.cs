@@ -91,7 +91,6 @@ public sealed class ODataTestLayerCatalog : ILayerCatalog
             Description: "Cities service for OData integration tests",
             Layers: [_testLayer, _landmarksLayer],
             SpatialReference: spatialRef,
-            MaxRecordCount: 1000,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
             ServiceExtent: extent);

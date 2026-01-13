@@ -6,7 +6,6 @@ sql:
           service_name VARCHAR(64) PRIMARY KEY,
           description TEXT NOT NULL DEFAULT '',
           srid INT NOT NULL DEFAULT 4326,
-          max_record_count INT NOT NULL DEFAULT 1000,
           supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
           capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
           service_extent GEOMETRY,
@@ -86,7 +85,6 @@ sql:
           service_name,
           description,
           srid,
-          max_record_count,
           supported_formats,
           capabilities,
           service_extent
@@ -95,7 +93,6 @@ sql:
           'srid-test',
           'Spatial reference test service',
           3857,
-          1000,
           ARRAY['JSON', 'GeoJSON'],
           ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-180, -90, 180, 90, 4326)
@@ -103,7 +100,6 @@ sql:
       ON CONFLICT (service_name) DO UPDATE SET
           description = EXCLUDED.description,
           srid = EXCLUDED.srid,
-          max_record_count = EXCLUDED.max_record_count,
           supported_formats = EXCLUDED.supported_formats,
           capabilities = EXCLUDED.capabilities,
           service_extent = EXCLUDED.service_extent,

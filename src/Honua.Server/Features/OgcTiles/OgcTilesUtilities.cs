@@ -4,7 +4,7 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Tiles;
+using Honua.Core.Configuration;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 
@@ -97,10 +97,10 @@ internal static class OgcTilesUtilities
         };
     }
 
-    public static TileMatrixSetDefinition BuildWebMercatorQuadDefinition(TileOptions options)
+    public static TileMatrixSetDefinition BuildWebMercatorQuadDefinition(TileLimits limits)
     {
-        var minZoom = Math.Max(0, options.MinZoom);
-        var maxZoom = Math.Max(minZoom, options.MaxZoom);
+        var minZoom = Math.Max(0, limits.MinTileZoom);
+        var maxZoom = Math.Max(minZoom, limits.MaxTileZoom);
         var tileMatrices = new List<TileMatrix>();
 
         for (var z = minZoom; z <= maxZoom; z++)

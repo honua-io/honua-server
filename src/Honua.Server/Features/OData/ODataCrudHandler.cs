@@ -38,13 +38,16 @@ internal sealed class ODataCrudHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Feature);
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.Feature);
         if (queryValidation != null)
         {
             return queryValidation;
         }
 
-        var formatValidation = ValidateFormat(context, format);
+        var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
         if (formatValidation != null)
         {
             return formatValidation;
@@ -112,7 +115,10 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.None);
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -196,7 +202,10 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.None);
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -281,7 +290,10 @@ internal sealed class ODataCrudHandler(
         long objectId,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.None);
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -322,33 +334,4 @@ internal sealed class ODataCrudHandler(
         }
     }
 
-    private IResult? ValidateAllowedParameters(
-        HttpContext context,
-        IReadOnlySet<string> allowedParameters)
-    {
-        var validationResult = _validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
-        }
-
-        return null;
-    }
-
-    private IResult? ValidateFormat(HttpContext context, string? format)
-    {
-        var validation = _validationService.ValidateFormat(format, ODataUtilityService.GetAllowedFormats());
-        if (!validation.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validation.ErrorMessage ?? "Invalid format parameter.");
-        }
-
-        return null;
-    }
 }

@@ -51,8 +51,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
         {
             Name = uniqueName,
             Description = "Service created to test cache invalidation",
-            SpatialReferenceSrid = 4326,
-            MaxRecordCount = 1000
+            SpatialReferenceSrid = 4326
         };
 
         var content = new StringContent(

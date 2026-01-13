@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Generic;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Postgres.Features.Infrastructure;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,81 +39,86 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
     private readonly PreparedStatementCache _statementCache;
     private readonly ILogger<HighFrequencyQueryPreparationService> _logger;
     private readonly QueryCacheOptions _options;
+    private readonly IReadOnlyList<HighPriorityQuery> _highPriorityQueries;
 
     /// <summary>
     /// High-priority queries that should be prepared immediately
     /// </summary>
-    private static readonly HighPriorityQuery[] _highPriorityQueries =
-    [
-        // Layer catalog queries - executed on every layer metadata request
-        new("layer_by_id", """
-            SELECT
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.geometry_type,
-                l.srid,
-                l.min_scale,
-                l.max_scale,
-                l.default_visibility,
-                ST_XMin(l.extent) as xmin,
-                ST_YMin(l.extent) as ymin,
-                ST_XMax(l.extent) as xmax,
-                ST_YMax(l.extent) as ymax
-            FROM honua.layers l
-            WHERE l.layer_id = $1
-            """),
+    private static IReadOnlyList<HighPriorityQuery> BuildHighPriorityQueries(string featuresTableName)
+    {
+        return new[]
+        {
+            // Layer catalog queries - executed on every layer metadata request
+            new HighPriorityQuery("layer_by_id", """
+                SELECT
+                    l.layer_id,
+                    l.layer_name,
+                    l.description,
+                    l.geometry_type,
+                    l.srid,
+                    l.min_scale,
+                    l.max_scale,
+                    l.default_visibility,
+                    ST_XMin(l.extent) as xmin,
+                    ST_YMin(l.extent) as ymin,
+                    ST_XMax(l.extent) as xmax,
+                    ST_YMax(l.extent) as ymax,
+                    ST_SRID(l.extent) as extent_srid
+                FROM honua.layers l
+                WHERE l.layer_id = $1
+                """),
 
-        // Layer existence check - used for validation
-        new("layer_exists", "SELECT 1 FROM honua.layers WHERE layer_id = $1"),
+            // Layer existence check - used for validation
+            new HighPriorityQuery("layer_exists", "SELECT 1 FROM honua.layers WHERE layer_id = $1"),
 
-        // Service existence check - used for validation
-        new("service_exists", "SELECT 1 FROM honua.services WHERE LOWER(service_name) = LOWER($1)"),
+            // Service existence check - used for validation
+            new HighPriorityQuery("service_exists", "SELECT 1 FROM honua.services WHERE LOWER(service_name) = LOWER($1)"),
 
-        // Layer SRID lookup - used for spatial queries
-        new("layer_srid", "SELECT srid FROM honua.layers WHERE layer_id = $1"),
+            // Layer SRID lookup - used for spatial queries
+            new HighPriorityQuery("layer_srid", "SELECT srid FROM honua.layers WHERE layer_id = $1"),
 
-        // Feature count query - used for metadata and pagination
-        new("feature_count", "SELECT COUNT(*) FROM data.features WHERE layer_id = $1"),
+            // Feature count query - used for metadata and pagination
+            new HighPriorityQuery("feature_count", $"SELECT COUNT(*) FROM {featuresTableName} WHERE layer_id = $1"),
 
-        // Feature extent query - used for spatial metadata
-        new("feature_extent", """
-            SELECT
-                ST_XMin(extent) as xmin,
-                ST_YMin(extent) as ymin,
-                ST_XMax(extent) as xmax,
-                ST_YMax(extent) as ymax
-            FROM (
-                SELECT ST_Extent(geometry) as extent
-                FROM data.features
+            // Feature extent query - used for spatial metadata
+            new HighPriorityQuery("feature_extent", $"""
+                SELECT
+                    ST_XMin(extent) as xmin,
+                    ST_YMin(extent) as ymin,
+                    ST_XMax(extent) as xmax,
+                    ST_YMax(extent) as ymax
+                FROM (
+                    SELECT ST_Extent(geometry) as extent
+                    FROM {featuresTableName}
+                    WHERE layer_id = $1
+                ) e
+                """),
+
+            // Health check query - executed regularly by monitoring
+            new HighPriorityQuery("health_check", "SELECT 1"),
+
+            // Attachment count by feature - used for feature metadata
+            new HighPriorityQuery("attachment_count", """
+                SELECT COUNT(*)
+                FROM honua.attachments
+                WHERE feature_id = $1 AND layer_id = $2
+                """),
+
+            // Layer fields metadata - used for feature schema
+            new HighPriorityQuery("layer_fields", """
+                SELECT
+                    field_name,
+                    field_type,
+                    field_length,
+                    is_nullable,
+                    default_value,
+                    field_alias
+                FROM honua.layer_fields
                 WHERE layer_id = $1
-            ) e
-            """),
-
-        // Health check query - executed regularly by monitoring
-        new("health_check", "SELECT 1"),
-
-        // Attachment count by feature - used for feature metadata
-        new("attachment_count", """
-            SELECT COUNT(*)
-            FROM honua.attachments
-            WHERE feature_id = $1 AND layer_id = $2
-            """),
-
-        // Layer fields metadata - used for feature schema
-        new("layer_fields", """
-            SELECT
-                field_name,
-                field_type,
-                field_length,
-                is_nullable,
-                default_value,
-                field_alias
-            FROM honua.layer_fields
-            WHERE layer_id = $1
-            ORDER BY field_order
-            """)
-    ];
+                ORDER BY field_order
+                """)
+        };
+    }
 
     private sealed record HighPriorityQuery(string Name, string Sql);
 
@@ -118,12 +126,17 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
         NpgsqlDataSource dataSource,
         PreparedStatementCache statementCache,
         IOptions<QueryCacheOptions> options,
+        IConfiguration configuration,
         ILogger<HighFrequencyQueryPreparationService> logger)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _statementCache = statementCache ?? throw new ArgumentNullException(nameof(statementCache));
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(configuration);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        var featuresTableName = DatabaseSchema.GetFeaturesTableName(configuration["Database:Schema"]);
+        _highPriorityQueries = BuildHighPriorityQueries(featuresTableName);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -134,7 +147,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
             return;
         }
 
-        HighFrequencyQueryPreparationLog.PreparationStarting(_logger, _highPriorityQueries.Length);
+        HighFrequencyQueryPreparationLog.PreparationStarting(_logger, _highPriorityQueries.Count);
 
         try
         {

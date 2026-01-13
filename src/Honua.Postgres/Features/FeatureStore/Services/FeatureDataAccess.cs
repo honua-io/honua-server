@@ -19,10 +19,23 @@ using Honua.Postgres.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.IO;
 using Npgsql;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
+
+internal sealed record FeatureDataAccessDependencies(
+    IDatabaseConnectionProvider ConnectionProvider,
+    IGeometryProcessor GeometryProcessor,
+    IFeatureCacheManager CacheManager,
+    ObjectPool<Dictionary<string, object?>> DictionaryPool,
+    PreparedStatementCache? StatementCache,
+    ILogger<FeatureDataAccess> Logger,
+    IOptions<PerformanceMonitoringOptions>? PerformanceOptions,
+    IOptions<LimitsOptions>? LimitsOptions,
+    IPerformanceMonitor? PerformanceMonitor,
+    string? SchemaName);
 
 /// <summary>
 /// Handles database data access operations for PostgreSQL feature store
@@ -41,34 +54,28 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private readonly int _tileTimeoutSeconds;
     private readonly string _tableName;
 
-    public FeatureDataAccess(
-        IDatabaseConnectionProvider connectionProvider,
-        IGeometryProcessor geometryProcessor,
-        IFeatureCacheManager cacheManager,
-        ObjectPool<Dictionary<string, object?>> dictionaryPool,
-        PreparedStatementCache? statementCache,
-        ILogger<FeatureDataAccess> logger,
-        IOptions<PerformanceMonitoringOptions>? performanceOptions = null,
-        IOptions<LimitsOptions>? limitsOptions = null,
-        IPerformanceMonitor? performanceMonitor = null,
-        string? schemaName = null)
+    public FeatureDataAccess(FeatureDataAccessDependencies dependencies)
     {
-        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _geometryProcessor = geometryProcessor ?? throw new ArgumentNullException(nameof(geometryProcessor));
-        _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
-        _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
-        _statementCache = statementCache;
-        _performanceMonitor = performanceMonitor;
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _slowQueryThresholdMs = (performanceOptions?.Value.SlowRequestThreshold ?? TimeSpan.FromSeconds(1))
+        ArgumentNullException.ThrowIfNull(dependencies);
+
+        _connectionProvider = dependencies.ConnectionProvider ?? throw new ArgumentNullException(nameof(dependencies.ConnectionProvider));
+        _geometryProcessor = dependencies.GeometryProcessor ?? throw new ArgumentNullException(nameof(dependencies.GeometryProcessor));
+        _cacheManager = dependencies.CacheManager ?? throw new ArgumentNullException(nameof(dependencies.CacheManager));
+        _dictionaryPool = dependencies.DictionaryPool ?? throw new ArgumentNullException(nameof(dependencies.DictionaryPool));
+        _statementCache = dependencies.StatementCache;
+        _performanceMonitor = dependencies.PerformanceMonitor;
+        _logger = dependencies.Logger ?? throw new ArgumentNullException(nameof(dependencies.Logger));
+        _slowQueryThresholdMs = (dependencies.PerformanceOptions?.Value.SlowRequestThreshold ?? TimeSpan.FromSeconds(1))
             .TotalMilliseconds;
 
-        var limits = limitsOptions?.Value ?? new LimitsOptions();
+        var limits = dependencies.LimitsOptions?.Value ?? new LimitsOptions();
         _queryTimeoutSeconds = GetTimeoutSeconds(limits.Query.QueryTimeout, TimeConstants.ThirtySeconds);
         _tileTimeoutSeconds = GetTimeoutSeconds(limits.Tiles.TileTimeout, TimeConstants.TenSeconds);
 
         var tableNameOnly = "features";
-        _tableName = string.IsNullOrEmpty(schemaName) ? tableNameOnly : $"{schemaName}.{tableNameOnly}";
+        _tableName = string.IsNullOrEmpty(dependencies.SchemaName)
+            ? tableNameOnly
+            : $"{dependencies.SchemaName}.{tableNameOnly}";
     }
 
     public async Task<long> ExecuteCountQueryAsync(CoreParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
@@ -642,6 +649,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
+        ValidateGeometrySrid(feature.Geometry, layerSrid);
         var geometryValueExpression = _geometryProcessor.GetGeometryWriteExpression(geometryStorageType, "$2", layerSrid);
 
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
@@ -695,6 +703,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
+        ValidateGeometrySrid(feature.Geometry, layerSrid);
         var geometryValueExpression = _geometryProcessor.GetGeometryWriteExpression(geometryStorageType, "$3", layerSrid);
 
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
@@ -754,6 +763,40 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
         return rowsAffected > 0;
+    }
+
+    private static void ValidateGeometrySrid(byte[]? geometry, int? layerSrid)
+    {
+        if (geometry == null || geometry.Length == 0 || !layerSrid.HasValue || layerSrid.Value <= 0)
+        {
+            return;
+        }
+
+        var srid = GetGeometrySrid(geometry);
+        if (!srid.HasValue || srid.Value == 0)
+        {
+            return;
+        }
+
+        if (srid.Value != layerSrid.Value)
+        {
+            throw new ArgumentException(
+                $"Geometry SRID {srid.Value} does not match layer SRID {layerSrid.Value}.");
+        }
+    }
+
+    private static int? GetGeometrySrid(byte[] geometry)
+    {
+        try
+        {
+            var reader = new WKBReader();
+            var parsed = reader.Read(geometry);
+            return parsed.SRID > 0 ? parsed.SRID : 0;
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException)
+        {
+            throw new ArgumentException("Invalid geometry WKB.", ex);
+        }
     }
 
     private async Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)

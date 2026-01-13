@@ -76,6 +76,7 @@ internal static class CollectionsEndpoints
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        OgcFeaturesLog.CollectionsRequested(logger);
 
         try
         {
@@ -118,6 +119,7 @@ internal static class CollectionsEndpoints
                 Links = links.ToImmutable()
             };
 
+            OgcFeaturesLog.CollectionsReturned(logger, collections.Length);
             return OgcCommonUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
         }
         catch (OperationCanceledException)
@@ -139,8 +141,8 @@ internal static class CollectionsEndpoints
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500,
-                "Internal server error",
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
                 "An error occurred while retrieving collections.");
         }
     }
@@ -159,6 +161,7 @@ internal static class CollectionsEndpoints
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
         try
         {
@@ -175,6 +178,7 @@ internal static class CollectionsEndpoints
 
             if (!int.TryParse(collectionId, out var layerId))
             {
+                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
@@ -182,6 +186,7 @@ internal static class CollectionsEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
+                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
@@ -202,6 +207,7 @@ internal static class CollectionsEndpoints
             updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
             collection = collection with { Links = updatedLinks };
 
+            OgcFeaturesLog.CollectionReturned(logger, collectionId, layer.Name);
             return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
                 OgcJsonContext.Default.CollectionInfo,
@@ -215,19 +221,20 @@ internal static class CollectionsEndpoints
         }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
-            CollectionsEndpointLogging.LogInvalidCollectionId(logger, collectionId, ex);
+            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (InvalidOperationException)
         {
             // Layer not found is a legitimate 404 case
+            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500,
-                "Internal server error",
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
                 "An error occurred while retrieving the collection.");
         }
     }
@@ -257,6 +264,7 @@ internal static class CollectionsEndpoints
 
             if (!int.TryParse(collectionId, out var layerId))
             {
+                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
@@ -265,6 +273,7 @@ internal static class CollectionsEndpoints
             var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
+                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
@@ -285,18 +294,19 @@ internal static class CollectionsEndpoints
         }
         catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
         {
-            CollectionsEndpointLogging.LogInvalidCollectionId(logger, collectionId, ex);
+            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (InvalidOperationException)
         {
+            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500,
-                "Internal server error",
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
                 "An error occurred while retrieving the queryables schema.");
         }
     }
@@ -366,7 +376,7 @@ internal static class CollectionsEndpoints
         SpatialExtent? spatialExtent = null;
         if (layer.Extent != null)
         {
-            var extentSrid = layer.SpatialReference.ToSrid();
+            var extentSrid = layer.Extent.Value.SpatialReference;
             var extentCrsIdentifier = extentSrid == 4326
                 ? OgcFeaturesUtilities.Crs84Uri
                 : extentSrid.ToOgcCrs();
@@ -502,11 +512,7 @@ internal static class CollectionsEndpoints
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                statusCodeResult.StatusCode.Value,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
@@ -542,10 +548,6 @@ internal static partial class CollectionsEndpointLogging
     [LoggerMessage(EventId = 5203, Level = LogLevel.Error,
         Message = "Collections query failed")]
     public static partial void LogCollectionsQueryFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 5204, Level = LogLevel.Warning,
-        Message = "Invalid collection ID provided: {CollectionId}")]
-    public static partial void LogInvalidCollectionId(ILogger logger, string collectionId, Exception exception);
 
     [LoggerMessage(EventId = 5205, Level = LogLevel.Error,
         Message = "Collection query failed for ID: {CollectionId}")]

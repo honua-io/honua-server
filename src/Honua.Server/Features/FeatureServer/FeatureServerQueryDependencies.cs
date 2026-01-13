@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -18,6 +19,7 @@ internal sealed class FeatureServerQueryDependencies
         IFilterExpressionService filterExpressionService,
         FeatureServerQueryExecutor queryExecutor,
         IResponseCache responseCache,
+        IETagService etagService,
         IOptions<CacheOptions> cacheOptions)
     {
         ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
@@ -25,6 +27,7 @@ internal sealed class FeatureServerQueryDependencies
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         QueryExecutor = queryExecutor ?? throw new ArgumentNullException(nameof(queryExecutor));
         ResponseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
+        ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
     }
 
@@ -33,5 +36,6 @@ internal sealed class FeatureServerQueryDependencies
     public IFilterExpressionService FilterExpressionService { get; }
     public FeatureServerQueryExecutor QueryExecutor { get; }
     public IResponseCache ResponseCache { get; }
+    public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }
 }

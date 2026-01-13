@@ -5,7 +5,10 @@
  * Mirrors the Python GeometryGenerator for test consistency.
  */
 
-import type { Geometry, Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon, GeometryCollection, Position } from 'geojson';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Geometry, Point, MultiPoint, LineString, MultiLineString, Position } from 'geojson';
 
 // =============================================================================
 // Types
@@ -53,6 +56,26 @@ export interface TestGeometry {
   isMulti: boolean;
   isNull: boolean;
 }
+
+interface GeometryFixture {
+  defaultName: string;
+  geometryType: string;
+  hasHoles: boolean;
+  isMulti: boolean;
+  isNull: boolean;
+  geojson: Geometry | null;
+}
+
+interface GeometryFixtures {
+  base: { lon: number; lat: number };
+  geometries: Record<string, GeometryFixture>;
+}
+
+const fixturesPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../fixtures/geometry-fixtures.json',
+);
+const geometryFixtures = JSON.parse(readFileSync(fixturesPath, 'utf8')) as GeometryFixtures;
 
 // =============================================================================
 // GeoJSON to Esri JSON Conversion
@@ -138,13 +161,37 @@ export function geojsonToEsri(geojson: Geometry | null): EsriGeometry {
  */
 export class GeometryGenerator {
   // Base coordinates for test data (San Francisco area)
-  private readonly baseLon = -122.4194;
-  private readonly baseLat = 37.7749;
+  private readonly baseLon = geometryFixtures.base.lon;
+  private readonly baseLat = geometryFixtures.base.lat;
+
+  private fromFixture(key: string, nameOverride?: string): TestGeometry {
+    const fixture = geometryFixtures.geometries[key];
+    if (!fixture) {
+      throw new Error(`Unknown geometry fixture: ${key}`);
+    }
+
+    const name = nameOverride ?? fixture.defaultName;
+    const geojson = fixture.geojson as Geometry | null;
+
+    return {
+      name,
+      geojson,
+      esriJson: geojsonToEsri(geojson),
+      geometryType: fixture.geometryType,
+      hasHoles: fixture.hasHoles,
+      isMulti: fixture.isMulti,
+      isNull: fixture.isNull,
+    };
+  }
 
   /**
    * Generate a Point geometry.
    */
   point(name = 'test_point', lon?: number, lat?: number): TestGeometry {
+    if (lon === undefined && lat === undefined) {
+      return this.fromFixture('point', name);
+    }
+
     const x = lon ?? this.baseLon;
     const y = lat ?? this.baseLat;
     const geojson: Point = {
@@ -166,6 +213,10 @@ export class GeometryGenerator {
    * Generate a MultiPoint geometry.
    */
   multipoint(name = 'test_multipoint', count = 3): TestGeometry {
+    if (count === 3) {
+      return this.fromFixture('multipoint', name);
+    }
+
     const points: Position[] = [];
     for (let i = 0; i < count; i++) {
       points.push([this.baseLon + i * 0.01, this.baseLat + i * 0.01]);
@@ -189,6 +240,10 @@ export class GeometryGenerator {
    * Generate a LineString geometry.
    */
   linestring(name = 'test_linestring', pointCount = 4): TestGeometry {
+    if (pointCount === 4) {
+      return this.fromFixture('linestring', name);
+    }
+
     const coords: Position[] = [];
     for (let i = 0; i < pointCount; i++) {
       coords.push([this.baseLon + i * 0.01, this.baseLat + i * 0.005]);
@@ -212,6 +267,10 @@ export class GeometryGenerator {
    * Generate a MultiLineString geometry.
    */
   multilinestring(name = 'test_multilinestring', lineCount = 2): TestGeometry {
+    if (lineCount === 2) {
+      return this.fromFixture('multilinestring', name);
+    }
+
     const lines: Position[][] = [];
     for (let lineIdx = 0; lineIdx < lineCount; lineIdx++) {
       const coords: Position[] = [];
@@ -242,240 +301,49 @@ export class GeometryGenerator {
    * Generate a simple Polygon without holes.
    */
   polygonSimple(name = 'test_polygon_simple'): TestGeometry {
-    const exterior: Position[] = [
-      [this.baseLon, this.baseLat],
-      [this.baseLon + 0.01, this.baseLat],
-      [this.baseLon + 0.01, this.baseLat + 0.01],
-      [this.baseLon, this.baseLat + 0.01],
-      [this.baseLon, this.baseLat], // Close the ring
-    ];
-    const geojson: Polygon = {
-      type: 'Polygon',
-      coordinates: [exterior],
-    };
-    return {
-      name,
-      geojson,
-      esriJson: geojsonToEsri(geojson),
-      geometryType: 'Polygon',
-      hasHoles: false,
-      isMulti: false,
-      isNull: false,
-    };
+    return this.fromFixture('polygonSimple', name);
   }
 
   /**
    * Generate a Polygon with one hole.
    */
   polygonWithHole(name = 'test_polygon_with_hole'): TestGeometry {
-    const exterior: Position[] = [
-      [this.baseLon, this.baseLat],
-      [this.baseLon + 0.02, this.baseLat],
-      [this.baseLon + 0.02, this.baseLat + 0.02],
-      [this.baseLon, this.baseLat + 0.02],
-      [this.baseLon, this.baseLat],
-    ];
-    const hole: Position[] = [
-      [this.baseLon + 0.005, this.baseLat + 0.005],
-      [this.baseLon + 0.015, this.baseLat + 0.005],
-      [this.baseLon + 0.015, this.baseLat + 0.015],
-      [this.baseLon + 0.005, this.baseLat + 0.015],
-      [this.baseLon + 0.005, this.baseLat + 0.005],
-    ];
-    const geojson: Polygon = {
-      type: 'Polygon',
-      coordinates: [exterior, hole],
-    };
-    return {
-      name,
-      geojson,
-      esriJson: geojsonToEsri(geojson),
-      geometryType: 'Polygon',
-      hasHoles: true,
-      isMulti: false,
-      isNull: false,
-    };
+    return this.fromFixture('polygonWithHole', name);
   }
 
   /**
    * Generate a Polygon with multiple holes.
    */
   polygonWithMultipleHoles(name = 'test_polygon_multiple_holes'): TestGeometry {
-    const exterior: Position[] = [
-      [this.baseLon, this.baseLat],
-      [this.baseLon + 0.04, this.baseLat],
-      [this.baseLon + 0.04, this.baseLat + 0.04],
-      [this.baseLon, this.baseLat + 0.04],
-      [this.baseLon, this.baseLat],
-    ];
-    const hole1: Position[] = [
-      [this.baseLon + 0.005, this.baseLat + 0.005],
-      [this.baseLon + 0.015, this.baseLat + 0.005],
-      [this.baseLon + 0.015, this.baseLat + 0.015],
-      [this.baseLon + 0.005, this.baseLat + 0.015],
-      [this.baseLon + 0.005, this.baseLat + 0.005],
-    ];
-    const hole2: Position[] = [
-      [this.baseLon + 0.025, this.baseLat + 0.025],
-      [this.baseLon + 0.035, this.baseLat + 0.025],
-      [this.baseLon + 0.035, this.baseLat + 0.035],
-      [this.baseLon + 0.025, this.baseLat + 0.035],
-      [this.baseLon + 0.025, this.baseLat + 0.025],
-    ];
-    const geojson: Polygon = {
-      type: 'Polygon',
-      coordinates: [exterior, hole1, hole2],
-    };
-    return {
-      name,
-      geojson,
-      esriJson: geojsonToEsri(geojson),
-      geometryType: 'Polygon',
-      hasHoles: true,
-      isMulti: false,
-      isNull: false,
-    };
+    return this.fromFixture('polygonWithMultipleHoles', name);
   }
 
   /**
    * Generate a MultiPolygon without holes.
    */
   multipolygonSimple(name = 'test_multipolygon_simple'): TestGeometry {
-    const poly1: Position[][] = [
-      [
-        [this.baseLon, this.baseLat],
-        [this.baseLon + 0.01, this.baseLat],
-        [this.baseLon + 0.01, this.baseLat + 0.01],
-        [this.baseLon, this.baseLat + 0.01],
-        [this.baseLon, this.baseLat],
-      ],
-    ];
-    const poly2: Position[][] = [
-      [
-        [this.baseLon + 0.02, this.baseLat],
-        [this.baseLon + 0.03, this.baseLat],
-        [this.baseLon + 0.03, this.baseLat + 0.01],
-        [this.baseLon + 0.02, this.baseLat + 0.01],
-        [this.baseLon + 0.02, this.baseLat],
-      ],
-    ];
-    const geojson: MultiPolygon = {
-      type: 'MultiPolygon',
-      coordinates: [poly1, poly2],
-    };
-    return {
-      name,
-      geojson,
-      esriJson: geojsonToEsri(geojson),
-      geometryType: 'MultiPolygon',
-      hasHoles: false,
-      isMulti: true,
-      isNull: false,
-    };
+    return this.fromFixture('multipolygonSimple', name);
   }
 
   /**
    * Generate a MultiPolygon with holes in some polygons.
    */
   multipolygonWithHoles(name = 'test_multipolygon_with_holes'): TestGeometry {
-    // First polygon with a hole
-    const exterior1: Position[] = [
-      [this.baseLon, this.baseLat],
-      [this.baseLon + 0.02, this.baseLat],
-      [this.baseLon + 0.02, this.baseLat + 0.02],
-      [this.baseLon, this.baseLat + 0.02],
-      [this.baseLon, this.baseLat],
-    ];
-    const hole1: Position[] = [
-      [this.baseLon + 0.005, this.baseLat + 0.005],
-      [this.baseLon + 0.015, this.baseLat + 0.005],
-      [this.baseLon + 0.015, this.baseLat + 0.015],
-      [this.baseLon + 0.005, this.baseLat + 0.015],
-      [this.baseLon + 0.005, this.baseLat + 0.005],
-    ];
-    const poly1: Position[][] = [exterior1, hole1];
-
-    // Second polygon without holes
-    const poly2: Position[][] = [
-      [
-        [this.baseLon + 0.03, this.baseLat],
-        [this.baseLon + 0.04, this.baseLat],
-        [this.baseLon + 0.04, this.baseLat + 0.01],
-        [this.baseLon + 0.03, this.baseLat + 0.01],
-        [this.baseLon + 0.03, this.baseLat],
-      ],
-    ];
-
-    const geojson: MultiPolygon = {
-      type: 'MultiPolygon',
-      coordinates: [poly1, poly2],
-    };
-    return {
-      name,
-      geojson,
-      esriJson: geojsonToEsri(geojson),
-      geometryType: 'MultiPolygon',
-      hasHoles: true,
-      isMulti: true,
-      isNull: false,
-    };
+    return this.fromFixture('multipolygonWithHoles', name);
   }
 
   /**
    * Generate a GeometryCollection with mixed geometry types.
    */
   geometryCollection(name = 'test_geometry_collection'): TestGeometry {
-    const point: Point = {
-      type: 'Point',
-      coordinates: [this.baseLon, this.baseLat],
-    };
-    const line: LineString = {
-      type: 'LineString',
-      coordinates: [
-        [this.baseLon + 0.01, this.baseLat],
-        [this.baseLon + 0.02, this.baseLat + 0.01],
-      ],
-    };
-    const polygon: Polygon = {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [this.baseLon + 0.03, this.baseLat],
-          [this.baseLon + 0.04, this.baseLat],
-          [this.baseLon + 0.04, this.baseLat + 0.01],
-          [this.baseLon + 0.03, this.baseLat + 0.01],
-          [this.baseLon + 0.03, this.baseLat],
-        ],
-      ],
-    };
-    const geojson: GeometryCollection = {
-      type: 'GeometryCollection',
-      geometries: [point, line, polygon],
-    };
-    return {
-      name,
-      geojson,
-      esriJson: geojsonToEsri(geojson),
-      geometryType: 'GeometryCollection',
-      hasHoles: false,
-      isMulti: false,
-      isNull: false,
-    };
+    return this.fromFixture('geometryCollection', name);
   }
 
   /**
    * Generate a null geometry representation.
    */
   nullGeometry(name = 'test_null_geometry'): TestGeometry {
-    return {
-      name,
-      geojson: null,
-      esriJson: null,
-      geometryType: 'Null',
-      hasHoles: false,
-      isMulti: false,
-      isNull: true,
-    };
+    return this.fromFixture('nullGeometry', name);
   }
 
   /**

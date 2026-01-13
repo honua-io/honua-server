@@ -14,14 +14,10 @@ namespace Honua.Server.Features.FileStorage;
 /// <summary>
 /// Local filesystem implementation of cloud file storage for development and testing
 /// </summary>
-internal sealed class LocalFileStorage : ICloudFileStorage
+internal sealed class LocalFileStorage : CloudFileStorageBase
 {
     private readonly LocalStorageOptions _options;
-    private readonly ILogger<LocalFileStorage> _logger;
-    private readonly IUploadProgressStore _progressStore;
     private readonly ConcurrentDictionary<string, CloudFile> _fileIndex;
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _batchIndex;
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _uploadCancellationTokens;
     private readonly string _basePath;
     private readonly string _metadataPath;
 
@@ -35,17 +31,14 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         IOptions<LocalStorageOptions> options,
         ILogger<LocalFileStorage> logger,
         IUploadProgressStore progressStore)
+        : base(logger, progressStore)
     {
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
             ? Directory.GetCurrentDirectory()
             : Path.TrimEndingDirectorySeparator(_options.BasePath);
         _metadataPath = Path.Combine(_basePath, ".metadata");
         _fileIndex = new ConcurrentDictionary<string, CloudFile>();
-        _batchIndex = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
-        _uploadCancellationTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
 
         InitializeStorage();
     }
@@ -63,7 +56,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         // Store cancellation token for potential cancellation
-        _uploadCancellationTokens[uploadId] = linkedCancellationSource;
+        UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         try
         {
@@ -71,7 +64,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
 
             // Store initial progress
-            await _progressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+            await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
 
             // Report initial progress if callback provided
             request.Progress?.Report(initialProgress);
@@ -102,7 +95,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 {
                     var progressTracker = new Progress<UploadProgress>(async progress =>
                     {
-                        await _progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                        await ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
                         request.Progress.Report(progress);
                     });
                     sourceStream = new ProgressTrackingStream(request.Content, progressTracker, uploadId, request.FileName, totalBytes);
@@ -156,12 +149,12 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 CompletedAt = uploadedAt,
                 CurrentPhase = "Upload completed"
             };
-            await _progressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             request.Progress?.Report(completedProgress);
 
             stopwatch.Stop();
             FileStorageLog.FileUploaded(
-                _logger,
+                Logger,
                 request.FileName,
                 sizeBytes,
                 fileId,
@@ -185,7 +178,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 ErrorMessage = "Upload was cancelled",
                 CurrentPhase = "Cancelled"
             };
-            await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
             request.Progress?.Report(cancelledProgress);
             throw;
         }
@@ -205,9 +198,9 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 ErrorMessage = ex.Message,
                 CurrentPhase = "Failed"
             };
-            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
             request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
+            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
             return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
         }
         catch (Exception ex)
@@ -226,78 +219,17 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                 ErrorMessage = "File upload failed",
                 CurrentPhase = "Failed"
             };
-            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
             request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
+            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
             return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
         }
         finally
         {
             // Clean up cancellation token
-            _uploadCancellationTokens.TryRemove(uploadId, out _);
+            UploadCancellationTokens.TryRemove(uploadId, out _);
             linkedCancellationSource.Dispose();
         }
-    }
-
-    /// <inheritdoc />
-    public async Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        using var stream = new MemoryStream(request.Content);
-        return await UploadAsync(new FileUploadRequest
-        {
-            Content = stream,
-            FileName = request.FileName,
-            ContentType = request.ContentType,
-            SizeBytes = request.Content.Length,
-            TimeToLive = request.TimeToLive,
-            Metadata = request.Metadata,
-            Folder = request.Folder,
-            UploadId = Guid.NewGuid().ToString() // Generate new upload ID for byte array uploads
-        }, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<UploadProgress?> GetUploadProgressAsync(string uploadId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
-        return _progressStore.GetProgressAsync(uploadId, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
-
-        if (_uploadCancellationTokens.TryRemove(uploadId, out var cancellationSource))
-        {
-            await cancellationSource.CancelAsync();
-            cancellationSource.Dispose();
-
-            // Update progress to cancelled status
-            var currentProgress = await _progressStore.GetProgressAsync(uploadId, cancellationToken);
-            if (currentProgress != null && currentProgress.Status == OperationStatus.Processing)
-            {
-                var cancelledProgress = currentProgress with
-                {
-                    Status = OperationStatus.Cancelled,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Cancelled"
-                };
-                await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
-    {
-        return _progressStore.GetActiveUploadsAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -314,25 +246,11 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         var fullPath = Path.Combine(_basePath, cloudFile.StoragePath);
         if (!File.Exists(fullPath))
         {
-            FileStorageLog.FileMissingOnDisk(_logger, fileId);
+            FileStorageLog.FileMissingOnDisk(Logger, fileId);
             return null;
         }
 
         return new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
-    }
-
-    /// <inheritdoc />
-    public async Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
-    {
-        await using var stream = await DownloadAsync(fileId, cancellationToken);
-        if (stream is null)
-        {
-            return null;
-        }
-
-        using var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, cancellationToken);
-        return memoryStream.ToArray();
     }
 
     /// <inheritdoc />
@@ -361,7 +279,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             }
 
             // Remove from batch index if present
-            foreach (var batch in _batchIndex)
+            foreach (var batch in BatchIndex)
             {
                 _ = batch.Value.TryRemove(fileId, out _);
             }
@@ -369,104 +287,19 @@ internal sealed class LocalFileStorage : ICloudFileStorage
             // Clean up upload progress if exists
             if (cloudFile.Metadata.TryGetValue("UploadId", out var uploadId))
             {
-                await _progressStore.DeleteProgressAsync(uploadId, cancellationToken);
+                await ProgressStore.DeleteProgressAsync(uploadId, cancellationToken);
             }
 
-            FileStorageLog.FileDeleted(_logger, fileId);
+            FileStorageLog.FileDeleted(Logger, fileId);
             return true;
         }
         catch (Exception ex)
         {
-            FileStorageLog.FileDeleteFailed(_logger, ex, fileId);
+            FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
             // Re-add to index since deletion failed
             _fileIndex[fileId] = cloudFile;
             return false;
         }
-    }
-
-    /// <inheritdoc />
-    public async Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        var stopwatch = Stopwatch.StartNew();
-        var batchId = Guid.NewGuid().ToString("N");
-        var uploadedFiles = new List<CloudFile>();
-        var failedFiles = new Dictionary<string, string>();
-
-        _batchIndex[batchId] = new ConcurrentDictionary<string, byte>();
-
-        foreach (var file in request.Files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var metadata = file.Metadata.Add("BatchId", batchId);
-            var result = await UploadAsync(new FileUploadRequest
-            {
-                Content = file.Content,
-                FileName = file.FileName,
-                ContentType = file.ContentType,
-                SizeBytes = file.SizeBytes,
-                TimeToLive = request.TimeToLive,
-                Metadata = metadata,
-                Folder = request.Folder ?? batchId,
-                UploadId = Guid.NewGuid().ToString()
-            }, cancellationToken);
-
-            if (result.Success && result.File is not null)
-            {
-                uploadedFiles.Add(result.File);
-                _ = _batchIndex[batchId].TryAdd(result.File.FileId, 0);
-            }
-            else
-            {
-                failedFiles[file.FileName] = result.ErrorMessage ?? "Unknown error";
-
-                if (!request.ContinueOnError)
-                {
-                    // Rollback uploaded files
-                    foreach (var uploaded in uploadedFiles)
-                    {
-                        await DeleteAsync(uploaded.FileId, cancellationToken);
-                    }
-
-                    stopwatch.Stop();
-                    return BatchUploadResult.CreateFailure(batchId, failedFiles, stopwatch.Elapsed);
-                }
-            }
-        }
-
-        stopwatch.Stop();
-
-        if (failedFiles.Count > 0)
-        {
-            return BatchUploadResult.CreatePartialSuccess(batchId, uploadedFiles, failedFiles, stopwatch.Elapsed);
-        }
-
-        return BatchUploadResult.CreateSuccess(batchId, uploadedFiles, stopwatch.Elapsed);
-    }
-
-    /// <inheritdoc />
-    public async Task<int> DeleteBatchAsync(string batchId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-
-        if (!_batchIndex.TryRemove(batchId, out var fileIds))
-        {
-            return 0;
-        }
-
-        var deletedCount = 0;
-        foreach (var fileId in fileIds.Keys)
-        {
-            if (await DeleteAsync(fileId, cancellationToken))
-            {
-                deletedCount++;
-            }
-        }
-
-        FileStorageLog.BatchDeleted(_logger, batchId, deletedCount);
-        return deletedCount;
     }
 
     /// <inheritdoc />
@@ -568,7 +401,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
 
         if (cleanedCount > 0)
         {
-            FileStorageLog.ExpiredFilesCleaned(_logger, cleanedCount);
+            FileStorageLog.ExpiredFilesCleaned(Logger, cleanedCount);
         }
 
         return cleanedCount;
@@ -579,7 +412,7 @@ internal sealed class LocalFileStorage : ICloudFileStorage
         if (_options.CreateDirectoryIfNotExists && !Directory.Exists(_basePath))
         {
             Directory.CreateDirectory(_basePath);
-            FileStorageLog.StorageDirectoryCreated(_logger, _basePath);
+            FileStorageLog.StorageDirectoryCreated(Logger, _basePath);
         }
 
         if (!Directory.Exists(_metadataPath))
@@ -612,18 +445,18 @@ internal sealed class LocalFileStorage : ICloudFileStorage
                     // Rebuild batch index
                     if (cloudFile.Metadata.TryGetValue("BatchId", out var batchId))
                     {
-                        var batchFiles = _batchIndex.GetOrAdd(batchId, _ => new ConcurrentDictionary<string, byte>());
+                        var batchFiles = BatchIndex.GetOrAdd(batchId, _ => new ConcurrentDictionary<string, byte>());
                         _ = batchFiles.TryAdd(cloudFile.FileId, 0);
                     }
                 }
             }
             catch (Exception ex)
             {
-                FileStorageLog.MetadataLoadFailed(_logger, ex, file);
+                FileStorageLog.MetadataLoadFailed(Logger, ex, file);
             }
         }
 
-        FileStorageLog.MetadataLoaded(_logger, _fileIndex.Count);
+        FileStorageLog.MetadataLoaded(Logger, _fileIndex.Count);
     }
 
     private async Task SaveMetadataAsync(CloudFile cloudFile, CancellationToken cancellationToken)

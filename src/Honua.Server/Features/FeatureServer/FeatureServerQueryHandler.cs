@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -41,6 +42,7 @@ internal sealed class FeatureServerQueryHandler(
     private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly FeatureServerQueryExecutor _queryExecutor = dependencies.QueryExecutor;
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
+    private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<FeatureServerQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
@@ -53,6 +55,7 @@ internal sealed class FeatureServerQueryHandler(
         int layerId,
         QueryParameters queryParams,
         HttpContext context,
+        ICommonQueryValidator queryValidator,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -88,6 +91,7 @@ internal sealed class FeatureServerQueryHandler(
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
             requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
+
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
             if (accessError != null)
             {
@@ -101,7 +105,6 @@ internal sealed class FeatureServerQueryHandler(
                 context.TraceIdentifier);
             featureActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-            var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             var whereValidation = queryValidator.ValidateWhereClause(queryParams.Where);
             if (!whereValidation.IsValid)
             {
@@ -110,6 +113,8 @@ internal sealed class FeatureServerQueryHandler(
                     ErrorMessages.Validation.InvalidParameter,
                     [message]);
             }
+
+            var queryLimits = queryValidator.QueryLimits;
 
             // Apply limits enforcement
             QueryValidationResult validationResult = _queryServices.ValidateQueryLimits(queryParams);
@@ -154,7 +159,9 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
-                return cached == null ? null : Results.Bytes(cached.Payload, cached.ContentType);
+                return cached == null
+                    ? null
+                    : ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
             }
 
             async Task<IResult> CreateCachedResultAsync<T>(
@@ -168,15 +175,16 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, typeInfo);
-                await _responseCache.SetAsync(cacheKey, new CachedResponse(payload, contentType), cacheTtl, cancellationToken);
-                return Results.Bytes(payload, contentType);
+                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
+                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
             GeoServicesGeometry? parsedGeometry = null;
             if (!TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
-                    "ErrorMessages.Validation.InvalidGeometryParameter",
+                    ErrorMessages.Validation.InvalidGeometryParameter,
                     [geometryError ?? "Geometry parameter is invalid."]);
             }
 
@@ -277,9 +285,9 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             // Build query from validated parameters
-            FeatureQuery query = BuildFeatureQuery(validatedParams, service, layer, parsedGeometry, inputSrid, outputSrid, sqlFilter);
+            FeatureQuery query = BuildFeatureQuery(validatedParams, layer, parsedGeometry, inputSrid, outputSrid, sqlFilter, queryLimits);
 
-            var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+            var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
             if (validatedParams.ReturnCountOnly)
             {
@@ -328,7 +336,7 @@ internal sealed class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnIdsOnly)
             {
-                var idsEffectiveLimit = query.Limit ?? service.MaxRecordCount;
+                var idsEffectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
                 var idsUseStreaming = idsEffectiveLimit > StreamingThreshold;
                 if (idsUseStreaming)
                 {
@@ -366,7 +374,7 @@ internal sealed class FeatureServerQueryHandler(
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
-            var effectiveLimit = query.Limit ?? service.MaxRecordCount;
+            var effectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
             var useStreaming = effectiveLimit > StreamingThreshold;
             if (validatedParams.ReturnDistinctValues)
             {
@@ -480,12 +488,12 @@ internal sealed class FeatureServerQueryHandler(
     /// </summary>
     private FeatureQuery BuildFeatureQuery(
         QueryParameters queryParams,
-        ServiceDefinition service,
         LayerDefinition layer,
         GeoServicesGeometry? parsedGeometry,
         int? inputSrid,
         int? outputSrid,
-        SqlFragment? sqlFilter)
+        SqlFragment? sqlFilter,
+        QueryLimits queryLimits)
     {
         var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
         var effectiveSqlFilter = hasObjectIds ? null : sqlFilter;
@@ -497,7 +505,7 @@ internal sealed class FeatureServerQueryHandler(
             SqlFilter = effectiveSqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,
-            Limit = queryParams.ResultRecordCount ?? service.MaxRecordCount,
+            Limit = queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             OutputSrid = outputSrid,
             OrderBy = OrderByParsing.ParseFeatureServerOrderBy(

@@ -68,7 +68,7 @@ Some items are implemented now and others are still in progress; see `docs/ROADM
 - Minimal admin: connect PostGIS, publish a layer/service, enable/disable, view health, map preview.
 - **OIDC Authentication**: Azure AD, Google, generic OIDC provider support.
 - **Redis cache (optional)**: metadata cache for multi-instance; in-memory fallback for single instance.
-- **Deployment templates**: Helm chart for Kubernetes, Terraform modules for AWS/Azure/GCP.
+- **Deployment templates**: Helm chart for Kubernetes, Terraform modules for AWS/Azure.
 - **.NET Aspire**: Local dev orchestration with dashboard (traces, logs, metrics, health).
 
 ## Deferred (post-MVP)

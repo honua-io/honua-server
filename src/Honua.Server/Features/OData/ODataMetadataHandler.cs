@@ -28,7 +28,10 @@ internal sealed class ODataMetadataHandler(
     /// </summary>
     public async Task<IResult> HandleGetServiceDocument(HttpContext context)
     {
-        var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.None);
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -57,7 +60,10 @@ internal sealed class ODataMetadataHandler(
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
-        var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.None);
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
         if (queryValidation != null)
         {
             return queryValidation;
@@ -82,19 +88,4 @@ internal sealed class ODataMetadataHandler(
         return TypedResults.Content(metadata, "application/xml");
     }
 
-    private IResult? ValidateAllowedParameters(
-        HttpContext context,
-        IReadOnlySet<string> allowedParameters)
-    {
-        var validationResult = _validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
-        }
-
-        return null;
-    }
 }

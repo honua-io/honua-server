@@ -240,6 +240,16 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         CleanupCacheIfNeeded();
     }
 
+    public void InvalidateLayerCache(int layerId)
+    {
+        if (layerId <= 0)
+        {
+            return;
+        }
+
+        _layerSridCache.TryRemove(layerId, out _);
+    }
+
     private static bool IsLayerSridCacheExpired(Internal.LayerSridCacheEntry entry, DateTimeOffset now)
     {
         return now - entry.CreatedAt > _layerSridCacheRetention;

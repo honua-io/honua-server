@@ -5,7 +5,9 @@ using System.Collections.Frozen;
 using System.Data;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -54,6 +56,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".gpx"] = SupportedFileFormat.Gpx
         }
         .ToFrozenDictionary();
+    private static readonly Regex _wktSridRegex = new(
+        @"SRID\s*=\s*(\d+)\s*;",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public StreamingFileImportService(
         IDatabaseConnectionProvider connectionProvider,
@@ -161,7 +166,17 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             // Detect CRS using streaming (doesn't load entire file)
             var detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
-            var sourceSrid = request.SourceSrid ?? detectedSrid ?? 4326;
+            var sourceSrid = request.SourceSrid ?? detectedSrid;
+            if (!sourceSrid.HasValue)
+            {
+                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                result = ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed);
+                return result;
+            }
 
             // Reset stream position after CRS detection
             if (fileStream.CanSeek)
@@ -181,7 +196,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 request,
                 fileStream,
                 format.Value,
-                sourceSrid,
+                sourceSrid.Value,
                 progress,
                 jobId,
                 cancellationToken);
@@ -433,6 +448,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ? await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
             : null;
 
+        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        {
+            Transaction = transaction
+        };
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
+        var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
+        command.Parameters.Add("source_srid", NpgsqlDbType.Integer).Value = sourceSrid;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
+
         try
         {
             foreach (var feature in features)
@@ -441,15 +466,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 try
                 {
-                    await InsertFeatureAsync(
-                        connection,
-                        tableName,
-                        feature,
-                        sourceSrid,
-                        targetSrid,
-                        wkbWriter,
-                        transaction,
-                        cancellationToken);
+                    wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
+                    propertiesParameter.Value = BuildPropertiesJson(feature);
+                    await command.ExecuteNonQueryAsync(cancellationToken);
                     imported++;
                 }
                 catch (Exception)
@@ -480,93 +499,69 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     }
 
     /// <summary>
-    /// Insert a single feature into the database.
+    /// Build a JSON string of feature properties for import.
     /// </summary>
-    private async Task InsertFeatureAsync(
-        NpgsqlConnection connection,
-        string tableName,
-        IFeature feature,
-        int sourceSrid,
-        int targetSrid,
-        WKBWriter wkbWriter,
-        NpgsqlTransaction? transaction,
-        CancellationToken cancellationToken)
+    private static string BuildPropertiesJson(IFeature feature)
     {
-        var properties = new Dictionary<string, object?>();
-        if (feature.Attributes is not null)
+        if (feature.Attributes is null)
         {
-            var names = feature.Attributes.GetNames();
-            var values = feature.Attributes.GetValues();
-            properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
+            return "{}";
         }
 
-        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        var names = feature.Attributes.GetNames();
+        if (names.Length == 0)
         {
-            Transaction = transaction
-        };
-        command.Parameters.AddWithValue("table_name", tableName);
+            return "{}";
+        }
 
-        byte[]? wkb = null;
-        if (feature.Geometry != null)
+        var values = feature.Attributes.GetValues();
+        var properties = new Dictionary<string, object?>(names.Length, StringComparer.Ordinal);
+        for (var i = 0; i < names.Length; i++)
         {
-            // Validate geometry before insertion if validation is enabled
-            if (_limits.ValidateGeometry)
-            {
-                var validationError = ValidateGeometry(feature.Geometry);
-                if (validationError != null)
-                {
-                    if (_limits.SkipInvalidGeometry)
-                    {
-                        // Skip invalid geometry but still insert the feature without geometry
-                        wkb = null;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Geometry validation failed: {validationError}");
-                    }
-                }
-                else
-                {
-                    wkb = wkbWriter.Write(feature.Geometry);
+            properties[names[i]] = values[i];
+        }
 
-                    // Validate WKB size
-                    if (wkb.Length > _limits.MaxWkbSize)
-                    {
-                        if (_limits.SkipInvalidGeometry)
-                        {
-                            wkb = null;
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException(
-                                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes)");
-                        }
-                    }
-                }
-            }
-            else
+        return JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
+    }
+
+    /// <summary>
+    /// Create WKB for a feature geometry, enforcing configured validation limits.
+    /// </summary>
+    private byte[]? CreateWkb(IFeature feature, WKBWriter wkbWriter)
+    {
+        if (feature.Geometry == null)
+        {
+            return null;
+        }
+
+        if (_limits.ValidateGeometry)
+        {
+            var validationError = ValidateGeometry(feature.Geometry);
+            if (validationError != null)
             {
-                wkb = wkbWriter.Write(feature.Geometry);
+                if (_limits.SkipInvalidGeometry)
+                {
+                    return null;
+                }
+
+                throw new InvalidOperationException($"Geometry validation failed: {validationError}");
             }
         }
 
-        var wkbParameter = new NpgsqlParameter("wkb", NpgsqlDbType.Bytea)
+        var wkb = wkbWriter.Write(feature.Geometry);
+
+        if (_limits.ValidateGeometry && wkb.Length > _limits.MaxWkbSize)
         {
-            Value = wkb ?? (object)DBNull.Value
-        };
-        command.Parameters.Add(wkbParameter);
+            if (_limits.SkipInvalidGeometry)
+            {
+                return null;
+            }
 
-        command.Parameters.AddWithValue("source_srid", sourceSrid);
-        command.Parameters.AddWithValue("target_srid", targetSrid);
+            throw new InvalidOperationException(
+                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes)");
+        }
 
-        var propertiesJson = JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
-        var propertiesParameter = new NpgsqlParameter("properties", NpgsqlDbType.Jsonb)
-        {
-            Value = propertiesJson
-        };
-        command.Parameters.Add(propertiesParameter);
-
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return wkb;
     }
 
     /// <summary>
@@ -778,7 +773,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             return format switch
             {
-                SupportedFileFormat.GeoJson => await _geoJsonReader.DetectCrsAsync(stream, cancellationToken),
+                SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
+                SupportedFileFormat.Kml => 4326,
+                SupportedFileFormat.Gpx => 4326,
+                SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 _ => null
             };
         }
@@ -791,6 +789,32 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (stream.CanSeek)
                 stream.Position = 0;
         }
+    }
+
+    private async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var detected = await _geoJsonReader.DetectCrsAsync(stream, cancellationToken);
+        return detected ?? 4326;
+    }
+
+    private async Task<int?> DetectWktSridAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        const int headerSize = 8192;
+        var buffer = new byte[headerSize];
+        var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, headerSize), cancellationToken);
+        if (bytesRead <= 0)
+        {
+            return null;
+        }
+
+        var header = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        var match = _wktSridRegex.Match(header);
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var srid))
+        {
+            return null;
+        }
+
+        return srid;
     }
 
     #region Streaming Readers for Other Formats

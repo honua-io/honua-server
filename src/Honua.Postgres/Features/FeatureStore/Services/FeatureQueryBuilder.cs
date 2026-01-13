@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -300,6 +301,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         int z,
         FeatureQuery? query,
         TileOptions tileOptions,
+        TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
@@ -308,11 +310,8 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 1;
             var parameters = new List<object>();
             var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
-            if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue &&
-                query.Value.SpatialReferenceSrid.Value != 3857)
-            {
-                geometryOperand = $"ST_Transform({geometryOperand}, 3857)";
-            }
+            var geometryForTile = geometryOperand;
+            var filterGeometryOperand = geometryOperand;
 
             var tileBounds = TileMath.GetTileBounds(x, y, z);
             var tileWidth = tileBounds.XMax - tileBounds.XMin;
@@ -333,7 +332,22 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             parameters.Add(tileOptions.TileBuffer);
             paramIndex = 8;
 
-            var geometryForTile = geometryOperand;
+            var tileEnvelopeForFilter = tileEnvelopeWithBuffer;
+            if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue)
+            {
+                var layerSrid = query.Value.SpatialReferenceSrid.Value;
+                if (layerSrid != 3857)
+                {
+                    geometryForTile = $"ST_Transform({geometryOperand}, 3857)";
+                    tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+                }
+            }
+            else
+            {
+                geometryForTile = $"ST_Transform({geometryOperand}, 3857)";
+                filterGeometryOperand = geometryForTile;
+            }
+
             if (z <= tileOptions.SimplifyZoom)
             {
                 var simplifyTolerance = TileMath.GetSimplificationTolerance(z);
@@ -368,12 +382,13 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             }
 
             sql.Append(CultureInfo.InvariantCulture, $@"
-                    AND ST_Intersects({geometryOperand}, {tileEnvelopeWithBuffer})");
+                    AND {filterGeometryOperand} && {tileEnvelopeForFilter}
+                    AND ST_Intersects({filterGeometryOperand}, {tileEnvelopeForFilter})");
 
-            if (tileOptions.MaxFeaturesPerTile > 0)
+            if (tileLimits.MaxFeaturesPerTile > 0)
             {
                 var limitParam = $"${paramIndex++}";
-                parameters.Add(tileOptions.MaxFeaturesPerTile);
+                parameters.Add(tileLimits.MaxFeaturesPerTile);
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }
 
@@ -1037,7 +1052,20 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             return true;
         }
 
-        return query.SpatialReferenceSrid.HasValue && query.SpatialReferenceSrid.Value == SpatialReference.WGS84.Wkid;
+        if (!query.SpatialReferenceSrid.HasValue)
+        {
+            return false;
+        }
+
+        return IsLikelyGeographicSrid(query.SpatialReferenceSrid.Value);
+    }
+
+    private static bool IsLikelyGeographicSrid(int srid)
+    {
+        return srid == SpatialReference.WGS84.Wkid ||
+               srid == 4269 ||
+               srid == 4267 ||
+               srid is >= 4000 and <= 4999;
     }
 
     private static string? FindDangerousPattern(string whereClause)

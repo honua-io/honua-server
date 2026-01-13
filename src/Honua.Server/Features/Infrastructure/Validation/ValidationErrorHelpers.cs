@@ -120,13 +120,32 @@ public static class ValidationErrorHelpers
         string detail,
         CancellationToken cancellationToken = default)
     {
+        await WriteValidationErrorAsync(context, statusCode, title, new[] { detail }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes a validation error response directly to the HTTP context with optional details.
+    /// Used when we need to bypass the normal result pipeline.
+    /// </summary>
+    /// <param name="context">HTTP context</param>
+    /// <param name="statusCode">HTTP status code</param>
+    /// <param name="title">Error title</param>
+    /// <param name="details">Optional error details</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public static async Task WriteValidationErrorAsync(
+        HttpContext context,
+        int statusCode,
+        string title,
+        string[]? details,
+        CancellationToken cancellationToken = default)
+    {
         var errorResponse = new ApiErrorResponse
         {
             Error = new GeoServicesError
             {
                 Code = statusCode,
                 Message = title,
-                Details = [detail]
+                Details = details
             }
         };
 

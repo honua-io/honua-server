@@ -135,7 +135,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         catch (Exception ex)
         {
             Log.BatchTransactionFailed(_logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while processing the batch operation.");
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while processing the batch operation.");
         }
     }
 
@@ -261,7 +261,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         catch (Exception ex)
         {
             Log.ReplaceFeatureFailed(_logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while replacing the feature.");
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while replacing the feature.");
         }
     }
 

@@ -19,7 +19,6 @@ namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
 /// - "env:DATABASE_CONNECTION_STRING"
 /// - "aws:secretsmanager:prod-database-credentials"
 /// - "azure:keyvault:my-vault:database-connection"
-/// - "gcp:secretmanager:my-project:database-connection"
 /// </remarks>
 internal sealed class CompositeSecretResolver : IConnectionSecretResolver
 {

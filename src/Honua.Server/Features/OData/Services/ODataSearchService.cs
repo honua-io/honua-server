@@ -212,7 +212,7 @@ internal sealed partial class ODataSearchService
 
     private static bool FieldExists(LayerDefinition layer, string field)
     {
-        if (field.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+        if (field.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
             field.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
             field.Equals("geometry", StringComparison.OrdinalIgnoreCase))
         {

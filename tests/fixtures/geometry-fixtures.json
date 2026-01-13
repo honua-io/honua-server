@@ -1,0 +1,273 @@
+{
+  "base": {
+    "lon": -122.4194,
+    "lat": 37.7749
+  },
+  "geometryTypes": [
+    "Point",
+    "MultiPoint",
+    "LineString",
+    "MultiLineString",
+    "Polygon",
+    "Polygon_with_hole",
+    "Polygon_with_multiple_holes",
+    "MultiPolygon",
+    "MultiPolygon_with_holes",
+    "GeometryCollection",
+    "Null"
+  ],
+  "geometries": {
+    "point": {
+      "defaultName": "test_point",
+      "geometryType": "Point",
+      "hasHoles": false,
+      "isMulti": false,
+      "isNull": false,
+      "geojson": {
+        "type": "Point",
+        "coordinates": [-122.4194, 37.7749]
+      }
+    },
+    "multipoint": {
+      "defaultName": "test_multipoint",
+      "geometryType": "MultiPoint",
+      "hasHoles": false,
+      "isMulti": true,
+      "isNull": false,
+      "geojson": {
+        "type": "MultiPoint",
+        "coordinates": [
+          [-122.4194, 37.7749],
+          [-122.4094, 37.7849],
+          [-122.3994, 37.7949]
+        ]
+      }
+    },
+    "linestring": {
+      "defaultName": "test_linestring",
+      "geometryType": "LineString",
+      "hasHoles": false,
+      "isMulti": false,
+      "isNull": false,
+      "geojson": {
+        "type": "LineString",
+        "coordinates": [
+          [-122.4194, 37.7749],
+          [-122.4094, 37.7799],
+          [-122.3994, 37.7849],
+          [-122.3894, 37.7899]
+        ]
+      }
+    },
+    "multilinestring": {
+      "defaultName": "test_multilinestring",
+      "geometryType": "MultiLineString",
+      "hasHoles": false,
+      "isMulti": true,
+      "isNull": false,
+      "geojson": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [-122.4194, 37.7749],
+            [-122.4094, 37.7799],
+            [-122.3994, 37.7849]
+          ],
+          [
+            [-122.4194, 37.7949],
+            [-122.4094, 37.7999],
+            [-122.3994, 37.8049]
+          ]
+        ]
+      }
+    },
+    "polygonSimple": {
+      "defaultName": "test_polygon_simple",
+      "geometryType": "Polygon",
+      "hasHoles": false,
+      "isMulti": false,
+      "isNull": false,
+      "geojson": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-122.4194, 37.7749],
+            [-122.4094, 37.7749],
+            [-122.4094, 37.7849],
+            [-122.4194, 37.7849],
+            [-122.4194, 37.7749]
+          ]
+        ]
+      }
+    },
+    "polygonWithHole": {
+      "defaultName": "test_polygon_with_hole",
+      "geometryType": "Polygon",
+      "hasHoles": true,
+      "isMulti": false,
+      "isNull": false,
+      "geojson": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-122.4194, 37.7749],
+            [-122.3994, 37.7749],
+            [-122.3994, 37.7949],
+            [-122.4194, 37.7949],
+            [-122.4194, 37.7749]
+          ],
+          [
+            [-122.4144, 37.7799],
+            [-122.4044, 37.7799],
+            [-122.4044, 37.7899],
+            [-122.4144, 37.7899],
+            [-122.4144, 37.7799]
+          ]
+        ]
+      }
+    },
+    "polygonWithMultipleHoles": {
+      "defaultName": "test_polygon_multiple_holes",
+      "geometryType": "Polygon",
+      "hasHoles": true,
+      "isMulti": false,
+      "isNull": false,
+      "geojson": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-122.4194, 37.7749],
+            [-122.3794, 37.7749],
+            [-122.3794, 37.8149],
+            [-122.4194, 37.8149],
+            [-122.4194, 37.7749]
+          ],
+          [
+            [-122.4144, 37.7799],
+            [-122.4044, 37.7799],
+            [-122.4044, 37.7899],
+            [-122.4144, 37.7899],
+            [-122.4144, 37.7799]
+          ],
+          [
+            [-122.3944, 37.7999],
+            [-122.3844, 37.7999],
+            [-122.3844, 37.8099],
+            [-122.3944, 37.8099],
+            [-122.3944, 37.7999]
+          ]
+        ]
+      }
+    },
+    "multipolygonSimple": {
+      "defaultName": "test_multipolygon_simple",
+      "geometryType": "MultiPolygon",
+      "hasHoles": false,
+      "isMulti": true,
+      "isNull": false,
+      "geojson": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-122.4194, 37.7749],
+              [-122.4094, 37.7749],
+              [-122.4094, 37.7849],
+              [-122.4194, 37.7849],
+              [-122.4194, 37.7749]
+            ]
+          ],
+          [
+            [
+              [-122.3994, 37.7749],
+              [-122.3894, 37.7749],
+              [-122.3894, 37.7849],
+              [-122.3994, 37.7849],
+              [-122.3994, 37.7749]
+            ]
+          ]
+        ]
+      }
+    },
+    "multipolygonWithHoles": {
+      "defaultName": "test_multipolygon_with_holes",
+      "geometryType": "MultiPolygon",
+      "hasHoles": true,
+      "isMulti": true,
+      "isNull": false,
+      "geojson": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-122.4194, 37.7749],
+              [-122.3994, 37.7749],
+              [-122.3994, 37.7949],
+              [-122.4194, 37.7949],
+              [-122.4194, 37.7749]
+            ],
+            [
+              [-122.4144, 37.7799],
+              [-122.4044, 37.7799],
+              [-122.4044, 37.7899],
+              [-122.4144, 37.7899],
+              [-122.4144, 37.7799]
+            ]
+          ],
+          [
+            [
+              [-122.3894, 37.7749],
+              [-122.3794, 37.7749],
+              [-122.3794, 37.7849],
+              [-122.3894, 37.7849],
+              [-122.3894, 37.7749]
+            ]
+          ]
+        ]
+      }
+    },
+    "geometryCollection": {
+      "defaultName": "test_geometry_collection",
+      "geometryType": "GeometryCollection",
+      "hasHoles": false,
+      "isMulti": false,
+      "isNull": false,
+      "geojson": {
+        "type": "GeometryCollection",
+        "geometries": [
+          {
+            "type": "Point",
+            "coordinates": [-122.4194, 37.7749]
+          },
+          {
+            "type": "LineString",
+            "coordinates": [
+              [-122.4094, 37.7749],
+              [-122.3994, 37.7849]
+            ]
+          },
+          {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [-122.3894, 37.7749],
+                [-122.3794, 37.7749],
+                [-122.3794, 37.7849],
+                [-122.3894, 37.7849],
+                [-122.3894, 37.7749]
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    "nullGeometry": {
+      "defaultName": "test_null_geometry",
+      "geometryType": "Null",
+      "hasHoles": false,
+      "isMulti": false,
+      "isNull": true,
+      "geojson": null
+    }
+  }
+}

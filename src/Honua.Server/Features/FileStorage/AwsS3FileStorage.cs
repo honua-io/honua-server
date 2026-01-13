@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using Amazon.Runtime;
@@ -13,25 +12,20 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FileStorage;
 
-internal sealed class AwsS3FileStorage : ICloudFileStorage
+internal sealed class AwsS3FileStorage : CloudFileStorageBase
 {
     private static readonly TimeSpan _defaultSignedUrlLifetime = TimeSpan.FromMinutes(15);
 
     private readonly AwsS3Options _options;
     private readonly AmazonS3Client _client;
-    private readonly ILogger<AwsS3FileStorage> _logger;
-    private readonly IUploadProgressStore _progressStore;
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _batchIndex;
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _uploadCancellationTokens;
 
     public AwsS3FileStorage(
         IOptions<CloudStorageOptions> options,
         ILogger<AwsS3FileStorage> logger,
         IUploadProgressStore progressStore)
+        : base(logger, progressStore)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
 
         var resolved = options.Value ?? throw new ArgumentNullException(nameof(options));
         _options = resolved.AwsS3 ?? throw new InvalidOperationException("AWS S3 options are not configured.");
@@ -57,8 +51,6 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
         }
 
         _client = CreateClient(_options);
-        _batchIndex = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
-        _uploadCancellationTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
     }
 
     public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
@@ -72,10 +64,10 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
 
-        _uploadCancellationTokens[uploadId] = linkedCancellationSource;
+        UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
-        await _progressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+        await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
         request.Progress?.Report(initialProgress);
 
         try
@@ -125,7 +117,7 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                         CurrentPhase = "Uploading"
                     };
 
-                    _ = _progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                    _ = ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
                     request.Progress.Report(progress);
                     lastProgressUpdate = now;
                 };
@@ -171,11 +163,11 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 CompletedAt = uploadedAt,
                 CurrentPhase = "Upload completed"
             };
-            await _progressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             request.Progress?.Report(completedProgress);
 
             stopwatch.Stop();
-            FileStorageLog.FileUploaded(_logger, request.FileName, sizeBytes, objectKey, stopwatch.ElapsedMilliseconds);
+            FileStorageLog.FileUploaded(Logger, request.FileName, sizeBytes, objectKey, stopwatch.ElapsedMilliseconds);
 
             return UploadResult.CreateSuccess(cloudFile, stopwatch.Elapsed);
         }
@@ -195,7 +187,7 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 ErrorMessage = "Upload was cancelled",
                 CurrentPhase = "Cancelled"
             };
-            await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
             request.Progress?.Report(cancelledProgress);
             throw;
         }
@@ -215,9 +207,9 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 ErrorMessage = ex.Message,
                 CurrentPhase = "Failed"
             };
-            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
             request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
+            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
             return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
         }
         catch (Exception ex)
@@ -236,33 +228,16 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
                 ErrorMessage = "File upload failed",
                 CurrentPhase = "Failed"
             };
-            await _progressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
             request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(_logger, ex, request.FileName);
+            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
             return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
         }
         finally
         {
-            _uploadCancellationTokens.TryRemove(uploadId, out _);
+            UploadCancellationTokens.TryRemove(uploadId, out _);
             linkedCancellationSource.Dispose();
         }
-    }
-
-    public async Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        using var stream = new MemoryStream(request.Content);
-        return await UploadAsync(new FileUploadRequest
-        {
-            Content = stream,
-            FileName = request.FileName,
-            ContentType = request.ContentType,
-            SizeBytes = request.Content.Length,
-            TimeToLive = request.TimeToLive,
-            Metadata = request.Metadata,
-            Folder = request.Folder
-        }, cancellationToken);
     }
 
     public async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
@@ -280,18 +255,6 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
         }
     }
 
-    public async Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
-    {
-        await using var stream = await DownloadAsync(fileId, cancellationToken);
-        if (stream is null)
-        {
-            return null;
-        }
-
-        using var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, cancellationToken);
-        return memoryStream.ToArray();
-    }
 
     public async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
@@ -305,95 +268,10 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
         var deleted = await DeleteObjectAsync(fileId, cancellationToken);
         if (deleted)
         {
-            FileStorageLog.FileDeleted(_logger, fileId);
+            FileStorageLog.FileDeleted(Logger, fileId);
         }
 
         return deleted;
-    }
-
-    public async Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        var stopwatch = Stopwatch.StartNew();
-        var batchId = Guid.NewGuid().ToString("N");
-        var uploadedFiles = new List<CloudFile>();
-        var failedFiles = new Dictionary<string, string>();
-
-        _batchIndex[batchId] = new ConcurrentDictionary<string, byte>();
-
-        foreach (var file in request.Files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var metadata = file.Metadata.Add("BatchId", batchId);
-            var result = await UploadAsync(new FileUploadRequest
-            {
-                Content = file.Content,
-                FileName = file.FileName,
-                ContentType = file.ContentType,
-                SizeBytes = file.SizeBytes,
-                TimeToLive = request.TimeToLive,
-                Metadata = metadata,
-                Folder = request.Folder ?? batchId
-            }, cancellationToken);
-
-            if (result.Success && result.File is not null)
-            {
-                uploadedFiles.Add(result.File);
-                _ = _batchIndex[batchId].TryAdd(result.File.FileId, 0);
-            }
-            else
-            {
-                failedFiles[file.FileName] = result.ErrorMessage ?? "Unknown error";
-
-                if (!request.ContinueOnError)
-                {
-                    foreach (var uploaded in uploadedFiles)
-                    {
-                        await DeleteObjectAsync(uploaded.FileId, cancellationToken);
-                    }
-
-                    stopwatch.Stop();
-                    return BatchUploadResult.CreateFailure(batchId, failedFiles, stopwatch.Elapsed);
-                }
-            }
-        }
-
-        stopwatch.Stop();
-
-        if (failedFiles.Count > 0)
-        {
-            return BatchUploadResult.CreatePartialSuccess(batchId, uploadedFiles, failedFiles, stopwatch.Elapsed);
-        }
-
-        return BatchUploadResult.CreateSuccess(batchId, uploadedFiles, stopwatch.Elapsed);
-    }
-
-    public async Task<int> DeleteBatchAsync(string batchId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-
-        if (_batchIndex.TryRemove(batchId, out var fileIds))
-        {
-            var deletedCount = 0;
-            foreach (var fileId in fileIds.Keys)
-            {
-                if (await DeleteObjectAsync(fileId, cancellationToken))
-                {
-                    deletedCount++;
-                }
-            }
-
-            if (deletedCount > 0)
-            {
-                FileStorageLog.BatchDeleted(_logger, batchId, deletedCount);
-            }
-
-            return deletedCount;
-        }
-
-        return await DeleteByPrefixAsync(batchId, cancellationToken);
     }
 
     public async Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
@@ -567,56 +445,10 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
 
         if (cleanedCount > 0)
         {
-            FileStorageLog.ExpiredFilesCleaned(_logger, cleanedCount);
+            FileStorageLog.ExpiredFilesCleaned(Logger, cleanedCount);
         }
 
         return cleanedCount;
-    }
-
-    /// <inheritdoc />
-    public Task<UploadProgress?> GetUploadProgressAsync(string uploadId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
-        return _progressStore.GetProgressAsync(uploadId, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default)
-    {
-        return CancelUploadInternalAsync(uploadId, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
-    {
-        return _progressStore.GetActiveUploadsAsync(cancellationToken);
-    }
-
-    private async Task<bool> CancelUploadInternalAsync(string uploadId, CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);
-
-        if (_uploadCancellationTokens.TryRemove(uploadId, out var cancellationSource))
-        {
-            await cancellationSource.CancelAsync();
-            cancellationSource.Dispose();
-
-            var currentProgress = await _progressStore.GetProgressAsync(uploadId, cancellationToken);
-            if (currentProgress != null && currentProgress.Status == OperationStatus.Processing)
-            {
-                var cancelledProgress = currentProgress with
-                {
-                    Status = OperationStatus.Cancelled,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Cancelled"
-                };
-                await _progressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
-            }
-
-            return true;
-        }
-
-        return false;
     }
 
     private static AmazonS3Client CreateClient(AwsS3Options options)
@@ -716,12 +548,12 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
         }
         catch (Exception ex)
         {
-            FileStorageLog.FileDeleteFailed(_logger, ex, fileId);
+            FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
             return false;
         }
     }
 
-    private async Task<int> DeleteByPrefixAsync(string batchId, CancellationToken cancellationToken)
+    protected override async Task<int> DeleteByPrefixAsync(string batchId, CancellationToken cancellationToken)
     {
         var prefix = CloudStoragePath.BuildPrefix(batchId, _options.KeyPrefix);
         if (string.IsNullOrWhiteSpace(prefix))
@@ -756,9 +588,12 @@ internal sealed class AwsS3FileStorage : ICloudFileStorage
 
         if (deletedCount > 0)
         {
-            FileStorageLog.BatchDeleted(_logger, batchId, deletedCount);
+            FileStorageLog.BatchDeleted(Logger, batchId, deletedCount);
         }
 
         return deletedCount;
     }
+
+    protected override Task<bool> DeleteBatchFileAsync(string fileId, CancellationToken cancellationToken)
+        => DeleteObjectAsync(fileId, cancellationToken);
 }

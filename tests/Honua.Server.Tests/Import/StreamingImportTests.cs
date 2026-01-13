@@ -207,6 +207,7 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent("wkt_import_table"), "TableName");
+        content.Add(new StringContent("4326"), "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act

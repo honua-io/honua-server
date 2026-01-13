@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Infrastructure.Middleware;
-
 namespace Honua.Server.Features.Infrastructure.Caching;
 
 /// <summary>
@@ -19,17 +17,6 @@ internal static class ETagExtensions
     {
         services.AddSingleton<IETagService, ETagService>();
         return services;
-    }
-
-    /// <summary>
-    /// Adds the ETag middleware to the application pipeline.
-    /// Should be called after UseOutputCache() to work with the existing cache infrastructure.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for chaining</returns>
-    internal static IApplicationBuilder UseETags(this IApplicationBuilder app)
-    {
-        return app.UseMiddleware<ETagMiddleware>();
     }
 
     /// <summary>

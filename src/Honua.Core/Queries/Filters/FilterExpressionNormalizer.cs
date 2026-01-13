@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Queries.Filters;
 
@@ -158,7 +159,7 @@ public static class FilterExpressionNormalizer
 
     private static bool TryGetFieldType(LayerDefinition layer, string field, out FieldType fieldType)
     {
-        if (field.Equals("objectid", StringComparison.OrdinalIgnoreCase))
+        if (field.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
             fieldType = FieldType.BigInteger;
             return true;

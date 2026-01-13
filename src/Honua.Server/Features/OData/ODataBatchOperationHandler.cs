@@ -36,7 +36,10 @@ internal sealed partial class ODataBatchOperationHandler(
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.None);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.None);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -64,7 +67,7 @@ internal sealed partial class ODataBatchOperationHandler(
                     "Batch request must contain at least one request.");
             }
 
-            Log.BatchRequested(_logger, batchRequest.Requests.Length);
+            ODataLog.BatchRequested(_logger, batchRequest.Requests.Length);
 
             var accessError = await ValidateBatchAccessAsync(context, batchRequest, effectiveToken);
             if (accessError != null)
@@ -262,30 +265,11 @@ internal sealed partial class ODataBatchOperationHandler(
         return false;
     }
 
-    private IResult? ValidateAllowedParameters(
-        HttpContext context,
-        IReadOnlySet<string> allowedParameters)
-    {
-        var validationResult = _validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
-        }
-
-        return null;
-    }
-
     /// <summary>
     /// Logging methods for OData batch operations.
     /// </summary>
     private static partial class Log
     {
-        [LoggerMessage(EventId = 3010, Level = LogLevel.Information, Message = "OData batch request with {RequestCount} operations.")]
-        public static partial void BatchRequested(ILogger logger, int requestCount);
-
         [LoggerMessage(EventId = 3011, Level = LogLevel.Warning, Message = "OData batch request parse failed.")]
         public static partial void BatchParseFailed(ILogger logger, Exception exception);
 

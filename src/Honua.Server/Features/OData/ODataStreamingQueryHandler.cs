@@ -61,41 +61,37 @@ internal sealed partial class ODataStreamingQueryHandler(
         Activity? featureActivity = null;
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Features);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.Features);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            var formatValidation = ValidateFormat(context, format);
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
             if (formatValidation != null)
             {
                 return formatValidation;
             }
 
-            if (!ODataParsingUtilities.TryParseOptionalInt(top, "$top", out var topValue, out var parseError))
+            if (!ODataRequestValidation.TryParsePaging(
+                context,
+                _validationService,
+                top,
+                skip,
+                count,
+                out var paging,
+                out var pagingError))
             {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
+                return pagingError!;
             }
 
-            if (!ODataParsingUtilities.TryParseOptionalInt(skip, "$skip", out var skipValue, out parseError))
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            }
-
-            if (!ODataParsingUtilities.TryParseOptionalBool(count, "$count", out var countValue, out parseError))
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            }
-
-            var paginationResult = _validationService.ValidateAndNormalizePagination(skipValue, topValue);
-            if (!paginationResult.IsValid)
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption",
-                    paginationResult.ErrorMessage ?? "Invalid OData query.");
-            }
-
-            var pagination = paginationResult.Value!;
+            var pagination = paging!.Pagination;
+            var topValue = paging.Top;
+            var skipValue = paging.Skip;
+            var countValue = paging.Count;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
             if (!string.IsNullOrWhiteSpace(apply))
@@ -221,7 +217,6 @@ internal sealed partial class ODataStreamingQueryHandler(
                 HonuaTelemetry.Protocols.OData,
                 layerId.Value.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
-            featureActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
 
             // Get total count if requested
             long? totalCount = null;
@@ -255,16 +250,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 _geometryService,
                 cancellationToken);
 
-            if (totalCount.HasValue)
-            {
-                var safeCount = (int)Math.Min(totalCount.Value, int.MaxValue);
-                HonuaTelemetry.SetSuccess(featureActivity, safeCount);
-            }
-            else
-            {
-                HonuaTelemetry.SetSuccess(featureActivity);
-            }
-
+            HonuaTelemetry.SetSuccess(featureActivity);
             return Results.Empty;
         }
         catch (OperationCanceledException)
@@ -275,8 +261,8 @@ internal sealed partial class ODataStreamingQueryHandler(
         catch (ArgumentException ex)
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
-            HonuaTelemetry.RecordException(featureActivity, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
         catch (Exception ex)
@@ -466,22 +452,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
     }
 
-    private IResult? ValidateAllowedParameters(
-        HttpContext context,
-        IReadOnlySet<string> allowedParameters)
-    {
-        var validationResult = _validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
-        }
-
-        return null;
-    }
-
     public async Task<IResult> HandleGetFeaturesCountAsync(
         HttpContext context,
         int? layerId,
@@ -489,15 +459,19 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        Activity? featureActivity = null;
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.FeaturesCount);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.FeaturesCount);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            var formatValidation = ValidateFormat(context, format);
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
             if (formatValidation != null)
             {
                 return formatValidation;
@@ -534,6 +508,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return accessError;
             }
 
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "count",
+                HonuaTelemetry.Protocols.OData,
+                layerId.Value.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+
             var featureQuery = _querySearchService.BuildFeatureQuery(
                 filter, null, null, null, layer, out var queryError);
             if (queryError != null)
@@ -544,6 +528,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             var count = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
+            HonuaTelemetry.SetSuccess(featureActivity, (int)Math.Min(count, int.MaxValue));
             return Results.Text(count.ToString(System.Globalization.CultureInfo.InvariantCulture), "text/plain");
         }
         catch (OperationCanceledException)
@@ -555,28 +540,20 @@ internal sealed partial class ODataStreamingQueryHandler(
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the OData request", 500);
         }
-    }
-
-    private IResult? ValidateFormat(HttpContext context, string? format)
-    {
-        var validation = _validationService.ValidateFormat(format, ODataUtilityService.GetAllowedFormats());
-        if (!validation.IsValid)
+        finally
         {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validation.ErrorMessage ?? "Invalid format parameter.");
+            featureActivity?.Dispose();
         }
-
-        return null;
     }
 
     private static bool TryResolveLayerIdFromFilter(string? filter, out (int LayerId, string? ErrorMessage) result)

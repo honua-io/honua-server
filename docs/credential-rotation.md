@@ -52,7 +52,6 @@ HONUA_ADMIN_PASSWORD_VALUE="new-admin-key"
 
 - **AWS Secrets Manager**: rotate the secret value and keep the ref stable; use `versionStage` or `versionId` if you need pinning.
 - **Azure Key Vault**: create a new version in the vault; update the ref only if you pin a version.
-- **GCP Secret Manager**: add a new version and keep `:latest`, or update the ref if you pin a version.
 
 ## Verification Checklist
 

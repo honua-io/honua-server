@@ -222,7 +222,7 @@ public sealed class TileLimits
     /// Range: 1,000-1,000,000.
     /// </summary>
     [Range(1000, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxFeaturesPerTile)]
-    public int MaxFeaturesPerTile { get; init; } = 100000;
+    public int MaxFeaturesPerTile { get; init; } = 10000;
 
     /// <summary>
     /// Maximum time allowed for tile generation.

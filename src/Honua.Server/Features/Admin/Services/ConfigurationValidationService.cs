@@ -270,8 +270,7 @@ internal static class ConfigurationValidationService
         {
             "env",
             "aws",
-            "azure",
-            "gcp"
+            "azure"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

@@ -52,7 +52,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 ST_XMin(l.extent) as xmin,
                 ST_YMin(l.extent) as ymin,
                 ST_XMax(l.extent) as xmax,
-                ST_YMax(l.extent) as ymax
+                ST_YMax(l.extent) as ymax,
+                ST_SRID(l.extent) as extent_srid
             FROM {_layersTable} l
             WHERE l.layer_id = @layerId
             """;
@@ -94,7 +95,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 ST_XMin(l.extent) as xmin,
                 ST_YMin(l.extent) as ymin,
                 ST_XMax(l.extent) as xmax,
-                ST_YMax(l.extent) as ymax
+                ST_YMax(l.extent) as ymax,
+                ST_SRID(l.extent) as extent_srid
             FROM {_layersTable} l
             ORDER BY l.layer_id
             """;
@@ -136,14 +138,14 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.service_name,
                 s.description,
                 s.srid,
-                s.max_record_count,
                 s.supported_formats,
                 s.capabilities,
                 s.metadata,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
-                ST_YMax(s.service_extent) as ymax
+                ST_YMax(s.service_extent) as ymax,
+                ST_SRID(s.service_extent) as extent_srid
             FROM {_servicesTable} s
             WHERE LOWER(s.service_name) = LOWER(@serviceName)
             """;
@@ -173,14 +175,14 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.service_name,
                 s.description,
                 s.srid,
-                s.max_record_count,
                 s.supported_formats,
                 s.capabilities,
                 s.metadata,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
-                ST_YMax(s.service_extent) as ymax
+                ST_YMax(s.service_extent) as ymax,
+                ST_SRID(s.service_extent) as extent_srid
             FROM {_servicesTable} s
             ORDER BY s.service_name
             """;
@@ -247,6 +249,16 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             throw new InvalidDataException($"Invalid geometry type: {geometryTypeString}");
 
         int srid = reader.GetInt32(reader.GetOrdinal("srid"));
+        int extentSrid = srid;
+        int extentSridOrdinal = reader.GetOrdinal("extent_srid");
+        if (!reader.IsDBNull(extentSridOrdinal))
+        {
+            extentSrid = reader.GetInt32(extentSridOrdinal);
+            if (extentSrid <= 0)
+            {
+                extentSrid = srid;
+            }
+        }
         double? minScale = reader.IsDBNull(reader.GetOrdinal("min_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("min_scale"));
         double? maxScale = reader.IsDBNull(reader.GetOrdinal("max_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("max_scale"));
         bool defaultVisibility = reader.GetBoolean(reader.GetOrdinal("default_visibility"));
@@ -260,7 +272,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
             double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
             double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
-            extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, srid);
+            extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, extentSrid);
         }
 
         var spatialReference = SpatialReference.Create(srid);
@@ -286,7 +298,16 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         string name = reader.GetString(reader.GetOrdinal("service_name"));
         string description = reader.GetString(reader.GetOrdinal("description"));
         int srid = reader.GetInt32(reader.GetOrdinal("srid"));
-        int maxRecordCount = reader.GetInt32(reader.GetOrdinal("max_record_count"));
+        int extentSrid = srid;
+        int extentSridOrdinal = reader.GetOrdinal("extent_srid");
+        if (!reader.IsDBNull(extentSridOrdinal))
+        {
+            extentSrid = reader.GetInt32(extentSridOrdinal);
+            if (extentSrid <= 0)
+            {
+                extentSrid = srid;
+            }
+        }
         string[] supportedFormats = reader.GetFieldValue<string[]>(reader.GetOrdinal("supported_formats"));
         string[] capabilities = reader.GetFieldValue<string[]>(reader.GetOrdinal("capabilities"));
 
@@ -299,7 +320,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
             double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
             double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
-            extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, srid);
+            extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, extentSrid);
         }
 
         var spatialReference = SpatialReference.Create(srid);
@@ -311,7 +332,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             description,
             [], // Layers populated separately
             spatialReference,
-            maxRecordCount,
             supportedFormats,
             capabilities,
             extent,
