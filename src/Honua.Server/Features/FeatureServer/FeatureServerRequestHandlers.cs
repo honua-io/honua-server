@@ -758,7 +758,7 @@ internal static partial class FeatureServerEndpoints
         parameters = new QueryParameters
         {
             Where = GetValueString(values, "where"),
-            OutFields = GetValueString(values, "outFields"),
+            OutFields = NormalizeOutFields(GetValueString(values, "outFields")),
             OrderByFields = GetValueString(values, "orderByFields"),
             Geometry = GetValueString(values, "geometry"),
             InSr = GetValueString(values, "inSR"),
@@ -856,7 +856,7 @@ internal static partial class FeatureServerEndpoints
         {
             ObjectIds = objectIds,
             RelationshipId = relationshipId,
-            OutFields = GetValueString(values, "outFields"),
+            OutFields = NormalizeOutFields(GetValueString(values, "outFields")),
             Where = where,
             ReturnGeometry = returnGeometry,
             F = GetValueString(values, "f") ?? "json",
@@ -865,6 +865,27 @@ internal static partial class FeatureServerEndpoints
         };
 
         return true;
+    }
+
+    private static string? NormalizeOutFields(string? outFields)
+    {
+        if (string.IsNullOrWhiteSpace(outFields))
+        {
+            return null;
+        }
+
+        var tokens = outFields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            return null;
+        }
+
+        if (tokens.Any(token => token.Equals("*", StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        return string.Join(',', tokens);
     }
 
     private static bool TryParseRequiredIntValue(

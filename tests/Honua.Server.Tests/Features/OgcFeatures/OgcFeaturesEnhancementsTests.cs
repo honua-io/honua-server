@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -276,24 +277,26 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("4 comma-separated values");
+        content.Should().Contain("4 or 6 comma-separated values");
     }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_With3dBbox_ReturnsBadRequest()
+    public async Task GetItems_With3dBbox_ReturnsFilteredFeatures()
     {
         // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz)
-        var invalidBbox = "-180,-90,-10,180,90,10";
+        var bbox = "-180,-90,-10,180,90,10";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={invalidBbox}");
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("3D bounding boxes are not supported");
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -349,6 +352,37 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         features.Should().NotBeEmpty();
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithBbox_IncludesNullGeometryFeatures()
+    {
+        // Arrange - insert a feature without geometry and query with a bbox filter
+        var name = $"Null Geometry {Guid.NewGuid():N}";
+        await InsertNullGeometryFeatureAsync(name);
+        var bbox = "-180,-90,180,90";
+
+        // Act
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray();
+
+        features.Any(feature =>
+        {
+            if (!feature.TryGetProperty("properties", out var props))
+            {
+                return false;
+            }
+
+            return props.TryGetProperty("name", out var nameProp)
+                && string.Equals(nameProp.GetString(), name, StringComparison.Ordinal);
+        }).Should().BeTrue();
+    }
+
     #endregion
 
     #region Default Limit Tests (Issue #157)
@@ -373,6 +407,23 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var defaultLimit = new Honua.Core.Configuration.LimitsOptions().Query.DefaultRecordCount;
         features.Length.Should().BeLessThanOrEqualTo(defaultLimit);
         numberReturned.Should().BeLessThanOrEqualTo(defaultLimit);
+    }
+
+    private async Task<long> InsertNullGeometryFeatureAsync(string name)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("name", name);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     [IntegrationTest]

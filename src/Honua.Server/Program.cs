@@ -413,6 +413,9 @@ app.MapImportEndpoints();
 // Configure Esri service import endpoints
 app.MapEsriImportEndpoints();
 
+// Configure unified operations progress endpoints
+app.MapOperationsProgressEndpoints();
+
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)
 {
@@ -741,6 +744,3 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
 }
 
-
-// Configure unified operations progress endpoints
-app.MapOperationsProgressEndpoints();

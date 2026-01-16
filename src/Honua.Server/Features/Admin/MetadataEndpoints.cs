@@ -8,6 +8,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -229,10 +230,30 @@ internal static partial class MetadataEndpoints
             return;
         }
 
+        if (request.ConnectionId == Guid.Empty)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Connection ID is required");
+            return;
+        }
+
         var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
+            return;
+        }
+
+        var registry = context.RequestServices.GetService<ISecureConnectionRegistry>();
+        if (registry == null)
+        {
+            await WriteError(context, StatusCodes.Status501NotImplemented, "Secure connection registry not available");
+            return;
+        }
+
+        var connection = await registry.GetConnectionAsync(request.ConnectionId, context.RequestAborted);
+        if (connection == null)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Connection not found");
             return;
         }
 
@@ -247,6 +268,7 @@ internal static partial class MetadataEndpoints
                 request.Description,
                 spatialReference,
                 metadata,
+                request.ConnectionId,
                 context.RequestAborted);
 
             await InvalidateServiceCache(context, request.Name);
@@ -304,6 +326,29 @@ internal static partial class MetadataEndpoints
             return;
         }
 
+        if (request.ConnectionId.HasValue && request.ConnectionId.Value == Guid.Empty)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Connection ID is required");
+            return;
+        }
+
+        if (request.ConnectionId.HasValue)
+        {
+            var registry = context.RequestServices.GetService<ISecureConnectionRegistry>();
+            if (registry == null)
+            {
+                await WriteError(context, StatusCodes.Status501NotImplemented, "Secure connection registry not available");
+                return;
+            }
+
+            var connection = await registry.GetConnectionAsync(request.ConnectionId.Value, context.RequestAborted);
+            if (connection == null)
+            {
+                await WriteError(context, StatusCodes.Status400BadRequest, "Connection not found");
+                return;
+            }
+        }
+
         var metadata = request.AccessPolicy == null
             ? null
             : new CatalogMetadata { AccessPolicy = request.AccessPolicy };
@@ -311,6 +356,7 @@ internal static partial class MetadataEndpoints
             name,
             request.Description,
             metadata,
+            request.ConnectionId,
             context.RequestAborted);
 
         if (service == null)
@@ -992,7 +1038,8 @@ internal static partial class MetadataEndpoints
         SpatialReferenceSrid = service.SpatialReference.ToSrid(),
         LayerCount = service.Layers.Length,
         LayerIds = service.Layers.Select(l => l.Id).ToArray(),
-        AccessPolicy = service.Metadata?.AccessPolicy
+        AccessPolicy = service.Metadata?.AccessPolicy,
+        ConnectionId = service.ConnectionId
     };
 
     private static LayerResponse MapToLayerResponse(LayerDefinition layer) => new()

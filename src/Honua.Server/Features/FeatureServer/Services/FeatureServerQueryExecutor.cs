@@ -67,7 +67,8 @@ internal sealed class FeatureServerQueryExecutor
         CancellationToken cancellationToken)
     {
         var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
-        var hasMoreResults = query.Limit.HasValue && totalCount > query.Limit.Value;
+        var offset = query.Offset ?? 0;
+        var hasMoreResults = query.Limit.HasValue && totalCount > offset + query.Limit.Value;
 
         string[]? outFields = string.IsNullOrEmpty(queryParams.OutFields)
             ? null
@@ -97,7 +98,6 @@ internal sealed class FeatureServerQueryExecutor
                 queryParams.GeometryPrecision,
                 queryParams.MaxAllowableOffset,
                 outFields,
-                totalCount,
                 hasMoreResults,
                 context.Response.BodyWriter,
                 cancellationToken);
@@ -114,7 +114,6 @@ internal sealed class FeatureServerQueryExecutor
                 queryParams.GeometryPrecision,
                 queryParams.MaxAllowableOffset,
                 outFields,
-                totalCount,
                 hasMoreResults,
                 context.Response.BodyWriter,
                 cancellationToken);
@@ -130,9 +129,6 @@ internal sealed class FeatureServerQueryExecutor
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
-        var hasMoreResults = query.Limit.HasValue && totalCount > query.Limit.Value;
-
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
         EnableChunkedEncodingIfHttp1(context);
@@ -145,8 +141,6 @@ internal sealed class FeatureServerQueryExecutor
 
         writer.WriteStartObject();
         writer.WriteString("objectIdFieldName", objectIdFieldName);
-        writer.WriteStartArray("features");
-        writer.WriteEndArray();
         writer.WriteStartArray("objectIds");
 
         var features = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
@@ -157,7 +151,6 @@ internal sealed class FeatureServerQueryExecutor
         }
 
         writer.WriteEndArray();
-        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);

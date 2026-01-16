@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -268,6 +271,53 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/preview")]
+    public async Task Import_KmlFile_ParsesCoordinates_WithNonInvariantCulture()
+    {
+        var kmlContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2">
+            <Document>
+                <Placemark>
+                    <name>San Francisco</name>
+                    <Point>
+                        <coordinates>-122.4194,37.7749,0</coordinates>
+                    </Point>
+                </Placemark>
+                <Placemark>
+                    <name>Oakland</name>
+                    <Point>
+                        <coordinates>-122.2711,37.8044,0</coordinates>
+                    </Point>
+                </Placemark>
+            </Document>
+        </kml>
+        """;
+
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            var culture = new CultureInfo("fr-FR");
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(kmlContent));
+            var importService = _fixture.GetService<IFileImportService>();
+
+            var preview = await importService.PreviewFileAsync(stream, "culture_test.kml");
+
+            preview.TotalFeatureCount.Should().BeGreaterThan(0);
+            preview.Format.Should().Be(SupportedFileFormat.Kml);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GpxFile_StreamsTracks()
     {
@@ -309,6 +359,50 @@ public class StreamingImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("gpx_import_table");
         responseContent.Should().Contain("Gpx");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/preview")]
+    public async Task Import_GpxFile_ParsesCoordinates_WithNonInvariantCulture()
+    {
+        var gpxContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <gpx version="1.1" creator="test">
+            <wpt lat="37.7749" lon="-122.4194">
+                <name>San Francisco</name>
+            </wpt>
+            <trk>
+                <name>Bay Trail</name>
+                <trkseg>
+                    <trkpt lat="37.7749" lon="-122.4194"/>
+                    <trkpt lat="37.8044" lon="-122.2711"/>
+                    <trkpt lat="37.8716" lon="-122.2727"/>
+                </trkseg>
+            </trk>
+        </gpx>
+        """;
+
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            var culture = new CultureInfo("fr-FR");
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(gpxContent));
+            var importService = _fixture.GetService<IFileImportService>();
+
+            var preview = await importService.PreviewFileAsync(stream, "culture_test.gpx");
+
+            preview.TotalFeatureCount.Should().BeGreaterThan(0);
+            preview.Format.Should().Be(SupportedFileFormat.Gpx);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [IntegrationTest]

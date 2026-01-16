@@ -54,11 +54,12 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string description,
         SpatialReference spatialReference,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default)
     {
         string sql = $"""
-            INSERT INTO {_servicesTable} (service_name, description, srid, supported_formats, capabilities, metadata)
-            VALUES (@name, @description, @srid, @supportedFormats, @capabilities, @metadata)
+            INSERT INTO {_servicesTable} (service_name, description, srid, supported_formats, capabilities, metadata, connection_id)
+            VALUES (@name, @description, @srid, @supportedFormats, @capabilities, @metadata, @connectionId)
             ON CONFLICT (service_name) DO UPDATE SET service_name = EXCLUDED.service_name
             RETURNING service_name
             """;
@@ -74,6 +75,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         {
             Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
         });
+        _ = command.Parameters.AddWithValue("@connectionId", (object?)connectionId ?? DBNull.Value);
 
         _ = await command.ExecuteScalarAsync(cancellationToken);
 
@@ -82,7 +84,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             description,
             [],
             spatialReference,
-            Metadata: metadata);
+            Metadata: metadata,
+            ConnectionId: connectionId);
     }
 
     /// <inheritdoc />
@@ -90,6 +93,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string name,
         string? description = null,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default)
     {
         var setClauses = new List<string>();
@@ -110,6 +114,12 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             });
         }
 
+        if (connectionId.HasValue)
+        {
+            setClauses.Add("connection_id = @connectionId");
+            parameters.Add(new NpgsqlParameter("@connectionId", connectionId.Value));
+        }
+
         if (setClauses.Count == 0)
         {
             // Nothing to update, just return existing service
@@ -120,7 +130,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             UPDATE {_servicesTable}
             SET {string.Join(", ", setClauses)}
             WHERE LOWER(service_name) = LOWER(@name)
-            RETURNING service_name, description, srid, metadata
+            RETURNING service_name, description, srid, metadata, connection_id
             """;
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -135,13 +145,15 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             return null;
 
         var updatedMetadata = ReadMetadata(reader, 3);
+        Guid? connectionIdValue = reader.IsDBNull(4) ? null : reader.GetGuid(4);
 
         return new ServiceDefinition(
             reader.GetString(0),
             reader.GetString(1),
             [],
             SpatialReference.Create(reader.GetInt32(2)),
-            Metadata: updatedMetadata);
+            Metadata: updatedMetadata,
+            ConnectionId: connectionIdValue);
     }
 
     /// <inheritdoc />
@@ -612,7 +624,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     private async Task<ServiceDefinition?> GetServiceInternalAsync(string name, CancellationToken cancellationToken)
     {
         string sql = $"""
-            SELECT service_name, description, srid, metadata
+            SELECT service_name, description, srid, metadata, connection_id
             FROM {_servicesTable}
             WHERE LOWER(service_name) = LOWER(@name)
             """;
@@ -626,13 +638,15 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             return null;
 
         var metadata = ReadMetadata(reader, 3);
+        Guid? connectionId = reader.IsDBNull(4) ? null : reader.GetGuid(4);
 
         return new ServiceDefinition(
             reader.GetString(0),
             reader.GetString(1),
             [],
             SpatialReference.Create(reader.GetInt32(2)),
-            Metadata: metadata);
+            Metadata: metadata,
+            ConnectionId: connectionId);
     }
 
     private async Task<LayerDefinition?> GetLayerInternalAsync(int layerId, CancellationToken cancellationToken)

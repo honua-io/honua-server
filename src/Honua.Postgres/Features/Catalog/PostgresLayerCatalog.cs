@@ -141,6 +141,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.supported_formats,
                 s.capabilities,
                 s.metadata,
+                s.connection_id,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
@@ -178,6 +179,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.supported_formats,
                 s.capabilities,
                 s.metadata,
+                s.connection_id,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
@@ -245,7 +247,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         string? description = reader.IsDBNull(reader.GetOrdinal("description")) ? null : reader.GetString(reader.GetOrdinal("description"));
 
         string geometryTypeString = reader.GetString(reader.GetOrdinal("geometry_type"));
-        if (!Enum.TryParse<GeometryType>(geometryTypeString, out GeometryType geometryType))
+        if (!Enum.TryParse(geometryTypeString, ignoreCase: true, out GeometryType geometryType))
             throw new InvalidDataException($"Invalid geometry type: {geometryTypeString}");
 
         int srid = reader.GetInt32(reader.GetOrdinal("srid"));
@@ -298,6 +300,9 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         string name = reader.GetString(reader.GetOrdinal("service_name"));
         string description = reader.GetString(reader.GetOrdinal("description"));
         int srid = reader.GetInt32(reader.GetOrdinal("srid"));
+        Guid? connectionId = reader.IsDBNull(reader.GetOrdinal("connection_id"))
+            ? null
+            : reader.GetGuid(reader.GetOrdinal("connection_id"));
         int extentSrid = srid;
         int extentSridOrdinal = reader.GetOrdinal("extent_srid");
         if (!reader.IsDBNull(extentSridOrdinal))
@@ -335,7 +340,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             supportedFormats,
             capabilities,
             extent,
-            Metadata: metadata);
+            Metadata: metadata,
+            ConnectionId: connectionId);
     }
 
     private async Task<FieldDefinition[]> GetLayerFieldsAsync(int layerId, CancellationToken cancellationToken)

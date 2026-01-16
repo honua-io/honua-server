@@ -106,7 +106,8 @@ public sealed class FileUploadSecurityTests
             "image.jpg",
             "data.geojson",
             "shapefile.shp",
-            "layer.gpkg"
+            "layer.gpkg",
+            @"C:\fakepath\layer.gpkg"
         };
 
         foreach (var name in safeNames)

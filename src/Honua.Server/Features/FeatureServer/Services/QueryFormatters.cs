@@ -141,15 +141,17 @@ internal sealed class QueryFormatter : IQueryFormatter
             .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
 
+        var exceededTransferLimit = result.HasMoreResults;
         var response = new GeoJsonFeatureSet
         {
             Features = features,
-            Properties = new Dictionary<string, object?>
-            {
-                ["objectIdFieldName"] = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId,
-                ["exceededTransferLimit"] = result.HasMoreResults,
-                ["totalFeatures"] = result.TotalCount
-            }
+            ExceededTransferLimit = exceededTransferLimit,
+            Properties = exceededTransferLimit
+                ? new Dictionary<string, object?>
+                {
+                    ["exceededTransferLimit"] = true
+                }
+                : null
         };
 
         return (response, "application/geo+json");
@@ -515,7 +517,6 @@ internal sealed class StreamingQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields,
-        long totalCount,
         bool hasMoreResults,
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
@@ -573,8 +574,11 @@ internal sealed class StreamingQueryFormatter
         // End features array
         writer.WriteEndArray();
 
-        // Write additional metadata
-        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
+        if (hasMoreResults)
+        {
+            // Write additional metadata only when exceeded (matches ArcGIS REST behavior)
+            writer.WriteBoolean("exceededTransferLimit", true);
+        }
 
         // End object
         writer.WriteEndObject();
@@ -594,7 +598,6 @@ internal sealed class StreamingQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields,
-        long totalCount,
         bool hasMoreResults,
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
@@ -640,12 +643,13 @@ internal sealed class StreamingQueryFormatter
         // End features array
         writer.WriteEndArray();
 
-        // Write properties with metadata
-        writer.WriteStartObject("properties");
-        writer.WriteString("objectIdFieldName", objectIdFieldName);
-        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
-        writer.WriteNumber("totalFeatures", totalCount);
-        writer.WriteEndObject();
+        if (hasMoreResults)
+        {
+            writer.WriteBoolean("exceededTransferLimit", true);
+            writer.WriteStartObject("properties");
+            writer.WriteBoolean("exceededTransferLimit", true);
+            writer.WriteEndObject();
+        }
 
         // End FeatureCollection
         writer.WriteEndObject();

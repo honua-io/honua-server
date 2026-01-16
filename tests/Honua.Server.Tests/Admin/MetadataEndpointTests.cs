@@ -23,11 +23,14 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
+    private Guid _connectionId;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
+        _connectionId = await _fixture.GetTestSecureConnectionIdAsync()
+            ?? throw new InvalidOperationException("Test secure connection not available.");
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -69,7 +72,8 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
         {
             Name = $"test_service_{Guid.NewGuid():N}",
             Description = "Test service created by integration test",
-            SpatialReferenceSrid = 4326
+            SpatialReferenceSrid = 4326,
+            ConnectionId = _connectionId
         };
 
         var content = new StringContent(
@@ -358,7 +362,8 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
         var request = new CreateServiceRequest
         {
             Name = "",
-            Description = "Test"
+            Description = "Test",
+            ConnectionId = _connectionId
         };
 
         var content = new StringContent(

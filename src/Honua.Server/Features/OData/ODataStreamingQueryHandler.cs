@@ -627,9 +627,53 @@ internal sealed partial class ODataStreamingQueryHandler(
         if (left is Honua.Core.Queries.Filters.PropertyReference property &&
             property.PropertyName.Equals("LayerId", StringComparison.OrdinalIgnoreCase) &&
             right is Honua.Core.Queries.Filters.Literal literal &&
-            literal.Value is double number)
+            TryParseLayerId(literal.Value, out var layerId))
         {
-            layerIds.Add((int)number);
+            layerIds.Add(layerId);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseLayerId(object? value, out int layerId)
+    {
+        layerId = default;
+        if (value is null)
+        {
+            return false;
+        }
+
+        if (value is int intValue)
+        {
+            layerId = intValue;
+            return true;
+        }
+
+        if (value is long longValue)
+        {
+            if (longValue < int.MinValue || longValue > int.MaxValue)
+            {
+                return false;
+            }
+
+            layerId = (int)longValue;
+            return true;
+        }
+
+        if (value is double doubleValue)
+        {
+            if (doubleValue % 1 != 0)
+            {
+                return false;
+            }
+
+            if (doubleValue < int.MinValue || doubleValue > int.MaxValue)
+            {
+                return false;
+            }
+
+            layerId = (int)doubleValue;
             return true;
         }
 

@@ -803,14 +803,16 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
-        var attributesJson = reader.GetString(2);
+        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
 
         // Use pooled dictionary for performance
         var attributesDictionary = _dictionaryPool.Get();
         try
         {
             // Deserialize JSON using AOT-compatible source generators
-            var deserializedDict = DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
+            var deserializedDict = string.IsNullOrWhiteSpace(attributesJson)
+                ? new Dictionary<string, object?>()
+                : DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
 
             // Convert JsonElement values to primitive types for compatibility
             foreach (var (key, value) in deserializedDict)
@@ -852,14 +854,16 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     {
         var id = reader.GetInt64(0);
         var geometryGml = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributesJson = reader.GetString(2);
+        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
 
         // Use pooled dictionary for performance
         var attributesDictionary = _dictionaryPool.Get();
         try
         {
             // Deserialize JSON using AOT-compatible source generators
-            var deserializedDict = DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
+            var deserializedDict = string.IsNullOrWhiteSpace(attributesJson)
+                ? new Dictionary<string, object?>()
+                : DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
 
             // Convert JsonElement values to primitive types for compatibility
             foreach (var (key, value) in deserializedDict)

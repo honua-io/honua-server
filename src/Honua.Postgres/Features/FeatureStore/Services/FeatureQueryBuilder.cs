@@ -583,93 +583,97 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
         var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
         string? filterGeometry = null;
+        string? clause = null;
 
         switch (filter.SpatialRelationship)
         {
             case SpatialRelationship.Intersects:
                 // PERFORMANCE OPTIMIZATION: Use bbox operator && for fast spatial index filtering
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Within:
                 // PERFORMANCE OPTIMIZATION: Pre-filter with bbox before expensive ST_Within
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Within({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Within({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Contains:
                 // PERFORMANCE OPTIMIZATION: Use spatial index hint for containment queries
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:
                 // Already optimized - pure index operation
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry}");
+                clause = $"{geometryOperand} && {filterGeometry}";
                 break;
 
             case SpatialRelationship.Crosses:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Crosses({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Crosses({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Touches:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Touches({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Touches({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Overlaps:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Overlaps({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Overlaps({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Disjoint:
                 // PERFORMANCE NOTE: Disjoint operations cannot effectively use spatial indexes
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_Disjoint({geometryOperand}, {filterGeometry})");
+                clause = $"ST_Disjoint({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Equals:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Equals({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Equals({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.WithinDistance:
                 // Use ST_DWithin with geography type for accurate geodesic distance calculations
                 var geographyFilter = BuildGeographyFilterExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})");
+                clause = $"ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})";
                 break;
 
             case SpatialRelationship.BeyondDistance:
                 // ST_Distance > threshold for features beyond a certain distance
                 var geographyFilterDistance = BuildGeographyFilterExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_Distance({geographyOperand}, {geographyFilterDistance}) > ${paramIndex++}");
+                clause = $"ST_Distance({geographyOperand}, {geographyFilterDistance}) > ${paramIndex++}";
                 break;
 
             case SpatialRelationship.NearestNeighbor:
                 // KNN uses ORDER BY with PostGIS <-> operator (handled separately)
-                sql.Append(CultureInfo.InvariantCulture, $" AND {geometryOperand} IS NOT NULL");
+                clause = $"{geometryOperand} IS NOT NULL";
                 break;
 
             default:
                 // PERFORMANCE OPTIMIZATION: Default to bbox + intersects for best performance
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
                 break;
+        }
+
+        if (clause == null)
+        {
+            return;
+        }
+
+        if (query.IncludeNullGeometry && filter.SpatialRelationship != SpatialRelationship.NearestNeighbor)
+        {
+            sql.Append(CultureInfo.InvariantCulture,
+                $" AND ({clause} OR {DatabaseSchema.GeometryColumn} IS NULL)");
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" AND {clause}");
         }
     }
 

@@ -18,6 +18,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="Capabilities">Operations supported by the service</param>
 /// <param name="ServiceExtent">Overall spatial extent of all service data</param>
 /// <param name="Metadata">Optional catalog metadata for access policy and extensions</param>
+/// <param name="ConnectionId">Optional secure connection identifier for this service</param>
 public record ServiceDefinition(
     string Name,
     string Description,
@@ -26,7 +27,8 @@ public record ServiceDefinition(
     string[] SupportedFormats = default!,
     string[] Capabilities = default!,
     FeatureExtent? ServiceExtent = null,
-    CatalogMetadata? Metadata = null)
+    CatalogMetadata? Metadata = null,
+    Guid? ConnectionId = null)
 {
     /// <summary>
     /// Default supported formats for GeoServices REST API

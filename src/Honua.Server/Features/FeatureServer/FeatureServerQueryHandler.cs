@@ -305,8 +305,8 @@ internal sealed class FeatureServerQueryHandler(
                 HonuaTelemetry.SetSuccess(featureActivity, safeCount);
                 var response = new QueryResponse
                 {
-                    ObjectIdFieldName = objectIdFieldName,
-                    Count = count
+                    Count = count,
+                    Features = null
                 };
 
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
@@ -327,8 +327,8 @@ internal sealed class FeatureServerQueryHandler(
                 HonuaTelemetry.SetSuccess(featureActivity);
                 var response = new QueryResponse
                 {
-                    ObjectIdFieldName = objectIdFieldName,
-                    Extent = extent.HasValue ? MapExtent(extent.Value) : null
+                    Extent = extent.HasValue ? MapExtent(extent.Value) : null,
+                    Features = null
                 };
 
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
@@ -361,14 +361,13 @@ internal sealed class FeatureServerQueryHandler(
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
                 var objectIds = result.Items.Select(feature => feature.Id).ToArray();
-                var hasMoreResults = query.Limit.HasValue && result.TotalCount > query.Limit.Value;
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 var response = new QueryResponse
                 {
                     ObjectIdFieldName = objectIdFieldName,
                     ObjectIds = objectIds,
-                    ExceededTransferLimit = hasMoreResults
+                    Features = null
                 };
 
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");

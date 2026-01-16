@@ -36,6 +36,7 @@ public static class Operations
     public const string TableDiscovery = "TableDiscovery";
     public const string Configuration = "Configuration";
     public const string Cache = "Cache";
+    public const string OperationsProgress = "OperationsProgress";
 
     // Import Operations
     public const string Import = "Import";

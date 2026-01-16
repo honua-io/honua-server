@@ -367,20 +367,188 @@ internal static class SecureConnectionEndpoints
         }
     }
 
-    // Additional endpoint handlers would go here (PUT, DELETE, etc.)
-    // For brevity, I'm showing the key patterns and most important endpoints
+    private static async Task<Results<Ok<ApiResponse<SecureConnectionSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+        HandleUpdateConnection(
+            Guid id,
+            UpdateSecureConnectionRequest request,
+            ISecureConnectionRegistry registry,
+            IConnectionEncryptionService encryptionService,
+            IDatabaseConnectionStringBuilder connectionStringBuilder,
+            HttpContext context,
+            ILogger<SecureConnectionEndpointsLog> logger)
+    {
+        try
+        {
+            var validationResults = new List<ValidationResult>();
+            var validationContext = new ValidationContext(request);
+            if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
+            {
+                var errors = validationResults.Select(r => r.ErrorMessage).ToList();
+                logger.LogWarning("Invalid update connection request: {Errors}", string.Join(", ", errors));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {string.Join(", ", errors)}"));
+            }
 
-    private static async Task<Results<Ok<ApiResponse<object>>, BadRequest<ApiResponse<object>>>> HandleUpdateConnection(
-        Guid id, object request, ISecureConnectionRegistry registry, HttpContext context, ILogger<SecureConnectionEndpointsLog> logger) =>
-        TypedResults.BadRequest(ApiResponse<object>.Failure("Not implemented"));
+            var existing = await registry.GetConnectionAsync(id, context.RequestAborted);
+            if (existing == null)
+            {
+                logger.LogWarning("Connection with ID {ConnectionId} not found for update", id);
+                return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
+            }
 
-    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>> HandleDeleteConnection(
-        Guid id, ISecureConnectionRegistry registry, HttpContext context, ILogger<SecureConnectionEndpointsLog> logger) =>
-        TypedResults.BadRequest(ApiResponse<object>.Failure("Not implemented"));
+            var host = request.Host ?? existing.Host;
+            var port = request.Port ?? existing.Port;
+            var databaseName = request.DatabaseName ?? existing.DatabaseName;
+            var username = request.Username ?? existing.Username;
+            var description = request.Description ?? existing.Description;
+            var sslRequired = request.SslRequired ?? existing.SslRequired;
+            var isActive = request.IsActive ?? existing.IsActive;
 
-    private static async Task<Results<Ok<ApiResponse<object>>, BadRequest<ApiResponse<object>>>> HandleRotateEncryptionKey(
-        IConnectionEncryptionService encryptionService, HttpContext context, ILogger<SecureConnectionEndpointsLog> logger) =>
-        TypedResults.BadRequest(ApiResponse<object>.Failure("Not implemented"));
+            var sslMode = existing.SslMode;
+            if (!string.IsNullOrWhiteSpace(request.SslMode))
+            {
+                if (!Enum.TryParse<SslMode>(request.SslMode, true, out var parsedSslMode))
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid SSL mode"));
+                }
+                sslMode = parsedSslMode;
+            }
+
+            byte[]? encryptedConnection = existing.ConnectionStringEncrypted;
+            int encryptionVersion = existing.EncryptionKeyVersion;
+            string? secretRef = existing.SecretRef;
+            string? secretType = existing.SecretType;
+
+            if (!string.IsNullOrWhiteSpace(request.Password))
+            {
+                var effectiveSslMode = sslRequired
+                    ? SslMode.Require
+                    : SslMode.Prefer;
+                var connectionString = connectionStringBuilder.BuildConnectionString(
+                    host,
+                    port,
+                    databaseName,
+                    username,
+                    request.Password,
+                    effectiveSslMode);
+
+                encryptedConnection = await encryptionService.EncryptConnectionStringAsync(connectionString);
+                encryptionVersion = await encryptionService.GetCurrentKeyVersionAsync();
+                secretRef = null;
+                secretType = null;
+            }
+
+            var updatedConnection = new DataConnection
+            {
+                ConnectionId = existing.ConnectionId,
+                Name = existing.Name,
+                Description = description,
+                Host = host,
+                Port = port,
+                DatabaseName = databaseName,
+                Username = username,
+                SslRequired = sslRequired,
+                SslMode = sslMode,
+                ConnectionStringEncrypted = encryptedConnection,
+                EncryptionKeyVersion = encryptionVersion,
+                SecretRef = secretRef,
+                SecretType = secretType,
+                CreatedAt = existing.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CreatedBy = existing.CreatedBy,
+                IsActive = isActive,
+                LastHealthCheck = existing.LastHealthCheck,
+                HealthStatus = existing.HealthStatus
+            };
+
+            var saved = await registry.UpdateConnectionAsync(updatedConnection, context.RequestAborted);
+
+            var summary = new SecureConnectionSummary
+            {
+                ConnectionId = saved.ConnectionId,
+                Name = saved.Name,
+                Description = saved.Description,
+                Host = saved.Host,
+                Port = saved.Port,
+                DatabaseName = saved.DatabaseName,
+                Username = saved.Username,
+                SslRequired = saved.SslRequired,
+                SslMode = saved.SslMode.ToString(),
+                StorageType = GetStorageClass(saved),
+                IsActive = saved.IsActive,
+                HealthStatus = saved.HealthStatus.ToString(),
+                LastHealthCheck = saved.LastHealthCheck,
+                CreatedAt = saved.CreatedAt,
+                CreatedBy = saved.CreatedBy
+            };
+
+            return TypedResults.Ok(ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to update secure connection {ConnectionId}", id);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to update secure connection"));
+        }
+    }
+
+    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
+        HandleDeleteConnection(
+            Guid id,
+            ISecureConnectionRegistry registry,
+            HttpContext context,
+            ILogger<SecureConnectionEndpointsLog> logger)
+    {
+        try
+        {
+            var deleted = await registry.DeleteConnectionAsync(id, context.RequestAborted);
+            if (!deleted)
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
+            }
+
+            logger.LogInformation("Deleted secure connection {ConnectionId}", id);
+            return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")
+        {
+            logger.LogWarning(ex, "Secure connection {ConnectionId} is in use", id);
+            return TypedResults.Conflict(ApiResponse<object>.Failure("Connection is in use by services"));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to delete secure connection {ConnectionId}", id);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to delete secure connection"));
+        }
+    }
+
+    private static async Task<Results<Ok<ApiResponse<KeyRotationResult>>, BadRequest<ApiResponse<object>>>>
+        HandleRotateEncryptionKey(
+            IConnectionEncryptionService encryptionService,
+            HttpContext context,
+            ILogger<SecureConnectionEndpointsLog> logger)
+    {
+        try
+        {
+            var previousVersion = await encryptionService.GetCurrentKeyVersionAsync();
+            var newVersion = await encryptionService.RotateKeyAsync();
+
+            var result = new KeyRotationResult
+            {
+                PreviousKeyVersion = previousVersion,
+                NewKeyVersion = newVersion,
+                RotatedAt = DateTimeOffset.UtcNow,
+                Message = "Encryption key rotated successfully"
+            };
+
+            logger.LogWarning("Encryption key rotated from {Previous} to {New}", previousVersion, newVersion);
+
+            return TypedResults.Ok(ApiResponse<KeyRotationResult>.CreateSuccess(result));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to rotate encryption key");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to rotate encryption key"));
+        }
+    }
 
     private static string GetStorageClass(DataConnection connection)
     {

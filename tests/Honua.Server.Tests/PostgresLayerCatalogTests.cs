@@ -74,7 +74,8 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 supported_formats text[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                 capabilities text[] NOT NULL DEFAULT '{Query,Extract}',
                 service_extent geometry,
-                metadata jsonb
+                metadata jsonb,
+                connection_id uuid
             );
 
             -- Service-layer mapping table
@@ -132,6 +133,35 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.Equal(-90.0, layer.Extent.Value.MinY);
         Assert.Equal(180.0, layer.Extent.Value.MaxX);
         Assert.Equal(90.0, layer.Extent.Value.MaxY);
+    }
+
+    [IntegrationTest]
+    public async Task GetLayerAsync_UppercaseGeometryType_ReturnsLayerDefinition()
+    {
+        const int layerId = 3;
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO layers (layer_id, layer_name, description, geometry_type, srid, default_visibility)
+            VALUES ({layerId}, 'test_upper', 'Uppercase geometry type', 'POINT', 4326, true);
+
+            INSERT INTO layer_fields (layer_id, field_name, field_type, field_order, max_length, nullable, description)
+            VALUES ({layerId}, 'id', 'BigInteger', 1, NULL, false, NULL);
+            """, _schemaName);
+
+        try
+        {
+            var layer = await _layerCatalog.GetLayerAsync(layerId);
+
+            Assert.NotNull(layer);
+            Assert.Equal(GeometryType.Point, layer.GeometryType);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM layer_fields WHERE layer_id = {layerId};
+                DELETE FROM layers WHERE layer_id = {layerId};
+                """, _schemaName);
+        }
     }
 
     [IntegrationTest]

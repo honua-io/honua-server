@@ -78,7 +78,9 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
         queryResponse.Should().NotBeNull();
 
-        var feature = queryResponse!.Features.FirstOrDefault(item => item.Geometry?.X != null && item.Geometry?.Y != null);
+        queryResponse!.Features.Should().NotBeNull();
+        var features = queryResponse.Features!;
+        var feature = features.FirstOrDefault(item => item.Geometry?.X != null && item.Geometry?.Y != null);
         feature.Should().NotBeNull("expected at least one feature with geometry");
 
         var x = feature!.Geometry!.X!.Value;
@@ -102,7 +104,8 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
         queryResponse.Should().NotBeNull();
 
-        var categories = queryResponse!.Features
+        queryResponse!.Features.Should().NotBeNull();
+        var categories = queryResponse.Features!
             .Select(feature => GetStringAttribute(feature.Attributes, "category"))
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .ToList();

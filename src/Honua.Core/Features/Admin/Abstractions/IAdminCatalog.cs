@@ -20,6 +20,7 @@ public interface IAdminCatalog
     /// <param name="description">Service description</param>
     /// <param name="spatialReference">Default spatial reference</param>
     /// <param name="metadata">Optional catalog metadata</param>
+    /// <param name="connectionId">Optional secure connection identifier for this service</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Created service definition</returns>
     Task<ServiceDefinition> CreateServiceAsync(
@@ -27,6 +28,7 @@ public interface IAdminCatalog
         string description,
         SpatialReference spatialReference,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -35,12 +37,14 @@ public interface IAdminCatalog
     /// <param name="name">Service name (identifier)</param>
     /// <param name="description">New description</param>
     /// <param name="metadata">Optional catalog metadata</param>
+    /// <param name="connectionId">Optional secure connection identifier for this service</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated service definition, null if not found</returns>
     Task<ServiceDefinition?> UpdateServiceAsync(
         string name,
         string? description = null,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

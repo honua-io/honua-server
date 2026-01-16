@@ -384,29 +384,86 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/connections/{id}")]
-    public async Task UpdateConnection_NotImplemented_ReturnsBadRequest()
+    public async Task UpdateConnection_ExistingConnection_ReturnsUpdatedSummary()
     {
-        var request = new StringContent("{}", Encoding.UTF8, "application/json");
-        var response = await _client.PutAsync($"/api/v1/admin/connections/{Guid.NewGuid()}", request);
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: $"test-update-{Guid.NewGuid():N}",
+            host: "localhost",
+            port: 5432,
+            databaseName: "testdb",
+            username: "testuser",
+            encryptedConnectionString: new byte[] { 1, 2, 3, 4, 5 },
+            encryptionKeyVersion: 1,
+            createdBy: "test-user");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var created = await _registry.CreateConnectionAsync(connection);
+
+        var updateRequest = new UpdateSecureConnectionRequest
+        {
+            Description = "Updated description",
+            IsActive = false
+        };
+
+        var jsonContent = JsonSerializer.Serialize(updateRequest, _jsonOptions);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync($"/api/v1/admin/connections/{created.ConnectionId}", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var responseJson = await response.Content.ReadAsStringAsync();
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<SecureConnectionSummary>>(responseJson, _jsonOptions);
+
+        Assert.NotNull(apiResponse);
+        Assert.True(apiResponse.Success);
+        Assert.NotNull(apiResponse.Data);
+        Assert.Equal("Updated description", apiResponse.Data.Description);
+        Assert.False(apiResponse.Data.IsActive);
     }
 
     [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/connections/{id}")]
-    public async Task DeleteConnection_NotImplemented_ReturnsBadRequest()
+    public async Task DeleteConnection_ExistingConnection_ReturnsOk()
     {
-        var response = await _client.DeleteAsync($"/api/v1/admin/connections/{Guid.NewGuid()}");
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: $"test-delete-{Guid.NewGuid():N}",
+            host: "localhost",
+            port: 5432,
+            databaseName: "testdb",
+            username: "testuser",
+            encryptedConnectionString: new byte[] { 5, 4, 3, 2, 1 },
+            encryptionKeyVersion: 1,
+            createdBy: "test-user");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var created = await _registry.CreateConnectionAsync(connection);
+
+        var response = await _client.DeleteAsync($"/api/v1/admin/connections/{created.ConnectionId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var deleted = await _registry.GetConnectionAsync(created.ConnectionId);
+        Assert.Null(deleted);
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections/encryption/rotate-key")]
-    public async Task RotateEncryptionKey_NotImplemented_ReturnsBadRequest()
+    public async Task RotateEncryptionKey_WithAdminAuth_ReturnsRotationResult()
     {
+        using var scope = _fixture.Services.CreateScope();
+        var encryptionService = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
+        var previousVersion = await encryptionService.GetCurrentKeyVersionAsync();
+
         var response = await _client.PostAsync("/api/v1/admin/connections/encryption/rotate-key", null);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var responseJson = await response.Content.ReadAsStringAsync();
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<KeyRotationResult>>(responseJson, _jsonOptions);
+
+        Assert.NotNull(apiResponse);
+        Assert.True(apiResponse.Success);
+        Assert.NotNull(apiResponse.Data);
+        Assert.Equal(previousVersion, apiResponse.Data.PreviousKeyVersion);
+        Assert.True(apiResponse.Data.NewKeyVersion > previousVersion);
     }
 }

@@ -60,7 +60,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
         try
         {
-            var totalBytes = request.SizeBytes ?? request.Content.Length;
+            var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
             var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
 
             // Store initial progress

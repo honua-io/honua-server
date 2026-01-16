@@ -133,7 +133,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
                 OutputSrid = filterResult.CrsDefinition.Srid,
                 SpatialFilter = filterResult.SpatialFilter,
-                TemporalFilter = filterResult.TemporalFilter
+                TemporalFilter = filterResult.TemporalFilter,
+                IncludeNullGeometry = filterResult.IncludeNullGeometry
             };
 
             var useStreaming = effectiveLimit > StreamingThreshold &&

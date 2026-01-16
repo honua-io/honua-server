@@ -575,7 +575,8 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Object ID field name for the layer
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = FieldNames.ObjectId;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ObjectIdFieldName { get; init; }
 
     /// <summary>
     /// Object IDs returned by the query (when returnIdsOnly=true)
@@ -606,19 +607,22 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Features returned by the query
     /// </summary>
-    public GeoServicesFeature[] Features { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesFeature[]? Features { get; init; }
 
     /// <summary>
     /// Whether the transfer limit was exceeded
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ExceededTransferLimit { get; init; }
 
     // ICollectionResponse implementation
-    ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items => Features.ToImmutableArray();
+    ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items =>
+        Features?.ToImmutableArray() ?? ImmutableArray<GeoServicesFeature>.Empty;
     ImmutableArray<ILink>? ICollectionResponse<GeoServicesFeature>.Links => null; // FeatureServer doesn't use links
     IPaginationMetadata? ICollectionResponse<GeoServicesFeature>.Pagination =>
-        Count.HasValue || Features.Length > 0
-            ? PaginationMetadata.Create(Count, Features.Length, ExceededTransferLimit)
+        Count.HasValue || (Features?.Length ?? 0) > 0
+            ? PaginationMetadata.Create(Count, Features?.Length ?? 0, ExceededTransferLimit)
             : null;
 }
 
@@ -635,7 +639,7 @@ public sealed class GeoServicesFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeoServicesGeometry? Geometry { get; init; }
 }
 
@@ -998,6 +1002,12 @@ public sealed class GeoJsonFeatureSet
     /// Array of GeoJSON features
     /// </summary>
     public GeoJsonFeature[] Features { get; init; } = [];
+
+    /// <summary>
+    /// Whether the transfer limit was exceeded
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ExceededTransferLimit { get; init; }
 
     /// <summary>
     /// Additional properties (metadata)

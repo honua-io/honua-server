@@ -34,6 +34,11 @@ public sealed record CreateServiceRequest
     /// Optional access policy for the service.
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Secure connection identifier for the service.
+    /// </summary>
+    public required Guid ConnectionId { get; init; }
 }
 
 /// <summary>
@@ -50,6 +55,11 @@ public sealed record UpdateServiceRequest
     /// Updated access policy for the service (optional).
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Updated secure connection identifier for the service (optional).
+    /// </summary>
+    public Guid? ConnectionId { get; init; }
 }
 
 /// <summary>
@@ -86,6 +96,11 @@ public sealed record ServiceResponse
     /// Access policy for the service.
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Secure connection identifier for the service.
+    /// </summary>
+    public Guid? ConnectionId { get; init; }
 }
 
 /// <summary>
