@@ -72,6 +72,7 @@ Pending MVP items (open issues):
 - Service enable/disable controls (#58).
 - Admin UI (project setup, connections, publishing, health dashboard, map preview) (#25, #26, #27, #42, #43).
 - Embedded Maputnik style editor (#30).
+- Canonical cross-protocol style pipeline (#244).
 - Esri Service Import Wizard UI (#187).
 - Deployment templates (Helm + AWS/Azure/GCP Terraform) (#31, #32, #33, #34).
 - Docs and security hardening (#38, #39).

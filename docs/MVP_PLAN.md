@@ -40,6 +40,7 @@ This plan is the target architecture and scope. The current repo already ships t
 - #58 Service enable/disable controls
 - #25, #26, #27, #42, #43 Admin UI (connections, publishing, health dashboard, map preview)
 - #30 Embedded Maputnik style editor
+- #244 Canonical cross-protocol style pipeline
 - #187 Esri Service Import Wizard UI
 - #31, #32, #33, #34 Deployment templates (Helm + AWS/Azure/GCP Terraform)
 - #38 Documentation and API docs
@@ -55,6 +56,7 @@ This plan is the target architecture and scope. The current repo already ships t
 | Service enable/disable | Required (Phase 4) | Not implemented | #58 | Medium |
 | Deployment templates | Required (Phase 4.5) | Not implemented | #31 #32 #33 #34 | Medium |
 | Docs + security hardening | Required (Phase 5) | Incomplete | #38 #39 | High |
+| Cross-protocol style pipeline | Required (Phase 4) | Not implemented | #244 | High |
 
 ### Locked MVP Scope (recommended)
 
@@ -67,6 +69,7 @@ This plan is the target architecture and scope. The current repo already ships t
 - Admin UI for connections + layer publishing + import workflow
 - Service enable/disable controls
 - TileJSON metadata
+- Canonical cross-protocol style pipeline (MapLibre as source of truth)
 - Security hardening + API/docs alignment
 
 **Explicitly defer to Beta/GA:**
@@ -74,7 +77,6 @@ This plan is the target architecture and scope. The current repo already ships t
 - Advanced observability/alerting (#227)
 - Layer-level RBAC and rate limiting (#240, #242, #243)
 - OGC certification path documentation (#232)
-- Canonical cross-protocol style pipeline (#244)
 
 ---
 
