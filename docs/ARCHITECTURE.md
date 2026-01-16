@@ -1,5 +1,7 @@
 # Greenfield Architecture Plan
 
+> Status note: This document mixes current implementation details with target architecture. The current tree already ships core server APIs; admin UI and deployment templates are still pending. See `docs/MVP_PLAN.md` for current status and open gaps.
+
 ## Executive Summary
 
 This document outlines the architecture for a greenfield Honua MVP, addressing the coupling and structural issues in the current codebase while preserving the good patterns from the platform layer.

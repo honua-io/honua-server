@@ -22,6 +22,62 @@ This document outlines the plan for a greenfield implementation of Honua, replac
 
 ---
 
+## Current Implementation Status (current tree)
+
+This plan is the target architecture and scope. The current repo already ships the core server APIs, but several MVP items remain open.
+
+**Implemented (server + admin API):**
+- FeatureServer query/edit/attachments/related endpoints
+- OGC API Features and OGC API Tiles endpoints
+- OData v4 CRUD + spatial query endpoints
+- MVT tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`
+- File import and Esri service import APIs
+- Admin APIs for connections/services/layers/relationships/styles + operations progress
+- OIDC authentication plumbing and optional Redis metadata cache
+
+**Pending MVP issues (open):**
+- #20 TileJSON metadata endpoint
+- #58 Service enable/disable controls
+- #25, #26, #27, #42, #43 Admin UI (connections, publishing, health dashboard, map preview)
+- #30 Embedded Maputnik style editor
+- #187 Esri Service Import Wizard UI
+- #31, #32, #33, #34 Deployment templates (Helm + AWS/Azure/GCP Terraform)
+- #38 Documentation and API docs
+- #39 Security hardening and input validation
+
+### MVP Gap Matrix (current tree)
+
+| Capability | Target MVP | Current status | Tracking | Risk |
+| --- | --- | --- | --- | --- |
+| Admin UI (connections/publishing/import/health/preview) | Required (Phase 4) | API only | #25 #26 #27 #42 #43 #187 | High |
+| Map style editing | Required (Phase 4) | Not implemented | #30 | Medium |
+| TileJSON metadata | Required (Phase 3.25) | Not implemented | #20 | Medium |
+| Service enable/disable | Required (Phase 4) | Not implemented | #58 | Medium |
+| Deployment templates | Required (Phase 4.5) | Not implemented | #31 #32 #33 #34 | Medium |
+| Docs + security hardening | Required (Phase 5) | Incomplete | #38 #39 | High |
+
+### Locked MVP Scope (recommended)
+
+**Must ship for MVP release:**
+- FeatureServer query/edit/attachments/related
+- OGC API Features (Core + Transactions)
+- OGC API Tiles + MVT endpoints
+- OData v4 CRUD with spatial filters
+- File import + Esri service import APIs
+- Admin UI for connections + layer publishing + import workflow
+- Service enable/disable controls
+- TileJSON metadata
+- Security hardening + API/docs alignment
+
+**Explicitly defer to Beta/GA:**
+- Query caching + performance enhancements (#233, #229)
+- Advanced observability/alerting (#227)
+- Layer-level RBAC and rate limiting (#240, #242, #243)
+- OGC certification path documentation (#232)
+- Canonical cross-protocol style pipeline (#244)
+
+---
+
 ## Technical Decisions
 
 ### Stack

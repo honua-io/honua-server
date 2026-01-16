@@ -4,41 +4,41 @@ This list tracks GIS-specific issues, assumptions, and follow-up priorities for 
 Coordinate transformation is currently handled in PostGIS (ST_Transform) rather than in-memory.
 
 ## Findings - High Impact
-- OData geometry is modeled as Edm.Binary and serialized as Base64 WKB, which is non-standard for OData spatial types and breaks geo.* functions and standard clients. Evidence: src/Honua.Server/Features/OData/Services/ODataMetadataService.cs:103, src/Honua.Server/Features/OData/ODataQueryHandler.cs:214.
-- FeatureServer where is parsed as CQL2 text rather than ArcGIS SQL, so many valid FeatureServer queries fail or behave differently. Evidence: src/Honua.Server/Features/FeatureServer/FeatureServerQueryHandler.cs:161.
-- OGC collections advertise the layer storage CRS, but CRS resolution only allows a small EPSG subset, so advertised CRS can still be rejected in crs/bbox-crs/filter-crs. Evidence: src/Honua.Server/Features/OgcFeatures/OgcFeaturesUtilities.cs:93, src/Honua.Server/Features/OgcFeatures/Services/OgcCrsResolver.cs:223.
-- OGC conformance declares filter classes (simple-cql, cql-text, etc.) but SQL translation only supports a limited function set, so conformance is overstated. Evidence: src/Honua.Server/Features/OgcFeatures/CoreEndpoints.cs:140, src/Honua.Postgres/Queries/Filters/PostgresSqlFilterTranslator.cs:327.
-- OGC bbox accepts 6 values but ignores Z, so 3D bbox filters silently downgrade to 2D. Evidence: src/Honua.Server/Features/OgcFeatures/Services/OgcFilterProcessor.cs:587.
-- FeatureServer timeRelation is ignored; temporal filtering always uses the first temporal field with simple start/end logic. Evidence: src/Honua.Server/Features/FeatureServer/FeatureServerQueryHandler.cs:604.
+- OData geometry uses Edm.Geometry/Edm.Geography with GeoJSON payloads; confirm client compatibility (Excel/Power BI) and document the spatial contract. Evidence: src/Honua.Server/Features/OData/Services/ODataMetadataService.cs:95, src/Honua.Server/Features/OData/Services/ODataGeometryConverter.cs:21.
+- OGC bbox accepts 6 values and validates Z but does not apply Z in the spatial filter, so 3D bbox filters effectively downgrade to 2D. Evidence: src/Honua.Server/Features/OgcFeatures/Services/OgcFilterProcessor.cs:603.
 
 ## Findings - Medium/Low Impact
+- FeatureServer where parsing uses the ArcGIS SQL parser, but parity with full ArcGIS SQL is incomplete; document unsupported functions/edge cases. Evidence: src/Honua.Server/Features/FeatureServer/FeatureServerQueryHandler.cs:232.
+- OGC conformance declares core/CRS/queryables only; filtering translation remains limited, so keep docs/tests aligned with advertised classes. Evidence: src/Honua.Server/Features/OgcFeatures/CoreEndpoints.cs:155, src/Honua.Postgres/Queries/Filters/PostgresSqlFilterTranslator.cs:327.
+- CRS registry is backed by Postgres spatial_ref_sys; advertised CRS now resolves through the registry. Status: addressed. Evidence: src/Honua.Postgres/Features/Infrastructure/Crs/PostgresCrsRegistry.cs:24.
 - Z/M detection is inconsistent and only checks the first coordinate despite docs claiming full sequence checks, so hasZ/hasM flags can be wrong across APIs. Evidence: src/Honua.Server/Features/Infrastructure/Services/GeometryService.cs:208, src/Honua.Server/Features/OgcFeatures/Services/OgcFeaturesGeometryServices.cs:239. Status: addressed.
-- FeatureServer service metadata ObjectIdField defaults to the literal string "DatabaseSchema.ObjectIdColumn" and is never set in the mapper. Evidence: src/Honua.Server/Features/FeatureServer/Models/FeatureServerModels.cs:95, src/Honua.Server/Features/FeatureServer/FeatureServerUtilities.cs:44.
-- OData $filter for Layers is a regex-based name equality check, not a real OData expression parser. Evidence: src/Honua.Server/Features/OData/Services/ODataQueryService.cs:73.
-- OGC temporal extent is always [null, null], so collections never advertise real temporal coverage. Evidence: src/Honua.Server/Features/OgcFeatures/OgcFeaturesUtilities.cs:231. Status: addressed.
+- FeatureServer service metadata ObjectIdField defaults to FieldNames.ObjectId and is set in the mapper. Status: addressed. Evidence: src/Honua.Server/Features/FeatureServer/Models/FeatureServerModels.cs:96.
+- OData $filter for Layers uses the shared OData expression parser. Status: addressed. Evidence: src/Honua.Server/Features/OData/Services/ODataQueryService.cs:47.
+- OGC temporal extent is computed from SQL min/max when temporal fields exist. Status: addressed. Evidence: src/Honua.Server/Features/OgcFeatures/OgcFeaturesUtilities.cs:239.
 - Data source abstraction currently binds all feature storage to Postgres; no runtime GeoPackage/cloud-native backends are wired in. Evidence: src/Honua.Postgres/Features/FeatureStore/ServiceCollectionExtensions.cs:23.
 
 ## Open Questions / Assumptions
-- Is the limited EPSG list intentional for MVP (if so, collections should avoid advertising unsupported CRS)?
-- Is OData meant to be a custom contract rather than strict OData spatial compliance?
-- Is using CQL2 for FeatureServer where a deliberate temporary simplification?
+- Is OData intended to be strict OData spatial compliance or a GeoJSON-based contract with compatible metadata?
+- Should 3D bbox be supported, or explicitly rejected to avoid silent 2D downgrade?
+- What is the canonical axis-order policy across FeatureServer, OGC, and OData outputs?
 
 ## Recommended Patterns
-- Centralize CRS support in a registry backed by spatial_ref_sys (or cached EPSG catalog) and use it for OGC/FeatureServer/OData validation + axis order rules.
+- Centralize CRS support in a registry backed by spatial_ref_sys and use it for OGC/FeatureServer/OData validation + axis order rules. Status: implemented via PostgresCrsRegistry; ensure all protocols use it consistently.
 - Consolidate geometry conversion + Z/M detection into IGeometryService and route OGC/FeatureServer/OData through it to avoid divergent behavior.
 - Add protocol adapters for filters: ArcGIS SQL -> internal AST, OData -> internal AST, CQL2 -> internal AST, with shared SQL translation.
-- Implement request-side CRS handling for transactions (Content-Crs / input CRS) with explicit reprojection and axis-order normalization.
+- Implement request-side CRS handling for transactions (Content-Crs / input CRS) with explicit reprojection and axis-order normalization instead of strict SRID equality.
 - Define a CRS-aware precision/tolerance policy (rounding, simplification thresholds) and apply consistently across GeoJSON/GML/EsriJSON.
 
 ## Priority Order
-1. Decide OData contract: implement true OData spatial types + payloads or document/rename it as a custom API and align metadata accordingly.
-2. Replace FeatureServer where parsing with ArcGIS SQL compatibility (or explicitly limit it and update conformance docs/tests).
-3. Fix OGC CRS advertisement/validation mismatch by expanding CRS support or restricting advertised CRS to what is actually accepted.
-4. Close temporal + bbox gaps (timeRelation support, 3D bbox handling, temporal extent computation) and align Z/M detection.
+1. Decide OData spatial contract and validate with real clients (Excel/Power BI) so metadata and payloads match expectations.
+2. Decide 3D bbox behavior (support vs reject) and document it to avoid silent 2D downgrade.
+3. Normalize axis-order and CRS handling across protocols for reads/writes.
+4. Document FeatureServer SQL and OGC filter limitations in API docs/tests.
 
 ## Prioritized Follow-ups (P0-P3)
-- P0: Introduce a shared CRS/axis-order pipeline (e.g., ICrsRegistry + IGeometryTransformer) and apply it to OGC Features writes; align metadata with the actual supported CRS set.
-- P1: Centralize bbox parsing/normalization (axis order, antimeridian, 2D/3D) and reuse it across OGC, FeatureServer, and OData to remove behavioral drift.
-- P1: Fix tile cache invalidation for FeatureServer by evicting mvt-tiles on edits; decide on empty-tile response semantics and document them.
-- P2: Implement temporal completeness (FeatureServer timeRelation semantics and real temporal extents via SQL min/max).
+- P0: Validate OData spatial payloads and metadata with Excel/Power BI; adjust contract or documentation accordingly.
+- P1: Decide 3D bbox behavior and centralize bbox parsing/normalization (axis order, antimeridian, 2D/3D) across OGC, FeatureServer, and OData.
+- P1: Normalize CRS axis-order handling across protocols for read/write paths.
+- P1: Fix tile cache invalidation for FeatureServer by evicting MVT tiles on edits; decide on empty-tile response semantics and document them.
+- P2: Expand filter translation coverage (FeatureServer/OData/OGC) or document unsupported functions explicitly.
 - P3: Expand tiles beyond WebMercator/MVT (additional TileMatrixSets, raster formats) and plan for multi-backend providers and style storage; wire in coordinate precision/tolerance enforcement using GeometryValidationOptions and CRS-specific precision.
