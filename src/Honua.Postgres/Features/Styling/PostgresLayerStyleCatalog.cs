@@ -7,7 +7,7 @@ using Honua.Core.Features.Styling.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Styling;
+namespace Honua.Postgres.Features.Infrastructure.Styling;
 
 /// <summary>
 /// PostgreSQL implementation of layer style persistence.

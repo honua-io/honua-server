@@ -4,7 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 /// <summary>
 /// Service for resolving and updating layer styles.

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class GeoServicesStyleBuilder
 {

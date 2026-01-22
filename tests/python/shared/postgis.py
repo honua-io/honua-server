@@ -292,6 +292,7 @@ class PostGISFixture:
                         capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
                         service_extent GEOMETRY,
                         metadata JSONB,
+                        connection_id UUID,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
@@ -313,6 +314,9 @@ class PostGISFixture:
                         max_scale DOUBLE PRECISION,
                         default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
                         metadata JSONB,
+                        maplibre_style JSONB,
+                        geoservices_drawing_info JSONB,
+                        style_version INT DEFAULT 1,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """

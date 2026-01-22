@@ -26,7 +26,7 @@ using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Styling;
+using Honua.Server.Features.Infrastructure.Styling;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Caching.Distributed;

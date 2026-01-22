@@ -629,6 +629,7 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
 /// <summary>
 /// GeoServices feature representation
 /// </summary>
+[JsonConverter(typeof(GeoServicesFeatureJsonConverter))]
 public sealed class GeoServicesFeature
 {
     /// <summary>
@@ -641,6 +642,12 @@ public sealed class GeoServicesFeature
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeoServicesGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// Controls whether the geometry property is emitted when null.
+    /// </summary>
+    [JsonIgnore]
+    public bool IncludeGeometry { get; init; } = true;
 }
 
 /// <summary>

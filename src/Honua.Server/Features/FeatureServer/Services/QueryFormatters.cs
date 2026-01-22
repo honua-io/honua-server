@@ -174,6 +174,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return new GeoServicesFeature
         {
             Attributes = attributes,
+            IncludeGeometry = returnGeometry,
             Geometry = returnGeometry
                 ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     feature.Geometry,
@@ -694,17 +695,24 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteEndObject(); // End attributes
 
-        // Write geometry if requested and available
-        if (returnGeometry && feature.Geometry != null)
+        // Write geometry if requested, even when null (matches GeoServices expectations)
+        if (returnGeometry)
         {
             writer.WritePropertyName("geometry");
-            var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                feature.Geometry,
-                null,
-                geometryLimits,
-                returnZ,
-                returnM);
-            JsonSerializer.Serialize(writer, geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+            if (feature.Geometry == null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                    feature.Geometry,
+                    null,
+                    geometryLimits,
+                    returnZ,
+                    returnM);
+                JsonSerializer.Serialize(writer, geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+            }
         }
 
         writer.WriteEndObject(); // End feature

@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class StyleJsonUtilities
 {

@@ -3438,7 +3438,7 @@ ALTER TABLE honua.layers ADD COLUMN style_version INT DEFAULT 1;
 
 ```csharp
 // Features/Styling/GeoServicesToMapLibreConverter.cs
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 public static class GeoServicesToMapLibreConverter
 {
@@ -3697,7 +3697,7 @@ Converts MapLibre style back to GeoServices drawingInfo for FeatureServer respon
 
 ```csharp
 // Features/Styling/MapLibreToGeoServicesConverter.cs
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 public static class MapLibreToGeoServicesConverter
 {

@@ -5,7 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 /// <summary>
 /// Default implementation for layer style orchestration.

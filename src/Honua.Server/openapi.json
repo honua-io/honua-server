@@ -359,6 +359,66 @@
         }
       }
     },
+    "/collections/{collectionId}/items/batch": {
+      "post": {
+        "summary": "Execute batch feature operations",
+        "description": "Perform multiple create, update, or delete operations in a single request",
+        "tags": [
+          "OGC API Features",
+          "Transactions",
+          "Batch"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch operation completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOperationResponse"
+                }
+              }
+            }
+          },
+          "207": {
+            "description": "Batch operation completed with mixed results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOperationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
+    },
     "/collections/{collectionId}": {
       "get": {
         "summary": "Get OGC API Features collection metadata",
@@ -769,6 +829,99 @@
             "format": "date-time"
           }
         }
+      },
+      "BatchRequest": {
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchOperation"
+            }
+          },
+          "failFast": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "operations"
+        ]
+      },
+      "BatchOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "UPDATE",
+              "DELETE"
+            ]
+          },
+          "featureId": {
+            "type": "string"
+          },
+          "feature": {
+            "$ref": "#/components/schemas/GeoJsonFeature"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "BatchOperationResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchOperationResult"
+            }
+          },
+          "hasErrors": {
+            "type": "boolean"
+          },
+          "processedCount": {
+            "type": "integer"
+          },
+          "successCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "results",
+          "hasErrors",
+          "processedCount",
+          "successCount"
+        ]
+      },
+      "BatchOperationResult": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "isSuccess": {
+            "type": "boolean"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "integer"
+          },
+          "featureId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "isSuccess",
+          "statusCode"
+        ]
       },
       "GeoJsonFeature": {
         "type": "object",

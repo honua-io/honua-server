@@ -14,7 +14,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Styling;
+using Honua.Server.Features.Infrastructure.Styling;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Server.Features.Admin;

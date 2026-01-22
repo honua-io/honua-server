@@ -4,10 +4,10 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Server.Features.Styling;
+using Honua.Server.Features.Infrastructure.Styling;
 using Xunit.Sdk;
 
-namespace Honua.Server.Tests.Features.Styling;
+namespace Honua.Server.Tests.Features.Infrastructure.Styling;
 
 /// <summary>
 /// Tests for Esri to MapLibre style conversion coverage.

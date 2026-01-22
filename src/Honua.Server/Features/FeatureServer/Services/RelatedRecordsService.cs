@@ -223,6 +223,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         return new GeoServicesFeature
         {
             Attributes = attributes,
+            IncludeGeometry = returnGeometry,
             Geometry = returnGeometry
                 ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid, geometryLimits)
                 : null
