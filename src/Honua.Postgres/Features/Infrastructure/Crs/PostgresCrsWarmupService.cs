@@ -10,12 +10,12 @@ namespace Honua.Postgres.Features.Infrastructure.Crs;
 
 internal sealed partial class PostgresCrsWarmupService : BackgroundService
 {
-    private static readonly string[] WarmupIdentifiers =
+    private static readonly string[] _warmupIdentifiers =
     [
         "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
     ];
 
-    private static readonly int[] WarmupSrids =
+    private static readonly int[] _warmupSrids =
     [
         4326,
         3857
@@ -37,12 +37,12 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var registry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
 
-            foreach (var identifier in WarmupIdentifiers)
+            foreach (var identifier in _warmupIdentifiers)
             {
                 await registry.ResolveAsync(identifier, stoppingToken).ConfigureAwait(false);
             }
 
-            foreach (var srid in WarmupSrids)
+            foreach (var srid in _warmupSrids)
             {
                 await registry.ResolveBySridAsync(srid, stoppingToken).ConfigureAwait(false);
             }

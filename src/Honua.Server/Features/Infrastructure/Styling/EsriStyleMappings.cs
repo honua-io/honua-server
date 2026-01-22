@@ -14,10 +14,10 @@ internal static class EsriStyleMappings
     public const string FillStyleSolid = "esriSFSSolid";
     public const string FillStyleNull = "esriSFSNull";
 
-    private static readonly double[] DashPattern = [4d, 2d];
-    private static readonly double[] DotPattern = [1d, 2d];
-    private static readonly double[] DashDotPattern = [4d, 2d, 1d, 2d];
-    private static readonly double[] DashDotDotPattern = [4d, 2d, 1d, 2d, 1d, 2d];
+    private static readonly double[] _dashPattern = [4d, 2d];
+    private static readonly double[] _dotPattern = [1d, 2d];
+    private static readonly double[] _dashDotPattern = [4d, 2d, 1d, 2d];
+    private static readonly double[] _dashDotDotPattern = [4d, 2d, 1d, 2d, 1d, 2d];
 
     public static bool IsNullFillStyle(string? style)
         => string.Equals(style, FillStyleNull, StringComparison.OrdinalIgnoreCase);
@@ -33,25 +33,25 @@ internal static class EsriStyleMappings
 
         if (string.Equals(style, LineStyleDash, StringComparison.OrdinalIgnoreCase))
         {
-            dashArray = (double[])DashPattern.Clone();
+            dashArray = (double[])_dashPattern.Clone();
             return true;
         }
 
         if (string.Equals(style, LineStyleDot, StringComparison.OrdinalIgnoreCase))
         {
-            dashArray = (double[])DotPattern.Clone();
+            dashArray = (double[])_dotPattern.Clone();
             return true;
         }
 
         if (string.Equals(style, LineStyleDashDot, StringComparison.OrdinalIgnoreCase))
         {
-            dashArray = (double[])DashDotPattern.Clone();
+            dashArray = (double[])_dashDotPattern.Clone();
             return true;
         }
 
         if (string.Equals(style, LineStyleDashDotDot, StringComparison.OrdinalIgnoreCase))
         {
-            dashArray = (double[])DashDotDotPattern.Clone();
+            dashArray = (double[])_dashDotDotPattern.Clone();
             return true;
         }
 
@@ -67,25 +67,25 @@ internal static class EsriStyleMappings
             return false;
         }
 
-        if (MatchesPattern(dashArray, DashPattern))
+        if (MatchesPattern(dashArray, _dashPattern))
         {
             style = LineStyleDash;
             return true;
         }
 
-        if (MatchesPattern(dashArray, DotPattern))
+        if (MatchesPattern(dashArray, _dotPattern))
         {
             style = LineStyleDot;
             return true;
         }
 
-        if (MatchesPattern(dashArray, DashDotPattern))
+        if (MatchesPattern(dashArray, _dashDotPattern))
         {
             style = LineStyleDashDot;
             return true;
         }
 
-        if (MatchesPattern(dashArray, DashDotDotPattern))
+        if (MatchesPattern(dashArray, _dashDotDotPattern))
         {
             style = LineStyleDashDotDot;
             return true;

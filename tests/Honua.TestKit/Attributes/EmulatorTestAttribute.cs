@@ -14,7 +14,7 @@ namespace Honua.TestKit.Attributes;
 [TraitDiscoverer("Honua.TestKit.Attributes.EmulatorTestDiscoverer", "Honua.TestKit")]
 public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
 {
-    private static readonly Dictionary<string, string> DefaultEmulatorValues =
+    private static readonly Dictionary<string, string> _defaultEmulatorValues =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["HONUA_TEST_S3_BUCKET"] = "honua-test",
@@ -37,7 +37,7 @@ public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
         foreach (var name in requiredEnvironmentVariables)
         {
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)) &&
-                DefaultEmulatorValues.TryGetValue(name, out var defaultValue))
+                _defaultEmulatorValues.TryGetValue(name, out var defaultValue))
             {
                 Environment.SetEnvironmentVariable(name, defaultValue);
             }
