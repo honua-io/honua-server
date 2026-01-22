@@ -126,6 +126,20 @@ jobs:
           docker pull postgis/postgis:16-3.4-alpine || true
           docker pull postgis/postgis:18-3.6 || true
 
+      - name: Start emulator containers (Azurite + Localstack)
+        run: |
+          docker compose -f .devcontainer/docker-compose.emulators.yml up -d
+          for i in {1..30}; do
+            if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
+              && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Emulators failed to start."
+          docker compose -f .devcontainer/docker-compose.emulators.yml ps
+          exit 1
+
       - name: Run .NET Tests
         timeout-minutes: 25
         run: |
@@ -334,7 +348,8 @@ jobs:
               srid,
               max_record_count,
               supported_formats,
-              capabilities
+              capabilities,
+              service_extent
           )
           VALUES (
               'test_service',
@@ -342,7 +357,8 @@ jobs:
               4326,
               1000,
               ARRAY['JSON', 'GeoJSON'],
-              ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete']
+              ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete'],
+              ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326)
           )
           ON CONFLICT (service_name) DO UPDATE SET
               description = EXCLUDED.description,
@@ -350,6 +366,7 @@ jobs:
               max_record_count = EXCLUDED.max_record_count,
               supported_formats = EXCLUDED.supported_formats,
               capabilities = EXCLUDED.capabilities,
+              service_extent = EXCLUDED.service_extent,
               updated_at = NOW();
 
           INSERT INTO honua.layers (
@@ -359,6 +376,7 @@ jobs:
               table_name,
               geometry_type,
               srid,
+              extent,
               default_visibility
           )
           VALUES (
@@ -368,6 +386,7 @@ jobs:
               'features',
               'Point',
               4326,
+              ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326),
               true
           )
           ON CONFLICT (layer_id) DO UPDATE SET
@@ -376,6 +395,7 @@ jobs:
               table_name = EXCLUDED.table_name,
               geometry_type = EXCLUDED.geometry_type,
               srid = EXCLUDED.srid,
+              extent = EXCLUDED.extent,
               default_visibility = EXCLUDED.default_visibility;
 
           INSERT INTO honua.layer_fields (
