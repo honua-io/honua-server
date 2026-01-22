@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Styling;
@@ -11,7 +10,7 @@ using Xunit.Sdk;
 namespace Honua.Server.Tests.Features.Styling;
 
 /// <summary>
-/// Tests for Esri <-> MapLibre style conversion coverage.
+/// Tests for Esri to MapLibre style conversion coverage.
 /// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "Styling")]

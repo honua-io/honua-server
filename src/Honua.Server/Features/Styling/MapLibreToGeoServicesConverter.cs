@@ -293,7 +293,7 @@ internal static class MapLibreToGeoServicesConverter
         GeometryType geometryType,
         string field,
         StyleColor baseColor,
-        IReadOnlyList<ClassBreakStop> stops,
+        List<ClassBreakStop> stops,
         double? opacity,
         OutlineStyle? outline,
         double? lineWidth,

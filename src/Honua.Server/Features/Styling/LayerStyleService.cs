@@ -92,14 +92,14 @@ internal sealed class LayerStyleService : ILayerStyleService
                 return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
             }
 
-            var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, layer);
-            _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
+            var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, layer);
+            _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, generatedDrawingInfoJson, cancellationToken).ConfigureAwait(false);
 
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
                 new LayerStyleSnapshot(
                     StyleJsonUtilities.ParseJsonElement(normalized),
-                    StyleJsonUtilities.ParseJsonElement(drawingInfoJson)),
+                    StyleJsonUtilities.ParseJsonElement(generatedDrawingInfoJson)),
                 null);
         }
 
