@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Attachments;
@@ -26,6 +27,7 @@ using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Security;
+using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,6 +81,9 @@ internal static class ServiceCollectionExtensions
 
         // Register admin catalog for metadata CRUD operations
         services.AddScoped<IAdminCatalog, PostgresAdminCatalog>();
+
+        // Register layer style catalog for MapLibre/GeoServices styling
+        services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
 
         // Register table discovery implementation
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();

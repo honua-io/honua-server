@@ -27,6 +27,9 @@ sql:
           max_scale DOUBLE PRECISION,
           default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
           metadata JSONB,
+          maplibre_style JSONB,
+          geoservices_drawing_info JSONB,
+          style_version INT DEFAULT 1,
           created_at TIMESTAMPTZ DEFAULT NOW()
       );
   - |

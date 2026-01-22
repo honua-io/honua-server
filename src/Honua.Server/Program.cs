@@ -26,6 +26,7 @@ using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Styling;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Caching.Distributed;
@@ -181,6 +182,7 @@ builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDoc
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
+builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 
 // Register shared validation services
 builder.Services.AddValidationServices();
@@ -743,4 +745,3 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
 }
-

@@ -395,20 +395,31 @@ curl "http://localhost:8080/rest/services/1/FeatureServer/0/tiles/metadata" \
 
 ## Authentication
 
-Admin endpoints require API key authentication using the `HONUA_ADMIN_PASSWORD` environment variable.
+Admin endpoints accept OIDC bearer tokens. Browser-based Admin UI **must** use OIDC.
+API key authentication is supported for CLI/server-to-server automation only.
 
 ```bash
-# Set admin password
+# OIDC (recommended, required for browser UI)
+export HONUA_ADMIN_TOKEN="your-oidc-access-token"
+
+# Use OIDC token for admin endpoints
+curl "http://localhost:8080/api/v1/admin/metadata/services" \
+  -H "Authorization: Bearer $HONUA_ADMIN_TOKEN"
+```
+
+```bash
+# API key (automation only, not for browser UI)
 export HONUA_ADMIN_PASSWORD="your-secure-password"
 
-# Use password as API key for admin endpoints
 curl "http://localhost:8080/api/v1/admin/metadata/services" \
-  -H "X-API-Key: your-secure-password"
+  -H "X-API-Key: $HONUA_ADMIN_PASSWORD"
 ```
 
 ### Admin Endpoints (v1)
 
 All admin endpoints are now versioned under `/api/v1/admin/*` for stability and headless client support.
+Examples below use API key headers for CLI usage; replace with `Authorization: Bearer $HONUA_ADMIN_TOKEN`
+for OIDC clients.
 
 #### Table Discovery
 
@@ -613,7 +624,7 @@ This ensures clients always receive fresh data after administrative changes.
 - **201 Created**: Feature created successfully
 - **204 No Content**: Feature updated/deleted successfully
 - **400 Bad Request**: Invalid request parameters or syntax
-- **401 Unauthorized**: Missing or invalid API key (admin endpoints)
+- **401 Unauthorized**: Missing or invalid token or API key (admin endpoints)
 - **404 Not Found**: Resource not found
 - **500 Internal Server Error**: Server error
 

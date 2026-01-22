@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -178,7 +179,8 @@ internal static partial class FeatureServerEndpoints
     private static LayerResponse MapLayerToResponse(
         LayerDefinition layer,
         QueryLimits queryLimits,
-        FeatureServerTimeInfo? timeInfo)
+        FeatureServerTimeInfo? timeInfo,
+        JsonElement? drawingInfo)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
@@ -194,7 +196,8 @@ internal static partial class FeatureServerEndpoints
             TimeInfo = timeInfo,
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
-            ObjectIdField = objectIdField
+            ObjectIdField = objectIdField,
+            DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null
         };
     }
 

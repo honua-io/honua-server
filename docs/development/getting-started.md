@@ -65,7 +65,7 @@ docker exec -it honua-postgres psql -U postgres -d honua -c "SELECT PostGIS_Vers
 # Test health endpoint
 curl http://localhost:8080/health | jq .
 
-# Test admin endpoint (requires API key)
+# Test admin endpoint (OIDC for browser UI; API key is automation-only)
 curl -H "X-API-Key: dev-admin-key" http://localhost:8080/admin/configuration | jq .
 
 # Test feature server endpoint

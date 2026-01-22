@@ -75,6 +75,32 @@ HONUA_SERVE_ADMIN_UI=false
 HONUA_ADMIN_UI_CORS_ORIGINS=https://admin.example.com
 ```
 
+### Admin UI Authentication
+
+Browser-based Admin UI **must not** use API keys. API keys are shared secrets
+and are not safe in a browser (exposed to devtools, XSS, and replay). Use OIDC
+with PKCE and short-lived access tokens instead.
+
+**Guidance:**
+- Admin UI authenticates via OIDC and sends `Authorization: Bearer <token>`.
+- Limit token use to the Admin API base URL via `AuthorizationMessageHandler`.
+- API keys remain for CLI/server-to-server automation only.
+- If API key auth is required for a UI, use a BFF/proxy that injects the key
+  server-side; never expose the key to the browser.
+
+```csharp
+builder.Services.AddHttpClient("AdminApi", client =>
+{
+    client.BaseAddress = new Uri(config.AdminApiBase);
+}).AddHttpMessageHandler(sp =>
+{
+    var handler = sp.GetRequiredService<AuthorizationMessageHandler>();
+    return handler.ConfigureHandler(
+        authorizedUrls: [config.AdminApiBase],
+        scopes: ["honua.admin"]);
+});
+```
+
 ### State Management: Fluxor (Optional) or Simple Services
 
 For MVP, use **simple injectable services** with `INotifyPropertyChanged`:
@@ -101,6 +127,37 @@ builder.Services.AddSingleton<AppState>();
 ```
 
 **Upgrade path:** If state complexity grows, migrate to [Fluxor](https://github.com/mrpmorris/Fluxor) (Redux pattern for Blazor).
+
+### Model Binding and Validation
+
+Use page-level form models that are distinct from API DTOs.
+
+**Pattern:**
+- Each page owns a `FormModel` with `DataAnnotations` for validation.
+- Use `EditForm` + `EditContext` and `MudForm` for validation and submission.
+- On submit, validate, then map `FormModel` to the API request DTO.
+- Keep side effects (API calls, navigation) in a page-level handler or service.
+
+```csharp
+public sealed class ConnectionFormModel
+{
+    [Required]
+    public string Host { get; set; } = "";
+
+    [Required]
+    public string Database { get; set; } = "";
+}
+```
+
+```razor
+<EditForm EditContext="_editContext" OnValidSubmit="HandleSubmit">
+    <MudForm @ref="_form">
+        <MudTextField @bind-Value="_model.Host" Label="Host" Required="true" />
+        <MudTextField @bind-Value="_model.Database" Label="Database" Required="true" />
+        <MudButton ButtonType="ButtonType.Submit">Save</MudButton>
+    </MudForm>
+</EditForm>
+```
 
 ### Testing: Playwright + bUnit
 
@@ -160,6 +217,14 @@ tests/
     ├── ImportWizardTests.cs
     └── PlaywrightFixture.cs
 ```
+
+### Testability Conventions
+
+- Keep components thin; move workflows into services or view-models.
+- Inject interfaces for side effects (API client, map interop, dialogs, snackbar).
+- Use `data-testid` attributes for stable Playwright selectors.
+- Wrap JS interop behind `IMapInterop` to avoid JS runtime in bUnit tests.
+- Register MudBlazor services in tests (`ctx.Services.AddMudServices()`).
 
 ### Map Integration: MapLibre GL JS via JS Interop
 

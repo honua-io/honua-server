@@ -1,6 +1,8 @@
 # Import Process Troubleshooting Guide
 
 This guide helps resolve issues with geospatial data import processes in Honua Server, including file format problems, validation errors, and import progress tracking.
+Admin import endpoints require auth; examples use API keys for automation. For OIDC clients,
+replace `X-API-Key` with `Authorization: Bearer <token>`.
 
 ## Quick Import Diagnostics
 

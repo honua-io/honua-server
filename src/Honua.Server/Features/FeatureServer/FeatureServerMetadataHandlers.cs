@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -206,7 +207,14 @@ internal static partial class FeatureServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var timeInfo = await BuildTimeInfoAsync(layer, featureReader, cancellationToken).ConfigureAwait(false);
-            LayerResponse response = MapLayerToResponse(layer, limits, timeInfo);
+            var styleService = context.RequestServices.GetService<ILayerStyleService>();
+            JsonElement? drawingInfo = null;
+            if (styleService != null)
+            {
+                drawingInfo = await styleService.GetDrawingInfoAsync(layer, cancellationToken).ConfigureAwait(false);
+            }
+
+            LayerResponse response = MapLayerToResponse(layer, limits, timeInfo, drawingInfo);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layer.Id, layer.Name);
 

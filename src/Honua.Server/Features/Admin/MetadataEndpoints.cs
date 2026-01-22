@@ -14,6 +14,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Server.Features.Admin;
@@ -951,6 +952,13 @@ internal static partial class MetadataEndpoints
         }
 
         var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var styleService = context.RequestServices.GetService<ILayerStyleService>();
+        if (styleService == null)
+        {
+            await WriteError(context, StatusCodes.Status501NotImplemented, "Layer style service not available");
+            return;
+        }
+
         var layer = await catalog.GetLayerAsync(layerId, context.RequestAborted);
 
         if (layer == null)
@@ -959,12 +967,18 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        // Style support is a placeholder - returning empty style for now
+        var style = await styleService.GetStyleAsync(layer, context.RequestAborted);
+        if (style == null)
+        {
+            await WriteError(context, StatusCodes.Status404NotFound, $"Style for layer {layerId} not found");
+            return;
+        }
+
         var response = new StyleResponse
         {
             LayerId = layerId,
-            MapLibreStyle = null,
-            DrawingInfo = null
+            MapLibreStyle = style.MapLibreStyle,
+            DrawingInfo = style.DrawingInfo
         };
 
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.StyleResponse);
@@ -1006,6 +1020,13 @@ internal static partial class MetadataEndpoints
         }
 
         var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var styleService = context.RequestServices.GetService<ILayerStyleService>();
+        if (styleService == null)
+        {
+            await WriteError(context, StatusCodes.Status501NotImplemented, "Layer style service not available");
+            return;
+        }
+
         var layer = await catalog.GetLayerAsync(layerId, context.RequestAborted);
 
         if (layer == null)
@@ -1014,14 +1035,31 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        // Style storage is a placeholder - just returning the submitted style
+        var updateResult = await styleService.UpdateStyleAsync(
+            layer,
+            request.MapLibreStyle,
+            request.DrawingInfo,
+            context.RequestAborted);
+
+        if (updateResult.Status == LayerStyleUpdateStatus.Invalid)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, updateResult.ErrorMessage ?? "Invalid style payload");
+            return;
+        }
+
+        if (updateResult.Status == LayerStyleUpdateStatus.NotFound || updateResult.Style == null)
+        {
+            await WriteError(context, StatusCodes.Status404NotFound, $"Layer {layerId} not found");
+            return;
+        }
+
         await InvalidateLayerCache(context, layerId);
 
         var response = new StyleResponse
         {
             LayerId = layerId,
-            MapLibreStyle = request.MapLibreStyle,
-            DrawingInfo = request.DrawingInfo
+            MapLibreStyle = updateResult.Style.MapLibreStyle,
+            DrawingInfo = updateResult.Style.DrawingInfo
         };
 
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.StyleResponse);

@@ -2901,7 +2901,15 @@ The admin interface is a Blazor WebAssembly app with MapLibre GL JS for map prev
 | **Framework** | Blazor WASM | C# end-to-end, single language |
 | **Map library** | MapLibre GL JS | Native MVT support, WebGL performance |
 | **JS Interop** | Minimal wrapper | Keep it simple, call MapLibre directly |
-| **Styling** | Tailwind CSS | Utility-first, works well with Blazor |
+| **UI components** | MudBlazor | Full component set for admin workflows |
+| **Styling** | MudBlazor theming + minimal CSS | Consistent look with low maintenance |
+
+### Hosting Model
+
+The Admin UI is served from Honua.Server at `/admin` by default (integrated mode).
+Standalone hosting is also supported for CDN/static hosting of the WASM bundle.
+In standalone mode, set `HONUA_SERVE_ADMIN_UI=false` and configure
+`HONUA_ADMIN_UI_CORS_ORIGINS` for the Admin UI origin.
 
 ### Why MapLibre GL over Leaflet
 
@@ -2922,7 +2930,7 @@ src/Honua.Admin/
 ├── wwwroot/
 │   ├── index.html
 │   ├── css/
-│   │   └── app.css                    # Tailwind output
+│   │   └── app.css                    # MudBlazor overrides
 │   └── js/
 │       └── maplibre-interop.js        # MapLibre JS interop
 ├── Pages/
@@ -5372,7 +5380,9 @@ public sealed class CorrelationMiddleware
 
 ### Authentication
 
-Simplified admin password authentication for MVP. Use `HONUA_ADMIN_PASSWORD` and pass it via the `X-API-Key` header.
+Admin UI uses OIDC (PKCE) and sends bearer tokens. API key authentication via
+`HONUA_ADMIN_PASSWORD` is supported for CLI/server-to-server automation only
+and must not be used by browser clients.
 
 ```csharp
 // Infrastructure/Auth/ApiKeyAuthenticationHandler.cs
@@ -5978,7 +5988,7 @@ Same code, same interface. Cloud-native ready from day one.
 
 | Concern | MVP Implementation | Portable From Existing? |
 |---------|-------------------|------------------------|
-| **Auth** | Admin password (X-API-Key header) | Yes - simplify `ApiKeyAuthenticationHandler` |
+| **Auth** | OIDC for Admin UI; API key for automation | Yes - simplify `ApiKeyAuthenticationHandler` |
 | **Health** | Database + self checks | Yes - extract from `HealthCheckExtensions` |
 | **Validation** | Manual + endpoint filters (AOT-safe) | No - fresh implementation |
 | **SQL Injection** | Parameterized queries + pattern check | Yes - copy `InputValidationHelpers` |
@@ -6000,7 +6010,7 @@ Docker deployments use environment variables exclusively. This is the primary co
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ConnectionStrings__DefaultConnection` | ✅ | — | PostGIS connection string |
-| `HONUA_ADMIN_PASSWORD` | ❌ | empty | Admin password (empty = no auth in dev) |
+| `HONUA_ADMIN_PASSWORD` | ❌ | empty | Admin API key for automation (not for browser UI) |
 | `Cors__AllowedOrigins__0` | ❌ | * in dev | First allowed origin |
 | `Cors__AllowedOrigins__1` | ❌ | — | Second allowed origin (and so on) |
 | `Basemap__Provider` | ❌ | openfreemap | `openfreemap` or `maptiler` |
@@ -6057,7 +6067,7 @@ For local development without Docker, use appsettings.json. Not used in producti
 
 ### Strongly-Typed Options
 
-Admin password is read from `HONUA_ADMIN_PASSWORD` directly to keep configuration simple.
+Admin password is read from `HONUA_ADMIN_PASSWORD` directly to keep automation configuration simple.
 
 ```csharp
 // Configuration/HonuaOptions.cs

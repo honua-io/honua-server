@@ -90,6 +90,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
 
         layerResponse.Should().NotBeNull();
         layerResponse!.MaxRecordCount.Should().Be(_testLimits.Query.MaxRecordCount);
+        layerResponse.DrawingInfo.Should().NotBeNull();
     }
 
     #endregion

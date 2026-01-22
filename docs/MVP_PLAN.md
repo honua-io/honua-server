@@ -22,6 +22,17 @@ This document outlines the plan for a greenfield implementation of Honua, replac
 
 ---
 
+## GTM Personas and Primary Workflows
+
+- **Business/BI user**: OData v4 for Excel/Power BI access, may not use maps.
+- **Esri user**: GeoServices FeatureServer for ArcGIS tooling compatibility.
+- **Open source GIS user**: OGC API Features/Tiles compatibility.
+- **GIS admin/DevOps**: Observability, deployability, and metadata management (admin APIs/UI).
+
+These personas shape which protocols are MVP-critical and guide validation targets.
+
+---
+
 ## Current Implementation Status (current tree)
 
 This plan is the target architecture and scope. The current repo already ships the core server APIs, but several MVP items remain open.
@@ -42,7 +53,7 @@ This plan is the target architecture and scope. The current repo already ships t
 - #30 Embedded Maputnik style editor
 - #244 Canonical cross-protocol style pipeline
 - #187 Esri Service Import Wizard UI
-- #31, #32, #33, #34 Deployment templates (Helm + AWS/Azure/GCP Terraform)
+- #31, #32, #33 Deployment templates (Helm + AWS/Azure Terraform)
 - #38 Documentation and API docs
 - #39 Security hardening and input validation
 
@@ -66,7 +77,7 @@ This plan is the target architecture and scope. The current repo already ships t
 - OGC API Tiles + MVT endpoints
 - OData v4 CRUD with spatial filters
 - File import + Esri service import APIs
-- Admin UI for connections + layer publishing + import workflow
+- Admin UI for connections + layer publishing + import workflow (OIDC required for browser UI)
 - Service enable/disable controls
 - TileJSON metadata
 - Canonical cross-protocol style pipeline (MapLibre as source of truth)
@@ -77,6 +88,7 @@ This plan is the target architecture and scope. The current repo already ships t
 - Advanced observability/alerting (#227)
 - Layer-level RBAC and rate limiting (#240, #242, #243)
 - OGC certification path documentation (#232)
+- GCP Terraform deployment templates
 
 ---
 
@@ -2308,6 +2320,7 @@ Critical paths include:
 | Task | Deliverable |
 |------|-------------|
 | Blazor project setup | WASM project, API integration |
+| Admin UI authentication | OIDC PKCE for browser UI (API key is automation-only) |
 | Connection management | Add/test PostGIS connections |
 | Table discovery | List tables/views with geometry, PK detection, row-count estimate |
 | Layer publishing | Create layer from table |
@@ -2332,6 +2345,7 @@ Critical paths include:
 - [ ] Basic health status visible
 - [ ] Map preview renders MVT tiles
 - [ ] Styles can be edited and saved via Maputnik
+- [ ] Admin UI authenticates via OIDC; browser clients do not use API keys
 - [ ] **Coverage checkpoint:** 70%+ on `Honua.Admin` (Blazor), 75%+ on `Features/Admin/` API, 80%+ cumulative maintained
 
 ### Phase 4.5: Deployment Templates
@@ -2382,7 +2396,7 @@ Critical paths include:
 
 | Task | Deliverable |
 |------|-------------|
-| **OIDC Authentication** | ASP.NET Core OIDC middleware integration |
+| **OIDC Authentication** | Admin UI + secured endpoints (PKCE for browser UI) |
 | **Auth providers** | Azure AD, Google, generic OIDC support |
 | **Token validation** | JWT validation, claims extraction |
 | **Admin protection** | Admin UI and API endpoints require auth |
@@ -2467,25 +2481,12 @@ Critical paths include:
 
 ---
 
-## Open Questions
-
-| Question | Options | Decision |
-|----------|---------|----------|
-| Repo name | `Honua`, `Honua.MVP`, `honua-server` | TBD |
-| Repo location | New org, same org, personal | New repo |
-| How to handle existing Honua.Server | Archive, rename, keep active | Keep locally as reference; new repo for greenfield |
-| License | ELv2 (same as current) | ELv2 |
-
-**Repo Strategy:** New repository for greenfield implementation. Existing Honua.Server kept locally as reference documentation for behavior and edge cases. No code will be copied directly—existing code serves as specification, not source.
-
----
-
 ## Next Steps
 
-1. **Finalize repo name** (location and handling decided)
-2. **Create new repository** with initial structure
-3. **Set up CI/CD pipeline** with all gates
-4. **Begin Phase 0** (Foundation)
+1. **Complete MVP gaps** (Admin UI, styles, TileJSON, service enable/disable)
+2. **Ship deployment templates** (Helm + AWS/Azure)
+3. **Finalize documentation + security hardening**
+4. **Validate MVP exit criteria**
 
 ---
 

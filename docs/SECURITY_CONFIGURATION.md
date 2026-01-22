@@ -41,7 +41,7 @@ ConnectionStrings__DefaultConnection=aws:secretsmanager:prod-db-credentials
 # Default connection string via Azure Key Vault
 ConnectionStrings__DefaultConnection=azure:keyvault:honua-vault:prod-db-credentials
 
-# Admin API key via env reference
+# Admin API key via env reference (automation only, not for browser UI)
 HONUA_ADMIN_PASSWORD=env:HONUA_ADMIN_PASSWORD_VALUE
 HONUA_ADMIN_PASSWORD_VALUE="super-secret"
 
@@ -58,6 +58,41 @@ HONUA_REDIS_URL="localhost:6379"
 
 Admin endpoints support secret references for managed connections (`SecretRef`/`SecretType`).
 The registry uses the same secret resolver pipeline as `DefaultConnection`.
+
+## OIDC Bootstrap (Initial Setup)
+
+Honua does not provide an in-app bootstrap flow for OIDC. Configure the IdP and
+set environment variables before first startup. Admin UI uses OIDC bearer tokens;
+API keys are automation-only.
+
+**Steps:**
+1. Register the Admin UI as an OIDC client and the API as a resource/audience.
+2. Ensure the IdP issues an admin role/group claim for privileged users.
+3. Configure OIDC environment variables and restart the server.
+
+**Azure AD example:**
+```bash
+OIDC__ENABLED=true
+OIDC__AZUREAD__ENABLED=true
+OIDC__AZUREAD__TENANTID="your-tenant-id"
+OIDC__AZUREAD__CLIENTID="your-client-id"
+OIDC__TOKENVALIDATION__VALIDAUDIENCES__0="api://your-client-id"
+OIDC__ADMINROLES__0="admin"
+```
+
+**Generic OIDC example:**
+```bash
+OIDC__ENABLED=true
+OIDC__GENERIC__ENABLED=true
+OIDC__GENERIC__AUTHORITY="https://your-idp"
+OIDC__GENERIC__CLIENTID="your-client-id"
+OIDC__GENERIC__CLIENTSECRET=env:OIDC_CLIENT_SECRET
+OIDC_CLIENT_SECRET="oidc-secret"
+OIDC__ADMINROLES__0="admin"
+```
+
+If your IdP uses a non-standard roles claim, set:
+`OIDC__CLAIMSMAPPING__ROLECLAIMTYPE="groups"` (or the claim name your IdP uses).
 
 ## OIDC Token Replay Protection
 
