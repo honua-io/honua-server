@@ -464,23 +464,35 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/metadata/layers")]
-    public async Task Admin_CreateLayer_ShouldCreateNewLayer()
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/resources")]
+    public async Task Admin_CreateMetadataResource_ShouldCreateLayerResource()
     {
-        // Arrange
-        var layerPayload = JsonSerializer.Serialize(new
+        var resource = new Honua.Core.Features.Metadata.Domain.MetadataResource
         {
-            tableName = "features",
-            schemaName = _fixture.CurrentSchema ?? "public",
-            displayName = "test_layer_" + Guid.NewGuid().ToString("N")[..8],
-            description = "Endpoint coverage layer"
-        });
+            ApiVersion = Honua.Core.Features.Metadata.Schema.MetadataSchemaRegistry.CurrentVersion,
+            Kind = Honua.Core.Features.Metadata.Domain.MetadataResourceKinds.Layer,
+            Metadata = new Honua.Core.Features.Metadata.Domain.ResourceMetadata
+            {
+                Name = $"coverage-layer-{Guid.NewGuid():N}",
+                Namespace = "default"
+            },
+            Spec = JsonSerializer.SerializeToElement(new
+            {
+                tableName = "features",
+                schemaName = _fixture.CurrentSchema ?? "public",
+                geometryType = "Polygon",
+                srid = 4326
+            })
+        };
 
-        var content = new StringContent(layerPayload, Encoding.UTF8, "application/json");
+        var payload = JsonSerializer.Serialize(
+            resource,
+            Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default.MetadataResource);
+        var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/metadata/layers", content);
+        var response = await _client.PostAsync("/api/v1/admin/metadata/resources", content);
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);

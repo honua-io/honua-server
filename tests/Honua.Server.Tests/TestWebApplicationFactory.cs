@@ -4,9 +4,11 @@
 using System.Text;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit.Infrastructure;
+using Honua.Server.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -34,6 +36,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();
             services.AddScoped<IConnectionEncryptionService, NullConnectionEncryptionService>();
             services.AddScoped<ISecureConnectionResolver, NullSecureConnectionResolver>();
+            services.AddSingleton<IMetadataResourceStore, InMemoryMetadataResourceStore>();
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>

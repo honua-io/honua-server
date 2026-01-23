@@ -403,7 +403,7 @@ API key authentication is supported for CLI/server-to-server automation only.
 export HONUA_ADMIN_TOKEN="your-oidc-access-token"
 
 # Use OIDC token for admin endpoints
-curl "http://localhost:8080/api/v1/admin/metadata/services" \
+curl "http://localhost:8080/api/v1/admin/version" \
   -H "Authorization: Bearer $HONUA_ADMIN_TOKEN"
 ```
 
@@ -411,7 +411,7 @@ curl "http://localhost:8080/api/v1/admin/metadata/services" \
 # API key (automation only, not for browser UI)
 export HONUA_ADMIN_PASSWORD="your-secure-password"
 
-curl "http://localhost:8080/api/v1/admin/metadata/services" \
+curl "http://localhost:8080/api/v1/admin/version" \
   -H "X-API-Key: $HONUA_ADMIN_PASSWORD"
 ```
 
@@ -429,136 +429,97 @@ curl "http://localhost:8080/api/v1/admin/connections/test/tables" \
   -H "X-API-Key: your-secure-password"
 ```
 
-#### Admin Metadata API v1 - Services
+#### Admin Metadata API v1 - Resource Model
 
 ```bash
-# List all services
-curl "http://localhost:8080/api/v1/admin/metadata/services" \
+# Server version + supported metadata API versions
+curl "http://localhost:8080/api/v1/admin/version" \
   -H "X-API-Key: your-secure-password"
 
-# Get service details
-curl "http://localhost:8080/api/v1/admin/metadata/services/my-service" \
+curl "http://localhost:8080/api/v1/admin/capabilities" \
   -H "X-API-Key: your-secure-password"
 
-# Create a new service
-curl -X POST "http://localhost:8080/api/v1/admin/metadata/services" \
+# List metadata resources (filter by kind/namespace)
+curl "http://localhost:8080/api/v1/admin/metadata/resources?kind=Layer&namespace=default" \
+  -H "X-API-Key: your-secure-password"
+
+# Create a Layer metadata resource
+curl -X POST "http://localhost:8080/api/v1/admin/metadata/resources" \
   -H "X-API-Key: your-secure-password" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "parcels",
-    "description": "Land parcel data service",
-    "spatialReferenceSrid": 4326,
-    "maxRecordCount": 1000
-  }'
-
-# Update a service
-curl -X PUT "http://localhost:8080/api/v1/admin/metadata/services/parcels" \
-  -H "X-API-Key: your-secure-password" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "description": "Updated parcel description",
-    "maxRecordCount": 2000
-  }'
-
-# Delete a service
-curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/services/parcels" \
-  -H "X-API-Key: your-secure-password"
-
-# Bind a layer to a service
-curl -X POST "http://localhost:8080/api/v1/admin/metadata/services/parcels/layers" \
-  -H "X-API-Key: your-secure-password" \
-  -H "Content-Type: application/json" \
-  -d '{"layerId": 1}'
-
-# Unbind a layer from a service
-curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/services/parcels/layers/1" \
-  -H "X-API-Key: your-secure-password"
-```
-
-#### Admin Metadata API v1 - Layers
-
-```bash
-# List all layers
-curl "http://localhost:8080/api/v1/admin/metadata/layers" \
-  -H "X-API-Key: your-secure-password"
-
-# Get layer details
-curl "http://localhost:8080/api/v1/admin/metadata/layers/1" \
-  -H "X-API-Key: your-secure-password"
-
-# Create a layer from database table
-curl -X POST "http://localhost:8080/api/v1/admin/metadata/layers" \
-  -H "X-API-Key: your-secure-password" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tableName": "parcels",
-    "schemaName": "public",
-    "displayName": "Land Parcels",
-    "description": "Property boundaries"
-  }'
-
-# Update a layer
-curl -X PUT "http://localhost:8080/api/v1/admin/metadata/layers/1" \
-  -H "X-API-Key: your-secure-password" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "displayName": "Updated Layer Name",
-    "minScale": 0,
-    "maxScale": 100000,
-    "defaultVisibility": true
-  }'
-
-# Refresh layer metadata from database
-curl -X POST "http://localhost:8080/api/v1/admin/metadata/layers/1/refresh" \
-  -H "X-API-Key: your-secure-password"
-
-# Delete a layer
-curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/layers/1" \
-  -H "X-API-Key: your-secure-password"
-```
-
-#### Admin Metadata API v1 - Relationships
-
-```bash
-# List relationships for a layer
-curl "http://localhost:8080/api/v1/admin/metadata/layers/1/relationships" \
-  -H "X-API-Key: your-secure-password"
-
-# Create a relationship
-curl -X POST "http://localhost:8080/api/v1/admin/metadata/layers/1/relationships" \
-  -H "X-API-Key: your-secure-password" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "relatedLayerId": 2,
-    "name": "parcel_owners",
-    "relationshipType": "OneToMany",
-    "originForeignKeyField": "parcel_id",
-    "destinationForeignKeyField": "id"
-  }'
-
-# Delete a relationship
-curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/layers/1/relationships/1" \
-  -H "X-API-Key: your-secure-password"
-```
-
-#### Admin Metadata API v1 - Styles
-
-```bash
-# Get layer style
-curl "http://localhost:8080/api/v1/admin/metadata/layers/1/style" \
-  -H "X-API-Key: your-secure-password"
-
-# Update layer style
-curl -X PUT "http://localhost:8080/api/v1/admin/metadata/layers/1/style" \
-  -H "X-API-Key: your-secure-password" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mapLibreStyle": {
-      "layers": [{"id": "fill", "type": "fill", "paint": {"fill-color": "#088"}}]
+    "apiVersion": "honua.io/v1alpha1",
+    "kind": "Layer",
+    "metadata": {
+      "name": "parcels",
+      "namespace": "default",
+      "labels": { "env": "dev" }
     },
-    "drawingInfo": {
-      "renderer": {"type": "simple", "symbol": {"type": "esriSFS"}}
+    "spec": {
+      "tableName": "parcels",
+      "schemaName": "public",
+      "geometryType": "Polygon",
+      "srid": 4326
     }
+  }'
+
+# Update a resource (If-Match required)
+etag=$(curl -sI "http://localhost:8080/api/v1/admin/metadata/resources/Layer/default/parcels" \
+  -H "X-API-Key: your-secure-password" | awk '/ETag/ {print $2}' | tr -d '\r')
+
+curl -X PUT "http://localhost:8080/api/v1/admin/metadata/resources/Layer/default/parcels" \
+  -H "X-API-Key: your-secure-password" \
+  -H "If-Match: $etag" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "apiVersion": "honua.io/v1alpha1",
+    "kind": "Layer",
+    "metadata": {
+      "name": "parcels",
+      "namespace": "default"
+    },
+    "spec": {
+      "tableName": "parcels",
+      "schemaName": "public",
+      "geometryType": "Polygon",
+      "srid": 4326,
+      "description": "Updated parcel description"
+    }
+  }'
+
+# Delete a resource (If-Match required)
+curl -X DELETE "http://localhost:8080/api/v1/admin/metadata/resources/Layer/default/parcels" \
+  -H "X-API-Key: your-secure-password" \
+  -H "If-Match: $etag"
+```
+
+#### Admin Metadata API v1 - Manifest (GitOps)
+
+```bash
+# Export a full manifest snapshot
+curl "http://localhost:8080/api/v1/admin/manifest" \
+  -H "X-API-Key: your-secure-password"
+
+# Apply a manifest (supports dryRun/prune)
+curl -X POST "http://localhost:8080/api/v1/admin/manifest/apply" \
+  -H "X-API-Key: your-secure-password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dryRun": true,
+    "prune": false,
+    "resources": [
+      {
+        "apiVersion": "honua.io/v1alpha1",
+        "kind": "Layer",
+        "metadata": { "name": "parcels", "namespace": "default" },
+        "spec": {
+          "tableName": "parcels",
+          "schemaName": "public",
+          "geometryType": "Polygon",
+          "srid": 4326
+        }
+      }
+    ]
   }'
 ```
 

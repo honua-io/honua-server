@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -27,6 +28,7 @@ using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Styling;
+using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
@@ -79,8 +81,12 @@ internal static class ServiceCollectionExtensions
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
 
-        // Register admin catalog for metadata CRUD operations
-        services.AddScoped<IAdminCatalog, PostgresAdminCatalog>();
+        // Register metadata resource store (ADR-0023)
+        services.AddScoped<IMetadataResourceStore>(serviceProvider =>
+            new PostgresMetadataResourceStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetService<Honua.Core.Features.Caching.Abstractions.ICacheService>(),
+                configuration["Database:Schema"]));
 
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
