@@ -412,7 +412,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
 
     private static string SerializeJsonElement(JsonElement element)
     {
-        return JsonSerializer.Serialize(element);
+        return element.GetRawText();
     }
 
     private static object SerializeOptionalJsonElement(JsonElement? element)
@@ -422,7 +422,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
             return DBNull.Value;
         }
 
-        return JsonSerializer.Serialize(element.Value);
+        return element.Value.GetRawText();
     }
 
     private static object SerializeDictionary(Dictionary<string, string>? value)
