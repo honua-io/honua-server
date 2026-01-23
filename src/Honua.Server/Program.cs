@@ -178,6 +178,7 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
+builder.Services.AddScoped<MetadataCacheInvalidator>();
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,

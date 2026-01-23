@@ -312,7 +312,10 @@ public readonly record struct BoundingBox
         return MergeRanges(intersections);
     }
 
-    private static (double Min, double Max) ResolveMinimalLongitudeSpan(List<(double Min, double Max)> ranges)
+    /// <summary>
+    /// Chooses the shortest longitude span that covers the provided ranges.
+    /// </summary>
+    internal static (double Min, double Max) ResolveMinimalLongitudeSpan(List<(double Min, double Max)> ranges)
     {
         if (ranges.Count == 0)
         {
@@ -361,7 +364,10 @@ public readonly record struct BoundingBox
         return NormalizeRangeTo180((spanStart, spanEnd));
     }
 
-    private static List<(double Min, double Max)> NormalizeRangesTo360(List<(double Min, double Max)> ranges)
+    /// <summary>
+    /// Normalizes longitude ranges into the [0, 360) domain.
+    /// </summary>
+    internal static List<(double Min, double Max)> NormalizeRangesTo360(List<(double Min, double Max)> ranges)
     {
         var normalized = new List<(double Min, double Max)>(ranges.Count * 2);
         foreach (var range in ranges)
@@ -382,14 +388,20 @@ public readonly record struct BoundingBox
         return normalized;
     }
 
-    private static (double Min, double Max) NormalizeRangeTo180((double Min, double Max) range)
+    /// <summary>
+    /// Normalizes a longitude range into the [-180, 180] domain.
+    /// </summary>
+    internal static (double Min, double Max) NormalizeRangeTo180((double Min, double Max) range)
     {
         var min = NormalizeLongitudeTo180(range.Min);
         var max = NormalizeLongitudeTo180(range.Max);
         return (min, max);
     }
 
-    private static double NormalizeLongitudeTo360(double value)
+    /// <summary>
+    /// Normalizes a longitude into the [0, 360) domain.
+    /// </summary>
+    internal static double NormalizeLongitudeTo360(double value)
     {
         var normalized = value % 360d;
         if (normalized < 0d)
@@ -405,7 +417,10 @@ public readonly record struct BoundingBox
         return normalized;
     }
 
-    private static double NormalizeLongitudeTo180(double value)
+    /// <summary>
+    /// Normalizes a longitude into the [-180, 180] domain.
+    /// </summary>
+    internal static double NormalizeLongitudeTo180(double value)
     {
         var normalized = value % 360d;
         if (normalized > 180d)
