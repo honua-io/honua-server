@@ -138,6 +138,69 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_data_connections_secret_ref ON honua.data_connections(secret_ref) WHERE secret_ref IS NOT NULL;"
   - "CREATE INDEX IF NOT EXISTS idx_encryption_keys_active ON honua.encryption_keys(is_active, key_version) WHERE is_active = TRUE;"
   - |
+      CREATE TABLE IF NOT EXISTS honua.metadata_resources (
+          resource_id TEXT PRIMARY KEY,
+          api_version TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          namespace TEXT NOT NULL,
+          name TEXT NOT NULL,
+          resource_version BIGINT NOT NULL DEFAULT 1,
+          generation INT NOT NULL DEFAULT 1,
+          spec JSONB NOT NULL,
+          status JSONB,
+          labels JSONB,
+          annotations JSONB,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_applied_manifest_hash TEXT
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS idx_metadata_resources_unique ON honua.metadata_resources(kind, namespace, name);"
+  - "CREATE INDEX IF NOT EXISTS idx_metadata_resources_kind_namespace ON honua.metadata_resources(kind, namespace);"
+  - "CREATE INDEX IF NOT EXISTS idx_metadata_resources_name ON honua.metadata_resources(name);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.metadata_history (
+          id BIGSERIAL PRIMARY KEY,
+          resource_id TEXT NOT NULL,
+          api_version TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          namespace TEXT NOT NULL,
+          name TEXT NOT NULL,
+          resource_version BIGINT NOT NULL,
+          generation INT NOT NULL,
+          spec JSONB NOT NULL,
+          status JSONB,
+          labels JSONB,
+          annotations JSONB,
+          action TEXT NOT NULL,
+          occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_metadata_history_resource ON honua.metadata_history(resource_id, resource_version);"
+  - "CREATE INDEX IF NOT EXISTS idx_metadata_history_kind_namespace ON honua.metadata_history(kind, namespace);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.metadata_compiled (
+          resource_id TEXT NOT NULL,
+          resource_version BIGINT NOT NULL,
+          api_version TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          artifact JSONB NOT NULL,
+          compiled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          compiler_version TEXT,
+          PRIMARY KEY (resource_id, resource_version)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_metadata_compiled_kind ON honua.metadata_compiled(kind);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.metadata_indexes (
+          resource_id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          namespace TEXT NOT NULL,
+          name TEXT NOT NULL,
+          resource_version BIGINT NOT NULL,
+          labels JSONB,
+          annotations JSONB,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_metadata_indexes_kind_namespace ON honua.metadata_indexes(kind, namespace);"
+  - |
       CREATE OR REPLACE FUNCTION honua.create_import_table(table_name text)
       RETURNS void
       LANGUAGE plpgsql
@@ -195,6 +258,10 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
+  - "DELETE FROM honua.metadata_compiled;"
+  - "DELETE FROM honua.metadata_history;"
+  - "DELETE FROM honua.metadata_indexes;"
+  - "DELETE FROM honua.metadata_resources;"
   - "DELETE FROM honua.relationships;"
   - "DELETE FROM honua.service_layers;"
   - "DELETE FROM honua.layer_fields;"

@@ -21,6 +21,10 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
+        new("GET", "/api/v1/admin/version"),
+        new("GET", "/api/v1/admin/capabilities"),
+        new("GET", "/api/v1/admin/manifest"),
+        new("POST", "/api/v1/admin/manifest/apply"),
 
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
@@ -32,25 +36,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/connections/encryption/validate"),
         new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
 
-        // v1 admin metadata endpoints
-        new("GET", "/api/v1/admin/metadata/services"),
-        new("GET", "/api/v1/admin/metadata/services/{name}"),
-        new("POST", "/api/v1/admin/metadata/services"),
-        new("PUT", "/api/v1/admin/metadata/services/{name}"),
-        new("DELETE", "/api/v1/admin/metadata/services/{name}"),
-        new("POST", "/api/v1/admin/metadata/services/{name}/layers"),
-        new("DELETE", "/api/v1/admin/metadata/services/{name}/layers/{layerId}"),
-        new("GET", "/api/v1/admin/metadata/layers"),
-        new("GET", "/api/v1/admin/metadata/layers/{layerId}"),
-        new("POST", "/api/v1/admin/metadata/layers"),
-        new("PUT", "/api/v1/admin/metadata/layers/{layerId}"),
-        new("DELETE", "/api/v1/admin/metadata/layers/{layerId}"),
-        new("POST", "/api/v1/admin/metadata/layers/{layerId}/refresh"),
-        new("GET", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
-        new("POST", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
-        new("DELETE", "/api/v1/admin/metadata/layers/{layerId}/relationships/{relationshipId}"),
-        new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
-        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        // v1 admin metadata resource endpoints
+        new("GET", "/api/v1/admin/metadata/resources"),
+        new("GET", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
+        new("POST", "/api/v1/admin/metadata/resources"),
+        new("PUT", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
+        new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
 
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),

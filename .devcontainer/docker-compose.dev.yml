@@ -37,7 +37,8 @@ services:
 
   # PostgreSQL - Development database
   postgres:
-    image: postgis/postgis:17-3.5-alpine
+    image: postgis/postgis:17-3.6-alpine
+    command: ["-c", "max_connections=200"]
     environment:
       POSTGRES_DB: honua_dev
       POSTGRES_USER: honua_user

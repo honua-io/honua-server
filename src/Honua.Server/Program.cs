@@ -13,6 +13,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Schema;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.FileStorage;
@@ -178,7 +180,8 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
-builder.Services.AddScoped<MetadataCacheInvalidator>();
+builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
+builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
@@ -257,7 +260,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.EsriImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
-        Honua.Server.Features.Admin.Models.MetadataJsonContext.Default,
+        Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
@@ -398,11 +401,14 @@ app.MapHealthEndpoints();
 // Configure admin endpoints
 app.MapAdminEndpoints();
 
+// Configure admin metadata version/manifest endpoints
+app.MapAdminMetadataEndpoints();
+
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
 
-// Configure admin metadata endpoints (v1)
-app.MapMetadataEndpoints();
+// Configure metadata resource endpoints (ADR-0023)
+app.MapMetadataResourceEndpoints();
 
 // Configure security endpoints (CSP violation reporting)
 app.MapCspViolationReportEndpoint();

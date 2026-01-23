@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install localstack AWS CLI wrapper for emulator tests
-RUN python3 -m pip install --no-cache-dir awscli-local
+RUN python3 -m pip install --no-cache-dir --break-system-packages awscli awscli-local
 
 # Install development tools
 RUN curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && rm get-docker.sh
@@ -44,9 +44,15 @@ ENV PATH="$PATH:/root/.dotnet/tools"
 # Create workspace directory
 WORKDIR /workspace
 
-# Create non-root user for development
-RUN groupadd --gid 1000 vscode \
-    && useradd --uid 1000 --gid 1000 -m vscode \
+# Create non-root user for development (idempotent for base images that already define gid 1000)
+RUN if ! getent group 1000 >/dev/null; then groupadd --gid 1000 vscode; fi \
+    && if ! id -u vscode >/dev/null 2>&1; then \
+        if getent passwd 1000 >/dev/null; then \
+            useradd --uid 1000 --gid 1000 --non-unique -m vscode; \
+        else \
+            useradd --uid 1000 --gid 1000 -m vscode; \
+        fi; \
+    fi \
     && apt-get update \
     && apt-get install -y sudo \
     && echo vscode ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/vscode \
