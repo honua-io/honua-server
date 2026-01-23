@@ -22,7 +22,7 @@ public sealed class MetadataSchemaRegistry : IMetadataSchemaRegistry
     /// </summary>
     public const string LegacyVersion = "honua.io/v1alpha0";
 
-    private static readonly string[] ResourcePayloadRequiredErrors = ["Resource payload is required."];
+    private static readonly string[] _resourcePayloadRequiredErrors = ["Resource payload is required."];
     private readonly Dictionary<(string ApiVersion, string Kind), ResourceSchemaDefinition> _schemas;
 
     /// <summary>
@@ -48,7 +48,7 @@ public sealed class MetadataSchemaRegistry : IMetadataSchemaRegistry
         var errors = new List<string>();
         if (resource == null)
         {
-            return new MetadataSchemaValidationResult(false, null, ResourcePayloadRequiredErrors, false);
+            return new MetadataSchemaValidationResult(false, null, _resourcePayloadRequiredErrors, false);
         }
 
         if (string.IsNullOrWhiteSpace(resource.ApiVersion))
