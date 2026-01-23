@@ -5,6 +5,7 @@ using System.Data;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Npgsql;
@@ -20,15 +21,20 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _supportedCapabilities = ["Query", "Extract"];
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly IFeatureCacheManager _featureCacheManager;
     private readonly string _layersTable;
     private readonly string _fieldsTable;
     private readonly string _servicesTable;
     private readonly string _serviceLayersTable;
     private readonly string _relationshipsTable;
 
-    public PostgresAdminCatalog(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresAdminCatalog(
+        IDatabaseConnectionProvider connectionProvider,
+        IFeatureCacheManager featureCacheManager,
+        string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _featureCacheManager = featureCacheManager ?? throw new ArgumentNullException(nameof(featureCacheManager));
 
         string schema = string.IsNullOrEmpty(schemaName) ? "honua" : schemaName;
         _layersTable = $"{schema}.layers";
@@ -47,13 +53,13 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         string name,
         string description,
         SpatialReference spatialReference,
-        int maxRecordCount = 1000,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default)
     {
         string sql = $"""
-            INSERT INTO {_servicesTable} (service_name, description, srid, max_record_count, supported_formats, capabilities, metadata)
-            VALUES (@name, @description, @srid, @maxRecordCount, @supportedFormats, @capabilities, @metadata)
+            INSERT INTO {_servicesTable} (service_name, description, srid, supported_formats, capabilities, metadata, connection_id)
+            VALUES (@name, @description, @srid, @supportedFormats, @capabilities, @metadata, @connectionId)
             ON CONFLICT (service_name) DO UPDATE SET service_name = EXCLUDED.service_name
             RETURNING service_name
             """;
@@ -63,13 +69,13 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         _ = command.Parameters.AddWithValue("@name", name);
         _ = command.Parameters.AddWithValue("@description", description);
         _ = command.Parameters.AddWithValue("@srid", spatialReference.Wkid);
-        _ = command.Parameters.AddWithValue("@maxRecordCount", maxRecordCount);
         _ = command.Parameters.AddWithValue("@supportedFormats", _supportedFormats);
         _ = command.Parameters.AddWithValue("@capabilities", _supportedCapabilities);
         _ = command.Parameters.Add(new NpgsqlParameter("@metadata", NpgsqlDbType.Jsonb)
         {
             Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
         });
+        _ = command.Parameters.AddWithValue("@connectionId", (object?)connectionId ?? DBNull.Value);
 
         _ = await command.ExecuteScalarAsync(cancellationToken);
 
@@ -78,16 +84,16 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             description,
             [],
             spatialReference,
-            maxRecordCount,
-            Metadata: metadata);
+            Metadata: metadata,
+            ConnectionId: connectionId);
     }
 
     /// <inheritdoc />
     public async Task<ServiceDefinition?> UpdateServiceAsync(
         string name,
         string? description = null,
-        int? maxRecordCount = null,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default)
     {
         var setClauses = new List<string>();
@@ -99,12 +105,6 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             parameters.Add(new NpgsqlParameter("@description", description));
         }
 
-        if (maxRecordCount.HasValue)
-        {
-            setClauses.Add("max_record_count = @maxRecordCount");
-            parameters.Add(new NpgsqlParameter("@maxRecordCount", maxRecordCount.Value));
-        }
-
         if (metadata != null)
         {
             setClauses.Add("metadata = @metadata");
@@ -112,6 +112,12 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             {
                 Value = SerializeMetadata(metadata) ?? (object)DBNull.Value
             });
+        }
+
+        if (connectionId.HasValue)
+        {
+            setClauses.Add("connection_id = @connectionId");
+            parameters.Add(new NpgsqlParameter("@connectionId", connectionId.Value));
         }
 
         if (setClauses.Count == 0)
@@ -124,7 +130,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             UPDATE {_servicesTable}
             SET {string.Join(", ", setClauses)}
             WHERE LOWER(service_name) = LOWER(@name)
-            RETURNING service_name, description, srid, max_record_count, metadata
+            RETURNING service_name, description, srid, metadata, connection_id
             """;
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -138,15 +144,16 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        var updatedMetadata = ReadMetadata(reader, 4);
+        var updatedMetadata = ReadMetadata(reader, 3);
+        Guid? connectionIdValue = reader.IsDBNull(4) ? null : reader.GetGuid(4);
 
         return new ServiceDefinition(
             reader.GetString(0),
             reader.GetString(1),
             [],
             SpatialReference.Create(reader.GetInt32(2)),
-            reader.GetInt32(3),
-            Metadata: updatedMetadata);
+            Metadata: updatedMetadata,
+            ConnectionId: connectionIdValue);
     }
 
     /// <inheritdoc />
@@ -314,6 +321,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
                 Metadata: metadata);
 
             await transaction.CommitAsync(cancellationToken);
+            _featureCacheManager.InvalidateLayerCache(newLayerId);
 
             return layerDefinition;
         }
@@ -420,6 +428,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
 
         // Get fields
         var fields = await GetLayerFieldsAsync(layerId, cancellationToken);
+        _featureCacheManager.InvalidateLayerCache(layerId);
         return layer with { Fields = fields };
     }
 
@@ -454,6 +463,11 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             int rowsAffected = await layerCommand.ExecuteNonQueryAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
+
+            if (rowsAffected > 0)
+            {
+                _featureCacheManager.InvalidateLayerCache(layerId);
+            }
 
             return rowsAffected > 0;
         }
@@ -524,6 +538,8 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
             };
 
             await transaction.CommitAsync(cancellationToken);
+
+            _featureCacheManager.InvalidateLayerCache(layerId);
 
             return refreshedLayer;
         }
@@ -608,7 +624,7 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
     private async Task<ServiceDefinition?> GetServiceInternalAsync(string name, CancellationToken cancellationToken)
     {
         string sql = $"""
-            SELECT service_name, description, srid, max_record_count, metadata
+            SELECT service_name, description, srid, metadata, connection_id
             FROM {_servicesTable}
             WHERE LOWER(service_name) = LOWER(@name)
             """;
@@ -621,15 +637,16 @@ internal sealed class PostgresAdminCatalog : IAdminCatalog
         if (!await reader.ReadAsync(cancellationToken))
             return null;
 
-        var metadata = ReadMetadata(reader, 4);
+        var metadata = ReadMetadata(reader, 3);
+        Guid? connectionId = reader.IsDBNull(4) ? null : reader.GetGuid(4);
 
         return new ServiceDefinition(
             reader.GetString(0),
             reader.GetString(1),
             [],
             SpatialReference.Create(reader.GetInt32(2)),
-            reader.GetInt32(3),
-            Metadata: metadata);
+            Metadata: metadata,
+            ConnectionId: connectionId);
     }
 
     private async Task<LayerDefinition?> GetLayerInternalAsync(int layerId, CancellationToken cancellationToken)

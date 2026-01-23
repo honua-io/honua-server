@@ -1,5 +1,7 @@
 # Greenfield Architecture Plan
 
+> Status note: This document mixes current implementation details with target architecture. The current tree already ships core server APIs; admin UI and deployment templates are still pending. See `docs/MVP_PLAN.md` for current status and open gaps.
+
 ## Executive Summary
 
 This document outlines the architecture for a greenfield Honua MVP, addressing the coupling and structural issues in the current codebase while preserving the good patterns from the platform layer.
@@ -2899,7 +2901,15 @@ The admin interface is a Blazor WebAssembly app with MapLibre GL JS for map prev
 | **Framework** | Blazor WASM | C# end-to-end, single language |
 | **Map library** | MapLibre GL JS | Native MVT support, WebGL performance |
 | **JS Interop** | Minimal wrapper | Keep it simple, call MapLibre directly |
-| **Styling** | Tailwind CSS | Utility-first, works well with Blazor |
+| **UI components** | MudBlazor | Full component set for admin workflows |
+| **Styling** | MudBlazor theming + minimal CSS | Consistent look with low maintenance |
+
+### Hosting Model
+
+The Admin UI is served from Honua.Server at `/admin` by default (integrated mode).
+Standalone hosting is also supported for CDN/static hosting of the WASM bundle.
+In standalone mode, set `HONUA_SERVE_ADMIN_UI=false` and configure
+`HONUA_ADMIN_UI_CORS_ORIGINS` for the Admin UI origin.
 
 ### Why MapLibre GL over Leaflet
 
@@ -2920,7 +2930,7 @@ src/Honua.Admin/
 ├── wwwroot/
 │   ├── index.html
 │   ├── css/
-│   │   └── app.css                    # Tailwind output
+│   │   └── app.css                    # MudBlazor overrides
 │   └── js/
 │       └── maplibre-interop.js        # MapLibre JS interop
 ├── Pages/
@@ -3428,7 +3438,7 @@ ALTER TABLE honua.layers ADD COLUMN style_version INT DEFAULT 1;
 
 ```csharp
 // Features/Styling/GeoServicesToMapLibreConverter.cs
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 public static class GeoServicesToMapLibreConverter
 {
@@ -3687,7 +3697,7 @@ Converts MapLibre style back to GeoServices drawingInfo for FeatureServer respon
 
 ```csharp
 // Features/Styling/MapLibreToGeoServicesConverter.cs
-namespace Honua.Server.Features.Styling;
+namespace Honua.Server.Features.Infrastructure.Styling;
 
 public static class MapLibreToGeoServicesConverter
 {
@@ -5370,7 +5380,9 @@ public sealed class CorrelationMiddleware
 
 ### Authentication
 
-Simplified admin password authentication for MVP. Use `HONUA_ADMIN_PASSWORD` and pass it via the `X-API-Key` header.
+Admin UI uses OIDC (PKCE) and sends bearer tokens. API key authentication via
+`HONUA_ADMIN_PASSWORD` is supported for CLI/server-to-server automation only
+and must not be used by browser clients.
 
 ```csharp
 // Infrastructure/Auth/ApiKeyAuthenticationHandler.cs
@@ -5976,7 +5988,7 @@ Same code, same interface. Cloud-native ready from day one.
 
 | Concern | MVP Implementation | Portable From Existing? |
 |---------|-------------------|------------------------|
-| **Auth** | Admin password (X-API-Key header) | Yes - simplify `ApiKeyAuthenticationHandler` |
+| **Auth** | OIDC for Admin UI; API key for automation | Yes - simplify `ApiKeyAuthenticationHandler` |
 | **Health** | Database + self checks | Yes - extract from `HealthCheckExtensions` |
 | **Validation** | Manual + endpoint filters (AOT-safe) | No - fresh implementation |
 | **SQL Injection** | Parameterized queries + pattern check | Yes - copy `InputValidationHelpers` |
@@ -5998,7 +6010,7 @@ Docker deployments use environment variables exclusively. This is the primary co
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ConnectionStrings__DefaultConnection` | ✅ | — | PostGIS connection string |
-| `HONUA_ADMIN_PASSWORD` | ❌ | empty | Admin password (empty = no auth in dev) |
+| `HONUA_ADMIN_PASSWORD` | ❌ | empty | Admin API key for automation (not for browser UI) |
 | `Cors__AllowedOrigins__0` | ❌ | * in dev | First allowed origin |
 | `Cors__AllowedOrigins__1` | ❌ | — | Second allowed origin (and so on) |
 | `Basemap__Provider` | ❌ | openfreemap | `openfreemap` or `maptiler` |
@@ -6055,7 +6067,7 @@ For local development without Docker, use appsettings.json. Not used in producti
 
 ### Strongly-Typed Options
 
-Admin password is read from `HONUA_ADMIN_PASSWORD` directly to keep configuration simple.
+Admin password is read from `HONUA_ADMIN_PASSWORD` directly to keep automation configuration simple.
 
 ```csharp
 // Configuration/HonuaOptions.cs
@@ -6204,7 +6216,7 @@ Keep `appsettings.json` for defaults and structure only. All secrets via environ
 | RateLimit (app-level) | Externalized to edge |
 | Resilience (hedging/bulkhead) | Keep only circuit breaker |
 | Features (GeoETL, etc.) | All enterprise features |
-| Cloud (AWS/Azure/GCP) | Deferred |
+| Cloud (AWS/Azure) | Deferred |
 | Alerts | Deferred |
 | GitOps | Deferred |
 | MultiTenancy | Deferred |

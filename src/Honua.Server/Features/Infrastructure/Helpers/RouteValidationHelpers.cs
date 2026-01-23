@@ -1,10 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text.Json;
-using Honua.Server.Features.Infrastructure.Middleware;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
 
@@ -22,12 +20,9 @@ internal static class RouteValidationHelpers
     /// <returns>True if method is valid, false if 405 response was written</returns>
     public static bool ValidateHttpMethod(HttpContext context, string allowedMethod)
     {
-        if (!string.Equals(context.Request.Method, allowedMethod, StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
-            return false;
-        }
-        return true;
+        var validator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+        var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { allowedMethod };
+        return validator.ValidateHttpMethod(context, allowedMethods).IsValid;
     }
 
     /// <summary>
@@ -38,9 +33,10 @@ internal static class RouteValidationHelpers
     /// <returns>True if serviceId is valid, false otherwise</returns>
     public static bool TryValidateServiceId(HttpContext context, out string serviceId)
     {
-        string? rawServiceId = context.GetRouteValue("serviceId")?.ToString();
-        serviceId = rawServiceId ?? string.Empty;
-        return !string.IsNullOrWhiteSpace(rawServiceId);
+        var validator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+        var result = validator.ValidateServiceId(context);
+        serviceId = result.IsValid ? result.Value ?? string.Empty : string.Empty;
+        return result.IsValid;
     }
 
     /// <summary>
@@ -51,20 +47,10 @@ internal static class RouteValidationHelpers
     /// <returns>True if layerId is valid, false otherwise</returns>
     public static bool TryValidateLayerId(HttpContext context, out int layerId)
     {
-        layerId = default;
-
-        if (!context.Request.RouteValues.TryGetValue("layerId", out object? raw) || raw is null)
-        {
-            return false;
-        }
-
-        if (raw is int intValue)
-        {
-            layerId = intValue;
-            return true;
-        }
-
-        return int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);
+        var validator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+        var result = validator.ValidateLayerId(context);
+        layerId = result.IsValid ? result.Value : default;
+        return result.IsValid;
     }
 
     /// <summary>
@@ -80,23 +66,11 @@ internal static class RouteValidationHelpers
         int statusCode = StatusCodes.Status400BadRequest,
         string[]? details = null)
     {
-        var errorResponse = new ApiErrorResponse
-        {
-            Error = new GeoServicesError
-            {
-                Code = statusCode,
-                Message = message,
-                Details = details
-            }
-        };
-
-        context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json; charset=utf-8";
-
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body,
-            errorResponse,
-            LimitsEnforcementJsonContext.Default.ApiErrorResponse,
+        await ValidationErrorHelpers.WriteValidationErrorAsync(
+            context,
+            statusCode,
+            message,
+            details,
             context.RequestAborted);
     }
 }

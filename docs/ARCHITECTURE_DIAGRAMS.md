@@ -109,7 +109,7 @@ graph TB
 | Container | Technology | Responsibility |
 |-----------|------------|----------------|
 | **Honua.Server** | ASP.NET Core 10, Native AOT | API host, business logic, protocol translation |
-| **Honua.Admin** | Blazor WebAssembly | Admin UI, served at `/admin` |
+| **Honua.Admin** | Blazor WebAssembly | Admin UI, served at `/admin` in integrated mode; can be hosted standalone |
 | **PostgreSQL + PostGIS** | PostgreSQL 16, PostGIS 3.4 | Data storage, spatial ops, MVT generation |
 | **Redis** (optional) | Redis 7 | Metadata caching, output caching |
 

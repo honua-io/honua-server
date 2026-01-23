@@ -7,7 +7,9 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -29,7 +31,8 @@ namespace Honua.Postgres.Features.Infrastructure;
 internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
     ILogger<PostgresDatabaseConnectionProvider> logger,
-    ISchemaContext? schemaContext = null) : IDatabaseConnectionProvider
+    ISchemaContext? schemaContext = null,
+    IActiveDbConnectionTracker? activeDbConnectionTracker = null) : IDatabaseConnectionProvider
 {
     // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -37,6 +40,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ISchemaContext? _schemaContext = schemaContext;
+    private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
 
     /// <summary>
     /// Opens a PostgreSQL connection with automatic retry for transient failures
@@ -94,6 +98,8 @@ internal sealed class PostgresDatabaseConnectionProvider(
         {
             await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken).ConfigureAwait(false);
         }
+
+        DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
         // Record connection success with retry count
         activity?.SetTag("db.connection.retry_count", retryCount);

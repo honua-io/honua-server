@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OData.Models;
 
@@ -435,7 +436,7 @@ internal sealed class ODataAggregationHandler
 
     private static object? GetFieldValue(Feature feature, string field)
     {
-        if (field.Equals("objectid", StringComparison.OrdinalIgnoreCase))
+        if (field.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
             return feature.Id;
         }

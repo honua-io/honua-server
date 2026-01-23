@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -300,6 +301,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         int z,
         FeatureQuery? query,
         TileOptions tileOptions,
+        TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
         var sql = _stringBuilderPool.Get();
@@ -308,11 +310,8 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 1;
             var parameters = new List<object>();
             var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
-            if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue &&
-                query.Value.SpatialReferenceSrid.Value != 3857)
-            {
-                geometryOperand = $"ST_Transform({geometryOperand}, 3857)";
-            }
+            var geometryForTile = geometryOperand;
+            var filterGeometryOperand = geometryOperand;
 
             var tileBounds = TileMath.GetTileBounds(x, y, z);
             var tileWidth = tileBounds.XMax - tileBounds.XMin;
@@ -333,7 +332,22 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             parameters.Add(tileOptions.TileBuffer);
             paramIndex = 8;
 
-            var geometryForTile = geometryOperand;
+            var tileEnvelopeForFilter = tileEnvelopeWithBuffer;
+            if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue)
+            {
+                var layerSrid = query.Value.SpatialReferenceSrid.Value;
+                if (layerSrid != 3857)
+                {
+                    geometryForTile = $"ST_Transform({geometryOperand}, 3857)";
+                    tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
+                }
+            }
+            else
+            {
+                geometryForTile = $"ST_Transform({geometryOperand}, 3857)";
+                filterGeometryOperand = geometryForTile;
+            }
+
             if (z <= tileOptions.SimplifyZoom)
             {
                 var simplifyTolerance = TileMath.GetSimplificationTolerance(z);
@@ -368,12 +382,13 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             }
 
             sql.Append(CultureInfo.InvariantCulture, $@"
-                    AND ST_Intersects({geometryOperand}, {tileEnvelopeWithBuffer})");
+                    AND {filterGeometryOperand} && {tileEnvelopeForFilter}
+                    AND ST_Intersects({filterGeometryOperand}, {tileEnvelopeForFilter})");
 
-            if (tileOptions.MaxFeaturesPerTile > 0)
+            if (tileLimits.MaxFeaturesPerTile > 0)
             {
                 var limitParam = $"${paramIndex++}";
-                parameters.Add(tileOptions.MaxFeaturesPerTile);
+                parameters.Add(tileLimits.MaxFeaturesPerTile);
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }
 
@@ -568,93 +583,97 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
         var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
         string? filterGeometry = null;
+        string? clause = null;
 
         switch (filter.SpatialRelationship)
         {
             case SpatialRelationship.Intersects:
                 // PERFORMANCE OPTIMIZATION: Use bbox operator && for fast spatial index filtering
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Within:
                 // PERFORMANCE OPTIMIZATION: Pre-filter with bbox before expensive ST_Within
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Within({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Within({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Contains:
                 // PERFORMANCE OPTIMIZATION: Use spatial index hint for containment queries
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:
                 // Already optimized - pure index operation
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry}");
+                clause = $"{geometryOperand} && {filterGeometry}";
                 break;
 
             case SpatialRelationship.Crosses:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Crosses({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Crosses({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Touches:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Touches({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Touches({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Overlaps:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Overlaps({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Overlaps({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Disjoint:
                 // PERFORMANCE NOTE: Disjoint operations cannot effectively use spatial indexes
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_Disjoint({geometryOperand}, {filterGeometry})");
+                clause = $"ST_Disjoint({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Equals:
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Equals({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Equals({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.WithinDistance:
                 // Use ST_DWithin with geography type for accurate geodesic distance calculations
                 var geographyFilter = BuildGeographyFilterExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})");
+                clause = $"ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})";
                 break;
 
             case SpatialRelationship.BeyondDistance:
                 // ST_Distance > threshold for features beyond a certain distance
                 var geographyFilterDistance = BuildGeographyFilterExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND ST_Distance({geographyOperand}, {geographyFilterDistance}) > ${paramIndex++}");
+                clause = $"ST_Distance({geographyOperand}, {geographyFilterDistance}) > ${paramIndex++}";
                 break;
 
             case SpatialRelationship.NearestNeighbor:
                 // KNN uses ORDER BY with PostGIS <-> operator (handled separately)
-                sql.Append(CultureInfo.InvariantCulture, $" AND {geometryOperand} IS NOT NULL");
+                clause = $"{geometryOperand} IS NOT NULL";
                 break;
 
             default:
                 // PERFORMANCE OPTIMIZATION: Default to bbox + intersects for best performance
                 filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" AND {geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})");
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
                 break;
+        }
+
+        if (clause == null)
+        {
+            return;
+        }
+
+        if (query.IncludeNullGeometry && filter.SpatialRelationship != SpatialRelationship.NearestNeighbor)
+        {
+            sql.Append(CultureInfo.InvariantCulture,
+                $" AND ({clause} OR {DatabaseSchema.GeometryColumn} IS NULL)");
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" AND {clause}");
         }
     }
 
@@ -1037,7 +1056,20 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             return true;
         }
 
-        return query.SpatialReferenceSrid.HasValue && query.SpatialReferenceSrid.Value == SpatialReference.WGS84.Wkid;
+        if (!query.SpatialReferenceSrid.HasValue)
+        {
+            return false;
+        }
+
+        return IsLikelyGeographicSrid(query.SpatialReferenceSrid.Value);
+    }
+
+    private static bool IsLikelyGeographicSrid(int srid)
+    {
+        return srid == SpatialReference.WGS84.Wkid ||
+               srid == 4269 ||
+               srid == 4267 ||
+               srid is >= 4000 and <= 4999;
     }
 
     private static string? FindDangerousPattern(string whereClause)

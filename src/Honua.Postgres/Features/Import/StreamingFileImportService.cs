@@ -4,17 +4,24 @@
 using System.Collections.Frozen;
 using System.Data;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite.IO.Esri;
+using NetTopologySuite.IO.Esri.Shapefiles.Readers;
 using Npgsql;
 using NpgsqlTypes;
 using Coordinate = NetTopologySuite.Geometries.Coordinate;
@@ -30,6 +37,7 @@ namespace Honua.Postgres.Features.Import;
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ICrsDetectionService _crsDetectionService;
     private readonly ImportLimits _limits;
     private readonly StreamingGeoJsonReader _geoJsonReader;
     private readonly IPerformanceMonitor _performanceMonitor;
@@ -38,6 +46,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
+    private const int CrsDetectionHeaderSize = 8192;
 
     /// <summary>
     /// Supported file extensions mapped to formats
@@ -49,20 +58,32 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".json"] = SupportedFileFormat.GeoJson,
             [".kml"] = SupportedFileFormat.Kml,
             [".wkt"] = SupportedFileFormat.Wkt,
-            [".shp"] = SupportedFileFormat.Shapefile,
+            [".zip"] = SupportedFileFormat.Shapefile,
             [".gpkg"] = SupportedFileFormat.GeoPackage,
             [".gpx"] = SupportedFileFormat.Gpx
         }
         .ToFrozenDictionary();
+    private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
+        {
+            ".shp", ".dbf", ".shx", ".prj", ".cpg"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly string _shapefileScratchRoot = Path.Combine(Path.GetTempPath(), "honua-shapefile");
+    private static readonly string _geoPackageScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geopackage");
+    private static readonly Regex _wktSridRegex = new(
+        @"SRID\s*=\s*(\d+)\s*;",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public StreamingFileImportService(
         IDatabaseConnectionProvider connectionProvider,
+        ICrsDetectionService crsDetectionService,
         IPerformanceMonitor performanceMonitor,
         ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
         Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _limits = limits ?? ImportLimits.Default;
@@ -143,6 +164,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var status = "failed";
         string? errorMessage = null;
         ImportResult result;
+        ShapefileScratch? shapefileScratch = null;
+        GeoPackageScratch? geoPackageScratch = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
@@ -159,14 +182,92 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 return result;
             }
 
-            // Detect CRS using streaming (doesn't load entire file)
-            var detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
-            var sourceSrid = request.SourceSrid ?? detectedSrid ?? 4326;
-
-            // Reset stream position after CRS detection
-            if (fileStream.CanSeek)
+            int? detectedSrid;
+            if (format.Value == SupportedFileFormat.GeoPackage)
             {
-                fileStream.Position = 0;
+                geoPackageScratch = await PrepareGeoPackageScratchAsync(fileStream, cancellationToken);
+                var layers = await GetGeoPackageLayersAsync(geoPackageScratch.FilePath, cancellationToken);
+                if (layers.Count == 0)
+                {
+                    errorMessage = "GeoPackage does not contain any feature layers.";
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed);
+                    return result;
+                }
+
+                var layer = layers[0];
+                detectedSrid = layer.Srid;
+
+                if (shouldDisposeStream)
+                {
+                    await fileStream.DisposeAsync();
+                    shouldDisposeStream = false;
+                }
+
+                fileStream = new FileStream(geoPackageScratch.FilePath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    BufferSize = _limits.StreamBufferSize,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
+                shouldDisposeStream = true;
+                totalBytes = fileStream.Length;
+            }
+            else if (format.Value == SupportedFileFormat.Shapefile)
+            {
+                if (!IsZipFileName(request.FileName))
+                {
+                    errorMessage = "Shapefile imports require a .zip containing .shp and .dbf files.";
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed);
+                    return result;
+                }
+
+                shapefileScratch = await PrepareShapefileScratchAsync(fileStream, request.FileName, cancellationToken);
+                detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath);
+            }
+            else
+            {
+                if (request.SourceSrid.HasValue)
+                {
+                    detectedSrid = request.SourceSrid;
+                }
+                else if (!fileStream.CanSeek)
+                {
+                    var header = await ReadHeaderAsync(fileStream, cancellationToken);
+                    detectedSrid = header == null
+                        ? null
+                        : await DetectCrsFromHeaderAsync(header, format.Value, cancellationToken);
+                    if (header != null && header.Length > 0)
+                    {
+                        fileStream = new PrefixedReadStream(header, fileStream);
+                    }
+                }
+                else
+                {
+                    // Detect CRS using streaming (doesn't load entire file)
+                    detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                }
+            }
+
+            var sourceSrid = request.SourceSrid ?? detectedSrid;
+            if (!sourceSrid.HasValue)
+            {
+                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                result = ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed);
+                return result;
             }
 
             // Report initial progress
@@ -181,10 +282,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 request,
                 fileStream,
                 format.Value,
-                sourceSrid,
+                sourceSrid.Value,
                 progress,
                 jobId,
-                cancellationToken);
+                cancellationToken,
+                shapefileScratch);
 
             if (importedCount == 0 && failedCount == 0)
             {
@@ -241,6 +343,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 await fileStream.DisposeAsync();
             }
 
+            CleanupShapefileScratch(shapefileScratch);
+            CleanupGeoPackageScratch(geoPackageScratch);
             RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
 
             if (status == "success")
@@ -271,7 +375,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         int sourceSrid,
         IProgress<ImportProgress>? progress,
         string jobId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ShapefileScratch? shapefileScratch = null)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
@@ -291,13 +396,18 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var startTime = DateTimeOffset.UtcNow;
 
         // Stream features based on format
+        if (format == SupportedFileFormat.Shapefile && shapefileScratch == null)
+        {
+            throw new InvalidOperationException("Shapefile scratch directory was not prepared.");
+        }
+
         var featureStream = format switch
         {
             SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
             SupportedFileFormat.Wkt => ReadWktStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Kml => ReadKmlStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => ReadGpxStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
         };
@@ -433,6 +543,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ? await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
             : null;
 
+        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        {
+            Transaction = transaction
+        };
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
+        var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
+        command.Parameters.Add("source_srid", NpgsqlDbType.Integer).Value = sourceSrid;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
+
         try
         {
             foreach (var feature in features)
@@ -441,15 +561,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 try
                 {
-                    await InsertFeatureAsync(
-                        connection,
-                        tableName,
-                        feature,
-                        sourceSrid,
-                        targetSrid,
-                        wkbWriter,
-                        transaction,
-                        cancellationToken);
+                    wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
+                    propertiesParameter.Value = BuildPropertiesJson(feature);
+                    await command.ExecuteNonQueryAsync(cancellationToken);
                     imported++;
                 }
                 catch (Exception)
@@ -480,93 +594,69 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     }
 
     /// <summary>
-    /// Insert a single feature into the database.
+    /// Build a JSON string of feature properties for import.
     /// </summary>
-    private async Task InsertFeatureAsync(
-        NpgsqlConnection connection,
-        string tableName,
-        IFeature feature,
-        int sourceSrid,
-        int targetSrid,
-        WKBWriter wkbWriter,
-        NpgsqlTransaction? transaction,
-        CancellationToken cancellationToken)
+    private static string BuildPropertiesJson(IFeature feature)
     {
-        var properties = new Dictionary<string, object?>();
-        if (feature.Attributes is not null)
+        if (feature.Attributes is null)
         {
-            var names = feature.Attributes.GetNames();
-            var values = feature.Attributes.GetValues();
-            properties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
+            return "{}";
         }
 
-        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        var names = feature.Attributes.GetNames();
+        if (names.Length == 0)
         {
-            Transaction = transaction
-        };
-        command.Parameters.AddWithValue("table_name", tableName);
+            return "{}";
+        }
 
-        byte[]? wkb = null;
-        if (feature.Geometry != null)
+        var values = feature.Attributes.GetValues();
+        var properties = new Dictionary<string, object?>(names.Length, StringComparer.Ordinal);
+        for (var i = 0; i < names.Length; i++)
         {
-            // Validate geometry before insertion if validation is enabled
-            if (_limits.ValidateGeometry)
-            {
-                var validationError = ValidateGeometry(feature.Geometry);
-                if (validationError != null)
-                {
-                    if (_limits.SkipInvalidGeometry)
-                    {
-                        // Skip invalid geometry but still insert the feature without geometry
-                        wkb = null;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Geometry validation failed: {validationError}");
-                    }
-                }
-                else
-                {
-                    wkb = wkbWriter.Write(feature.Geometry);
+            properties[names[i]] = values[i];
+        }
 
-                    // Validate WKB size
-                    if (wkb.Length > _limits.MaxWkbSize)
-                    {
-                        if (_limits.SkipInvalidGeometry)
-                        {
-                            wkb = null;
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException(
-                                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes)");
-                        }
-                    }
-                }
-            }
-            else
+        return JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
+    }
+
+    /// <summary>
+    /// Create WKB for a feature geometry, enforcing configured validation limits.
+    /// </summary>
+    private byte[]? CreateWkb(IFeature feature, WKBWriter wkbWriter)
+    {
+        if (feature.Geometry == null)
+        {
+            return null;
+        }
+
+        if (_limits.ValidateGeometry)
+        {
+            var validationError = ValidateGeometry(feature.Geometry);
+            if (validationError != null)
             {
-                wkb = wkbWriter.Write(feature.Geometry);
+                if (_limits.SkipInvalidGeometry)
+                {
+                    return null;
+                }
+
+                throw new InvalidOperationException($"Geometry validation failed: {validationError}");
             }
         }
 
-        var wkbParameter = new NpgsqlParameter("wkb", NpgsqlDbType.Bytea)
+        var wkb = wkbWriter.Write(feature.Geometry);
+
+        if (_limits.ValidateGeometry && wkb.Length > _limits.MaxWkbSize)
         {
-            Value = wkb ?? (object)DBNull.Value
-        };
-        command.Parameters.Add(wkbParameter);
+            if (_limits.SkipInvalidGeometry)
+            {
+                return null;
+            }
 
-        command.Parameters.AddWithValue("source_srid", sourceSrid);
-        command.Parameters.AddWithValue("target_srid", targetSrid);
+            throw new InvalidOperationException(
+                $"Geometry WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({_limits.MaxWkbSize:N0} bytes)");
+        }
 
-        var propertiesJson = JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
-        var propertiesParameter = new NpgsqlParameter("properties", NpgsqlDbType.Jsonb)
-        {
-            Value = propertiesJson
-        };
-        command.Parameters.Add(propertiesParameter);
-
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return wkb;
     }
 
     /// <summary>
@@ -707,6 +797,30 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             long? bytesRead);
     }
 
+    private static partial class ShapefileLog
+    {
+        [LoggerMessage(
+            EventId = 7404,
+            Level = LogLevel.Warning,
+            Message = "Failed to delete temporary zip file {ZipPath}")]
+        public static partial void DeleteZipFailed(ILogger logger, Exception exception, string zipPath);
+
+        [LoggerMessage(
+            EventId = 7405,
+            Level = LogLevel.Warning,
+            Message = "Failed to clean up shapefile scratch directory {ScratchDir}")]
+        public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
+    }
+
+    private static partial class GeoPackageLog
+    {
+        [LoggerMessage(
+            EventId = 7406,
+            Level = LogLevel.Warning,
+            Message = "Failed to clean up GeoPackage scratch directory {ScratchDir}")]
+        public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
+    }
+
     /// <inheritdoc/>
     public async Task<FilePreview> PreviewFileAsync(
         Stream fileStream,
@@ -720,50 +834,98 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             throw new NotSupportedException("Unsupported file format: " + Path.GetExtension(fileName));
         }
 
-        // Detect CRS using streaming
-        var detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
-
-        // Reset stream position
-        if (fileStream.CanSeek)
-            fileStream.Position = 0;
-
-        // Stream features but only collect up to the limit
-        var features = new List<IFeature>();
-        var featureStream = format.Value switch
+        ShapefileScratch? shapefileScratch = null;
+        GeoPackageScratch? geoPackageScratch = null;
+        try
         {
-            SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Wkt => ReadWktStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Kml => ReadKmlStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Gpx => ReadGpxStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
-            _ => throw new NotSupportedException($"Preview not supported for format: {format}")
-        };
+            int? detectedSrid;
+            string[] availableLayers = [];
 
-        await foreach (var feature in featureStream.WithCancellation(cancellationToken))
-        {
-            features.Add(feature);
-            if (features.Count >= _limits.MaxPreviewFeatures)
-                break;
+            if (format.Value == SupportedFileFormat.GeoPackage)
+            {
+                geoPackageScratch = await PrepareGeoPackageScratchAsync(fileStream, cancellationToken);
+                var layers = await GetGeoPackageLayersAsync(geoPackageScratch.FilePath, cancellationToken);
+                if (layers.Count == 0)
+                {
+                    throw new InvalidDataException("GeoPackage does not contain any feature layers.");
+                }
+
+                availableLayers = layers.Select(layer => layer.TableName).ToArray();
+                detectedSrid = layers[0].Srid;
+            }
+            else if (format.Value == SupportedFileFormat.Shapefile)
+            {
+                if (!IsZipFileName(fileName))
+                {
+                    throw new NotSupportedException("Shapefile preview requires a .zip containing .shp and .dbf files.");
+                }
+
+                shapefileScratch = await PrepareShapefileScratchAsync(fileStream, fileName, cancellationToken);
+                detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath);
+            }
+            else
+            {
+                if (!fileStream.CanSeek)
+                {
+                    var header = await ReadHeaderAsync(fileStream, cancellationToken);
+                    detectedSrid = header == null
+                        ? null
+                        : await DetectCrsFromHeaderAsync(header, format.Value, cancellationToken);
+                    if (header != null && header.Length > 0)
+                    {
+                        fileStream = new PrefixedReadStream(header, fileStream);
+                    }
+                }
+                else
+                {
+                    // Detect CRS using streaming
+                    detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                }
+            }
+
+            // Stream features but only collect up to the limit
+            var features = new List<IFeature>();
+            var featureStream = format.Value switch
+            {
+                SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Wkt => ReadWktStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Kml => ReadKmlStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Gpx => ReadGpxStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
+                SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
+                _ => throw new NotSupportedException($"Preview not supported for format: {format}")
+            };
+
+            await foreach (var feature in featureStream.WithCancellation(cancellationToken))
+            {
+                features.Add(feature);
+                if (features.Count >= _limits.MaxPreviewFeatures)
+                    break;
+            }
+
+            var sampleProperties = new Dictionary<string, object?>();
+            var firstFeature = features.FirstOrDefault();
+            if (firstFeature?.Attributes is not null)
+            {
+                var names = firstFeature.Attributes.GetNames();
+                var values = firstFeature.Attributes.GetValues();
+                sampleProperties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
+            }
+
+            return new FilePreview
+            {
+                Format = format.Value,
+                TotalFeatureCount = features.Count,
+                DetectedSrid = detectedSrid,
+                SampleProperties = sampleProperties,
+                AvailableLayers = availableLayers
+            };
         }
-
-        var sampleProperties = new Dictionary<string, object?>();
-        var firstFeature = features.FirstOrDefault();
-        if (firstFeature?.Attributes is not null)
+        finally
         {
-            var names = firstFeature.Attributes.GetNames();
-            var values = firstFeature.Attributes.GetValues();
-            sampleProperties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
+            CleanupShapefileScratch(shapefileScratch);
+            CleanupGeoPackageScratch(geoPackageScratch);
         }
-
-        return new FilePreview
-        {
-            Format = format.Value,
-            TotalFeatureCount = features.Count,
-            DetectedSrid = detectedSrid,
-            SampleProperties = sampleProperties,
-            AvailableLayers = []
-        };
     }
 
     /// <summary>
@@ -778,7 +940,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             return format switch
             {
-                SupportedFileFormat.GeoJson => await _geoJsonReader.DetectCrsAsync(stream, cancellationToken),
+                SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
+                SupportedFileFormat.Kml => 4326,
+                SupportedFileFormat.Gpx => 4326,
+                SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
+                SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
                 _ => null
             };
         }
@@ -790,6 +956,492 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             if (stream.CanSeek)
                 stream.Position = 0;
+        }
+    }
+
+    private async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var detected = await _geoJsonReader.DetectCrsAsync(stream, cancellationToken);
+        return detected ?? 4326;
+    }
+
+    private static async Task<byte[]?> ReadHeaderAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[CrsDetectionHeaderSize];
+        var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+        if (bytesRead <= 0)
+        {
+            return null;
+        }
+
+        if (bytesRead == buffer.Length)
+        {
+            return buffer;
+        }
+
+        Array.Resize(ref buffer, bytesRead);
+        return buffer;
+    }
+
+    private async Task<int?> DetectCrsFromHeaderAsync(
+        byte[] header,
+        SupportedFileFormat format,
+        CancellationToken cancellationToken)
+    {
+        await using var headerStream = new MemoryStream(header, writable: false);
+
+        return format switch
+        {
+            SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
+            SupportedFileFormat.Kml => 4326,
+            SupportedFileFormat.Gpx => 4326,
+            SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
+            _ => null
+        };
+    }
+
+    private async Task<int?> DetectWktSridAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[CrsDetectionHeaderSize];
+        var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+        if (bytesRead <= 0)
+        {
+            return null;
+        }
+
+        var header = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        var match = _wktSridRegex.Match(header);
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var srid))
+        {
+            return null;
+        }
+
+        return srid;
+    }
+
+    private async Task<int?> DetectGeoPackageSridAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        GeoPackageScratch? scratch = null;
+        try
+        {
+            scratch = await PrepareGeoPackageScratchAsync(stream, cancellationToken);
+            var layers = await GetGeoPackageLayersAsync(scratch.FilePath, cancellationToken);
+            return layers.Count > 0 ? layers[0].Srid : null;
+        }
+        finally
+        {
+            CleanupGeoPackageScratch(scratch);
+        }
+    }
+
+    private sealed record ShapefileScratch(string DirectoryPath, string ShpPath);
+
+    private sealed record GeoPackageScratch(string DirectoryPath, string FilePath);
+
+    private sealed record GeoPackageLayerInfo(string TableName, string GeometryColumn, int? Srid);
+
+    private sealed class PrefixedReadStream : Stream
+    {
+        private readonly ReadOnlyMemory<byte> _prefix;
+        private readonly Stream _inner;
+        private int _prefixOffset;
+
+        public PrefixedReadStream(ReadOnlyMemory<byte> prefix, Stream inner)
+        {
+            _prefix = prefix;
+            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (count == 0)
+            {
+                return 0;
+            }
+
+            var bytesRead = ReadPrefix(buffer.AsSpan(offset, count));
+            if (bytesRead < count)
+            {
+                bytesRead += _inner.Read(buffer, offset + bytesRead, count - bytesRead);
+            }
+
+            return bytesRead;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (buffer.Length == 0)
+            {
+                return 0;
+            }
+
+            var bytesRead = ReadPrefix(buffer);
+            if (bytesRead < buffer.Length)
+            {
+                bytesRead += _inner.Read(buffer[bytesRead..]);
+            }
+
+            return bytesRead;
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var bytesRead = ReadPrefix(buffer.AsSpan(offset, count));
+            if (bytesRead < count)
+            {
+                bytesRead += await _inner.ReadAsync(buffer.AsMemory(offset + bytesRead, count - bytesRead), cancellationToken);
+            }
+
+            return bytesRead;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var bytesRead = ReadPrefix(buffer.Span);
+            if (bytesRead < buffer.Length)
+            {
+                bytesRead += await _inner.ReadAsync(buffer[bytesRead..], cancellationToken);
+            }
+
+            return bytesRead;
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(ReadOnlySpan<byte> buffer) => throw new NotSupportedException();
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        private int ReadPrefix(Span<byte> buffer)
+        {
+            var remaining = _prefix.Length - _prefixOffset;
+            if (remaining <= 0)
+            {
+                return 0;
+            }
+
+            var toCopy = Math.Min(buffer.Length, remaining);
+            _prefix.Span.Slice(_prefixOffset, toCopy).CopyTo(buffer[..toCopy]);
+            _prefixOffset += toCopy;
+            return toCopy;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await _inner.DisposeAsync();
+            await base.DisposeAsync();
+        }
+    }
+
+    private sealed record ShapefileEntries(
+        string BaseName,
+        ZipArchiveEntry ShpEntry,
+        ZipArchiveEntry DbfEntry,
+        ZipArchiveEntry? ShxEntry,
+        ZipArchiveEntry? PrjEntry,
+        ZipArchiveEntry? CpgEntry);
+
+    private sealed class ShapefileEntryGroup
+    {
+        public ShapefileEntryGroup(string baseName)
+        {
+            BaseName = baseName;
+        }
+
+        public string BaseName { get; }
+        public ZipArchiveEntry? Shp { get; set; }
+        public ZipArchiveEntry? Dbf { get; set; }
+        public ZipArchiveEntry? Shx { get; set; }
+        public ZipArchiveEntry? Prj { get; set; }
+        public ZipArchiveEntry? Cpg { get; set; }
+    }
+
+    private static bool IsZipFileName(string fileName)
+        => string.Equals(Path.GetExtension(fileName), ".zip", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<ShapefileScratch> PrepareShapefileScratchAsync(
+        Stream stream,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        if (!IsZipFileName(fileName))
+        {
+            throw new NotSupportedException("Shapefile imports require a .zip containing .shp and .dbf files.");
+        }
+
+        var scratchDir = Path.Combine(_shapefileScratchRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratchDir);
+
+        string? zipPath = null;
+        Stream? zipStream = null;
+        var leaveOpen = false;
+
+        try
+        {
+            if (stream.CanSeek)
+            {
+                if (stream.Position != 0)
+                {
+                    stream.Position = 0;
+                }
+
+                zipStream = stream;
+                leaveOpen = true;
+            }
+            else
+            {
+                zipPath = Path.Combine(scratchDir, "upload.zip");
+                await using (var zipFileStream = File.Create(zipPath))
+                {
+                    await stream.CopyToAsync(zipFileStream, cancellationToken);
+                }
+
+                zipStream = File.OpenRead(zipPath);
+            }
+
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
+            var entries = SelectShapefileEntries(archive)
+                ?? throw new InvalidDataException("Zip does not contain required .shp and .dbf files.");
+
+            var shpPath = Path.Combine(scratchDir, entries.BaseName + ".shp");
+            var dbfPath = Path.Combine(scratchDir, entries.BaseName + ".dbf");
+
+            await ExtractEntryAsync(entries.ShpEntry, shpPath, cancellationToken);
+            await ExtractEntryAsync(entries.DbfEntry, dbfPath, cancellationToken);
+
+            if (entries.ShxEntry != null)
+            {
+                await ExtractEntryAsync(entries.ShxEntry, Path.Combine(scratchDir, entries.BaseName + ".shx"), cancellationToken);
+            }
+
+            if (entries.PrjEntry != null)
+            {
+                await ExtractEntryAsync(entries.PrjEntry, Path.Combine(scratchDir, entries.BaseName + ".prj"), cancellationToken);
+            }
+
+            if (entries.CpgEntry != null)
+            {
+                await ExtractEntryAsync(entries.CpgEntry, Path.Combine(scratchDir, entries.BaseName + ".cpg"), cancellationToken);
+            }
+
+            return new ShapefileScratch(scratchDir, shpPath);
+        }
+        catch
+        {
+            CleanupShapefileScratchDirectory(scratchDir);
+            throw;
+        }
+        finally
+        {
+            if (zipStream != null && !leaveOpen)
+            {
+                await zipStream.DisposeAsync();
+            }
+
+            if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
+            {
+                try
+                {
+                    File.Delete(zipPath);
+                }
+                catch (Exception ex)
+                {
+                    ShapefileLog.DeleteZipFailed(_logger, ex, zipPath);
+                }
+            }
+        }
+    }
+
+    private async Task<GeoPackageScratch> PrepareGeoPackageScratchAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        var scratchDir = Path.Combine(_geoPackageScratchRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratchDir);
+
+        var filePath = Path.Combine(scratchDir, "upload.gpkg");
+
+        try
+        {
+            if (stream.CanSeek && stream.Position != 0)
+            {
+                stream.Position = 0;
+            }
+
+            await using var outputStream = new FileStream(filePath, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                BufferSize = _limits.StreamBufferSize,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+            await stream.CopyToAsync(outputStream, cancellationToken);
+
+            return new GeoPackageScratch(scratchDir, filePath);
+        }
+        catch
+        {
+            CleanupGeoPackageScratchDirectory(scratchDir);
+            throw;
+        }
+    }
+
+    private static ShapefileEntries? SelectShapefileEntries(ZipArchive archive)
+    {
+        var groups = new Dictionary<string, ShapefileEntryGroup>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Name))
+            {
+                continue;
+            }
+
+            var extension = Path.GetExtension(entry.Name);
+            if (string.IsNullOrWhiteSpace(extension) || !_shapefileComponentExtensions.Contains(extension))
+            {
+                continue;
+            }
+
+            var baseName = Path.GetFileNameWithoutExtension(entry.Name);
+            if (string.IsNullOrWhiteSpace(baseName))
+            {
+                continue;
+            }
+
+            if (!groups.TryGetValue(baseName, out var group))
+            {
+                group = new ShapefileEntryGroup(baseName);
+                groups.Add(baseName, group);
+            }
+
+            switch (extension.ToLowerInvariant())
+            {
+                case ".shp":
+                    group.Shp = entry;
+                    break;
+                case ".dbf":
+                    group.Dbf = entry;
+                    break;
+                case ".shx":
+                    group.Shx = entry;
+                    break;
+                case ".prj":
+                    group.Prj = entry;
+                    break;
+                case ".cpg":
+                    group.Cpg = entry;
+                    break;
+            }
+        }
+
+        foreach (var group in groups.Values)
+        {
+            if (group.Shp != null && group.Dbf != null)
+            {
+                return new ShapefileEntries(group.BaseName, group.Shp, group.Dbf, group.Shx, group.Prj, group.Cpg);
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task ExtractEntryAsync(
+        ZipArchiveEntry entry,
+        string destinationPath,
+        CancellationToken cancellationToken)
+    {
+        await using var entryStream = entry.Open();
+        await using var outputStream = File.Create(destinationPath);
+        await entryStream.CopyToAsync(outputStream, cancellationToken);
+    }
+
+    private void CleanupShapefileScratch(ShapefileScratch? scratch)
+    {
+        if (scratch == null)
+        {
+            return;
+        }
+
+        CleanupShapefileScratchDirectory(scratch.DirectoryPath);
+    }
+
+    private void CleanupShapefileScratchDirectory(string scratchDir)
+    {
+        if (string.IsNullOrWhiteSpace(scratchDir))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(scratchDir))
+            {
+                Directory.Delete(scratchDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShapefileLog.CleanupScratchFailed(_logger, ex, scratchDir);
+        }
+    }
+
+    private void CleanupGeoPackageScratch(GeoPackageScratch? scratch)
+    {
+        if (scratch == null)
+        {
+            return;
+        }
+
+        CleanupGeoPackageScratchDirectory(scratch.DirectoryPath);
+    }
+
+    private void CleanupGeoPackageScratchDirectory(string scratchDir)
+    {
+        if (string.IsNullOrWhiteSpace(scratchDir))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(scratchDir))
+            {
+                Directory.Delete(scratchDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            GeoPackageLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
 
@@ -923,8 +1575,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 var coords = await reader.ReadElementContentAsStringAsync();
                 var parts = coords.Trim().Split(',');
                 if (parts.Length >= 2 &&
-                    double.TryParse(parts[0], out var lon) &&
-                    double.TryParse(parts[1], out var lat))
+                    double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
+                    double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
                 {
                     return factory.CreatePoint(new Coordinate(lon, lat));
                 }
@@ -1027,8 +1679,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             var components = part.Split(',');
             if (components.Length >= 2 &&
-                double.TryParse(components[0], out var lon) &&
-                double.TryParse(components[1], out var lat))
+                double.TryParse(components[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
+                double.TryParse(components[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
             {
                 coords.Add(new Coordinate(lon, lat));
             }
@@ -1089,24 +1741,33 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var lon = reader.GetAttribute("lon");
 
         if (lat == null || lon == null ||
-            !double.TryParse(lat, out var latitude) ||
-            !double.TryParse(lon, out var longitude))
+            !double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) ||
+            !double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
             return null;
 
         var attributes = new AttributesTable();
         var geometry = factory.CreatePoint(new Coordinate(longitude, latitude));
 
-        while (await reader.ReadAsync())
+        using (var subtree = reader.ReadSubtree())
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "wpt")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
+            await subtree.ReadAsync();
+            while (await subtree.ReadAsync())
             {
-                var name = reader.LocalName;
-                var value = await reader.ReadElementContentAsStringAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (subtree.NodeType != XmlNodeType.Element)
+                {
+                    continue;
+                }
+
+                var name = subtree.LocalName;
+                if (subtree.IsEmptyElement)
+                {
+                    attributes.Add(name, string.Empty);
+                    continue;
+                }
+
+                var value = await subtree.ReadElementContentAsStringAsync();
                 attributes.Add(name, value);
             }
         }
@@ -1140,8 +1801,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     var lat = reader.GetAttribute("lat");
                     var lon = reader.GetAttribute("lon");
                     if (lat != null && lon != null &&
-                        double.TryParse(lat, out var latitude) &&
-                        double.TryParse(lon, out var longitude))
+                        double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
+                        double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
                     {
                         allCoordinates.Add(new Coordinate(longitude, latitude));
                     }
@@ -1184,8 +1845,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     var lat = reader.GetAttribute("lat");
                     var lon = reader.GetAttribute("lon");
                     if (lat != null && lon != null &&
-                        double.TryParse(lat, out var latitude) &&
-                        double.TryParse(lon, out var longitude))
+                        double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
+                        double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
                     {
                         coordinates.Add(new Coordinate(longitude, latitude));
                     }
@@ -1203,54 +1864,185 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     }
 
     /// <summary>
-    /// Stream Shapefile features (placeholder - actual implementation would use streaming shapefile reader).
+    /// Stream Shapefile features from extracted components on disk.
     /// </summary>
     private async IAsyncEnumerable<IFeature> ReadShapefileStreamingAsync(
-        Stream stream,
+        string shapefilePath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // Shapefile streaming requires more complex implementation with .shx and .dbf files
-        // This is a placeholder that yields a sample feature
-        await Task.Yield();
-
-        var attributes = new AttributesTable
+        var options = new ShapefileReaderOptions
         {
-            ["source"] = "Shapefile import",
-            ["note"] = "Streaming implementation"
+            GeometryBuilderMode = GeometryBuilderMode.QuickFixInvalidShapes
         };
-        var point = new GeometryFactory().CreatePoint(new Coordinate(-122.5, 37.5));
-        point.SRID = 4326;
 
-        yield return new Feature(point, attributes);
+        using var reader = Shapefile.OpenRead(shapefilePath, options);
+        var recordIndex = 0;
+
+        while (reader.Read(out var deleted, out var feature))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (deleted || feature == null)
+            {
+                continue;
+            }
+
+            yield return feature;
+
+            if (++recordIndex % 256 == 0)
+            {
+                await Task.Yield();
+            }
+        }
     }
 
     /// <summary>
-    /// Stream GeoPackage features (placeholder - actual implementation would use SQLite streaming).
+    /// Stream GeoPackage features from a stream by using a temporary SQLite file.
     /// </summary>
     private async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // GeoPackage streaming requires SQLite access
-        // This is a placeholder that yields a sample feature
-        await Task.Yield();
+        GeoPackageScratch? scratch = null;
+        var filePath = (stream as FileStream)?.Name;
+        var ownsScratch = false;
 
-        var attributes = new AttributesTable
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
         {
-            ["source"] = "GeoPackage import",
-            ["note"] = "Streaming implementation"
+            scratch = await PrepareGeoPackageScratchAsync(stream, cancellationToken);
+            filePath = scratch.FilePath;
+            ownsScratch = true;
+        }
+
+        try
+        {
+            await foreach (var feature in ReadGeoPackageStreamingAsync(filePath, cancellationToken))
+            {
+                yield return feature;
+            }
+        }
+        finally
+        {
+            if (ownsScratch)
+            {
+                CleanupGeoPackageScratch(scratch);
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
+        string filePath,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var layers = await GetGeoPackageLayersAsync(filePath, cancellationToken);
+        if (layers.Count == 0)
+        {
+            throw new InvalidDataException("GeoPackage does not contain any feature layers.");
+        }
+
+        var layer = layers[0];
+        await foreach (var feature in ReadGeoPackageLayerAsync(filePath, layer, cancellationToken))
+        {
+            yield return feature;
+        }
+    }
+
+    private async IAsyncEnumerable<IFeature> ReadGeoPackageLayerAsync(
+        string filePath,
+        GeoPackageLayerInfo layer,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await using var connection = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly;");
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {QuoteIdentifier(layer.TableName)}";
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var geometryOrdinal = reader.GetOrdinal(layer.GeometryColumn);
+        var geoReader = new GeoPackageGeoReader
+        {
+            HandleSRID = true,
+            RepairRings = true
         };
-        var polygon = new GeometryFactory().CreatePolygon(new[]
-        {
-            new Coordinate(-122.6, 37.4),
-            new Coordinate(-122.4, 37.4),
-            new Coordinate(-122.4, 37.6),
-            new Coordinate(-122.6, 37.6),
-            new Coordinate(-122.6, 37.4)
-        });
-        polygon.SRID = 4326;
 
-        yield return new Feature(polygon, attributes);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            NtsGeometry? geometry = null;
+            if (!reader.IsDBNull(geometryOrdinal))
+            {
+                var blob = reader.GetFieldValue<byte[]>(geometryOrdinal);
+                geometry = geoReader.Read(blob);
+                if (geometry != null && layer.Srid.HasValue && geometry.SRID <= 0)
+                {
+                    geometry.SRID = layer.Srid.Value;
+                }
+            }
+
+            var attributes = new AttributesTable();
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                if (i == geometryOrdinal)
+                {
+                    continue;
+                }
+
+                var name = reader.GetName(i);
+                var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                attributes.Add(name, value);
+            }
+
+            yield return new Feature(geometry, attributes);
+        }
+    }
+
+    private static async Task<IReadOnlyList<GeoPackageLayerInfo>> GetGeoPackageLayersAsync(
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly;");
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = """
+            SELECT c.table_name, g.column_name, g.srs_id
+            FROM gpkg_contents c
+            JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
+            WHERE c.data_type = 'features'
+            ORDER BY c.table_name
+            """;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var layers = new List<GeoPackageLayerInfo>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var tableName = reader.GetString(0);
+            var geometryColumn = reader.GetString(1);
+            var srid = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
+            layers.Add(new GeoPackageLayerInfo(tableName, geometryColumn, NormalizeGeoPackageSrid(srid)));
+        }
+
+        return layers;
+    }
+
+    private static int? NormalizeGeoPackageSrid(int? srid)
+    {
+        if (!srid.HasValue)
+        {
+            return null;
+        }
+
+        return srid.Value <= 0 ? null : srid.Value;
+    }
+
+    private static string QuoteIdentifier(string identifier)
+    {
+        return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
 
     #endregion

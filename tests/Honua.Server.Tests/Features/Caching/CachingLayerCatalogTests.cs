@@ -400,7 +400,6 @@ public sealed class CachingLayerCatalogTests : IDisposable
                 $"Test service {name}",
                 new[] { CreateTestLayer(1) },
                 SpatialReference.WGS84,
-                1000,
                 _defaultFormats,
                 _defaultCapabilities);
         }

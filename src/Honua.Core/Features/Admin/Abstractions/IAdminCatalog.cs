@@ -19,16 +19,16 @@ public interface IAdminCatalog
     /// <param name="name">Service name</param>
     /// <param name="description">Service description</param>
     /// <param name="spatialReference">Default spatial reference</param>
-    /// <param name="maxRecordCount">Maximum records per query</param>
     /// <param name="metadata">Optional catalog metadata</param>
+    /// <param name="connectionId">Optional secure connection identifier for this service</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Created service definition</returns>
     Task<ServiceDefinition> CreateServiceAsync(
         string name,
         string description,
         SpatialReference spatialReference,
-        int maxRecordCount = 1000,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -36,15 +36,15 @@ public interface IAdminCatalog
     /// </summary>
     /// <param name="name">Service name (identifier)</param>
     /// <param name="description">New description</param>
-    /// <param name="maxRecordCount">New max record count</param>
     /// <param name="metadata">Optional catalog metadata</param>
+    /// <param name="connectionId">Optional secure connection identifier for this service</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated service definition, null if not found</returns>
     Task<ServiceDefinition?> UpdateServiceAsync(
         string name,
         string? description = null,
-        int? maxRecordCount = null,
         CatalogMetadata? metadata = null,
+        Guid? connectionId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

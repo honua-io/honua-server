@@ -56,26 +56,19 @@ internal static class ServiceCollectionExtensions
 
         services.AddScoped<IFeatureDataAccess>(provider =>
         {
-            var connectionProvider = provider.GetRequiredService<IDatabaseConnectionProvider>();
-            var geometryProcessor = provider.GetRequiredService<IGeometryProcessor>();
-            var cacheManager = provider.GetRequiredService<IFeatureCacheManager>();
-            var dictionaryPool = provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>();
-            var statementCache = provider.GetService<PreparedStatementCache>();
-            var logger = provider.GetRequiredService<ILogger<FeatureDataAccess>>();
-            var performanceOptions = provider.GetService<IOptions<PerformanceMonitoringOptions>>();
-            var limitsOptions = provider.GetService<IOptions<LimitsOptions>>();
-            var performanceMonitor = provider.GetService<IPerformanceMonitor>();
-            return new FeatureDataAccess(
-                connectionProvider,
-                geometryProcessor,
-                cacheManager,
-                dictionaryPool,
-                statementCache,
-                logger,
-                performanceOptions,
-                limitsOptions,
-                performanceMonitor,
+            var dependencies = new FeatureDataAccessDependencies(
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IGeometryProcessor>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
+                provider.GetService<PreparedStatementCache>(),
+                provider.GetRequiredService<ILogger<FeatureDataAccess>>(),
+                provider.GetService<IOptions<PerformanceMonitoringOptions>>(),
+                provider.GetService<IOptions<LimitsOptions>>(),
+                provider.GetService<IPerformanceMonitor>(),
                 schemaName);
+
+            return new FeatureDataAccess(dependencies);
         });
 
         // Register the main feature store implementation

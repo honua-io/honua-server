@@ -38,6 +38,16 @@ public static class HonuaTelemetry
     /// </summary>
     public static readonly Meter Meter = new(ServiceName, ServiceVersion);
 
+    private static volatile bool _includeExceptionStackTraces = true;
+
+    /// <summary>
+    /// Configures whether exception stack traces are recorded on spans.
+    /// </summary>
+    public static void ConfigureExceptionRecording(bool includeStackTraces)
+    {
+        _includeExceptionStackTraces = includeStackTraces;
+    }
+
     /// <summary>
     /// Well-known activity names for consistent tracing.
     /// </summary>
@@ -96,6 +106,9 @@ public static class HonuaTelemetry
 
         /// <summary>The layer identifier.</summary>
         public const string LayerId = "honua.layer.id";
+
+        /// <summary>The collection identifier (OGC APIs).</summary>
+        public const string CollectionId = "honua.collection.id";
 
         /// <summary>The operation type (query, edit, delete, etc.).</summary>
         public const string Operation = "honua.operation";
@@ -165,6 +178,9 @@ public static class HonuaTelemetry
 
         /// <summary>OGC API Features.</summary>
         public const string OgcFeatures = "OGC-Features";
+
+        /// <summary>OGC API Tiles.</summary>
+        public const string OgcTiles = "OGC-Tiles";
 
         /// <summary>OData v4 protocol.</summary>
         public const string OData = "OData";
@@ -306,12 +322,18 @@ public static class HonuaTelemetry
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity.SetTag(Tags.Error, true);
         activity.SetTag(Tags.ErrorMessage, exception.Message);
-        activity.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+        var tags = new ActivityTagsCollection
         {
             { "exception.type", exception.GetType().FullName },
-            { "exception.message", exception.Message },
-            { "exception.stacktrace", exception.StackTrace }
-        }));
+            { "exception.message", exception.Message }
+        };
+
+        if (_includeExceptionStackTraces && exception.StackTrace != null)
+        {
+            tags.Add("exception.stacktrace", exception.StackTrace);
+        }
+
+        activity.AddEvent(new ActivityEvent("exception", tags: tags));
     }
 
     /// <summary>

@@ -481,6 +481,26 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Get the test secure connection ID created by the fixture.
+    /// </summary>
+    public async Task<Guid?> GetTestSecureConnectionIdAsync()
+    {
+        if (_serviceScope is null)
+        {
+            return null;
+        }
+
+        var registry = _serviceScope.ServiceProvider.GetService<ISecureConnectionRegistry>();
+        if (registry == null)
+        {
+            return null;
+        }
+
+        var connection = await registry.GetConnectionByNameAsync(TestSecureConnectionName);
+        return connection?.ConnectionId;
+    }
+
+    /// <summary>
     /// Create an isolated schema for this test.
     /// Schema is automatically cleaned up on dispose.
     /// </summary>

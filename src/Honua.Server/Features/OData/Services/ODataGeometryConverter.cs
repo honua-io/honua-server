@@ -1,10 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers;
-using System.Globalization;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -34,10 +30,7 @@ internal static class ODataGeometryConverter
             return null;
         }
 
-        if (axisOrder == AxisOrder.NorthEast)
-        {
-            geoJson = SwapGeoJsonAxisOrder(geoJson);
-        }
+        _ = axisOrder; // OData uses GeoJSON coordinate order regardless of CRS axis order.
 
         using var document = JsonDocument.Parse(geoJson);
         var root = document.RootElement;
@@ -97,12 +90,7 @@ internal static class ODataGeometryConverter
         }
 
         var srid = crsDefinition?.Srid ?? defaultSrid;
-        var axisOrder = crsDefinition?.AxisOrder ?? AxisOrder.EastNorth;
         var geoJson = BuildGeoJson(geometry);
-        if (axisOrder == AxisOrder.NorthEast)
-        {
-            geoJson = SwapGeoJsonAxisOrder(geoJson);
-        }
 
         try
         {
@@ -155,89 +143,5 @@ internal static class ODataGeometryConverter
 
         public static GeometryConversionResult Success(byte[]? wkb) => new() { IsSuccess = true, Wkb = wkb };
         public static GeometryConversionResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
-    }
-
-    private static string SwapGeoJsonAxisOrder(string geoJson)
-    {
-        using var document = JsonDocument.Parse(geoJson);
-        var buffer = new ArrayBufferWriter<byte>();
-        using var writer = new Utf8JsonWriter(buffer);
-        WriteSwappedElement(document.RootElement, writer);
-        writer.Flush();
-        return Encoding.UTF8.GetString(buffer.WrittenSpan);
-    }
-
-    private static void WriteSwappedElement(JsonElement element, Utf8JsonWriter writer)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                foreach (var property in element.EnumerateObject())
-                {
-                    writer.WritePropertyName(property.Name);
-                    WriteSwappedElement(property.Value, writer);
-                }
-                writer.WriteEndObject();
-                return;
-            case JsonValueKind.Array:
-                if (IsCoordinateArray(element))
-                {
-                    WriteSwappedCoordinateArray(element, writer);
-                    return;
-                }
-
-                writer.WriteStartArray();
-                foreach (var item in element.EnumerateArray())
-                {
-                    WriteSwappedElement(item, writer);
-                }
-                writer.WriteEndArray();
-                return;
-            default:
-                element.WriteTo(writer);
-                return;
-        }
-    }
-
-    private static bool IsCoordinateArray(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Array)
-        {
-            return false;
-        }
-
-        if (element.GetArrayLength() < 2)
-        {
-            return false;
-        }
-
-        var first = element[0];
-        var second = element[1];
-        return first.ValueKind == JsonValueKind.Number &&
-               second.ValueKind == JsonValueKind.Number;
-    }
-
-    private static void WriteSwappedCoordinateArray(JsonElement element, Utf8JsonWriter writer)
-    {
-        var items = element.EnumerateArray().ToArray();
-        writer.WriteStartArray();
-        if (items.Length >= 2)
-        {
-            items[1].WriteTo(writer);
-            items[0].WriteTo(writer);
-            for (var i = 2; i < items.Length; i++)
-            {
-                items[i].WriteTo(writer);
-            }
-        }
-        else
-        {
-            foreach (var item in items)
-            {
-                item.WriteTo(writer);
-            }
-        }
-        writer.WriteEndArray();
     }
 }

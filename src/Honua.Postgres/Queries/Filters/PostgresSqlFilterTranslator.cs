@@ -210,8 +210,13 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateSpatialDistance(SpatialDistancePredicate spatial, LayerDefinition layer)
     {
-        var left = TranslateGeometryExpression(spatial.Left, layer);
-        var right = TranslateGeometryExpression(spatial.Right, layer);
+        var useGeography = IsGeographicLayer(layer);
+        var left = useGeography
+            ? TranslateGeographyExpression(spatial.Left, layer)
+            : TranslateGeometryExpression(spatial.Left, layer);
+        var right = useGeography
+            ? TranslateGeographyExpression(spatial.Right, layer)
+            : TranslateGeometryExpression(spatial.Right, layer);
         var distance = TranslateExpression(spatial.Distance, layer);
 
         return spatial.Operator switch
@@ -221,6 +226,22 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             _ => throw new NotSupportedException($"Spatial operator {spatial.Operator}")
         };
     }
+
+    private static bool IsGeographicLayer(LayerDefinition layer)
+    {
+        if (layer.SpatialReference.IsGeographic)
+        {
+            return true;
+        }
+
+        return IsLikelyGeographicSrid(layer.SpatialReference.Wkid);
+    }
+
+    private static bool IsLikelyGeographicSrid(int srid)
+        => srid == SpatialReference.WGS84.Wkid ||
+           srid == 4269 ||
+           srid == 4267 ||
+           srid is >= 4000 and <= 4999;
 
     private string TranslateGeometryExpression(FilterExpression expression, LayerDefinition layer)
     {

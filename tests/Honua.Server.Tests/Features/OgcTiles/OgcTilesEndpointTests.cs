@@ -4,7 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Honua.Core.Features.Tiles;
+using Honua.Core.Configuration;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 using Honua.TestKit;
@@ -210,9 +210,9 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
         tileset.Links.Should().Contain(l => l.Rel == "item");
 
-        var tileOptions = _fixture.Services.GetRequiredService<IOptions<TileOptions>>().Value;
-        var minZoom = Math.Max(0, tileOptions.MinZoom);
-        var maxZoom = Math.Max(minZoom, tileOptions.MaxZoom);
+        var tileLimits = _fixture.Services.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        var minZoom = Math.Max(0, tileLimits.MinTileZoom);
+        var maxZoom = Math.Max(minZoom, tileLimits.MaxTileZoom);
         tileset.TileMatrixSetLimits.Should().NotBeNull();
         tileset.TileMatrixSetLimits!.Value.Should().HaveCount(maxZoom - minZoom + 1);
     }

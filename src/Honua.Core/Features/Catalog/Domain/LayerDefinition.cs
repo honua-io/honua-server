@@ -84,7 +84,7 @@ public record LayerDefinition(
     /// </summary>
     public FieldDefinition? PrimaryKeyField => Fields.FirstOrDefault(f =>
         f.Name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
-        f.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+        f.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
         f.Name.Equals("fid", StringComparison.OrdinalIgnoreCase)) ??
         Fields.FirstOrDefault(f => f.Type is FieldType.Integer or FieldType.BigInteger);
 
@@ -125,7 +125,7 @@ public record LayerDefinition(
             errors.Add("Layer has geometry field but geometry type is None");
 
         if (PrimaryKeyField == null)
-            errors.Add("Layer must have a primary key field (integer field named 'id', 'objectid', or 'fid')");
+            errors.Add($"Layer must have a primary key field (integer field named 'id', '{FieldNames.ObjectId}', or 'fid')");
 
         // Validate each field
         foreach (var field in Fields)
@@ -161,7 +161,7 @@ public record LayerDefinition(
         var srs = spatialReference ?? SpatialReference.WGS84;
         var fields = new List<FieldDefinition>
         {
-            new("objectid", FieldType.Integer, Nullable: false, Description: "Unique object identifier")
+            new(FieldNames.ObjectId, FieldType.Integer, Nullable: false, Description: "Unique object identifier")
         };
 
         if (geometryType != GeometryType.None)

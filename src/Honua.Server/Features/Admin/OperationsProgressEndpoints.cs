@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -18,9 +19,12 @@ internal static class OperationsProgressEndpoints
     /// </summary>
     public static void MapOperationsProgressEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/v1/admin/operations")
-            .WithTags("Operations Progress")
-            .WithDescription("Unified operation progress tracking");
+        var group = app.MapGroup("/api/v{version:apiVersion}/admin/operations")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Admin", "Operations Progress")
+            .WithDescription("Unified operation progress tracking")
+            .RequireAdminAuthorization();
 
         // Get operation status by ID
         _ = group.Map("/{operationId}", HandleGetOperationStatus)

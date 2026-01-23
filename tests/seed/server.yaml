@@ -6,11 +6,11 @@ sql:
           service_name VARCHAR(64) PRIMARY KEY,
           description TEXT NOT NULL DEFAULT '',
           srid INT NOT NULL DEFAULT 4326,
-          max_record_count INT NOT NULL DEFAULT 1000,
           supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
           capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
           service_extent GEOMETRY,
           metadata JSONB,
+          connection_id UUID,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -28,6 +28,9 @@ sql:
           max_scale DOUBLE PRECISION,
           default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
           metadata JSONB,
+          maplibre_style JSONB,
+          geoservices_drawing_info JSONB,
+          style_version INT DEFAULT 1,
           created_at TIMESTAMPTZ DEFAULT NOW()
       );
   - |
@@ -207,7 +210,6 @@ sql:
           service_name,
           description,
           srid,
-          max_record_count,
           supported_formats,
           capabilities,
           service_extent,
@@ -217,7 +219,6 @@ sql:
           'test',
           'Test service for integration tests',
           4326,
-          1000,
           ARRAY['JSON', 'GeoJSON'],
           ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-180, -90, 180, 90, 4326),
@@ -226,7 +227,6 @@ sql:
       ON CONFLICT (service_name) DO UPDATE SET
           description = EXCLUDED.description,
           srid = EXCLUDED.srid,
-          max_record_count = EXCLUDED.max_record_count,
           supported_formats = EXCLUDED.supported_formats,
           capabilities = EXCLUDED.capabilities,
           service_extent = EXCLUDED.service_extent,

@@ -8,7 +8,6 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Core.Features.Tiles;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore;
@@ -173,24 +172,18 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken);
     }
 
-    public async Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query = null, CancellationToken cancellationToken = default)
+    public async Task<byte[]?> GetMvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        FeatureQuery? query,
+        Core.Features.Tiles.TileOptions tileOptions,
+        Core.Configuration.TileLimits tileLimits,
+        CancellationToken cancellationToken = default)
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var tileQuery = _queryBuilder.BuildMvtTileQuery(
-            layerId,
-            x,
-            y,
-            z,
-            query,
-            new TileOptions(),
-            geometryStorageType: geometryStorageType);
-        return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
-    }
-
-    public async Task<byte[]?> GetMvtTileAsync(int layerId, int x, int y, int z, FeatureQuery? query, Core.Features.Tiles.TileOptions tileOptions, CancellationToken cancellationToken = default)
-    {
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, geometryStorageType);
+        var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
     }
 

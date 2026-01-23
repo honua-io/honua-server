@@ -59,6 +59,7 @@ public static partial class Extensions
         var tracingOptions = new TracingOptions();
         builder.Configuration.GetSection(TracingOptions.SectionName).Bind(tracingOptions);
         builder.Services.Configure<TracingOptions>(builder.Configuration.GetSection(TracingOptions.SectionName));
+        HonuaTelemetry.ConfigureExceptionRecording(tracingOptions.RecordExceptionStackTraces);
 
         var otlpEndpoint = ResolveOtlpEndpoint(builder.Configuration, tracingOptions);
         var otlpHeaders = ResolveOtlpHeaders(builder.Configuration, tracingOptions);

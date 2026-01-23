@@ -18,6 +18,9 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
+# Install localstack AWS CLI wrapper for emulator tests
+RUN python3 -m pip install --no-cache-dir awscli-local
+
 # Install development tools
 RUN curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && rm get-docker.sh
 

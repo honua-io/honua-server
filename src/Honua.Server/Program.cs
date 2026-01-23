@@ -25,6 +25,7 @@ using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -177,10 +178,12 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
+builder.Services.AddScoped<MetadataCacheInvalidator>();
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
+builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 
 // Register shared validation services
 builder.Services.AddValidationServices();
@@ -267,6 +270,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
+
+var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
+if (activeDbConnectionTracker != null)
+{
+    EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
+}
 
 if (forwardedHeadersEnabled)
 {
@@ -406,6 +415,9 @@ app.MapImportEndpoints();
 
 // Configure Esri service import endpoints
 app.MapEsriImportEndpoints();
+
+// Configure unified operations progress endpoints
+app.MapOperationsProgressEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)
@@ -734,7 +746,3 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
 }
-
-
-// Configure unified operations progress endpoints
-app.MapOperationsProgressEndpoints();

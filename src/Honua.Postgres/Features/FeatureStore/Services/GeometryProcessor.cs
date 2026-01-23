@@ -128,7 +128,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         }
 
         var wgs84Srid = SpatialReference.WGS84.Wkid;
-        if (layerSrid.HasValue && layerSrid.Value != wgs84Srid)
+        if (layerSrid.HasValue)
         {
             geometryOperand = $"ST_Transform({geometryOperand}, {wgs84Srid})";
         }
@@ -144,7 +144,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             return baseGeometry;
         }
 
-        return $"ST_Transform(ST_SetSRID({baseGeometry}, COALESCE(NULLIF(ST_SRID({baseGeometry}), 0), {layerSrid.Value})), {layerSrid.Value})";
+        return $"ST_SetSRID({baseGeometry}, COALESCE(NULLIF(ST_SRID({baseGeometry}), 0), {layerSrid.Value}))";
     }
 
     private static string BuildGeographyWriteExpression(string parameterName, int? layerSrid)
@@ -152,6 +152,6 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         var targetSrid = SpatialReference.WGS84.Wkid;
         var baseGeometry = $"ST_GeomFromEWKB({parameterName})";
         var assumedSrid = layerSrid ?? targetSrid;
-        return $"ST_Transform(ST_SetSRID({baseGeometry}, COALESCE(NULLIF(ST_SRID({baseGeometry}), 0), {assumedSrid})), {targetSrid})::geography";
+        return $"ST_SetSRID({baseGeometry}, COALESCE(NULLIF(ST_SRID({baseGeometry}), 0), {assumedSrid}))::geography";
     }
 }

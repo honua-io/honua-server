@@ -192,7 +192,10 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 
         Assert.NotNull(queryResponse);
         Assert.True(queryResponse.ObjectIds?.Length > 0, "Should return object IDs");
-        queryResponse.Features.Should().BeEmpty();
+        queryResponse.Features.Should().BeNull();
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        Assert.False(jsonDoc.RootElement.TryGetProperty("features", out _));
 
         _output.WriteLine($"Streamed {queryResponse.ObjectIds?.Length} object IDs");
     }
@@ -583,7 +586,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse!.Count.Should().Be(5);
         queryResponse.ObjectIds.Should().BeNull();
         queryResponse.Extent.Should().BeNull();
-        queryResponse.Features.Should().BeEmpty();
+        queryResponse.Features.Should().BeNull();
+        queryResponse.ObjectIdFieldName.Should().BeNull();
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -605,7 +613,34 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.ObjectIds!.Should().HaveCount(5);
         queryResponse.Count.Should().BeNull();
         queryResponse.Extent.Should().BeNull();
-        queryResponse.Features.Should().BeEmpty();
+        queryResponse.Features.Should().BeNull();
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true")]
+    public async Task QueryFeatures_WithReturnIdsOnly_DoesNotIncludeExceededTransferLimit()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnIdsOnly=true&resultRecordCount=1");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.ObjectIds.Should().NotBeNull();
+        queryResponse.ObjectIds!.Should().HaveCount(1);
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -627,7 +662,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.Extent!.SpatialReference.Should().NotBeNull();
         queryResponse.ObjectIds.Should().BeNull();
         queryResponse.Count.Should().BeNull();
-        queryResponse.Features.Should().BeEmpty();
+        queryResponse.Features.Should().BeNull();
+        queryResponse.ObjectIdFieldName.Should().BeNull();
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -952,7 +992,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.ObjectIds!.Should().HaveCount(3);
         queryResponse.ObjectIds.Should().Contain(new long[] { 1, 2, 3 });
         queryResponse.Count.Should().BeNull();
-        queryResponse.Features.Should().BeEmpty();
+        queryResponse.Features.Should().BeNull();
     }
 
     /// <summary>
@@ -976,7 +1016,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         queryResponse!.Count.Should().Be(3);
         queryResponse.ObjectIds.Should().BeNull();
-        queryResponse.Features.Should().BeEmpty();
+        queryResponse.Features.Should().BeNull();
+        queryResponse.ObjectIdFieldName.Should().BeNull();
     }
 
     /// <summary>
@@ -1170,6 +1211,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse!.Features.Should().NotBeNull();
         queryResponse.Features.Should().HaveCount(1);
         queryResponse.ExceededTransferLimit.Should().BeTrue("because there are 5 total features but only 1 was requested");
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
     }
 
     /// <summary>
@@ -1194,6 +1238,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse!.Features.Should().NotBeNull();
         queryResponse.Features.Should().HaveCount(5);
         queryResponse.ExceededTransferLimit.Should().BeFalse("because all available features were returned");
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
     /// <summary>
@@ -1442,8 +1489,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         geoJsonResponse.Should().NotBeNull();
         geoJsonResponse!.Type.Should().Be("FeatureCollection");
         geoJsonResponse.Features.Should().NotBeNull();
-        geoJsonResponse.Properties.Should().NotBeNull();
-        geoJsonResponse.Properties!["objectIdFieldName"].Should().NotBeNull();
+        geoJsonResponse.ExceededTransferLimit.Should().BeFalse();
+        geoJsonResponse.Properties.Should().BeNull();
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
+        jsonDoc.RootElement.TryGetProperty("properties", out _).Should().BeFalse();
 
         geoJsonResponse.Features.Should().AllSatisfy(f =>
         {
@@ -1456,6 +1507,38 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 f.Geometry.Coordinates.Should().NotBeNull();
             }
         });
+    }
+
+    /// <summary>
+    /// Tests that GeoJSON format includes exceededTransferLimit only when exceeded
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithGeoJsonExceededTransferLimit_IncludesExceededTransferLimit()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&resultRecordCount=1");
+
+        // Assert
+        response.BeSuccessful();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var geoJsonResponse = JsonSerializer.Deserialize<GeoJsonFeatureSet>(
+            content, FeatureServerJsonContext.Default.GeoJsonFeatureSet);
+
+        geoJsonResponse.Should().NotBeNull();
+        geoJsonResponse!.ExceededTransferLimit.Should().BeTrue();
+        geoJsonResponse.Properties.Should().NotBeNull();
+        var exceededValue = geoJsonResponse.Properties!["exceededTransferLimit"];
+        exceededValue.Should().BeOfType<JsonElement>();
+        ((JsonElement)exceededValue).GetBoolean().Should().BeTrue();
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+        jsonDoc.RootElement.GetProperty("properties").GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
     }
 
     /// <summary>
@@ -1500,6 +1583,35 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Tests that outFields supports wildcard combined with explicit fields
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithOutFieldsWildcardAndExplicitFields_ReturnsAllAttributes()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=*,name");
+
+        // Assert
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNullOrEmpty();
+        queryResponse.Features.Should().AllSatisfy(feature =>
+        {
+            feature.Attributes.Keys.Should().Contain("name");
+            feature.Attributes.Keys.Should().Contain("description");
+            feature.Attributes.Keys.Should().Contain("category");
+        });
+    }
+
+    /// <summary>
     /// Tests that returnGeometry=false omits geometry in both formats
     /// </summary>
     [IntegrationTest]
@@ -1516,6 +1628,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             geoServicesContent, FeatureServerJsonContext.Default.QueryResponse);
 
         geoServicesQueryResponse!.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
+
+        using var geoServicesDoc = JsonDocument.Parse(geoServicesContent);
+        foreach (var feature in geoServicesDoc.RootElement.GetProperty("features").EnumerateArray())
+        {
+            feature.TryGetProperty("geometry", out _).Should().BeFalse();
+        }
 
         // Test GeoJSON format
         var geoJsonResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&returnGeometry=false");

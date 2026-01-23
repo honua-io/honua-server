@@ -23,11 +23,14 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
+    private Guid _connectionId;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
+        _connectionId = await _fixture.GetTestSecureConnectionIdAsync()
+            ?? throw new InvalidOperationException("Test secure connection not available.");
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -70,7 +73,7 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
             Name = $"test_service_{Guid.NewGuid():N}",
             Description = "Test service created by integration test",
             SpatialReferenceSrid = 4326,
-            MaxRecordCount = 1000
+            ConnectionId = _connectionId
         };
 
         var content = new StringContent(
@@ -323,6 +326,23 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    public async Task GetStyle_WithExistingLayer_ReturnsStyle()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/admin/metadata/layers/0/style");
+
+        // Assert
+        response.BeSuccessful();
+        var content = await response.Content.ReadAsStringAsync();
+
+        using var doc = JsonDocument.Parse(content);
+        var mapLibre = doc.RootElement.GetProperty("mapLibreStyle");
+        mapLibre.ValueKind.Should().Be(JsonValueKind.Object);
+        mapLibre.GetProperty("version").GetInt32().Should().Be(8);
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task UpdateStyle_WhenLayerNotFound_Returns404()
     {
@@ -347,6 +367,48 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    public async Task UpdateStyle_WithMapLibre_ReturnsDrawingInfo()
+    {
+        // Arrange
+        var mapLibreStyleJson = """
+            {
+              "version": 8,
+              "layers": [
+                {
+                  "id": "test-layer",
+                  "type": "circle",
+                  "paint": {
+                    "circle-color": "#2D69A5"
+                  }
+                }
+              ]
+            }
+            """;
+
+        using var styleDoc = JsonDocument.Parse(mapLibreStyleJson);
+        var request = new UpdateStyleRequest
+        {
+            MapLibreStyle = styleDoc.RootElement.Clone()
+        };
+
+        var content = new StringContent(
+            JsonSerializer.Serialize(request, MetadataJsonContext.Default.UpdateStyleRequest),
+            Encoding.UTF8,
+            "application/json");
+
+        // Act
+        var response = await _client.PutAsync("/api/v1/admin/metadata/layers/0/style", content);
+
+        // Assert
+        response.BeSuccessful();
+        var responseContent = await response.Content.ReadAsStringAsync();
+
+        using var responseDoc = JsonDocument.Parse(responseContent);
+        responseDoc.RootElement.GetProperty("drawingInfo").ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
     // ========================================================================
     // Error handling tests
     // ========================================================================
@@ -359,7 +421,8 @@ public sealed class MetadataEndpointTests : IAsyncLifetime
         var request = new CreateServiceRequest
         {
             Name = "",
-            Description = "Test"
+            Description = "Test",
+            ConnectionId = _connectionId
         };
 
         var content = new StringContent(

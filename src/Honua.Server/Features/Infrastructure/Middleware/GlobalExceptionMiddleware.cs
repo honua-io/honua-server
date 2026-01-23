@@ -31,6 +31,10 @@ internal sealed class GlobalExceptionMiddleware(
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Client disconnected; skip logging and response shaping.
+        }
         catch (Exception ex)
         {
             // Log the unhandled exception with correlation ID

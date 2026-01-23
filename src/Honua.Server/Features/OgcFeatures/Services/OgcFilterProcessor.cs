@@ -40,6 +40,7 @@ internal sealed class OgcFilterProcessor
         public SqlFragment? SqlFilter { get; init; }
         public SpatialFilter? SpatialFilter { get; init; }
         public TemporalFilter? TemporalFilter { get; init; }
+        public bool IncludeNullGeometry { get; init; }
         public CrsDefinition CrsDefinition { get; init; }
 
         public static FilterProcessingResult Success(
@@ -47,6 +48,7 @@ internal sealed class OgcFilterProcessor
             SqlFragment? sqlFilter,
             SpatialFilter? spatialFilter,
             TemporalFilter? temporalFilter,
+            bool includeNullGeometry,
             CrsDefinition crsDefinition)
             => new()
             {
@@ -55,6 +57,7 @@ internal sealed class OgcFilterProcessor
                 SqlFilter = sqlFilter,
                 SpatialFilter = spatialFilter,
                 TemporalFilter = temporalFilter,
+                IncludeNullGeometry = includeNullGeometry,
                 CrsDefinition = crsDefinition
             };
 
@@ -196,11 +199,14 @@ internal sealed class OgcFilterProcessor
                 return FilterProcessingResult.Failure(temporalResult.ErrorMessage!);
             }
 
+            var includeNullGeometry = bboxResult.SpatialFilter != null;
+
             return FilterProcessingResult.Success(
                 combinedFilter,
                 sqlFilter,
                 bboxResult.SpatialFilter,
                 temporalResult.TemporalFilter,
+                includeNullGeometry,
                 crsDefinition);
         }
         catch (Exception ex)
@@ -606,25 +612,59 @@ internal sealed class OgcFilterProcessor
         {
             if (partCount == 0 && parseError == "Value list is empty.")
             {
-                return BboxParseResult.Failure("Bounding box must contain 4 comma-separated values.");
+                return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
             }
 
             return BboxParseResult.Failure("Bounding box coordinates must be valid numbers.");
         }
 
-        if (partCount == 6)
+        if (partCount is not (4 or 6))
         {
-            return BboxParseResult.Failure("3D bounding boxes are not supported.");
+            return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
         }
 
-        if (partCount != 4)
-        {
-            return BboxParseResult.Failure("Bounding box must contain 4 comma-separated values.");
-        }
+        var hasZ = partCount == 6;
+        double minX;
+        double minY;
+        double maxX;
+        double maxY;
 
-        var (minX, minY, maxX, maxY) = crsDefinition.AxisOrder == AxisOrder.NorthEast
-            ? (parts[1], parts[0], parts[3], parts[2])
-            : (parts[0], parts[1], parts[2], parts[3]);
+        if (hasZ)
+        {
+            if (parts[2] > parts[5])
+            {
+                return BboxParseResult.Failure("Bounding box minimum Z must be less than or equal to maximum Z.");
+            }
+
+            if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
+            {
+                minX = parts[1];
+                minY = parts[0];
+                maxX = parts[4];
+                maxY = parts[3];
+            }
+            else
+            {
+                minX = parts[0];
+                minY = parts[1];
+                maxX = parts[3];
+                maxY = parts[4];
+            }
+        }
+        else if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
+        {
+            minX = parts[1];
+            minY = parts[0];
+            maxX = parts[3];
+            maxY = parts[2];
+        }
+        else
+        {
+            minX = parts[0];
+            minY = parts[1];
+            maxX = parts[2];
+            maxY = parts[3];
+        }
 
         if (minY > maxY)
         {

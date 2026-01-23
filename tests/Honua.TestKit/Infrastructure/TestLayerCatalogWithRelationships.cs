@@ -126,7 +126,6 @@ public sealed class TestLayerCatalogWithRelationships : ILayerCatalog
             Description: baseService.Description,
             Layers: allLayers.ToArray(),
             SpatialReference: baseService.SpatialReference,
-            MaxRecordCount: baseService.MaxRecordCount,
             SupportedFormats: baseService.SupportedFormats,
             Capabilities: baseService.Capabilities,
             ServiceExtent: baseService.ServiceExtent);

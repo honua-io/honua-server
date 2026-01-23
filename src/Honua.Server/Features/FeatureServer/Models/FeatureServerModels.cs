@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.FeatureServer.Models;
@@ -94,7 +93,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Object ID field name used across the service
     /// </summary>
-    public string ObjectIdField { get; init; } = "DatabaseSchema.ObjectIdColumn";
+    public string ObjectIdField { get; init; } = FieldNames.ObjectId;
 
     /// <summary>
     /// Global ID field name (if used)
@@ -576,7 +575,8 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Object ID field name for the layer
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = "DatabaseSchema.ObjectIdColumn";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ObjectIdFieldName { get; init; }
 
     /// <summary>
     /// Object IDs returned by the query (when returnIdsOnly=true)
@@ -607,25 +607,29 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Features returned by the query
     /// </summary>
-    public GeoServicesFeature[] Features { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesFeature[]? Features { get; init; }
 
     /// <summary>
     /// Whether the transfer limit was exceeded
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ExceededTransferLimit { get; init; }
 
     // ICollectionResponse implementation
-    ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items => Features.ToImmutableArray();
+    ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items =>
+        Features?.ToImmutableArray() ?? ImmutableArray<GeoServicesFeature>.Empty;
     ImmutableArray<ILink>? ICollectionResponse<GeoServicesFeature>.Links => null; // FeatureServer doesn't use links
     IPaginationMetadata? ICollectionResponse<GeoServicesFeature>.Pagination =>
-        Count.HasValue || Features.Length > 0
-            ? PaginationMetadata.Create(Count, Features.Length, ExceededTransferLimit)
+        Count.HasValue || (Features?.Length ?? 0) > 0
+            ? PaginationMetadata.Create(Count, Features?.Length ?? 0, ExceededTransferLimit)
             : null;
 }
 
 /// <summary>
 /// GeoServices feature representation
 /// </summary>
+[JsonConverter(typeof(GeoServicesFeatureJsonConverter))]
 public sealed class GeoServicesFeature
 {
     /// <summary>
@@ -636,8 +640,14 @@ public sealed class GeoServicesFeature
     /// <summary>
     /// Feature geometry (optional if returnGeometry=false)
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GeoServicesGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// Controls whether the geometry property is emitted when null.
+    /// </summary>
+    [JsonIgnore]
+    public bool IncludeGeometry { get; init; } = true;
 }
 
 /// <summary>
@@ -1001,6 +1011,12 @@ public sealed class GeoJsonFeatureSet
     public GeoJsonFeature[] Features { get; init; } = [];
 
     /// <summary>
+    /// Whether the transfer limit was exceeded
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ExceededTransferLimit { get; init; }
+
+    /// <summary>
     /// Additional properties (metadata)
     /// </summary>
     public Dictionary<string, object?>? Properties { get; init; }
@@ -1028,7 +1044,7 @@ public sealed class GeoJsonFeature
     public GeoJsonGeometry? Geometry { get; init; }
 
     /// <summary>
-    /// Feature ID (typically the DatabaseSchema.ObjectIdColumn)
+    /// Feature ID (typically the objectid field)
     /// </summary>
     public object? Id { get; init; }
 }
@@ -1282,7 +1298,7 @@ public sealed class RelatedRecords
     /// <summary>
     /// Object ID field name
     /// </summary>
-    public string ObjectIdFieldName { get; init; } = "DatabaseSchema.ObjectIdColumn";
+    public string ObjectIdFieldName { get; init; } = FieldNames.ObjectId;
 
     /// <summary>
     /// Global ID field name (if used)

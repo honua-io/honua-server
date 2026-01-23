@@ -68,6 +68,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/esri/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/esri/jobs"),
 
+        // v1 admin operations progress endpoints
+        new("GET", "/api/v1/admin/operations/{operationId}"),
+        new("POST", "/api/v1/admin/operations/{operationId}/cancel"),
+        new("GET", "/api/v1/admin/operations/active"),
+        new("GET", "/api/v1/admin/operations/type/{operationType}"),
+
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
 
         new("GET", "/api/v1/metrics/health"),
@@ -130,6 +136,7 @@ public static class EndpointRegistry
         new("GET", "/ogc/features/collections/{collectionId}/items"),
         new("GET", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("POST", "/ogc/features/collections/{collectionId}/items"),
+        new("POST", "/ogc/features/collections/{collectionId}/items/batch"),
         new("PUT", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("DELETE", "/ogc/features/collections/{collectionId}/items/{featureId}"),
 

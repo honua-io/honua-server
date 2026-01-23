@@ -288,11 +288,11 @@ class PostGISFixture:
                         service_name VARCHAR(64) PRIMARY KEY,
                         description TEXT NOT NULL DEFAULT '',
                         srid INT NOT NULL DEFAULT 4326,
-                        max_record_count INT NOT NULL DEFAULT 1000,
                         supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                         capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
                         service_extent GEOMETRY,
                         metadata JSONB,
+                        connection_id UUID,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
@@ -314,6 +314,9 @@ class PostGISFixture:
                         max_scale DOUBLE PRECISION,
                         default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
                         metadata JSONB,
+                        maplibre_style JSONB,
+                        geoservices_drawing_info JSONB,
+                        style_version INT DEFAULT 1,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -420,7 +423,6 @@ class PostGISFixture:
                         service_name,
                         description,
                         srid,
-                        max_record_count,
                         supported_formats,
                         capabilities
                     )
@@ -428,7 +430,6 @@ class PostGISFixture:
                         %s,
                         'Test Feature Service',
                         4326,
-                        1000,
                         ARRAY['JSON', 'GeoJSON'],
                         ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete']
                     )

@@ -1,6 +1,6 @@
 # Honua Roadmap
 
-This roadmap assumes the MVP described in `docs/MVP_PLAN.md` (full FeatureServer + OGC API Features + OData v4 with spatial + CRUD + MVT + file import + CRS support on PostGIS + GeoServices Import Wizard + embedded Maputnik style editor + OIDC authentication + Helm/Terraform deployment templates) is delivered; the current repo is in planning/Phase 0.
+This roadmap assumes the MVP described in `docs/MVP_PLAN.md`. The current repo already ships the core server APIs (FeatureServer, OGC API Features/Tiles, OData v4, file import, admin APIs), but MVP items like admin UI, TileJSON, service enable/disable, styles, and deployment templates are still pending. Track open MVP issues (#20, #25, #26, #27, #30, #31, #32, #33, #34, #38, #39, #42, #43, #58, #187, #244).
 
 ## Beta (stabilize core + top asks)
 - **Query caching:** Short-lived result caching (10-30s) with ETag validation for read-heavy workloads.

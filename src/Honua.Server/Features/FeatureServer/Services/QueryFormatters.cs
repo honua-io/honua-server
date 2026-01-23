@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
@@ -101,7 +102,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         GeoServicesFeature[] features = result.Items
             .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
@@ -135,20 +136,22 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         GeoJsonFeature[] features = result.Items
             .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
 
+        var exceededTransferLimit = result.HasMoreResults;
         var response = new GeoJsonFeatureSet
         {
             Features = features,
-            Properties = new Dictionary<string, object?>
-            {
-                ["objectIdFieldName"] = layer.PrimaryKeyField?.Name ?? "objectid",
-                ["exceededTransferLimit"] = result.HasMoreResults,
-                ["totalFeatures"] = result.TotalCount
-            }
+            ExceededTransferLimit = exceededTransferLimit,
+            Properties = exceededTransferLimit
+                ? new Dictionary<string, object?>
+                {
+                    ["exceededTransferLimit"] = true
+                }
+                : null
         };
 
         return (response, "application/geo+json");
@@ -171,6 +174,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return new GeoServicesFeature
         {
             Attributes = attributes,
+            IncludeGeometry = returnGeometry,
             Geometry = returnGeometry
                 ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     feature.Geometry,
@@ -199,7 +203,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         // Extract the ID from attributes if available
         // Normalize numeric values to ensure type consistency
         object? id = null;
-        if (properties.TryGetValue("objectid", out object? objectId))
+        if (properties.TryGetValue(FieldNames.ObjectId, out object? objectId))
         {
             // Normalize numeric types to avoid JsonElement vs primitive mismatches
             id = objectId switch
@@ -275,7 +279,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static void AddObjectIdAlias(Dictionary<string, object?> target, string objectIdFieldName)
     {
-        if (!objectIdFieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase))
+        if (!objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -514,7 +518,6 @@ internal sealed class StreamingQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields,
-        long totalCount,
         bool hasMoreResults,
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
@@ -525,7 +528,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
 
         // Start object
@@ -572,8 +575,11 @@ internal sealed class StreamingQueryFormatter
         // End features array
         writer.WriteEndArray();
 
-        // Write additional metadata
-        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
+        if (hasMoreResults)
+        {
+            // Write additional metadata only when exceeded (matches ArcGIS REST behavior)
+            writer.WriteBoolean("exceededTransferLimit", true);
+        }
 
         // End object
         writer.WriteEndObject();
@@ -593,7 +599,6 @@ internal sealed class StreamingQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields,
-        long totalCount,
         bool hasMoreResults,
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
@@ -604,7 +609,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
         // Start GeoJSON FeatureCollection
         writer.WriteStartObject();
@@ -639,12 +644,13 @@ internal sealed class StreamingQueryFormatter
         // End features array
         writer.WriteEndArray();
 
-        // Write properties with metadata
-        writer.WriteStartObject("properties");
-        writer.WriteString("objectIdFieldName", objectIdFieldName);
-        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
-        writer.WriteNumber("totalFeatures", totalCount);
-        writer.WriteEndObject();
+        if (hasMoreResults)
+        {
+            writer.WriteBoolean("exceededTransferLimit", true);
+            writer.WriteStartObject("properties");
+            writer.WriteBoolean("exceededTransferLimit", true);
+            writer.WriteEndObject();
+        }
 
         // End FeatureCollection
         writer.WriteEndObject();
@@ -689,17 +695,24 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteEndObject(); // End attributes
 
-        // Write geometry if requested and available
-        if (returnGeometry && feature.Geometry != null)
+        // Write geometry if requested, even when null (matches GeoServices expectations)
+        if (returnGeometry)
         {
             writer.WritePropertyName("geometry");
-            var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                feature.Geometry,
-                null,
-                geometryLimits,
-                returnZ,
-                returnM);
-            JsonSerializer.Serialize(writer, geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+            if (feature.Geometry == null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                    feature.Geometry,
+                    null,
+                    geometryLimits,
+                    returnZ,
+                    returnM);
+                JsonSerializer.Serialize(writer, geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+            }
         }
 
         writer.WriteEndObject(); // End feature

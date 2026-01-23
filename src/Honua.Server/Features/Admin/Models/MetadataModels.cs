@@ -31,14 +31,14 @@ public sealed record CreateServiceRequest
     public int SpatialReferenceSrid { get; init; } = 4326;
 
     /// <summary>
-    /// Maximum records returned per query (default: 1000)
-    /// </summary>
-    public int MaxRecordCount { get; init; } = 1000;
-
-    /// <summary>
     /// Optional access policy for the service.
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Secure connection identifier for the service.
+    /// </summary>
+    public required Guid ConnectionId { get; init; }
 }
 
 /// <summary>
@@ -52,14 +52,14 @@ public sealed record UpdateServiceRequest
     public string? Description { get; init; }
 
     /// <summary>
-    /// New max record count (optional)
-    /// </summary>
-    public int? MaxRecordCount { get; init; }
-
-    /// <summary>
     /// Updated access policy for the service (optional).
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Updated secure connection identifier for the service (optional).
+    /// </summary>
+    public Guid? ConnectionId { get; init; }
 }
 
 /// <summary>
@@ -83,11 +83,6 @@ public sealed record ServiceResponse
     public required int SpatialReferenceSrid { get; init; }
 
     /// <summary>
-    /// Maximum records per query
-    /// </summary>
-    public required int MaxRecordCount { get; init; }
-
-    /// <summary>
     /// Number of layers in service
     /// </summary>
     public required int LayerCount { get; init; }
@@ -101,6 +96,11 @@ public sealed record ServiceResponse
     /// Access policy for the service.
     /// </summary>
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Secure connection identifier for the service.
+    /// </summary>
+    public Guid? ConnectionId { get; init; }
 }
 
 /// <summary>

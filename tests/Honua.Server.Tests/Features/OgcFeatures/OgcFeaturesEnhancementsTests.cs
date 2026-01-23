@@ -1,9 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.OgcFeatures;
+using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -125,6 +130,51 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCrs84Alias_ReturnsContentCrs()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?limit=1&crs=CRS84");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues!.First().Should().Contain(OgcFeaturesUtilities.Crs84Uri);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithContentCrsAlias_ReturnsCreated()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.5, 37.5]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "CRS84 alias feature"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{TestCollectionId}/items")
+        {
+            Content = new StringContent(json, Encoding.UTF8, new MediaTypeHeaderValue("application/geo+json"))
+        };
+        request.Headers.TryAddWithoutValidation("Content-Crs", "CRS84");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithQueryableParameter_FiltersResults()
     {
         var response = await _fixture.Client.GetAsync(
@@ -227,24 +277,26 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("4 comma-separated values");
+        content.Should().Contain("4 or 6 comma-separated values");
     }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_With3dBbox_ReturnsBadRequest()
+    public async Task GetItems_With3dBbox_ReturnsFilteredFeatures()
     {
         // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz)
-        var invalidBbox = "-180,-90,-10,180,90,10";
+        var bbox = "-180,-90,-10,180,90,10";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={invalidBbox}");
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("3D bounding boxes are not supported");
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -300,6 +352,37 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         features.Should().NotBeEmpty();
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithBbox_IncludesNullGeometryFeatures()
+    {
+        // Arrange - insert a feature without geometry and query with a bbox filter
+        var name = $"Null Geometry {Guid.NewGuid():N}";
+        await InsertNullGeometryFeatureAsync(name);
+        var bbox = "-180,-90,180,90";
+
+        // Act
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray();
+
+        features.Any(feature =>
+        {
+            if (!feature.TryGetProperty("properties", out var props))
+            {
+                return false;
+            }
+
+            return props.TryGetProperty("name", out var nameProp)
+                && string.Equals(nameProp.GetString(), name, StringComparison.Ordinal);
+        }).Should().BeTrue();
+    }
+
     #endregion
 
     #region Default Limit Tests (Issue #157)
@@ -324,6 +407,23 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var defaultLimit = new Honua.Core.Configuration.LimitsOptions().Query.DefaultRecordCount;
         features.Length.Should().BeLessThanOrEqualTo(defaultLimit);
         numberReturned.Should().BeLessThanOrEqualTo(defaultLimit);
+    }
+
+    private async Task<long> InsertNullGeometryFeatureAsync(string name)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("name", name);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     [IntegrationTest]

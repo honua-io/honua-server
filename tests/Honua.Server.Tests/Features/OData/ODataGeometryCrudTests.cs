@@ -359,7 +359,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features with SRID 3857 layer")]
-    public async Task CreateFeature_OnSrid3857Layer_MismatchedGeometryCrs_TransformsToLayerSrid()
+    public async Task CreateFeature_OnSrid3857Layer_MismatchedGeometryCrs_ReturnsBadRequest()
     {
         // Use the spatial-reference seed with SRID 3857 layers
         var sridFixture = new WebAppFixture();
@@ -383,22 +383,12 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
                 $"/odata/Layers({SpatialReferenceTestLayerCatalog.PointLayerId})/Features",
                 new StringContent(json, Encoding.UTF8, "application/json"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            var created = JsonSerializer.Deserialize(responseContent, ODataJsonContext.Default.ODataFeatureResponse);
-            created.Should().NotBeNull();
-            created!.Geometry.Should().NotBeNull();
-            created.Geometry!.Crs.Should().NotBeNull();
-            created.Geometry.Crs!.Properties!.Name.Should().Be("EPSG:3857");
-
-            using var coordinatesDocument = JsonDocument.Parse(created.Geometry.CoordinatesJson!);
-            var coordinates = coordinatesDocument.RootElement;
-            coordinates.ValueKind.Should().Be(JsonValueKind.Array);
-            var x = coordinates[0].GetDouble();
-            var y = coordinates[1].GetDouble();
-            Math.Abs(x).Should().BeGreaterThan(180);
-            Math.Abs(y).Should().BeGreaterThan(90);
+            using var document = JsonDocument.Parse(responseContent);
+            var details = document.RootElement.GetProperty("error").GetProperty("details");
+            details[0].GetProperty("message").GetString().Should().Contain("does not match layer SRID");
         }
         finally
         {

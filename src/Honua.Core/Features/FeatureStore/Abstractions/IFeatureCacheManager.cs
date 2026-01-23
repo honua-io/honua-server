@@ -39,6 +39,12 @@ internal interface IFeatureCacheManager
     /// Clears expired cache entries
     /// </summary>
     void CleanupExpiredCacheEntries();
+
+    /// <summary>
+    /// Invalidates cached layer metadata for the specified layer.
+    /// </summary>
+    /// <param name="layerId">Layer ID to invalidate</param>
+    void InvalidateLayerCache(int layerId);
 }
 
 /// <summary>

@@ -72,9 +72,9 @@ This document provides solutions to common issues when setting up and running Ho
    Limits__Connections__RequestTimeout=00:01:00
    ```
 
-### Missing Admin Password
+### Missing Admin Password (Automation)
 
-**Symptom**: API returns 401 Unauthorized for admin endpoints
+**Symptom**: API returns 401 Unauthorized for admin endpoints (automation/CLI clients)
 
 **Solution**:
 ```bash
@@ -82,6 +82,7 @@ export HONUA_ADMIN_PASSWORD="your-secure-password-here"
 ```
 
 The password is used as an API key in the `X-API-Key` header for admin endpoints.
+Browser-based Admin UI must use OIDC instead.
 
 ## Performance Issues
 

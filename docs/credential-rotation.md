@@ -4,7 +4,7 @@ This document outlines how to rotate sensitive credentials without downtime.
 
 ## Rotation Targets
 
-- **Admin API key** (`HONUA_ADMIN_PASSWORD`)
+- **Admin API key (automation only)** (`HONUA_ADMIN_PASSWORD`)
 - **OIDC client secrets** (`Oidc:*:ClientSecret`)
 - **Database credentials** (`ConnectionStrings__DefaultConnection`)
 - **Cache credentials** (Redis connection string)
@@ -23,7 +23,7 @@ This document outlines how to rotate sensitive credentials without downtime.
 4. **Verify** functionality (health + smoke tests)
 5. **Revoke** old credential after validation
 
-## Admin API Key Rotation
+## Admin API Key Rotation (Automation)
 
 ```bash
 # Set a new secret reference
@@ -52,7 +52,6 @@ HONUA_ADMIN_PASSWORD_VALUE="new-admin-key"
 
 - **AWS Secrets Manager**: rotate the secret value and keep the ref stable; use `versionStage` or `versionId` if you need pinning.
 - **Azure Key Vault**: create a new version in the vault; update the ref only if you pin a version.
-- **GCP Secret Manager**: add a new version and keep `:latest`, or update the ref if you pin a version.
 
 ## Verification Checklist
 

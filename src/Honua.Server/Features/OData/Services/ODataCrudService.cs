@@ -22,6 +22,15 @@ namespace Honua.Server.Features.OData.Services;
 /// </summary>
 internal sealed class ODataCrudLog;
 
+internal sealed record ODataCrudDependencies(
+    IResourceValidator ResourceValidator,
+    IFeatureReader FeatureReader,
+    IFeatureWriter FeatureWriter,
+    IGeometryService GeometryService,
+    ICrsRegistry CrsRegistry,
+    IETagService ETagService,
+    FeatureMutationValidator MutationValidator);
+
 /// <summary>
 /// Service for handling OData CRUD operations (Create, Read, Update, Delete) on features.
 /// Provides validation, geometry processing, and error handling for feature operations.
@@ -41,23 +50,19 @@ internal sealed partial class ODataCrudService
     /// Initializes a new instance of the <see cref="ODataCrudService"/> class.
     /// </summary>
     public ODataCrudService(
-        IResourceValidator resourceValidator,
-        IFeatureReader featureReader,
-        IFeatureWriter featureWriter,
-        IGeometryService geometryService,
-        ICrsRegistry crsRegistry,
-        IETagService etagService,
-        FeatureMutationValidator mutationValidator,
+        ODataCrudDependencies dependencies,
         ILogger<ODataCrudLog> logger)
     {
-        _resourceValidator = resourceValidator;
-        _featureReader = featureReader;
-        _featureWriter = featureWriter;
-        _geometryService = geometryService;
-        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
-        _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
-        _mutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(dependencies);
+
+        _resourceValidator = dependencies.ResourceValidator ?? throw new ArgumentNullException(nameof(dependencies), "ResourceValidator is required.");
+        _featureReader = dependencies.FeatureReader ?? throw new ArgumentNullException(nameof(dependencies), "FeatureReader is required.");
+        _featureWriter = dependencies.FeatureWriter ?? throw new ArgumentNullException(nameof(dependencies), "FeatureWriter is required.");
+        _geometryService = dependencies.GeometryService ?? throw new ArgumentNullException(nameof(dependencies), "GeometryService is required.");
+        _crsRegistry = dependencies.CrsRegistry ?? throw new ArgumentNullException(nameof(dependencies), "CrsRegistry is required.");
+        _etagService = dependencies.ETagService ?? throw new ArgumentNullException(nameof(dependencies), "ETagService is required.");
+        _mutationValidator = dependencies.MutationValidator ?? throw new ArgumentNullException(nameof(dependencies), "MutationValidator is required.");
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>

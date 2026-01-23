@@ -92,6 +92,7 @@ internal static class FileUploadSecurity
     private static readonly Regex _dangerousPatternRegex = new(
         @"\.(exe|com|bat|cmd|scr|pif|vbs|js|jar|app|dmg|deb|rpm|msi|pkg)(\.|$)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly SearchValues<char> _pathSeparators = SearchValues.Create(new[] { '/', '\\' });
 
     /// <summary>
     /// Validates a file upload for security threats.
@@ -167,26 +168,36 @@ internal static class FileUploadSecurity
             return FileValidationResult.Invalid("File name cannot be empty.");
         }
 
+        var baseName = GetBaseFileName(fileName);
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            return FileValidationResult.Invalid("File name cannot be empty.");
+        }
+
+        var hasPathSeparators = fileName.Contains('/') || fileName.Contains('\\');
+        var hasFakePathPrefix = fileName.StartsWith(@"C:\fakepath\", StringComparison.OrdinalIgnoreCase) ||
+                                fileName.StartsWith("C:/fakepath/", StringComparison.OrdinalIgnoreCase);
+
         // Check for path traversal attempts
-        if (fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\'))
+        if (fileName.Contains("..", StringComparison.Ordinal) || (hasPathSeparators && !hasFakePathPrefix))
         {
             return FileValidationResult.Invalid("File name contains invalid path characters.");
         }
 
         // Check for dangerous executable patterns
-        if (_dangerousPatternRegex.IsMatch(fileName))
+        if (_dangerousPatternRegex.IsMatch(baseName))
         {
             return FileValidationResult.Invalid("File type is not allowed for security reasons.");
         }
 
         // Check for overly long file names
-        if (fileName.Length > 255)
+        if (baseName.Length > 255)
         {
             return FileValidationResult.Invalid("File name is too long (maximum 255 characters).");
         }
 
         // Check for null bytes and other dangerous characters
-        if (fileName.Any(c => c < 32 || c == 127 || "\"*:<>?|".Contains(c)))
+        if (baseName.Any(c => c < 32 || c == 127 || "\"*:<>?|".Contains(c)))
         {
             return FileValidationResult.Invalid("File name contains invalid characters.");
         }
@@ -316,6 +327,10 @@ internal static class FileUploadSecurity
 
             return FileValidationResult.Valid();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception)
         {
             return FileValidationResult.Invalid("Error validating file content.");
@@ -403,6 +418,10 @@ internal static class FileUploadSecurity
             }
 
             return FileValidationResult.Valid();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch
         {
@@ -549,6 +568,17 @@ internal static class FileUploadSecurity
         return textExtensions.Contains(extension);
     }
 
+    private static string GetBaseFileName(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName))
+        {
+            return string.Empty;
+        }
+
+        var lastSeparator = fileName.AsSpan().LastIndexOfAny(_pathSeparators);
+        return lastSeparator >= 0 ? fileName[(lastSeparator + 1)..] : fileName;
+    }
+
     /// <summary>
     /// Sanitizes a file name for safe storage.
     /// </summary>
@@ -561,7 +591,7 @@ internal static class FileUploadSecurity
 
         var cleanedName = fileName.Replace("\0", string.Empty, StringComparison.Ordinal);
         cleanedName = new string(cleanedName.Where(c => !char.IsControl(c)).ToArray());
-        var baseName = Path.GetFileName(cleanedName);
+        var baseName = GetBaseFileName(cleanedName);
 
         // Remove dangerous characters
         var invalidChars = Path.GetInvalidFileNameChars();

@@ -181,6 +181,12 @@ public class PerformanceMonitoringMiddlewareTests
 
         // Configure services
         configureServices?.Invoke(builder.Services);
+        if (!builder.Services.Any(service => service.ServiceType == typeof(ISystemMetricsCollector)))
+        {
+            var metricsCollector = Substitute.For<ISystemMetricsCollector>();
+            metricsCollector.TrackRequest().Returns(Substitute.For<IDisposable>());
+            builder.Services.AddSingleton(metricsCollector);
+        }
 
         var app = builder.Build();
 

@@ -196,15 +196,8 @@ public readonly record struct BoundingBox
             return Create(MinX, minY, MaxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
         }
 
-        if (mergedRanges.Count == 1)
-        {
-            var range = mergedRanges[0];
-            return Create(range.Min, minY, range.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
-        }
-
-        var left = mergedRanges[0];
-        var right = mergedRanges[^1];
-        return Create(right.Min, minY, left.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        var (minX, maxX) = ResolveMinimalLongitudeSpan(mergedRanges);
+        return Create(minX, minY, maxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
     }
 
     /// <summary>
@@ -228,15 +221,8 @@ public readonly record struct BoundingBox
             return null;
         }
 
-        if (intersections.Count == 1)
-        {
-            var range = intersections[0];
-            return Create(range.Min, minY, range.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
-        }
-
-        var left = intersections[0];
-        var right = intersections[^1];
-        return Create(right.Min, minY, left.Max, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
+        var (minX, maxX) = ResolveMinimalLongitudeSpan(intersections);
+        return Create(minX, minY, maxX, maxY, SpatialReferenceId ?? other.SpatialReferenceId);
     }
 
     /// <summary>
@@ -324,6 +310,129 @@ public readonly record struct BoundingBox
         }
 
         return MergeRanges(intersections);
+    }
+
+    /// <summary>
+    /// Chooses the shortest longitude span that covers the provided ranges.
+    /// </summary>
+    internal static (double Min, double Max) ResolveMinimalLongitudeSpan(List<(double Min, double Max)> ranges)
+    {
+        if (ranges.Count == 0)
+        {
+            return (MinLongitude, MaxLongitude);
+        }
+
+        var normalizedRanges = NormalizeRangesTo360(ranges);
+        var merged = MergeRanges(normalizedRanges);
+        if (merged.Count == 0)
+        {
+            return (MinLongitude, MaxLongitude);
+        }
+
+        var coverage = merged.Sum(range => range.Max - range.Min);
+        if (coverage >= 360d - 1e-9)
+        {
+            return (MinLongitude, MaxLongitude);
+        }
+
+        if (merged.Count == 1)
+        {
+            return NormalizeRangeTo180(merged[0]);
+        }
+
+        var largestGap = -1d;
+        var gapStart = 0d;
+        var gapEnd = 0d;
+        for (var i = 0; i < merged.Count; i++)
+        {
+            var current = merged[i];
+            var next = i == merged.Count - 1 ? merged[0] : merged[i + 1];
+            var gap = i == merged.Count - 1
+                ? (next.Min + 360d) - current.Max
+                : next.Min - current.Max;
+
+            if (gap > largestGap)
+            {
+                largestGap = gap;
+                gapStart = current.Max;
+                gapEnd = next.Min;
+            }
+        }
+
+        var spanStart = gapEnd;
+        var spanEnd = gapStart;
+        return NormalizeRangeTo180((spanStart, spanEnd));
+    }
+
+    /// <summary>
+    /// Normalizes longitude ranges into the [0, 360) domain.
+    /// </summary>
+    internal static List<(double Min, double Max)> NormalizeRangesTo360(List<(double Min, double Max)> ranges)
+    {
+        var normalized = new List<(double Min, double Max)>(ranges.Count * 2);
+        foreach (var range in ranges)
+        {
+            var start = NormalizeLongitudeTo360(range.Min);
+            var end = NormalizeLongitudeTo360(range.Max);
+
+            if (start <= end)
+            {
+                normalized.Add((start, end));
+                continue;
+            }
+
+            normalized.Add((start, 360d));
+            normalized.Add((0d, end));
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Normalizes a longitude range into the [-180, 180] domain.
+    /// </summary>
+    internal static (double Min, double Max) NormalizeRangeTo180((double Min, double Max) range)
+    {
+        var min = NormalizeLongitudeTo180(range.Min);
+        var max = NormalizeLongitudeTo180(range.Max);
+        return (min, max);
+    }
+
+    /// <summary>
+    /// Normalizes a longitude into the [0, 360) domain.
+    /// </summary>
+    internal static double NormalizeLongitudeTo360(double value)
+    {
+        var normalized = value % 360d;
+        if (normalized < 0d)
+        {
+            normalized += 360d;
+        }
+
+        if (normalized >= 360d)
+        {
+            normalized -= 360d;
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Normalizes a longitude into the [-180, 180] domain.
+    /// </summary>
+    internal static double NormalizeLongitudeTo180(double value)
+    {
+        var normalized = value % 360d;
+        if (normalized > 180d)
+        {
+            normalized -= 360d;
+        }
+        else if (normalized < -180d)
+        {
+            normalized += 360d;
+        }
+
+        return normalized;
     }
 
     private static double NormalizeLongitude(double value)

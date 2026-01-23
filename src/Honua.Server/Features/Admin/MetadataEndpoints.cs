@@ -5,15 +5,14 @@ using System.Collections.Frozen;
 using System.Data.Common;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
-using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
-using Microsoft.AspNetCore.OutputCaching;
+using Honua.Server.Features.Infrastructure.Styling;
 
 namespace Honua.Server.Features.Admin;
 
@@ -24,11 +23,6 @@ internal static partial class MetadataEndpoints
 {
     internal sealed class MetadataEndpointsLog { }
 
-    private const string LayerCacheKeyPrefix = "layer:";
-    private const string LayerListCacheKey = "layers:all";
-    private const string ServiceCacheKeyPrefix = "service:";
-    private const string ServiceListCacheKey = "services:all";
-    private const string RelationshipCacheKeyPrefix = "relationship:";
     private static readonly FrozenSet<string> _relationshipTypes = new[]
         {
             "esriRelRoleOrigin",
@@ -148,7 +142,7 @@ internal static partial class MetadataEndpoints
     // Service handlers
     // ========================================================================
 
-    private static async Task HandleListServices(HttpContext context)
+    private static async Task HandleListServices(HttpContext context, ILayerCatalog catalog)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -156,7 +150,6 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var services = await catalog.ListServicesAsync(context.RequestAborted);
 
         var response = new ServiceListResponse
@@ -167,7 +160,7 @@ internal static partial class MetadataEndpoints
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.ServiceListResponse);
     }
 
-    private static async Task HandleGetService(HttpContext context)
+    private static async Task HandleGetService(HttpContext context, ILayerCatalog catalog)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -182,7 +175,6 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var service = await catalog.GetServiceAsync(name, context.RequestAborted);
 
         if (service == null)
@@ -195,7 +187,11 @@ internal static partial class MetadataEndpoints
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.ServiceResponse);
     }
 
-    private static async Task HandleCreateService(HttpContext context)
+    private static async Task HandleCreateService(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        IEnumerable<ISecureConnectionRegistry> registries,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -229,10 +225,30 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        if (request.ConnectionId == Guid.Empty)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Connection ID is required");
+            return;
+        }
+
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
+            return;
+        }
+
+        var registry = ResolveOptional(registries);
+        if (registry == null)
+        {
+            await WriteError(context, StatusCodes.Status501NotImplemented, "Secure connection registry not available");
+            return;
+        }
+
+        var connection = await registry.GetConnectionAsync(request.ConnectionId, context.RequestAborted);
+        if (connection == null)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Connection not found");
             return;
         }
 
@@ -246,11 +262,11 @@ internal static partial class MetadataEndpoints
                 request.Name,
                 request.Description,
                 spatialReference,
-                request.MaxRecordCount,
                 metadata,
+                request.ConnectionId,
                 context.RequestAborted);
 
-            await InvalidateServiceCache(context, request.Name);
+            await cacheInvalidator.InvalidateServiceAsync(request.Name, context.RequestAborted);
 
             var response = MapToServiceResponse(service);
             context.Response.StatusCode = StatusCodes.Status201Created;
@@ -263,7 +279,11 @@ internal static partial class MetadataEndpoints
         }
     }
 
-    private static async Task HandleUpdateService(HttpContext context)
+    private static async Task HandleUpdateService(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        IEnumerable<ISecureConnectionRegistry> registries,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPut(context.Request.Method))
         {
@@ -298,11 +318,34 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
             return;
+        }
+
+        if (request.ConnectionId.HasValue && request.ConnectionId.Value == Guid.Empty)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, "Connection ID is required");
+            return;
+        }
+
+        if (request.ConnectionId.HasValue)
+        {
+            var registry = ResolveOptional(registries);
+            if (registry == null)
+            {
+                await WriteError(context, StatusCodes.Status501NotImplemented, "Secure connection registry not available");
+                return;
+            }
+
+            var connection = await registry.GetConnectionAsync(request.ConnectionId.Value, context.RequestAborted);
+            if (connection == null)
+            {
+                await WriteError(context, StatusCodes.Status400BadRequest, "Connection not found");
+                return;
+            }
         }
 
         var metadata = request.AccessPolicy == null
@@ -311,8 +354,8 @@ internal static partial class MetadataEndpoints
         var service = await adminCatalog.UpdateServiceAsync(
             name,
             request.Description,
-            request.MaxRecordCount,
             metadata,
+            request.ConnectionId,
             context.RequestAborted);
 
         if (service == null)
@@ -321,13 +364,16 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateServiceCache(context, name);
+        await cacheInvalidator.InvalidateServiceAsync(name, context.RequestAborted);
 
         var response = MapToServiceResponse(service);
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.ServiceResponse);
     }
 
-    private static async Task HandleDeleteService(HttpContext context)
+    private static async Task HandleDeleteService(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsDelete(context.Request.Method))
         {
@@ -342,7 +388,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -357,7 +403,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateServiceCache(context, name);
+        await cacheInvalidator.InvalidateServiceAsync(name, context.RequestAborted);
 
         var response = new SuccessResponse { Success = true, Message = $"Service '{name}' deleted" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.SuccessResponse);
@@ -367,7 +413,10 @@ internal static partial class MetadataEndpoints
     // Service-layer binding handlers
     // ========================================================================
 
-    private static async Task HandleBindLayer(HttpContext context)
+    private static async Task HandleBindLayer(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -402,7 +451,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -426,13 +475,16 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateServiceAndLayerCache(context, name, request.LayerId);
+        await cacheInvalidator.InvalidateServiceAndLayerAsync(name, request.LayerId, context.RequestAborted);
 
         var response = new BindingResponse { Success = true, Message = $"Layer {request.LayerId} bound to service '{name}'" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.BindingResponse);
     }
 
-    private static async Task HandleUnbindLayer(HttpContext context)
+    private static async Task HandleUnbindLayer(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsDelete(context.Request.Method))
         {
@@ -455,7 +507,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -470,7 +522,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateServiceAndLayerCache(context, name, layerId);
+        await cacheInvalidator.InvalidateServiceAndLayerAsync(name, layerId, context.RequestAborted);
 
         var response = new BindingResponse { Success = true, Message = $"Layer {layerId} unbound from service '{name}'" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.BindingResponse);
@@ -480,7 +532,7 @@ internal static partial class MetadataEndpoints
     // Layer handlers
     // ========================================================================
 
-    private static async Task HandleListLayers(HttpContext context)
+    private static async Task HandleListLayers(HttpContext context, ILayerCatalog catalog)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -488,7 +540,6 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var layers = await catalog.ListLayersAsync(context.RequestAborted);
 
         var response = new LayerListResponse
@@ -499,7 +550,7 @@ internal static partial class MetadataEndpoints
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerListResponse);
     }
 
-    private static async Task HandleGetLayer(HttpContext context)
+    private static async Task HandleGetLayer(HttpContext context, ILayerCatalog catalog)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -514,7 +565,6 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var layer = await catalog.GetLayerAsync(layerId, context.RequestAborted);
 
         if (layer == null)
@@ -527,7 +577,10 @@ internal static partial class MetadataEndpoints
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerResponse);
     }
 
-    private static async Task HandleCreateLayer(HttpContext context)
+    private static async Task HandleCreateLayer(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -567,7 +620,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -587,7 +640,7 @@ internal static partial class MetadataEndpoints
                 metadata,
                 context.RequestAborted);
 
-            await InvalidateLayerCache(context, layer.Id);
+            await cacheInvalidator.InvalidateLayerAsync(layer.Id, context.RequestAborted);
 
             var response = MapToLayerResponse(layer);
             context.Response.StatusCode = StatusCodes.Status201Created;
@@ -600,7 +653,10 @@ internal static partial class MetadataEndpoints
         }
     }
 
-    private static async Task HandleUpdateLayer(HttpContext context)
+    private static async Task HandleUpdateLayer(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPut(context.Request.Method))
         {
@@ -635,7 +691,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -661,13 +717,16 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateLayerCache(context, layerId);
+        await cacheInvalidator.InvalidateLayerAsync(layerId, context.RequestAborted);
 
         var response = MapToLayerResponse(layer);
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerResponse);
     }
 
-    private static async Task HandleDeleteLayer(HttpContext context)
+    private static async Task HandleDeleteLayer(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsDelete(context.Request.Method))
         {
@@ -682,7 +741,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -697,13 +756,16 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateLayerCache(context, layerId);
+        await cacheInvalidator.InvalidateLayerAsync(layerId, context.RequestAborted);
 
         var response = new SuccessResponse { Success = true, Message = $"Layer {layerId} deleted" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.SuccessResponse);
     }
 
-    private static async Task HandleRefreshLayer(HttpContext context)
+    private static async Task HandleRefreshLayer(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -718,7 +780,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -733,7 +795,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateLayerCache(context, layerId);
+        await cacheInvalidator.InvalidateLayerAsync(layerId, context.RequestAborted);
 
         var response = MapToLayerResponse(layer);
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.LayerResponse);
@@ -743,7 +805,7 @@ internal static partial class MetadataEndpoints
     // Relationship handlers
     // ========================================================================
 
-    private static async Task HandleListRelationships(HttpContext context)
+    private static async Task HandleListRelationships(HttpContext context, ILayerCatalog catalog)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -758,7 +820,6 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var relationships = await catalog.ListRelationshipsAsync(layerId, context.RequestAborted);
 
         var response = new RelationshipListResponse
@@ -770,7 +831,10 @@ internal static partial class MetadataEndpoints
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.RelationshipListResponse);
     }
 
-    private static async Task HandleCreateRelationship(HttpContext context)
+    private static async Task HandleCreateRelationship(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -805,7 +869,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -825,8 +889,8 @@ internal static partial class MetadataEndpoints
                 context.RequestAborted);
 
             // Invalidate both origin and related layer caches
-            await InvalidateLayerCache(context, layerId);
-            await InvalidateLayerCache(context, request.RelatedLayerId);
+            await cacheInvalidator.InvalidateLayerAsync(layerId, context.RequestAborted);
+            await cacheInvalidator.InvalidateLayerAsync(request.RelatedLayerId, context.RequestAborted);
 
             var response = MapToRelationshipResponse(relationship);
             context.Response.StatusCode = StatusCodes.Status201Created;
@@ -843,7 +907,10 @@ internal static partial class MetadataEndpoints
         }
     }
 
-    private static async Task HandleDeleteRelationship(HttpContext context)
+    private static async Task HandleDeleteRelationship(
+        HttpContext context,
+        IEnumerable<IAdminCatalog> adminCatalogs,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsDelete(context.Request.Method))
         {
@@ -866,7 +933,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var adminCatalog = context.RequestServices.GetService<IAdminCatalog>();
+        var adminCatalog = ResolveOptional(adminCatalogs);
         if (adminCatalog == null)
         {
             await WriteError(context, StatusCodes.Status501NotImplemented, "Admin catalog not available");
@@ -881,7 +948,7 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        await InvalidateLayerCache(context, layerId);
+        await cacheInvalidator.InvalidateLayerAsync(layerId, context.RequestAborted);
 
         var response = new SuccessResponse { Success = true, Message = $"Relationship {relationshipId} deleted from layer {layerId}" };
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.SuccessResponse);
@@ -891,7 +958,10 @@ internal static partial class MetadataEndpoints
     // Style handlers
     // ========================================================================
 
-    private static async Task HandleGetStyle(HttpContext context)
+    private static async Task HandleGetStyle(
+        HttpContext context,
+        ILayerCatalog catalog,
+        IEnumerable<ILayerStyleService> styleServices)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -906,7 +976,13 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var styleService = ResolveOptional(styleServices);
+        if (styleService == null)
+        {
+            await WriteError(context, StatusCodes.Status501NotImplemented, "Layer style service not available");
+            return;
+        }
+
         var layer = await catalog.GetLayerAsync(layerId, context.RequestAborted);
 
         if (layer == null)
@@ -915,18 +991,28 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        // Style support is a placeholder - returning empty style for now
+        var style = await styleService.GetStyleAsync(layer, context.RequestAborted);
+        if (style == null)
+        {
+            await WriteError(context, StatusCodes.Status404NotFound, $"Style for layer {layerId} not found");
+            return;
+        }
+
         var response = new StyleResponse
         {
             LayerId = layerId,
-            MapLibreStyle = null,
-            DrawingInfo = null
+            MapLibreStyle = style.MapLibreStyle,
+            DrawingInfo = style.DrawingInfo
         };
 
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.StyleResponse);
     }
 
-    private static async Task HandleUpdateStyle(HttpContext context)
+    private static async Task HandleUpdateStyle(
+        HttpContext context,
+        ILayerCatalog catalog,
+        IEnumerable<ILayerStyleService> styleServices,
+        MetadataCacheInvalidator cacheInvalidator)
     {
         if (!HttpMethods.IsPut(context.Request.Method))
         {
@@ -961,7 +1047,13 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        var catalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var styleService = ResolveOptional(styleServices);
+        if (styleService == null)
+        {
+            await WriteError(context, StatusCodes.Status501NotImplemented, "Layer style service not available");
+            return;
+        }
+
         var layer = await catalog.GetLayerAsync(layerId, context.RequestAborted);
 
         if (layer == null)
@@ -970,14 +1062,31 @@ internal static partial class MetadataEndpoints
             return;
         }
 
-        // Style storage is a placeholder - just returning the submitted style
-        await InvalidateLayerCache(context, layerId);
+        var updateResult = await styleService.UpdateStyleAsync(
+            layer,
+            request.MapLibreStyle,
+            request.DrawingInfo,
+            context.RequestAborted);
+
+        if (updateResult.Status == LayerStyleUpdateStatus.Invalid)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, updateResult.ErrorMessage ?? "Invalid style payload");
+            return;
+        }
+
+        if (updateResult.Status == LayerStyleUpdateStatus.NotFound || updateResult.Style == null)
+        {
+            await WriteError(context, StatusCodes.Status404NotFound, $"Layer {layerId} not found");
+            return;
+        }
+
+        await cacheInvalidator.InvalidateLayerAsync(layerId, context.RequestAborted);
 
         var response = new StyleResponse
         {
             LayerId = layerId,
-            MapLibreStyle = request.MapLibreStyle,
-            DrawingInfo = request.DrawingInfo
+            MapLibreStyle = updateResult.Style.MapLibreStyle,
+            DrawingInfo = updateResult.Style.DrawingInfo
         };
 
         await WriteJsonAsync(context, response, MetadataJsonContext.Default.StyleResponse);
@@ -992,10 +1101,10 @@ internal static partial class MetadataEndpoints
         Name = service.Name,
         Description = service.Description,
         SpatialReferenceSrid = service.SpatialReference.ToSrid(),
-        MaxRecordCount = service.MaxRecordCount,
         LayerCount = service.Layers.Length,
         LayerIds = service.Layers.Select(l => l.Id).ToArray(),
-        AccessPolicy = service.Metadata?.AccessPolicy
+        AccessPolicy = service.Metadata?.AccessPolicy,
+        ConnectionId = service.ConnectionId
     };
 
     private static LayerResponse MapToLayerResponse(LayerDefinition layer) => new()
@@ -1026,61 +1135,15 @@ internal static partial class MetadataEndpoints
         Description = relationship.Description
     };
 
-    private static async Task InvalidateServiceCache(HttpContext context, string serviceName)
+    private static TService? ResolveOptional<TService>(IEnumerable<TService> services)
+        where TService : class
     {
-        var normalizedServiceName = serviceName.ToLowerInvariant();
-
-        var cachingCatalog = context.RequestServices.GetService<CachingLayerCatalog>();
-        if (cachingCatalog != null)
+        foreach (var service in services)
         {
-            await cachingCatalog.InvalidateServiceAsync(serviceName, context.RequestAborted);
+            return service;
         }
 
-        var cacheService = context.RequestServices.GetService<ICacheService>();
-        if (cacheService != null)
-        {
-            await cacheService.RemoveAsync($"{ServiceCacheKeyPrefix}{normalizedServiceName}", context.RequestAborted);
-            await cacheService.RemoveAsync(ServiceListCacheKey, context.RequestAborted);
-        }
-
-        var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
-        if (outputCache != null)
-        {
-            await outputCache.EvictByTagAsync($"service:{normalizedServiceName}", context.RequestAborted);
-            await outputCache.EvictByTagAsync("ogc-metadata", context.RequestAborted);
-            await outputCache.EvictByTagAsync("ogc-tiles", context.RequestAborted);
-        }
-    }
-
-    private static async Task InvalidateLayerCache(HttpContext context, int layerId)
-    {
-        var cachingCatalog = context.RequestServices.GetService<CachingLayerCatalog>();
-        if (cachingCatalog != null)
-        {
-            await cachingCatalog.InvalidateLayerAsync(layerId, context.RequestAborted);
-        }
-
-        var cacheService = context.RequestServices.GetService<ICacheService>();
-        if (cacheService != null)
-        {
-            await cacheService.RemoveAsync($"{LayerCacheKeyPrefix}{layerId}", context.RequestAborted);
-            await cacheService.RemoveAsync(LayerListCacheKey, context.RequestAborted);
-            await cacheService.RemoveByPatternAsync($"{RelationshipCacheKeyPrefix}{layerId}:*", context.RequestAborted);
-        }
-
-        var outputCache = context.RequestServices.GetService<IOutputCacheStore>();
-        if (outputCache != null)
-        {
-            await outputCache.EvictByTagAsync($"layer:{layerId}", context.RequestAborted);
-            await outputCache.EvictByTagAsync("ogc-metadata", context.RequestAborted);
-            await outputCache.EvictByTagAsync("ogc-tiles", context.RequestAborted);
-        }
-    }
-
-    private static async Task InvalidateServiceAndLayerCache(HttpContext context, string serviceName, int layerId)
-    {
-        await InvalidateServiceCache(context, serviceName);
-        await InvalidateLayerCache(context, layerId);
+        return null;
     }
 
     private static async Task WriteJsonAsync<T>(HttpContext context, T response, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)

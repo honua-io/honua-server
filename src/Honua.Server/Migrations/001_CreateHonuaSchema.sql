@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS honua.services (
     service_name VARCHAR(64) PRIMARY KEY,
     description TEXT NOT NULL DEFAULT '',
     srid INT NOT NULL DEFAULT 4326,
-    max_record_count INT NOT NULL DEFAULT 1000,
     supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
     capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
     service_extent GEOMETRY,

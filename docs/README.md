@@ -109,12 +109,13 @@ redis-cli ping                    # Redis connectivity
 ConnectionStrings__DefaultConnection="Host=localhost;Database=honua;Username=postgres;Password=postgres"
 
 # Authentication
-HONUA_ADMIN_PASSWORD="secure-api-key"
 OIDC__ENABLED=true
 OIDC__AZUREAD__ENABLED=true
 OIDC__AZUREAD__TENANTID="your-tenant-id"
 OIDC__AZUREAD__CLIENTID="your-client-id"
 OIDC__TOKENVALIDATION__VALIDAUDIENCES__0="api://your-client-id"
+OIDC__ADMINROLES__0="admin"
+HONUA_ADMIN_PASSWORD="secure-api-key" # automation only, not for browser UI
 
 # Performance
 Limits__Query__MaxRecordCount=2000
@@ -124,7 +125,7 @@ Cache__Provider="Redis"
 ### Important URLs
 ```
 Health Check:     http://localhost:8080/health
-Admin Dashboard:  http://localhost:8080/admin/configuration
+Admin UI:         http://localhost:8080/admin
 Feature Server:   http://localhost:8080/rest/services/1/FeatureServer
 OGC Features:     http://localhost:8080/collections
 OData Endpoint:   http://localhost:8080/odata
@@ -132,10 +133,15 @@ OData Endpoint:   http://localhost:8080/odata
 
 Note: When OIDC is enabled, the `/odata` endpoints require bearer token auth (Power BI/Excel can use Organizational Account or Web API).
 
+### OIDC Bootstrap (Initial Setup)
+Honua does not provide an in-app bootstrap flow for OIDC. Configure your IdP and
+set env vars before startup. See `docs/SECURITY_CONFIGURATION.md` for step-by-step
+examples and role mapping guidance.
+
 ## 📈 Documentation Status
 
 ### Comprehensive Coverage
-- ✅ Architecture decisions documented (19 ADRs)
+- ✅ Architecture decisions documented (22 ADRs)
 - ✅ Development setup and contribution guidelines
 - ✅ Troubleshooting guides for common issues
 - ✅ Performance optimization strategies

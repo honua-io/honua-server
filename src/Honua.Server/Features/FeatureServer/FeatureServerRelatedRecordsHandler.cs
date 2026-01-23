@@ -147,10 +147,12 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(layerId, relatedQuery, cancellationToken);
 
             // Group results by origin object ID
+            var objectIdFieldName = relatedLayer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
             RelatedRecordGroup[] relatedRecordGroups = _relatedRecordsService.GroupRelatedRecords(
                 result,
                 objectIds,
                 relationship,
+                objectIdFieldName,
                 validatedParams.ReturnGeometry,
                 relatedLayer.SpatialReference.ToSrid(),
                 relatedQuery.OutFields);

@@ -1,6 +1,7 @@
 # Authentication Troubleshooting Guide
 
 This guide helps resolve authentication and authorization issues in Honua Server, including API keys, OIDC configuration, and access control problems.
+Browser-based Admin UI must use OIDC; API keys are for automation only.
 
 ## Quick Authentication Diagnostics
 
@@ -13,7 +14,10 @@ curl -v http://localhost:8080/health
 # Test admin endpoint without authentication (should fail)
 curl -v http://localhost:8080/admin/configuration
 
-# Test with API key
+# Test with OIDC (recommended for UI)
+curl -H "Authorization: Bearer your-oidc-token" http://localhost:8080/admin/configuration
+
+# Test with API key (automation only)
 curl -H "X-API-Key: your-api-key" http://localhost:8080/admin/configuration
 
 # Test OIDC endpoint (if configured)

@@ -4,7 +4,8 @@
 namespace Honua.Core.Features.Tiles;
 
 /// <summary>
-/// Configuration options for tile generation
+/// Configuration options for tile rendering and caching.
+/// Operational limits live in <see cref="Honua.Core.Configuration.LimitsOptions.Tiles" />.
 /// </summary>
 public sealed class TileOptions
 {
@@ -14,29 +15,9 @@ public sealed class TileOptions
     public const string SectionName = "TileOptions";
 
     /// <summary>
-    /// Maximum features per tile (default: 10,000)
-    /// </summary>
-    public int MaxFeaturesPerTile { get; init; } = 10_000;
-
-    /// <summary>
-    /// Query timeout for tile generation in seconds (default: 10)
-    /// </summary>
-    public int TileTimeoutSeconds { get; init; } = 10;
-
-    /// <summary>
     /// Zoom level below which geometries are simplified (default: 10)
     /// </summary>
     public int SimplifyZoom { get; init; } = 10;
-
-    /// <summary>
-    /// Minimum supported zoom level (default: 0)
-    /// </summary>
-    public int MinZoom { get; init; }
-
-    /// <summary>
-    /// Maximum supported zoom level (default: 22)
-    /// </summary>
-    public int MaxZoom { get; init; } = 22;
 
     /// <summary>
     /// Cache control max-age in seconds (default: 3600 = 1 hour)

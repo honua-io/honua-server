@@ -22,6 +22,76 @@ This document outlines the plan for a greenfield implementation of Honua, replac
 
 ---
 
+## GTM Personas and Primary Workflows
+
+- **Business/BI user**: OData v4 for Excel/Power BI access, may not use maps.
+- **Esri user**: GeoServices FeatureServer for ArcGIS tooling compatibility.
+- **Open source GIS user**: OGC API Features/Tiles compatibility.
+- **GIS admin/DevOps**: Observability, deployability, and metadata management (admin APIs/UI).
+
+These personas shape which protocols are MVP-critical and guide validation targets.
+
+---
+
+## Current Implementation Status (current tree)
+
+This plan is the target architecture and scope. The current repo already ships the core server APIs, but several MVP items remain open.
+
+**Implemented (server + admin API):**
+- FeatureServer query/edit/attachments/related endpoints
+- OGC API Features and OGC API Tiles endpoints
+- OData v4 CRUD + spatial query endpoints
+- MVT tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`
+- File import and Esri service import APIs
+- Admin APIs for connections/services/layers/relationships/styles + operations progress
+- OIDC authentication plumbing and optional Redis metadata cache
+
+**Pending MVP issues (open):**
+- #20 TileJSON metadata endpoint
+- #58 Service enable/disable controls
+- #25, #26, #27, #42, #43 Admin UI (connections, publishing, health dashboard, map preview)
+- #30 Embedded Maputnik style editor
+- #244 Canonical cross-protocol style pipeline
+- #187 Esri Service Import Wizard UI
+- #31, #32, #33 Deployment templates (Helm + AWS/Azure Terraform)
+- #38 Documentation and API docs
+- #39 Security hardening and input validation
+
+### MVP Gap Matrix (current tree)
+
+| Capability | Target MVP | Current status | Tracking | Risk |
+| --- | --- | --- | --- | --- |
+| Admin UI (connections/publishing/import/health/preview) | Required (Phase 4) | API only | #25 #26 #27 #42 #43 #187 | High |
+| Map style editing | Required (Phase 4) | Not implemented | #30 | Medium |
+| TileJSON metadata | Required (Phase 3.25) | Not implemented | #20 | Medium |
+| Service enable/disable | Required (Phase 4) | Not implemented | #58 | Medium |
+| Deployment templates | Required (Phase 4.5) | Not implemented | #31 #32 #33 #34 | Medium |
+| Docs + security hardening | Required (Phase 5) | Incomplete | #38 #39 | High |
+| Cross-protocol style pipeline | Required (Phase 4) | Not implemented | #244 | High |
+
+### Locked MVP Scope (recommended)
+
+**Must ship for MVP release:**
+- FeatureServer query/edit/attachments/related
+- OGC API Features (Core + Transactions)
+- OGC API Tiles + MVT endpoints
+- OData v4 CRUD with spatial filters
+- File import + Esri service import APIs
+- Admin UI for connections + layer publishing + import workflow (OIDC required for browser UI)
+- Service enable/disable controls
+- TileJSON metadata
+- Canonical cross-protocol style pipeline (MapLibre as source of truth)
+- Security hardening + API/docs alignment
+
+**Explicitly defer to Beta/GA:**
+- Query caching + performance enhancements (#233, #229)
+- Advanced observability/alerting (#227)
+- Layer-level RBAC and rate limiting (#240, #242, #243)
+- OGC certification path documentation (#232)
+- GCP Terraform deployment templates
+
+---
+
 ## Technical Decisions
 
 ### Stack
@@ -117,13 +187,11 @@ Honua/
 │   └── terraform/
 │       ├── modules/
 │       │   ├── aws-ecs/           # AWS ECS/Fargate
-│       │   ├── azure-aca/         # Azure Container Apps
-│       │   └── gcp-cloudrun/      # Google Cloud Run
+│       │   └── azure-aca/         # Azure Container Apps
 │       │
 │       └── examples/
 │           ├── aws/               # Complete AWS example
-│           ├── azure/             # Complete Azure example
-│           └── gcp/               # Complete GCP example
+│           └── azure/             # Complete Azure example
 │
 ├── scripts/
 │   ├── check-perf-regression.py   # Benchmark regression checker
@@ -135,14 +203,13 @@ Honua/
 │   │   └── release.yml            # Publish images
 │   └── perf-baseline.json         # Benchmark baseline for regression
 │
-└── docs/
-    ├── api/                       # API documentation
-    ├── architecture/              # Architecture decisions
-    └── deployment/                # Deployment guides
+    └── docs/
+        ├── api/                       # API documentation
+        ├── architecture/              # Architecture decisions
+        └── deployment/                # Deployment guides
         ├── kubernetes.md          # Helm install guide
         ├── aws.md                 # AWS ECS/Fargate guide
-        ├── azure.md               # Azure Container Apps guide
-        └── gcp.md                 # GCP Cloud Run guide
+        └── azure.md               # Azure Container Apps guide
 ```
 
 ### Key Architectural Principles
@@ -2253,6 +2320,7 @@ Critical paths include:
 | Task | Deliverable |
 |------|-------------|
 | Blazor project setup | WASM project, API integration |
+| Admin UI authentication | OIDC PKCE for browser UI (API key is automation-only) |
 | Connection management | Add/test PostGIS connections |
 | Table discovery | List tables/views with geometry, PK detection, row-count estimate |
 | Layer publishing | Create layer from table |
@@ -2277,19 +2345,19 @@ Critical paths include:
 - [ ] Basic health status visible
 - [ ] Map preview renders MVT tiles
 - [ ] Styles can be edited and saved via Maputnik
+- [ ] Admin UI authenticates via OIDC; browser clients do not use API keys
 - [ ] **Coverage checkpoint:** 70%+ on `Honua.Admin` (Blazor), 75%+ on `Features/Admin/` API, 80%+ cumulative maintained
 
 ### Phase 4.5: Deployment Templates
 
-**Goal:** Production-ready deployment options for Kubernetes and major cloud providers.
+**Goal:** Production-ready deployment options for Kubernetes plus AWS and Azure.
 
 | Task | Deliverable |
 |------|-------------|
 | **Helm chart** | Complete K8s deployment with configurable values |
 | **AWS Terraform** | ECS/Fargate module with RDS PostgreSQL, ALB, secrets |
 | **Azure Terraform** | Container Apps module with Azure Database for PostgreSQL |
-| **GCP Terraform** | Cloud Run module with Cloud SQL PostgreSQL |
-| **Examples** | Complete working examples for each cloud |
+| **Examples** | Complete working examples for AWS and Azure |
 | **Documentation** | Step-by-step deployment guides for each platform |
 
 **Helm Chart Features:**
@@ -2305,9 +2373,9 @@ Critical paths include:
 **Terraform Module Features:**
 - VPC/network setup (or use existing)
 - Managed PostgreSQL with PostGIS
-- Container service (ECS/Container Apps/Cloud Run)
+- Container service (ECS/Container Apps)
 - Load balancer with TLS termination
-- Secrets management (Secrets Manager/Key Vault/Secret Manager)
+- Secrets management (Secrets Manager/Key Vault)
 - IAM/RBAC for least-privilege access
 - Optional Redis for caching
 - Outputs for connection strings and endpoints
@@ -2317,7 +2385,6 @@ Critical paths include:
 - [ ] `helm test` passes (connectivity, health checks)
 - [ ] AWS Terraform applies cleanly, Honua accessible via ALB
 - [ ] Azure Terraform applies cleanly, Honua accessible via Container Apps endpoint
-- [ ] GCP Terraform applies cleanly, Honua accessible via Cloud Run URL
 - [ ] Each deployment connects to managed PostgreSQL with PostGIS
 - [ ] OIDC authentication works in all deployment scenarios
 - [ ] Deployment guides tested by someone other than author
@@ -2329,7 +2396,7 @@ Critical paths include:
 
 | Task | Deliverable |
 |------|-------------|
-| **OIDC Authentication** | ASP.NET Core OIDC middleware integration |
+| **OIDC Authentication** | Admin UI + secured endpoints (PKCE for browser UI) |
 | **Auth providers** | Azure AD, Google, generic OIDC support |
 | **Token validation** | JWT validation, claims extraction |
 | **Admin protection** | Admin UI and API endpoints require auth |
@@ -2388,7 +2455,7 @@ Critical paths include:
 - [ ] OIDC authentication works (Azure AD, Google, generic provider)
 - [ ] Single Docker container deploys and runs
 - [ ] Helm chart deploys to Kubernetes
-- [ ] Terraform modules deploy to AWS, Azure, and GCP
+- [ ] Terraform modules deploy to AWS and Azure
 - [ ] Redis cache works when configured (in-memory fallback otherwise)
 
 ### Quality
@@ -2409,30 +2476,17 @@ Critical paths include:
 
 - [ ] README with quick start
 - [ ] API documentation (OpenAPI)
-- [ ] Deployment guides (Kubernetes, AWS, Azure, GCP)
+- [ ] Deployment guides (Kubernetes, AWS, Azure)
 - [ ] Architecture decisions recorded
-
----
-
-## Open Questions
-
-| Question | Options | Decision |
-|----------|---------|----------|
-| Repo name | `Honua`, `Honua.MVP`, `honua-server` | TBD |
-| Repo location | New org, same org, personal | New repo |
-| How to handle existing Honua.Server | Archive, rename, keep active | Keep locally as reference; new repo for greenfield |
-| License | ELv2 (same as current) | ELv2 |
-
-**Repo Strategy:** New repository for greenfield implementation. Existing Honua.Server kept locally as reference documentation for behavior and edge cases. No code will be copied directly—existing code serves as specification, not source.
 
 ---
 
 ## Next Steps
 
-1. **Finalize repo name** (location and handling decided)
-2. **Create new repository** with initial structure
-3. **Set up CI/CD pipeline** with all gates
-4. **Begin Phase 0** (Foundation)
+1. **Complete MVP gaps** (Admin UI, styles, TileJSON, service enable/disable)
+2. **Ship deployment templates** (Helm + AWS/Azure)
+3. **Finalize documentation + security hardening**
+4. **Validate MVP exit criteria**
 
 ---
 

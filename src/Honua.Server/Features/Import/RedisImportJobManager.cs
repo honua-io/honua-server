@@ -55,8 +55,8 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 }
 
 /// <summary>
-/// Redis-based job queue using StackExchange.Redis lists with IDistributedCache fallback.
-/// Note: IDistributedCache doesn't support LPUSH/BRPOP, so we use a polling approach.
+/// Redis-based job queue using StackExchange.Redis lists with an in-memory fallback.
+/// Note: IDistributedCache isn't used for queue semantics to avoid race-prone polling.
 /// </summary>
 internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 {
@@ -75,7 +75,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
         _logger = logger;
         _queueKey = queueKey;
         _useRedis = _redisDb != null;
-        _isUsingFallback = !_useRedis && cache == null;
+        _isUsingFallback = !_useRedis;
 
         if (_isUsingFallback)
         {
@@ -97,50 +97,18 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             {
                 Log.RedisFailed(_logger, "enqueue", ex);
                 _useRedis = false;
-                _isUsingFallback = _cache == null;
+                _isUsingFallback = true;
             }
         }
 
-        if (_isUsingFallback || _cache == null)
+        if (!_isUsingFallback)
         {
-            _fallbackQueue.Enqueue(jobId);
-            Log.JobEnqueued(_logger, jobId, "fallback");
-            return;
-        }
-
-        try
-        {
-            // Use a list-like pattern with distributed cache
-            // Store jobs as individual keys with a counter for ordering
-            var counterKey = $"{_queueKey}:counter";
-            var counterBytes = await _cache.GetAsync(counterKey, cancellationToken);
-            var counter = counterBytes != null ? BitConverter.ToInt64(counterBytes) + 1 : 1;
-
-            await _cache.SetAsync(counterKey, BitConverter.GetBytes(counter),
-                new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(24) },
-                cancellationToken);
-
-            var itemKey = $"{_queueKey}:{counter:D10}";
-            await _cache.SetStringAsync(itemKey, jobId,
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24) },
-                cancellationToken);
-
-            // Track pending items
-            var pendingKey = $"{_queueKey}:pending";
-            var pending = await _cache.GetStringAsync(pendingKey, cancellationToken) ?? "";
-            pending = string.IsNullOrEmpty(pending) ? itemKey : $"{pending},{itemKey}";
-            await _cache.SetStringAsync(pendingKey, pending,
-                new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(24) },
-                cancellationToken);
-
-            Log.JobEnqueued(_logger, jobId, "redis");
-        }
-        catch (Exception ex)
-        {
-            Log.RedisFailed(_logger, "enqueue", ex);
+            Log.UsingFallbackQueue(_logger);
             _isUsingFallback = true;
-            _fallbackQueue.Enqueue(jobId);
         }
+
+        _fallbackQueue.Enqueue(jobId);
+        Log.JobEnqueued(_logger, jobId, "fallback");
     }
 
     public async Task<string?> DequeueAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -165,57 +133,22 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
                 {
                     Log.RedisFailed(_logger, "dequeue", ex);
                     _useRedis = false;
-                    _isUsingFallback = _cache == null;
+                    _isUsingFallback = true;
                 }
             }
 
             if (!_useRedis)
             {
-                if (_isUsingFallback || _cache == null)
+                if (!_isUsingFallback)
                 {
-                    if (_fallbackQueue.TryDequeue(out var fallbackJob))
-                    {
-                        Log.JobDequeued(_logger, fallbackJob, "fallback");
-                        return fallbackJob;
-                    }
+                    Log.UsingFallbackQueue(_logger);
+                    _isUsingFallback = true;
                 }
-                else
+
+                if (_fallbackQueue.TryDequeue(out var fallbackJob))
                 {
-                    try
-                    {
-                        var pendingKey = $"{_queueKey}:pending";
-                        var pending = await _cache.GetStringAsync(pendingKey, cancellationToken);
-
-                        if (!string.IsNullOrEmpty(pending))
-                        {
-                            var items = pending.Split(',', StringSplitOptions.RemoveEmptyEntries);
-                            if (items.Length > 0)
-                            {
-                                var itemKey = items[0];
-                                var jobId = await _cache.GetStringAsync(itemKey, cancellationToken);
-
-                                if (jobId != null)
-                                {
-                                    // Remove from pending list
-                                    var newPending = string.Join(",", items.Skip(1));
-                                    await _cache.SetStringAsync(pendingKey, newPending,
-                                        new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(24) },
-                                        cancellationToken);
-
-                                    // Remove the item
-                                    await _cache.RemoveAsync(itemKey, cancellationToken);
-
-                                    Log.JobDequeued(_logger, jobId, "redis");
-                                    return jobId;
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.RedisFailed(_logger, "dequeue", ex);
-                        _isUsingFallback = true;
-                    }
+                    Log.JobDequeued(_logger, fallbackJob, "fallback");
+                    return fallbackJob;
                 }
             }
 
@@ -238,25 +171,17 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             {
                 Log.RedisFailed(_logger, "length", ex);
                 _useRedis = false;
-                _isUsingFallback = _cache == null;
+                _isUsingFallback = true;
             }
         }
 
-        if (_isUsingFallback || _cache == null)
+        if (!_isUsingFallback)
         {
-            return _fallbackQueue.Count;
+            Log.UsingFallbackQueue(_logger);
+            _isUsingFallback = true;
         }
 
-        try
-        {
-            var pendingKey = $"{_queueKey}:pending";
-            var pending = await _cache.GetStringAsync(pendingKey, cancellationToken);
-            return string.IsNullOrEmpty(pending) ? 0 : pending.Split(',').Length;
-        }
-        catch
-        {
-            return _fallbackQueue.Count;
-        }
+        return _fallbackQueue.Count;
     }
 
     private static partial class Log

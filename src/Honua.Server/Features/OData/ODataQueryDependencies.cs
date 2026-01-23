@@ -8,6 +8,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.OData.Services;
 using Microsoft.Extensions.Options;
 
@@ -24,6 +25,7 @@ internal sealed class ODataQueryDependencies
         ODataValidationService validationService,
         ODataQuerySearchService querySearchService,
         IResponseCache responseCache,
+        IETagService etagService,
         IOptions<CacheOptions> cacheOptions)
     {
         LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
@@ -34,6 +36,7 @@ internal sealed class ODataQueryDependencies
         ValidationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
         QuerySearchService = querySearchService ?? throw new ArgumentNullException(nameof(querySearchService));
         ResponseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
+        ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
     }
 
@@ -45,5 +48,6 @@ internal sealed class ODataQueryDependencies
     public ODataValidationService ValidationService { get; }
     public ODataQuerySearchService QuerySearchService { get; }
     public IResponseCache ResponseCache { get; }
+    public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }
 }

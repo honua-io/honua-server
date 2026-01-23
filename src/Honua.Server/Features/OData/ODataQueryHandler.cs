@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
@@ -39,6 +40,7 @@ internal sealed partial class ODataQueryHandler(
     private readonly ODataValidationService _validationService = dependencies.ValidationService;
     private readonly ODataQuerySearchService _querySearchService = dependencies.QuerySearchService;
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
+    private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<ODataQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -57,41 +59,35 @@ internal sealed partial class ODataQueryHandler(
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Layers);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.Layers);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            var formatValidation = ValidateFormat(context, format);
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
             if (formatValidation != null)
             {
                 return formatValidation;
             }
 
-            if (!ODataParsingUtilities.TryParseOptionalInt(top, "$top", out var topValue, out var parseError))
+            if (!ODataRequestValidation.TryParsePaging(
+                context,
+                _validationService,
+                top,
+                skip,
+                count,
+                out var paging,
+                out var pagingError))
             {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
+                return pagingError!;
             }
 
-            if (!ODataParsingUtilities.TryParseOptionalInt(skip, "$skip", out var skipValue, out parseError))
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            }
-
-            if (!ODataParsingUtilities.TryParseOptionalBool(count, "$count", out var countValue, out parseError))
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            }
-
-            var paginationResult = _validationService.ValidateAndNormalizePagination(skipValue, topValue);
-            if (!paginationResult.IsValid)
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQueryOption",
-                    paginationResult.ErrorMessage ?? "Invalid OData query.");
-            }
-
-            var pagination = paginationResult.Value!;
+            var pagination = paging!.Pagination;
+            var countValue = paging.Count;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
             var visibleLayers = layers
@@ -169,13 +165,16 @@ internal sealed partial class ODataQueryHandler(
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Layer);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.Layer);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            var formatValidation = ValidateFormat(context, format);
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
             if (formatValidation != null)
             {
                 return formatValidation;
@@ -247,13 +246,16 @@ internal sealed partial class ODataQueryHandler(
     {
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.LayersCount);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.LayersCount);
             if (queryValidation != null)
             {
                 return queryValidation;
             }
 
-            var formatValidation = ValidateFormat(context, format);
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
             if (formatValidation != null)
             {
                 return formatValidation;
@@ -310,9 +312,13 @@ internal sealed partial class ODataQueryHandler(
         [FromQuery(Name = "$expand")] string? expand = null,
         CancellationToken cancellationToken = default)
     {
+        Activity? featureActivity = null;
         try
         {
-            var queryValidation = ValidateAllowedParameters(context, AllowedQueryParameters.Features);
+            var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+                context,
+                _validationService,
+                AllowedQueryParameters.Features);
             if (queryValidation != null)
             {
                 return queryValidation;
@@ -345,9 +351,15 @@ internal sealed partial class ODataQueryHandler(
                 return accessError;
             }
 
-            var activity = Activity.Current;
-            activity?.SetTag("honua.protocol", "odata");
-            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                HonuaTelemetry.Protocols.OData,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
 
             // Build feature query using query service
             var featureQuery = _querySearchService.BuildFeatureQuery(
@@ -377,7 +389,8 @@ internal sealed partial class ODataQueryHandler(
                 if (cached != null)
                 {
                     ODataUtilityService.SetODataHeaders(context);
-                    return Results.Bytes(cached.Payload, cached.ContentType);
+                    HonuaTelemetry.SetSuccess(featureActivity);
+                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
                 }
             }
 
@@ -447,10 +460,13 @@ internal sealed partial class ODataQueryHandler(
             {
                 var contentType = ODataUtilityService.GetODataContentType();
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, ODataJsonContext.Default.ODataResponse);
-                await _responseCache.SetAsync(cacheKey, new CachedResponse(payload, contentType), cacheTtl, effectiveToken);
-                return Results.Bytes(payload, contentType);
+                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
+                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, effectiveToken);
+                HonuaTelemetry.SetSuccess(featureActivity, result.Length);
+                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
+            HonuaTelemetry.SetSuccess(featureActivity, result.Length);
             return Results.Json(response, ODataJsonContext.Default.ODataResponse,
                 contentType: ODataUtilityService.GetODataContentType());
         }
@@ -463,44 +479,20 @@ internal sealed partial class ODataQueryHandler(
         {
             Log.InvalidFeaturesQuery(_logger, layerId, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the OData request", 500);
         }
-    }
-
-    private IResult? ValidateAllowedParameters(
-        HttpContext context,
-        IReadOnlySet<string> allowedParameters)
-    {
-        var validationResult = _validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
+        finally
         {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
+            featureActivity?.Dispose();
         }
-
-        return null;
-    }
-
-    private IResult? ValidateFormat(HttpContext context, string? format)
-    {
-        var validation = _validationService.ValidateFormat(format, ODataUtilityService.GetAllowedFormats());
-        if (!validation.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validation.ErrorMessage ?? "Invalid format parameter.");
-        }
-
-        return null;
     }
 
     private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)

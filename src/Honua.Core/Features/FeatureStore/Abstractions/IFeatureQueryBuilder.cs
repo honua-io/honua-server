@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
@@ -78,5 +79,6 @@ internal interface IFeatureQueryBuilder
         int z,
         FeatureQuery? query,
         TileOptions tileOptions,
+        TileLimits tileLimits,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 }

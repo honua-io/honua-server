@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -55,7 +56,7 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets basic health metrics.
     /// </summary>
-    private static IResult GetHealthMetrics()
+    private static IResult GetHealthMetrics(HttpContext context)
     {
         try
         {
@@ -74,17 +75,16 @@ public static class MetricsEndpoints
         }
         catch (Exception)
         {
-            return Results.Problem(
-                detail: "See server logs for details.",
-                statusCode: 500,
-                title: "Failed to retrieve health metrics");
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Failed to retrieve health metrics. See server logs for details.");
         }
     }
 
     /// <summary>
     /// Gets comprehensive performance metrics.
     /// </summary>
-    private static IResult GetPerformanceMetrics(IHttpRequestMetricsSnapshotProvider httpMetricsProvider)
+    private static IResult GetPerformanceMetrics(HttpContext context, IHttpRequestMetricsSnapshotProvider httpMetricsProvider)
     {
         try
         {
@@ -124,17 +124,16 @@ public static class MetricsEndpoints
         }
         catch (Exception)
         {
-            return Results.Problem(
-                detail: "See server logs for details.",
-                statusCode: 500,
-                title: "Failed to retrieve performance metrics");
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Failed to retrieve performance metrics. See server logs for details.");
         }
     }
 
     /// <summary>
     /// Gets database-specific performance metrics.
     /// </summary>
-    private static IResult GetDatabaseMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider)
+    private static IResult GetDatabaseMetrics(HttpContext context, IDatabasePerformanceMetricsProvider databaseMetricsProvider)
     {
         try
         {
@@ -161,17 +160,16 @@ public static class MetricsEndpoints
         }
         catch (Exception)
         {
-            return Results.Problem(
-                detail: "See server logs for details.",
-                statusCode: 500,
-                title: "Failed to retrieve database metrics");
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Failed to retrieve database metrics. See server logs for details.");
         }
     }
 
     /// <summary>
     /// Gets cache-specific performance metrics.
     /// </summary>
-    private static IResult GetCacheMetrics(ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider)
+    private static IResult GetCacheMetrics(HttpContext context, ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider)
     {
         try
         {
@@ -200,17 +198,16 @@ public static class MetricsEndpoints
         }
         catch (Exception)
         {
-            return Results.Problem(
-                detail: "See server logs for details.",
-                statusCode: 500,
-                title: "Failed to retrieve cache metrics");
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Failed to retrieve cache metrics. See server logs for details.");
         }
     }
 
     /// <summary>
     /// Gets current memory usage metrics.
     /// </summary>
-    private static IResult GetMemoryMetrics()
+    private static IResult GetMemoryMetrics(HttpContext context)
     {
         try
         {
@@ -219,10 +216,9 @@ public static class MetricsEndpoints
         }
         catch (Exception)
         {
-            return Results.Problem(
-                detail: "See server logs for details.",
-                statusCode: 500,
-                title: "Failed to retrieve memory metrics");
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Failed to retrieve memory metrics. See server logs for details.");
         }
     }
 }

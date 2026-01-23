@@ -26,9 +26,9 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler)
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
     {
-        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -49,6 +49,7 @@ internal static partial class FeatureServerEndpoints
             layerId,
             queryParams,
             context,
+            queryValidator,
             cancellationToken);
     }
 
@@ -56,9 +57,9 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler)
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
     {
-        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -87,6 +88,7 @@ internal static partial class FeatureServerEndpoints
             layerId,
             queryParams,
             context,
+            queryValidator,
             cancellationToken);
     }
 
@@ -327,11 +329,12 @@ internal static partial class FeatureServerEndpoints
         }
 
         var tileOptions = context.RequestServices.GetRequiredService<IOptions<TileOptions>>().Value;
-        if (z < tileOptions.MinZoom || z > tileOptions.MaxZoom)
+        var tileLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        if (z < tileLimits.MinTileZoom || z > tileLimits.MaxTileZoom)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 $"Zoom level {z} is outside supported range",
-                [$"Supported zoom range is {tileOptions.MinZoom}-{tileOptions.MaxZoom}"]);
+                [$"Supported zoom range is {tileLimits.MinTileZoom}-{tileLimits.MaxTileZoom}"]);
         }
 
         var maxIndex = 1 << z;
@@ -397,6 +400,7 @@ internal static partial class FeatureServerEndpoints
             z,
             query,
             tileOptions,
+            tileLimits,
             cancellationToken);
 
         if (tileData == null || tileData.Length == 0)
@@ -754,7 +758,7 @@ internal static partial class FeatureServerEndpoints
         parameters = new QueryParameters
         {
             Where = GetValueString(values, "where"),
-            OutFields = GetValueString(values, "outFields"),
+            OutFields = NormalizeOutFields(GetValueString(values, "outFields")),
             OrderByFields = GetValueString(values, "orderByFields"),
             Geometry = GetValueString(values, "geometry"),
             InSr = GetValueString(values, "inSR"),
@@ -852,7 +856,7 @@ internal static partial class FeatureServerEndpoints
         {
             ObjectIds = objectIds,
             RelationshipId = relationshipId,
-            OutFields = GetValueString(values, "outFields"),
+            OutFields = NormalizeOutFields(GetValueString(values, "outFields")),
             Where = where,
             ReturnGeometry = returnGeometry,
             F = GetValueString(values, "f") ?? "json",
@@ -861,6 +865,27 @@ internal static partial class FeatureServerEndpoints
         };
 
         return true;
+    }
+
+    private static string? NormalizeOutFields(string? outFields)
+    {
+        if (string.IsNullOrWhiteSpace(outFields))
+        {
+            return null;
+        }
+
+        var tokens = outFields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            return null;
+        }
+
+        if (tokens.Any(token => token.Equals("*", StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        return string.Join(',', tokens);
     }
 
     private static bool TryParseRequiredIntValue(

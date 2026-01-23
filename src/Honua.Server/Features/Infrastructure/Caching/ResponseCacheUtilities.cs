@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
 
-internal sealed record CachedResponse(byte[] Payload, string ContentType);
+internal sealed record CachedResponse(byte[] Payload, string ContentType, string? ETag = null);
 
 internal static class ResponseCacheUtilities
 {
@@ -70,6 +70,48 @@ internal static class ResponseCacheUtilities
 
     internal static string BuildODataLayerPattern(int layerId)
         => $"{ODataPrefix}{layerId}:*";
+
+    internal static CachedResponse CreateCachedResponse(byte[] payload, string contentType, IETagService etagService)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(contentType);
+        ArgumentNullException.ThrowIfNull(etagService);
+
+        var etag = etagService.ComputeETag(payload);
+        return new CachedResponse(payload, contentType, etag);
+    }
+
+    internal static IResult CreateResultFromCachedResponse(
+        HttpContext context,
+        CachedResponse cached,
+        IETagService etagService)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(cached);
+        ArgumentNullException.ThrowIfNull(etagService);
+
+        if (!string.IsNullOrWhiteSpace(cached.ETag))
+        {
+            var ifMatch = context.Request.Headers.IfMatch.ToString();
+            if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, cached.ETag))
+            {
+                return Results.StatusCode(StatusCodes.Status412PreconditionFailed);
+            }
+
+            var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
+            if (!etagService.IsModified(ifNoneMatch, cached.ETag))
+            {
+                etagService.SetCacheHeaders(context.Response, cached.ETag);
+                context.Response.Headers.Remove("Content-Type");
+                context.Response.ContentLength = 0;
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+
+            etagService.SetCacheHeaders(context.Response, cached.ETag);
+        }
+
+        return Results.Bytes(cached.Payload, cached.ContentType);
+    }
 
     private static string BuildKey(string prefix, HttpRequest request)
     {

@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Attachments;
@@ -20,10 +21,12 @@ using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.Geometry;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure.Styling;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
@@ -48,48 +51,13 @@ internal static class ServiceCollectionExtensions
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
         var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
+        var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
         // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
             var connectionString = ResolveConnectionString(serviceProvider, configuration);
-
-            var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-
-            // PERFORMANCE OPTIMIZATION: Configure optimized connection settings
-            dataSourceBuilder.ConnectionStringBuilder.Pooling = true;
-            dataSourceBuilder.ConnectionStringBuilder.MinPoolSize = 5;
-            dataSourceBuilder.ConnectionStringBuilder.MaxPoolSize = 50;
-            dataSourceBuilder.ConnectionStringBuilder.ConnectionIdleLifetime = 300; // 5 minutes
-            dataSourceBuilder.ConnectionStringBuilder.ConnectionPruningInterval = 10;
-            dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = 30;
-            dataSourceBuilder.ConnectionStringBuilder.WriteBufferSize = 16384; // 16KB
-            dataSourceBuilder.ConnectionStringBuilder.ReadBufferSize = 16384; // 16KB
-            dataSourceBuilder.ConnectionStringBuilder.NoResetOnClose = !schemaHeadersEnabled;
-            dataSourceBuilder.ConnectionStringBuilder.Multiplexing = !schemaHeadersEnabled;
-
-            if (dataSourceBuilder.ConnectionStringBuilder.Multiplexing)
-            {
-                // Npgsql multiplexing does not support keepalive settings.
-                dataSourceBuilder.ConnectionStringBuilder.KeepAlive = 0;
-                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveTime = 0;
-                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveInterval = 0;
-            }
-            else
-            {
-                dataSourceBuilder.ConnectionStringBuilder.KeepAlive = 30;
-                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveTime = 30;
-                dataSourceBuilder.ConnectionStringBuilder.TcpKeepAliveInterval = 2;
-            }
-
-            // Note: Not using EnableDynamicJson() for AOT compatibility
-            // Manual JSON serialization is used instead for JSONB parameters
-
-            // SECURITY: Configure lock timeouts to prevent indefinite blocking
-            dataSourceBuilder.ConnectionStringBuilder.Options =
-                "-c lock_timeout=30s -c statement_timeout=120s -c idle_in_transaction_session_timeout=60s";
-
-            return dataSourceBuilder.Build();
+            return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits);
         });
 
         // Register refactored feature store implementation
@@ -113,6 +81,9 @@ internal static class ServiceCollectionExtensions
 
         // Register admin catalog for metadata CRUD operations
         services.AddScoped<IAdminCatalog, PostgresAdminCatalog>();
+
+        // Register layer style catalog for MapLibre/GeoServices styling
+        services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
 
         // Register table discovery implementation
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
@@ -157,6 +128,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
             new CrsDetectionService(serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
+        services.AddHostedService<PostgresCrsWarmupService>();
 
         // Register import limits configuration
         services.AddSingleton(serviceProvider =>
@@ -193,6 +165,7 @@ internal static class ServiceCollectionExtensions
 
             return new StreamingFileImportService(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ICrsDetectionService>(),
                 performanceMonitor,
                 logger,
                 limits,

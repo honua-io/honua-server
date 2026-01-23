@@ -45,14 +45,17 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         var geometryProcessor = new GeometryProcessor();
         var cacheManager = new FeatureCacheManager(connectionProvider, NullLogger<FeatureCacheManager>.Instance, _schemaName);
         var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _schemaName);
-        var dataAccess = new FeatureDataAccess(
+        var dataAccess = new FeatureDataAccess(new FeatureDataAccessDependencies(
             connectionProvider,
             geometryProcessor,
             cacheManager,
             dictionaryPool,
-            statementCache: null,
-            logger: NullLogger<FeatureDataAccess>.Instance,
-            schemaName: _schemaName);
+            StatementCache: null,
+            Logger: NullLogger<FeatureDataAccess>.Instance,
+            PerformanceOptions: null,
+            LimitsOptions: null,
+            PerformanceMonitor: null,
+            SchemaName: _schemaName));
         _featureStore = new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
 
         // Create test table structure

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Postgres.Features.Infrastructure;
 
@@ -9,7 +10,7 @@ namespace Honua.Postgres.Features.Infrastructure;
 /// Centralized database schema constants for PostgreSQL feature store operations.
 /// Contains table names, column names, and common field identifiers used throughout the data layer.
 /// </summary>
-public static class DatabaseSchema
+internal static class DatabaseSchema
 {
     #region Table Names
 
@@ -51,7 +52,7 @@ public static class DatabaseSchema
     /// Primary key column name for features (objectid).
     /// Standard across all feature-related operations.
     /// </summary>
-    public const string ObjectIdColumn = "objectid";
+    public const string ObjectIdColumn = FieldNames.ObjectId;
 
     /// <summary>
     /// Alternative object ID column name (object_id) for compatibility.

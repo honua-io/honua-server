@@ -337,7 +337,7 @@ internal sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Tiles:MinTileZoom", "Limits__Tiles__MinTileZoom", "integer",
                     "Minimum tile zoom level", 0, opts.MinTileZoom, "Range: 0-10"),
                 BuildPropertyWithCurrent("Limits:Tiles:MaxFeaturesPerTile", "Limits__Tiles__MaxFeaturesPerTile", "integer",
-                    "Maximum features per tile", 100000, opts.MaxFeaturesPerTile, "Range: 1000-1000000"),
+                    "Maximum features per tile", 10000, opts.MaxFeaturesPerTile, "Range: 1000-1000000"),
                 BuildPropertyWithCurrent("Limits:Tiles:TileTimeout", "Limits__Tiles__TileTimeout", "timespan",
                     "Tile generation timeout", TimeSpan.FromSeconds(10), opts.TileTimeout, "Range: 00:00:01-00:01:00"),
                 BuildPropertyWithCurrent("Limits:Tiles:MaxTileSize", "Limits__Tiles__MaxTileSize", "integer",
@@ -414,19 +414,11 @@ internal sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "TileOptions",
-            Description = "Tile generation and caching options",
+            Description = "Tile rendering and caching options (limits are under Limits:Tiles)",
             Properties =
             [
-                BuildPropertyWithCurrent("TileOptions:MaxFeaturesPerTile", "TileOptions__MaxFeaturesPerTile", "integer",
-                    "Maximum features per tile", 10000, opts.MaxFeaturesPerTile),
-                BuildPropertyWithCurrent("TileOptions:TileTimeoutSeconds", "TileOptions__TileTimeoutSeconds", "integer",
-                    "Tile generation timeout in seconds", 10, opts.TileTimeoutSeconds),
                 BuildPropertyWithCurrent("TileOptions:SimplifyZoom", "TileOptions__SimplifyZoom", "integer",
                     "Zoom level below which geometries are simplified", 10, opts.SimplifyZoom),
-                BuildPropertyWithCurrent("TileOptions:MinZoom", "TileOptions__MinZoom", "integer",
-                    "Minimum supported zoom level", 0, opts.MinZoom),
-                BuildPropertyWithCurrent("TileOptions:MaxZoom", "TileOptions__MaxZoom", "integer",
-                    "Maximum supported zoom level", 22, opts.MaxZoom),
                 BuildPropertyWithCurrent("TileOptions:CacheMaxAge", "TileOptions__CacheMaxAge", "integer",
                     "Cache control max-age in seconds", 3600, opts.CacheMaxAge),
                 BuildPropertyWithCurrent("TileOptions:TileExtent", "TileOptions__TileExtent", "integer",

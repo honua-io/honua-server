@@ -71,11 +71,11 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 service_name varchar(64) PRIMARY KEY,
                 description text NOT NULL,
                 srid integer NOT NULL DEFAULT 4326,
-                max_record_count integer NOT NULL DEFAULT 1000,
                 supported_formats text[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                 capabilities text[] NOT NULL DEFAULT '{Query,Extract}',
                 service_extent geometry,
-                metadata jsonb
+                metadata jsonb,
+                connection_id uuid
             );
 
             -- Service-layer mapping table
@@ -136,6 +136,35 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    public async Task GetLayerAsync_UppercaseGeometryType_ReturnsLayerDefinition()
+    {
+        const int layerId = 3;
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO layers (layer_id, layer_name, description, geometry_type, srid, default_visibility)
+            VALUES ({layerId}, 'test_upper', 'Uppercase geometry type', 'POINT', 4326, true);
+
+            INSERT INTO layer_fields (layer_id, field_name, field_type, field_order, max_length, nullable, description)
+            VALUES ({layerId}, 'id', 'BigInteger', 1, NULL, false, NULL);
+            """, _schemaName);
+
+        try
+        {
+            var layer = await _layerCatalog.GetLayerAsync(layerId);
+
+            Assert.NotNull(layer);
+            Assert.Equal(GeometryType.Point, layer.GeometryType);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM layer_fields WHERE layer_id = {layerId};
+                DELETE FROM layers WHERE layer_id = {layerId};
+                """, _schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetLayerAsync_NonExistentLayer_ReturnsNull()
     {
         // Act
@@ -176,7 +205,6 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.Equal("TestService", service.Name);
         Assert.Equal("Test GeoServices service", service.Description);
         Assert.Equal(4326, service.SpatialReference.Wkid);
-        Assert.Equal(500, service.MaxRecordCount);
         Assert.Equal(2, service.SupportedFormats.Length);
         Assert.Contains("JSON", service.SupportedFormats);
         Assert.Contains("GeoJSON", service.SupportedFormats);
@@ -310,8 +338,8 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
 
         // Insert test service
         await _fixture.ExecuteAsync("""
-            INSERT INTO services (service_name, description, srid, max_record_count, supported_formats, capabilities) VALUES
-            ('TestService', 'Test GeoServices service', 4326, 500, '{JSON,GeoJSON}', '{Query,Extract}');
+            INSERT INTO services (service_name, description, srid, supported_formats, capabilities) VALUES
+            ('TestService', 'Test GeoServices service', 4326, '{JSON,GeoJSON}', '{Query,Extract}');
             """, _schemaName);
 
         // Insert service-layer mappings

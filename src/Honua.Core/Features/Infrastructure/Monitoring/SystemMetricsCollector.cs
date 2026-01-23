@@ -3,6 +3,8 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Honua.Core.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
@@ -15,19 +17,24 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
 {
     private readonly Timer _metricsTimer;
     private readonly ConcurrentQueue<(DateTime Timestamp, bool IsError)> _recentRequests = new();
-    private readonly TimeSpan _errorWindow = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan _errorWindow;
 
     private volatile SystemMetrics _currentMetrics = new();
     private volatile int _activeRequests;
     private double _totalResponseTime;
     private volatile int _responseCount;
     private volatile bool _disposed;
+    private readonly object _cpuLock = new();
+    private TimeSpan _lastCpuTime;
+    private DateTime _lastCpuSampleTime;
 
     /// <summary>
     /// Initializes a new SystemMetricsCollector with 10-second collection intervals.
     /// </summary>
-    public SystemMetricsCollector()
+    public SystemMetricsCollector(IOptions<AdaptiveSamplingOptions>? options = null)
     {
+        var windowMinutes = options?.Value.Error.ErrorWindowMinutes ?? 5;
+        _errorWindow = TimeSpan.FromMinutes(Math.Max(1, windowMinutes));
         _metricsTimer = new Timer(CollectMetrics, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
     }
 
@@ -115,8 +122,8 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
             var gcInfo = GC.GetGCMemoryInfo();
             var totalMemory = GC.GetTotalMemory(false);
 
-            // Calculate CPU usage (approximation based on process time)
-            var cpuUsage = GetApproximateCpuUsage(process);
+            // Calculate process CPU usage based on delta samples.
+            var cpuUsage = GetProcessCpuUsage(process);
 
             // Calculate average response time
             double avgResponseTime;
@@ -144,18 +151,36 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
         }
     }
 
-    private static double GetApproximateCpuUsage(Process process)
+    private double GetProcessCpuUsage(Process process)
     {
         try
         {
-            // This is a simplified CPU usage calculation
-            // For production, consider using PerformanceCounter for more accuracy
-            var totalProcessorTime = process.TotalProcessorTime;
-            var currentTime = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            var cpuTime = process.TotalProcessorTime;
 
-            // Store previous values for delta calculation (simplified implementation)
-            // In a real implementation, you'd track these across calls
-            return Math.Min(Environment.ProcessorCount * 10.0, 100.0); // Placeholder
+            lock (_cpuLock)
+            {
+                if (_lastCpuSampleTime == default)
+                {
+                    _lastCpuSampleTime = now;
+                    _lastCpuTime = cpuTime;
+                    return 0.0;
+                }
+
+                var cpuDelta = cpuTime - _lastCpuTime;
+                var timeDelta = now - _lastCpuSampleTime;
+
+                _lastCpuSampleTime = now;
+                _lastCpuTime = cpuTime;
+
+                if (timeDelta.TotalMilliseconds <= 0 || Environment.ProcessorCount <= 0)
+                {
+                    return 0.0;
+                }
+
+                var usage = cpuDelta.TotalMilliseconds / (timeDelta.TotalMilliseconds * Environment.ProcessorCount) * 100.0;
+                return Math.Clamp(usage, 0.0, 100.0);
+            }
         }
         catch
         {

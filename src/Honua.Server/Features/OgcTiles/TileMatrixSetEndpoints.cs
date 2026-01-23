@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Tiles;
+using Honua.Core.Configuration;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
@@ -84,7 +84,7 @@ internal static class TileMatrixSetEndpoints
         string tileMatrixSetId,
         HttpContext context,
         string? f,
-        IOptions<TileOptions> tileOptions)
+        IOptions<LimitsOptions> limitsOptions)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)
@@ -102,7 +102,7 @@ internal static class TileMatrixSetEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
-        var definition = OgcTilesUtilities.BuildWebMercatorQuadDefinition(tileOptions.Value);
+        var definition = OgcTilesUtilities.BuildWebMercatorQuadDefinition(limitsOptions.Value.Tiles);
         return OgcCommonUtilities.FormatMetadataResponse(definition, OgcTilesJsonContext.Default.TileMatrixSetDefinition, outputFormat, "Tile matrix set");
     }
 
@@ -115,11 +115,7 @@ internal static class TileMatrixSetEndpoints
 
         if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
         {
-            return ProtocolErrorWriter.CreateErrorResult(
-                context,
-                statusCodeResult.StatusCode.Value,
-                "Not Acceptable",
-                "Requested format is not acceptable.");
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");

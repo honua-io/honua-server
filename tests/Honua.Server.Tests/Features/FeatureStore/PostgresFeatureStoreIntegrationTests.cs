@@ -190,6 +190,44 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    public async Task Query_WithNullAttributes_ShouldReturnObjectId()
+    {
+        const long objectId = 999999;
+
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_testSchema}.features ALTER COLUMN attributes DROP NOT NULL;
+
+            INSERT INTO {_testSchema}.features (objectid, layer_id, geometry, attributes)
+            VALUES ({objectId}, {PointsLayerId}, ST_GeomFromText('POINT(1 1)', 4326), NULL);
+            """);
+
+        try
+        {
+            var store = CreateFeatureStore();
+            var query = new FeatureQuery
+            {
+                ObjectIds = ImmutableArray.Create(objectId)
+            };
+
+            var result = await store.QueryAsync(PointsLayerId, query, CancellationToken.None);
+            result.Items.Should().HaveCount(1);
+            result.Items[0].Attributes.Should().ContainKey("objectid");
+
+            var gmlResult = await store.QueryGmlAsync(PointsLayerId, query, CancellationToken.None);
+            gmlResult.Items.Should().HaveCount(1);
+            gmlResult.Items[0].Attributes.Should().ContainKey("objectid");
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM {_testSchema}.features WHERE objectid = {objectId};
+                ALTER TABLE {_testSchema}.features ALTER COLUMN attributes SET NOT NULL;
+                """);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     public async Task Query_WithComplexFilter_ShouldReturnCorrectResults()
     {
         // Arrange
@@ -481,14 +519,17 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         var geometryProcessor = new GeometryProcessor();
         var cacheManager = new FeatureCacheManager(connectionProvider, NullLogger<FeatureCacheManager>.Instance, _testSchema);
         var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, _testSchema);
-        var dataAccess = new FeatureDataAccess(
+        var dataAccess = new FeatureDataAccess(new FeatureDataAccessDependencies(
             connectionProvider,
             geometryProcessor,
             cacheManager,
             dictionaryPool,
-            statementCache: null,
-            logger: NullLogger<FeatureDataAccess>.Instance,
-            schemaName: _testSchema);
+            StatementCache: null,
+            Logger: NullLogger<FeatureDataAccess>.Instance,
+            PerformanceOptions: null,
+            LimitsOptions: null,
+            PerformanceMonitor: null,
+            SchemaName: _testSchema));
 
         return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
     }

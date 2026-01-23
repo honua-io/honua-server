@@ -23,11 +23,14 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
+    private Guid _connectionId;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
+        _connectionId = await _fixture.GetTestSecureConnectionIdAsync()
+            ?? throw new InvalidOperationException("Test secure connection not available.");
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -52,7 +55,7 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
             Name = uniqueName,
             Description = "Service created to test cache invalidation",
             SpatialReferenceSrid = 4326,
-            MaxRecordCount = 1000
+            ConnectionId = _connectionId
         };
 
         var content = new StringContent(
@@ -89,7 +92,8 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
         {
             Name = uniqueName,
             Description = "Original description",
-            SpatialReferenceSrid = 4326
+            SpatialReferenceSrid = 4326,
+            ConnectionId = _connectionId
         };
 
         var createContent = new StringContent(
@@ -139,7 +143,8 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
         {
             Name = uniqueName,
             Description = "Service to be deleted",
-            SpatialReferenceSrid = 4326
+            SpatialReferenceSrid = 4326,
+            ConnectionId = _connectionId
         };
 
         var createContent = new StringContent(
@@ -250,7 +255,8 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
         {
             Name = uniqueName,
             Description = "Test service",
-            SpatialReferenceSrid = 4326
+            SpatialReferenceSrid = 4326,
+            ConnectionId = _connectionId
         };
 
         var createContent = new StringContent(
@@ -299,7 +305,8 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
         {
             Name = serviceName1,
             Description = "First service",
-            SpatialReferenceSrid = 4326
+            SpatialReferenceSrid = 4326,
+            ConnectionId = _connectionId
         };
 
         var content1 = new StringContent(
@@ -321,7 +328,8 @@ public sealed class MetadataCacheInvalidationTests : IAsyncLifetime
         {
             Name = serviceName2,
             Description = "Second service",
-            SpatialReferenceSrid = 4326
+            SpatialReferenceSrid = 4326,
+            ConnectionId = _connectionId
         };
 
         var content2 = new StringContent(

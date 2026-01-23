@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Caching;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -17,6 +19,7 @@ internal static class ObservabilityServiceCollectionExtensions
         ConfigureOutputCaching(services, configuration);
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddETags();
+        services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
         services.AddPerformanceMonitoring();
         ConfigureResponseCompression(services);
 

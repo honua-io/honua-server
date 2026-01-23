@@ -12,6 +12,11 @@ namespace Honua.ServiceDefaults;
 /// </summary>
 public static class EnhancedTelemetry
 {
+    private static readonly object _cpuLock = new();
+    private static TimeSpan _lastCpuTime;
+    private static DateTime _lastCpuSampleTime;
+    private static Func<int>? _activeDbConnectionsProvider;
+
     /// <summary>
     /// Well-known enhanced event names for consistent tracing.
     /// </summary>
@@ -307,7 +312,7 @@ public static class EnhancedTelemetry
 
         return new ResourceMetrics
         {
-            CpuUsagePercentage = GetCpuUsage(),
+            CpuUsagePercentage = GetCpuUsage(process),
             MemoryUsageBytes = process.WorkingSet64,
             ActiveDbConnections = GetActiveDbConnections(),
             ThreadPoolUsagePercentage = GetThreadPoolUsage(),
@@ -315,18 +320,67 @@ public static class EnhancedTelemetry
         };
     }
 
-    private static double GetCpuUsage()
+    /// <summary>
+    /// Configures a provider for active database connection counts.
+    /// </summary>
+    public static void ConfigureActiveDbConnectionsProvider(Func<int> provider)
     {
-        // Simplified CPU usage calculation
-        // In production, would use performance counters
-        return Environment.ProcessorCount > 0 ?
-            Random.Shared.NextDouble() * 100 : 0;
+        ArgumentNullException.ThrowIfNull(provider);
+        _activeDbConnectionsProvider = provider;
+    }
+
+    private static double GetCpuUsage(System.Diagnostics.Process process)
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+            var cpuTime = process.TotalProcessorTime;
+
+            lock (_cpuLock)
+            {
+                if (_lastCpuSampleTime == default)
+                {
+                    _lastCpuSampleTime = now;
+                    _lastCpuTime = cpuTime;
+                    return 0.0;
+                }
+
+                var cpuDelta = cpuTime - _lastCpuTime;
+                var timeDelta = now - _lastCpuSampleTime;
+
+                _lastCpuSampleTime = now;
+                _lastCpuTime = cpuTime;
+
+                if (timeDelta.TotalMilliseconds <= 0 || Environment.ProcessorCount <= 0)
+                {
+                    return 0.0;
+                }
+
+                var usage = cpuDelta.TotalMilliseconds / (timeDelta.TotalMilliseconds * Environment.ProcessorCount) * 100.0;
+                return Math.Clamp(usage, 0.0, 100.0);
+            }
+        }
+        catch
+        {
+            return 0.0;
+        }
     }
 
     private static int GetActiveDbConnections()
     {
-        // Would query actual connection pool in production
-        return Random.Shared.Next(5, 50);
+        try
+        {
+            if (_activeDbConnectionsProvider != null)
+            {
+                return Math.Max(0, _activeDbConnectionsProvider());
+            }
+        }
+        catch
+        {
+            // Ignore provider failures and fall back to zero.
+        }
+
+        return 0;
     }
 
     private static double GetThreadPoolUsage()

@@ -162,6 +162,32 @@ public class SharedModelTests
     }
 
     [Fact]
+    public void BoundingBox_Union_DisjointRanges_UsesShortestLongitudeSpan()
+    {
+        var left = BoundingBox.Create(-10, -5, 10, 5, 4326);
+        var right = BoundingBox.Create(30, -5, 40, 5, 4326);
+
+        var union = left.Union(right);
+
+        union.IsAntimeridianCrossing.Should().BeFalse();
+        union.MinX.Should().Be(-10);
+        union.MaxX.Should().Be(40);
+    }
+
+    [Fact]
+    public void BoundingBox_Union_AcrossDateline_PreservesCrossing()
+    {
+        var east = BoundingBox.Create(170, -10, 179, 10, 4326);
+        var west = BoundingBox.Create(-179, -10, -170, 10, 4326);
+
+        var union = east.Union(west);
+
+        union.IsAntimeridianCrossing.Should().BeTrue();
+        union.MinX.Should().Be(170);
+        union.MaxX.Should().Be(-170);
+    }
+
+    [Fact]
     public void BoundingBox_Intersection_PreservesAntimeridianCrossing()
     {
         var crossing = BoundingBox.Create(170, -10, -170, 10, 4326);

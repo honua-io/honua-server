@@ -4,6 +4,7 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
@@ -50,7 +51,6 @@ internal static class SecurityServiceCollectionExtensions
         // Register secret resolvers
         services.AddAwsSecretsManagerSupport(configuration);
         services.AddAzureKeyVaultSupport(configuration);
-        services.AddGcpSecretManagerSupport(configuration);
 
         services.TryAddSingleton<EnvironmentSecretResolver>();
         services.TryAddSingleton<NullSecretResolver>();
@@ -63,7 +63,6 @@ internal static class SecurityServiceCollectionExtensions
                 serviceProvider.GetRequiredService<EnvironmentSecretResolver>(),
                 serviceProvider.GetRequiredService<AwsSecretsManagerResolver>(),
                 serviceProvider.GetRequiredService<AzureKeyVaultResolver>(),
-                serviceProvider.GetRequiredService<GcpSecretManagerResolver>(),
                 serviceProvider.GetRequiredService<NullSecretResolver>() // Fallback
             };
             return new CompositeSecretResolver(resolvers, logger);
@@ -73,6 +72,8 @@ internal static class SecurityServiceCollectionExtensions
         services.AddSingleton<IConnectionSecretResolverFactory>(serviceProvider =>
             new ConnectionSecretResolverFactory(
                 serviceProvider.GetRequiredService<ILogger<ConnectionSecretResolverFactory>>()));
+
+        services.AddSingleton<SecureConnectionDataSourceCache>();
 
         // Register secure connection registry as scoped (database operations)
         services.AddScoped<ISecureConnectionRegistry, PostgresSecureConnectionRegistry>();
@@ -132,15 +133,19 @@ internal static class SecurityServiceCollectionExtensions
             {
                 var originalProvider = serviceProvider.GetRequiredService<IPrimaryDatabaseConnectionProvider>();
                 var secureResolver = serviceProvider.GetRequiredService<ISecureConnectionResolver>();
+                var dataSourceCache = serviceProvider.GetRequiredService<SecureConnectionDataSourceCache>();
                 var logger = serviceProvider.GetRequiredService<ILogger<SecureConnectionAwareDatabaseProvider>>();
                 var schemaContext = serviceProvider.GetService<ISchemaContext>();
+                var activeDbConnectionTracker = serviceProvider.GetService<IActiveDbConnectionTracker>();
 
                 return new SecureConnectionAwareDatabaseProvider(
                     originalProvider,
                     secureResolver,
+                    dataSourceCache,
                     configuration,
                     logger,
-                    schemaContext);
+                    schemaContext,
+                    activeDbConnectionTracker);
             },
             existingDescriptor.Lifetime));
 
@@ -247,29 +252,6 @@ internal static class SecurityServiceCollectionExtensions
         });
 
         services.TryAddSingleton<AzureKeyVaultResolver>();
-        return services;
-    }
-
-    /// <summary>
-    /// Adds Google Secret Manager secret resolver support.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <param name="configuration">Application configuration</param>
-    /// <returns>Updated service collection for chaining</returns>
-    /// <remarks>
-    /// Registers the AOT-safe GCP Secret Manager resolver using HTTP + service account JWT or metadata tokens.
-    /// Credentials are sourced from GOOGLE_APPLICATION_CREDENTIALS or GCE metadata server.
-    /// </remarks>
-    public static IServiceCollection AddGcpSecretManagerSupport(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        services.AddHttpClient("GcpSecretManager", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
-
-        services.TryAddSingleton<GcpSecretManagerResolver>();
         return services;
     }
 

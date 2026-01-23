@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -22,6 +23,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -40,6 +42,7 @@ internal sealed class FeatureServerQueryHandler(
     private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly FeatureServerQueryExecutor _queryExecutor = dependencies.QueryExecutor;
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
+    private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<FeatureServerQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
@@ -52,8 +55,10 @@ internal sealed class FeatureServerQueryHandler(
         int layerId,
         QueryParameters queryParams,
         HttpContext context,
+        ICommonQueryValidator queryValidator,
         CancellationToken cancellationToken = default)
     {
+        Activity? featureActivity = null;
         try
         {
             FeatureServerLog.QueryRequested(_logger, serviceId, layerId, queryParams.Where);
@@ -82,17 +87,24 @@ internal sealed class FeatureServerQueryHandler(
 
             ServiceDefinition service = resourceResult.Resource!.Service;
             LayerDefinition layer = resourceResult.Resource.Layer;
-            var activity = Activity.Current;
-            activity?.SetTag("honua.protocol", "featureserver");
-            activity?.SetTag("honua.service_id", serviceId);
-            activity?.SetTag("honua.layer_id", layerId.ToString(CultureInfo.InvariantCulture));
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
+
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
             if (accessError != null)
             {
                 return accessError;
             }
 
-            var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                HonuaTelemetry.Protocols.FeatureServer,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+            featureActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
             var whereValidation = queryValidator.ValidateWhereClause(queryParams.Where);
             if (!whereValidation.IsValid)
             {
@@ -101,6 +113,8 @@ internal sealed class FeatureServerQueryHandler(
                     ErrorMessages.Validation.InvalidParameter,
                     [message]);
             }
+
+            var queryLimits = queryValidator.QueryLimits;
 
             // Apply limits enforcement
             QueryValidationResult validationResult = _queryServices.ValidateQueryLimits(queryParams);
@@ -145,7 +159,9 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
-                return cached == null ? null : Results.Bytes(cached.Payload, cached.ContentType);
+                return cached == null
+                    ? null
+                    : ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
             }
 
             async Task<IResult> CreateCachedResultAsync<T>(
@@ -159,15 +175,16 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, typeInfo);
-                await _responseCache.SetAsync(cacheKey, new CachedResponse(payload, contentType), cacheTtl, cancellationToken);
-                return Results.Bytes(payload, contentType);
+                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
+                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
             GeoServicesGeometry? parsedGeometry = null;
             if (!TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
-                    "ErrorMessages.Validation.InvalidGeometryParameter",
+                    ErrorMessages.Validation.InvalidGeometryParameter,
                     [geometryError ?? "Geometry parameter is invalid."]);
             }
 
@@ -268,9 +285,9 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             // Build query from validated parameters
-            FeatureQuery query = BuildFeatureQuery(validatedParams, service, layer, parsedGeometry, inputSrid, outputSrid, sqlFilter);
+            FeatureQuery query = BuildFeatureQuery(validatedParams, layer, parsedGeometry, inputSrid, outputSrid, sqlFilter, queryLimits);
 
-            var objectIdFieldName = layer.PrimaryKeyField?.Name ?? "objectid";
+            var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
             if (validatedParams.ReturnCountOnly)
             {
@@ -284,10 +301,12 @@ internal sealed class FeatureServerQueryHandler(
                 var count = await _queryExecutor.CountAsync(layerId, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+                var safeCount = (int)Math.Min(count, int.MaxValue);
+                HonuaTelemetry.SetSuccess(featureActivity, safeCount);
                 var response = new QueryResponse
                 {
-                    ObjectIdFieldName = objectIdFieldName,
-                    Count = count
+                    Count = count,
+                    Features = null
                 };
 
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
@@ -305,10 +324,11 @@ internal sealed class FeatureServerQueryHandler(
                 var extent = await _queryExecutor.GetExtentAsync(layerId, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+                HonuaTelemetry.SetSuccess(featureActivity);
                 var response = new QueryResponse
                 {
-                    ObjectIdFieldName = objectIdFieldName,
-                    Extent = extent.HasValue ? MapExtent(extent.Value) : null
+                    Extent = extent.HasValue ? MapExtent(extent.Value) : null,
+                    Features = null
                 };
 
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
@@ -316,7 +336,7 @@ internal sealed class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnIdsOnly)
             {
-                var idsEffectiveLimit = query.Limit ?? service.MaxRecordCount;
+                var idsEffectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
                 var idsUseStreaming = idsEffectiveLimit > StreamingThreshold;
                 if (idsUseStreaming)
                 {
@@ -341,19 +361,19 @@ internal sealed class FeatureServerQueryHandler(
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
                 var objectIds = result.Items.Select(feature => feature.Id).ToArray();
-                var hasMoreResults = query.Limit.HasValue && result.TotalCount > query.Limit.Value;
+                HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 var response = new QueryResponse
                 {
                     ObjectIdFieldName = objectIdFieldName,
                     ObjectIds = objectIds,
-                    ExceededTransferLimit = hasMoreResults
+                    Features = null
                 };
 
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
-            var effectiveLimit = query.Limit ?? service.MaxRecordCount;
+            var effectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
             var useStreaming = effectiveLimit > StreamingThreshold;
             if (validatedParams.ReturnDistinctValues)
             {
@@ -395,6 +415,7 @@ internal sealed class FeatureServerQueryHandler(
                     outFields);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
+                HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
 
                 return format.ToLowerInvariant() switch
                 {
@@ -418,6 +439,7 @@ internal sealed class FeatureServerQueryHandler(
                 context,
                 cancellationToken);
 
+            HonuaTelemetry.SetSuccess(featureActivity);
             return _streamingResult;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -427,6 +449,7 @@ internal sealed class FeatureServerQueryHandler(
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
 
             if (context.Response.HasStarted)
             {
@@ -439,6 +462,7 @@ internal sealed class FeatureServerQueryHandler(
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
 
             if (context.Response.HasStarted)
             {
@@ -446,6 +470,10 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
+        }
+        finally
+        {
+            featureActivity?.Dispose();
         }
     }
 
@@ -459,12 +487,12 @@ internal sealed class FeatureServerQueryHandler(
     /// </summary>
     private FeatureQuery BuildFeatureQuery(
         QueryParameters queryParams,
-        ServiceDefinition service,
         LayerDefinition layer,
         GeoServicesGeometry? parsedGeometry,
         int? inputSrid,
         int? outputSrid,
-        SqlFragment? sqlFilter)
+        SqlFragment? sqlFilter,
+        QueryLimits queryLimits)
     {
         var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
         var effectiveSqlFilter = hasObjectIds ? null : sqlFilter;
@@ -476,7 +504,7 @@ internal sealed class FeatureServerQueryHandler(
             SqlFilter = effectiveSqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,
-            Limit = queryParams.ResultRecordCount ?? service.MaxRecordCount,
+            Limit = queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             OutputSrid = outputSrid,
             OrderBy = OrderByParsing.ParseFeatureServerOrderBy(

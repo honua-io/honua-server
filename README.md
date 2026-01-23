@@ -14,7 +14,7 @@ Honua MVP serves and edits PostGIS data over multiple protocols with a small, fa
 - **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
 - **Vector Tiles (MVT)** — PostGIS-native tile generation.
 
-Includes **file import** (GeoJSON, Shapefile, GeoPackage, CSV, KML) and a **GeoServices Import Wizard** for easy migration. Everything else (images, multi-DB, AI, advanced admin) is deferred to keep the surface area tight. See `docs/ROADMAP.md` for what comes next.
+Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Admin UI and deployment templates are pending; see `docs/ROADMAP.md` for what comes next.
 
 ## Status
 
@@ -53,23 +53,29 @@ docker run -p 8080:8080 \
   ghcr.io/honuaio/honua-server:latest
 ```
 
-## MVP Scope
-Some items are implemented now and others are still in progress; see `docs/ROADMAP.md` for current status.
+## MVP Scope (current tree)
+Implemented (server + admin API):
 - PostGIS-only data source.
-- Full FeatureServer: query, applyEdits, add/update/delete, attachments, related records.
+- FeatureServer: query, applyEdits, attachments, related records.
 - OGC API Features: collections/items, filters, bbox/geometry, POST/PUT/DELETE transactions.
-- **OData v4**: Excel/Power BI integration with spatial functions (`geo.distance`, `geo.intersects`) + POST/PATCH/DELETE.
-- **Vector Tiles (MVT)**: PostGIS `ST_AsMVT`, TileJSON metadata.
-- **File Import**: GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ — no GDAL required.
-- **CRS Support**: PostGIS-based reprojection, any EPSG code, auto-detect from source files.
-- Outputs: GeoJSON, GeoServices JSON, MVT.
-- **GeoServices Import Wizard**: paste GeoServices REST server URL, import layers, publish to Honua.
-- **Visual Style Editor**: embedded Maputnik for MapLibre-based styling (Simple, UniqueValue, ClassBreaks).
-- Minimal admin: connect PostGIS, publish a layer/service, enable/disable, view health, map preview.
-- **OIDC Authentication**: Azure AD, Google, generic OIDC provider support.
-- **Redis cache (optional)**: metadata cache for multi-instance; in-memory fallback for single instance.
-- **Deployment templates**: Helm chart for Kubernetes, Terraform modules for AWS/Azure/GCP.
-- **.NET Aspire**: Local dev orchestration with dashboard (traces, logs, metrics, health).
+- OGC API Tiles: tilesets metadata + vector tiles.
+- OData v4: CRUD with spatial functions (`geo.distance`, `geo.intersects`); $batch/$apply/$search endpoints exist with limited coverage.
+- Vector tiles (MVT): PostGIS `ST_AsMVT` via `/tiles/{layerId}/{z}/{x}/{y}.mvt`.
+- File import: GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ — no GDAL required.
+- CRS support: PostGIS-based reprojection, EPSG via `spatial_ref_sys`, auto-detect from source files.
+- Admin APIs: connections, services/layers/relationships/styles, import jobs, operations progress.
+- OIDC authentication (server-side plumbing) and optional Redis metadata cache.
+- .NET Aspire local dev orchestration with dashboard (traces, logs, metrics, health).
+
+Pending MVP items (open issues):
+- TileJSON metadata endpoint (#20).
+- Service enable/disable controls (#58).
+- Admin UI (project setup, connections, publishing, health dashboard, map preview) (#25, #26, #27, #42, #43).
+- Embedded Maputnik style editor (#30).
+- Canonical cross-protocol style pipeline (#244).
+- Esri Service Import Wizard UI (#187).
+- Deployment templates (Helm + AWS/Azure/GCP Terraform) (#31, #32, #33, #34).
+- Docs and security hardening (#38, #39).
 
 ## Deferred (post-MVP)
 - **Operational/enterprise**: audit logging/storage + compliance dashboards, secure-connection allowlist/audit, edge rate limiting templates (nginx/ALB/WAF).

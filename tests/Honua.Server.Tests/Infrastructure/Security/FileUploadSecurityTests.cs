@@ -68,6 +68,21 @@ public class FileUploadSecurityTests
     }
 
     [Theory]
+    [InlineData("C:\\fakepath\\layer.gpkg")]
+    [InlineData("C:/fakepath/layer.gpkg")]
+    [SecurityTest]
+    public void ValidateFileName_BrowserFakePath_AcceptsFile(string fileName)
+    {
+        // Act
+        var result = FileUploadSecurity.ValidateFileName(fileName);
+
+        // Assert
+        Assert.True(result.IsValid);
+
+        _output.WriteLine($"Fake path test '{fileName}': Valid");
+    }
+
+    [Theory]
     [InlineData(".csv", true)]
     [InlineData(".geojson", true)]
     [InlineData(".shp", true)]

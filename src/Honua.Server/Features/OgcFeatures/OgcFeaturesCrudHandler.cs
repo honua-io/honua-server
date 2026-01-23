@@ -124,7 +124,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(_logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while creating the feature.");
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while creating the feature.");
         }
     }
 
@@ -238,7 +238,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
         catch (Exception ex)
         {
             Log.UpdateFeatureFailed(_logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while updating the feature.");
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while updating the feature.");
         }
     }
 
@@ -283,7 +283,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(_logger, collectionId, ex);
-            return ProtocolErrorWriter.CreateErrorResult(context, 500, "Internal server error", "An error occurred while deleting the feature.");
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while deleting the feature.");
         }
     }
 
