@@ -1,8 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
@@ -52,20 +51,14 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var layerResult = await resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
-            if (!layerResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId,
+                LayerValidationHelpers.ValidationProtocol.OData,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
-                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
-            }
-
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layerResult.Resource!);
-            if (accessError != null)
-            {
-                return accessError;
+                return layerValidation.ErrorResult!;
             }
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
@@ -130,35 +123,30 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", "$search parameter is required.");
             }
 
-            if (!ODataRequestValidation.TryParsePaging(
+            var pagingError = ODataRequestValidation.TryGetPagingValues(
                 context,
                 _validationService,
                 top,
                 skip,
                 count,
-                out var paging,
-                out var pagingError))
+                out var pagination,
+                out _,
+                out _,
+                out var countValue);
+            if (pagingError != null)
             {
-                return pagingError!;
+                return pagingError;
             }
 
-            var pagination = paging!.Pagination;
-            var countValue = paging.Count;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var layerResult = await resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
-            if (!layerResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId,
+                LayerValidationHelpers.ValidationProtocol.OData,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
-                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
-            }
-
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layerResult.Resource!);
-            if (accessError != null)
-            {
-                return accessError;
+                return layerValidation.ErrorResult!;
             }
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 

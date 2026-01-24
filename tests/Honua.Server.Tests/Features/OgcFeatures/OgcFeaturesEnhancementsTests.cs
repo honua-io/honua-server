@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -358,7 +357,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     {
         // Arrange - insert a feature without geometry and query with a bbox filter
         var name = $"Null Geometry {Guid.NewGuid():N}";
-        await InsertNullGeometryFeatureAsync(name);
+        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, name);
         var bbox = "-180,-90,180,90";
 
         // Act
@@ -407,23 +406,6 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var defaultLimit = new Honua.Core.Configuration.LimitsOptions().Query.DefaultRecordCount;
         features.Length.Should().BeLessThanOrEqualTo(defaultLimit);
         numberReturned.Should().BeLessThanOrEqualTo(defaultLimit);
-    }
-
-    private async Task<long> InsertNullGeometryFeatureAsync(string name)
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO features (layer_id, geometry, attributes)
-            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
-            RETURNING objectid;
-            """;
-        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-        command.Parameters.AddWithValue("name", name);
-
-        var result = await command.ExecuteScalarAsync();
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     [IntegrationTest]

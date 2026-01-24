@@ -9,9 +9,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Core.Features.Validation;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Honua.ServiceDefaults;
@@ -28,8 +28,6 @@ internal sealed partial class ODataStreamingQueryHandler(
     IStreamingFeatureStore streamingFeatureStore,
     ILogger<ODataStreamingQueryHandler> logger)
 {
-    private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
-        ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
     private readonly IGeometryService _geometryService = dependencies.GeometryService;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
@@ -76,22 +74,21 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return formatValidation;
             }
 
-            if (!ODataRequestValidation.TryParsePaging(
+            var pagingError = ODataRequestValidation.TryGetPagingValues(
                 context,
                 _validationService,
                 top,
                 skip,
                 count,
-                out var paging,
-                out var pagingError))
+                out var pagination,
+                out var topValue,
+                out var skipValue,
+                out var countValue);
+            if (pagingError != null)
             {
-                return pagingError!;
+                return pagingError;
             }
 
-            var pagination = paging!.Pagination;
-            var topValue = paging.Top;
-            var skipValue = paging.Skip;
-            var countValue = paging.Count;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
             if (!string.IsNullOrWhiteSpace(apply))
@@ -170,22 +167,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId = layerResolution.LayerId;
             }
 
-            // Verify layer exists
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId.Value, effectiveToken);
-            if (!layerResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId.Value,
+                LayerValidationHelpers.ValidationProtocol.OData,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
-                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
+                return layerValidation.ErrorResult!;
             }
-
-            var layer = layerResult.Resource!;
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+            var layer = layerValidation.Layer!;
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -218,12 +209,8 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId.Value.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
-            // Get total count if requested
-            long? totalCount = null;
-            if (countValue == true)
-            {
-                totalCount = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
-            }
+            // Get total count to support nextLink generation
+            var totalCount = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
@@ -239,16 +226,21 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             // Stream the OData response
             await StreamODataFeaturesAsync(
-                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(layerId.Value, featureQuery, cancellationToken),
+                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(layerId.Value, featureQuery, effectiveToken),
                 context,
                 layerId.Value,
                 layer.SpatialReference.ToSrid(),
                 axisOrder,
+                pagination,
                 selectedFields,
+                filter,
+                select,
+                orderby,
+                countValue,
                 expand,
                 totalCount,
                 _geometryService,
-                cancellationToken);
+                effectiveToken);
 
             HonuaTelemetry.SetSuccess(featureActivity);
             return Results.Empty;
@@ -287,9 +279,14 @@ internal sealed partial class ODataStreamingQueryHandler(
         int layerId,
         int? layerSrid,
         AxisOrder axisOrder,
-        HashSet<string>? select,
+        PaginationValues pagination,
+        HashSet<string>? selectedFields,
+        string? filter,
+        string? select,
+        string? orderby,
+        bool? count,
         string? expand,
-        long? totalCount,
+        long totalCount,
         IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
@@ -302,17 +299,18 @@ internal sealed partial class ODataStreamingQueryHandler(
         // Start OData response
         writer.WriteStartObject();
 
-        if (totalCount.HasValue)
+        if (count == true)
         {
-            writer.WriteNumber("@odata.count", totalCount.Value);
+            writer.WriteNumber("@odata.count", totalCount);
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select != null ? string.Join(",", select) : null, expand: expand));
+        writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
 
         // Start value array
         writer.WriteStartArray("value");
 
+        var streamedCount = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             await WriteODataFeatureAsync(
@@ -321,9 +319,10 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId,
                 layerSrid,
                 axisOrder,
-                select,
+                selectedFields,
                 geometryService,
                 cancellationToken);
+            streamedCount++;
 
             // Flush periodically for better streaming
             await writer.FlushAsync(cancellationToken);
@@ -331,6 +330,21 @@ internal sealed partial class ODataStreamingQueryHandler(
 
         // End value array
         writer.WriteEndArray();
+
+        if (ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount, pagination.Limit))
+        {
+            var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
+            var nextLink = ODataUtilityService.GenerateNextLink(
+                context.Request,
+                nextSkip,
+                pagination.Limit,
+                filter,
+                select,
+                orderby,
+                count,
+                expand);
+            writer.WriteString("@odata.nextLink", nextLink);
+        }
 
         // End OData response
         writer.WriteEndObject();
@@ -492,21 +506,16 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId.Value, effectiveToken);
-            if (!layerResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId.Value,
+                LayerValidationHelpers.ValidationProtocol.OData,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
-                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
+                return layerValidation.ErrorResult!;
             }
-
-            var layer = layerResult.Resource!;
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+            var layer = layerValidation.Layer!;
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);

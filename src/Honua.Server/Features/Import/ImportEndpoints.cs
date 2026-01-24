@@ -331,10 +331,21 @@ internal static partial class ImportEndpoints
                     var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
                     if (progressStore != null)
                     {
-                        progressReporter = new Progress<UploadProgress>(async progress =>
+                        var progressLogger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+
+                        async Task ReportProgressAsync(UploadProgress progress)
                         {
-                            await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
-                        });
+                            try
+                            {
+                                await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
+                            }
+                        }
+
+                        progressReporter = new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
                     }
                 }
 
@@ -790,6 +801,15 @@ internal static partial class ImportEndpoints
         /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3301, Level = LogLevel.Error, Message = "Import failed for table {TableName}")]
         public static partial void ImportFailed(ILogger logger, string tableName, Exception exception);
+
+        /// <summary>
+        /// Logs when upload progress fails to update.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="uploadId">The upload identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
+        [LoggerMessage(EventId = 3302, Level = LogLevel.Warning, Message = "Failed to update upload progress for {UploadId}")]
+        public static partial void ProgressUpdateFailed(ILogger logger, string uploadId, Exception exception);
     }
 
     private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)

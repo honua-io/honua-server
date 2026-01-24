@@ -98,7 +98,7 @@ public sealed class GeoServicesSqlParser
                 var lower = ParseAdditive();
                 Consume(TokenType.And, "Expected AND in BETWEEN expression.");
                 var upper = ParseAdditive();
-                return BuildBetweenExpression(left, lower, upper, negate: true);
+                return FilterExpressionHelpers.BuildBetweenExpression(left, lower, upper, negate: true);
             }
 
             throw Error("Expected LIKE, IN, or BETWEEN after NOT.");
@@ -119,7 +119,7 @@ public sealed class GeoServicesSqlParser
             var lower = ParseAdditive();
             Consume(TokenType.And, "Expected AND in BETWEEN expression.");
             var upper = ParseAdditive();
-            return BuildBetweenExpression(left, lower, upper, negate: false);
+            return FilterExpressionHelpers.BuildBetweenExpression(left, lower, upper, negate: false);
         }
 
         if (Match(TokenType.Equal))
@@ -343,26 +343,6 @@ public sealed class GeoServicesSqlParser
 
         Consume(TokenType.RightParen, "Expected ')' after value list.");
         return new ValueList(values);
-    }
-
-    private static BinaryExpression BuildBetweenExpression(
-        FilterExpression target,
-        FilterExpression lower,
-        FilterExpression upper,
-        bool negate)
-    {
-        var lowerExpr = new BinaryExpression(target, BinaryOperator.GreaterThanOrEqual, lower);
-        var upperExpr = new BinaryExpression(target, BinaryOperator.LessThanOrEqual, upper);
-        var combined = new BinaryExpression(lowerExpr, BinaryOperator.And, upperExpr);
-
-        if (!negate)
-        {
-            return combined;
-        }
-
-        var lowerNot = new BinaryExpression(target, BinaryOperator.LessThan, lower);
-        var upperNot = new BinaryExpression(target, BinaryOperator.GreaterThan, upper);
-        return new BinaryExpression(lowerNot, BinaryOperator.Or, upperNot);
     }
 
     private static Literal CreateDateLiteral(string? value, bool? dateOnly = null)

@@ -18,6 +18,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
@@ -176,7 +177,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, estimatedReturned, totalCount, stopwatch.Elapsed.TotalMilliseconds);
                 HonuaTelemetry.SetSuccess(featureActivity, estimatedReturned);
 
-                var streamBaseUrl = $"{request.Scheme}://{request.Host}";
+                var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
                 var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
                 var streamLinks = BuildItemsLinks(request, streamBasePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
 
@@ -209,7 +210,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, features.Length, result.TotalCount, stopwatch.Elapsed.TotalMilliseconds);
             HonuaTelemetry.SetSuccess(featureActivity, features.Length);
 
-            var baseUrl = $"{request.Scheme}://{request.Host}";
+            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
 
             var links = BuildItemsLinks(request, basePath, outputFormat, effectiveLimit, effectiveOffset, result.HasMoreResults);
@@ -451,7 +452,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string featureId,
         string outputFormat)
     {
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
 
         var links = new List<Link>

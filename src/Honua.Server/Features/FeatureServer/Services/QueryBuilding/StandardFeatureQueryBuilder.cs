@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.FeatureServer.Services.QueryBuilding;
@@ -82,7 +83,10 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
                 throw new InvalidOperationException("Geometry is required for nearest neighbor queries");
             }
 
-            var spatialFilter = BuildSpatialFilter(context);
+            var spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+                context.QueryParams,
+                context.ParsedGeometry!,
+                context.InputSrid);
             return query with { SpatialFilter = spatialFilter };
         }
         catch (ArgumentException ex)
@@ -93,89 +97,6 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
         {
             throw new InvalidOperationException($"Invalid geometry: {ex.Message}");
         }
-    }
-
-    private static SpatialFilter BuildSpatialFilter(QueryBuildingContext context)
-    {
-        var geometry = context.ParsedGeometry!;
-        var queryParams = context.QueryParams;
-
-        // Convert GeoServices JSON geometry to WKB bytes
-        byte[] wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, context.InputSrid);
-
-        // Check if this is a KNN query
-        if (queryParams.NearestCount.HasValue && queryParams.NearestCount.Value > 0)
-        {
-            return SpatialFilter.CreateKnnFilter(
-                wkbBytes,
-                queryParams.NearestCount.Value,
-                queryParams.ReturnDistance,
-                context.InputSrid);
-        }
-
-        // Parse spatial relationship
-        SpatialRelationship relationship = ParseSpatialRelationship(queryParams.SpatialRel);
-
-        // Handle distance-based queries
-        if (relationship == SpatialRelationship.WithinDistance ||
-            relationship == SpatialRelationship.BeyondDistance)
-        {
-            if (!queryParams.Distance.HasValue || queryParams.Distance.Value <= 0)
-            {
-                throw new ArgumentException("Distance parameter is required for distance-based spatial queries");
-            }
-
-            var unit = ParseDistanceUnit(queryParams.Units);
-            return SpatialFilter.CreateDistanceFilter(
-                wkbBytes,
-                queryParams.Distance.Value,
-                unit,
-                relationship == SpatialRelationship.WithinDistance,
-                context.InputSrid);
-        }
-
-        return new SpatialFilter
-        {
-            Geometry = wkbBytes,
-            SpatialRelationship = relationship,
-            Srid = context.InputSrid
-        };
-    }
-
-    private static SpatialRelationship ParseSpatialRelationship(string? spatialRel)
-    {
-        return spatialRel?.ToLowerInvariant() switch
-        {
-            "esrispatialrelintersects" or null => SpatialRelationship.Intersects,
-            "esrispatialrelcontains" => SpatialRelationship.Contains,
-            "esrispatialrelwithin" => SpatialRelationship.Within,
-            "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,
-            "esrispatialrelcrosses" => SpatialRelationship.Crosses,
-            "esrispatialreltouches" => SpatialRelationship.Touches,
-            "esrispatialreloverlaps" => SpatialRelationship.Overlaps,
-            "esrispatialreldisjoint" => SpatialRelationship.Disjoint,
-            "esrispatialrelequals" => SpatialRelationship.Equals,
-            "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
-            "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
-            _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
-        };
-    }
-
-    private static DistanceUnit ParseDistanceUnit(string? units)
-    {
-        return units?.ToLowerInvariant() switch
-        {
-            "esrisrunit_meter" or null => DistanceUnit.Meters,
-            "esrisrunit_foot" => DistanceUnit.Feet,
-            "esrisrunit_kilometer" => DistanceUnit.Kilometers,
-            "esrisrunit_statutemile" => DistanceUnit.Miles,
-            // Also support simple unit names
-            "meters" or "m" => DistanceUnit.Meters,
-            "feet" or "ft" => DistanceUnit.Feet,
-            "kilometers" or "km" => DistanceUnit.Kilometers,
-            "miles" or "mi" => DistanceUnit.Miles,
-            _ => DistanceUnit.Meters // Default to meters for unknown units
-        };
     }
 
 }

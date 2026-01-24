@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
@@ -307,7 +308,7 @@ public static class ValidationExtensions
 
         if (value is JsonElement jsonElement)
         {
-            return ConvertJsonElement(jsonElement);
+            return JsonElementConverter.ConvertToObject(jsonElement);
         }
 
         if (value is IReadOnlyDictionary<string, object?> readOnlyDict)
@@ -332,24 +333,6 @@ public static class ValidationExtensions
         }
 
         return value;
-    }
-
-    private static object? ConvertJsonElement(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                element.TryGetDouble(out var doubleVal) ? doubleVal :
-                element.GetDecimal(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(prop => prop.Name, prop => ConvertJsonElement(prop.Value)),
-            JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToArray(),
-            _ => element.GetRawText()
-        };
     }
 
     private static string? ValidateAttributeValue(

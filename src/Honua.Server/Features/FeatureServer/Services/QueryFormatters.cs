@@ -496,12 +496,10 @@ internal sealed class QueryFormatter : IQueryFormatter
 /// </summary>
 internal sealed class StreamingQueryFormatter
 {
-    private readonly ILogger<StreamingQueryFormatter> _logger;
     private readonly GeometryLimits _geometryLimits;
 
-    public StreamingQueryFormatter(ILogger<StreamingQueryFormatter> logger, IOptions<LimitsOptions> limitsOptions)
+    public StreamingQueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 

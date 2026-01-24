@@ -84,6 +84,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"),
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
+        new("GET", "/tiles/{layerId}/tile.json"),
+        new("GET", "/api/styles/{layerId}.json"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),

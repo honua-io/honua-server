@@ -87,6 +87,40 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
+    /// Validates layer existence and access using standard error responses.
+    /// </summary>
+    /// <param name="context">HTTP context containing request services and user information</param>
+    /// <param name="layerId">Layer ID to validate</param>
+    /// <param name="scope">Access scope required for the request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Validation result with layer or error response</returns>
+    public static async Task<LayerValidationResult> ValidateLayerWithAccessAsync(
+        HttpContext context,
+        int layerId,
+        AccessScope scope = AccessScope.Read,
+        CancellationToken cancellationToken = default)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+
+        if (!layerResult.IsValid)
+        {
+            var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
+            var errorResult = StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return new LayerValidationResult(false, null, errorResult);
+        }
+
+        var layer = layerResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        if (accessError != null)
+        {
+            return new LayerValidationResult(false, null, accessError);
+        }
+
+        return new LayerValidationResult(true, layer, null);
+    }
+
+    /// <summary>
     /// Validates collection existence and access in a single operation for OGC API Features.
     /// </summary>
     /// <param name="context">HTTP context containing request services and user information</param>

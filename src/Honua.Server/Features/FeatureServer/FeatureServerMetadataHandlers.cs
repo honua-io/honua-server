@@ -151,30 +151,20 @@ internal static partial class FeatureServerEndpoints
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-        if (!resourceResult.IsValid)
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger,
+            cancellationToken);
+        if (!validationResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-
-            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-            }
-
-            if (errorMessage.StartsWith("Service", StringComparison.OrdinalIgnoreCase))
-            {
-                FeatureServerLog.ServiceNotFound(logger, serviceId);
-            }
-            else if (errorMessage.StartsWith("Layer", StringComparison.OrdinalIgnoreCase))
-            {
-                FeatureServerLog.LayerNotFound(logger, serviceId, layerId);
-            }
-
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return validationResult.ErrorResult!;
         }
 
-        var service = resourceResult.Resource!.Service;
-        var layer = resourceResult.Resource.Layer;
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
         if (accessError != null)
         {

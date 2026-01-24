@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Validation;
+using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.OData.Services;
 
@@ -19,15 +20,10 @@ internal static class ODataRequestValidation
         IReadOnlySet<string> allowedParameters)
     {
         var validationResult = validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            return ODataUtilityService.CreateODataError(
-                context,
-                "InvalidQueryOption",
-                validationResult.ErrorMessage ?? "Invalid query parameter.");
-        }
-
-        return null;
+        var error = QueryParameterValidationHelpers.GetValidationError(validationResult);
+        return error == null
+            ? null
+            : ODataUtilityService.CreateODataError(context, "InvalidQueryOption", error);
     }
 
     public static IResult? ValidateFormat(
@@ -89,5 +85,49 @@ internal static class ODataRequestValidation
 
         paging = new ODataPagingParameters(topValue, skipValue, countValue, paginationResult.Value!);
         return true;
+    }
+
+    public static IResult? TryParsePagingOrError(
+        HttpContext context,
+        ODataValidationService validationService,
+        string? top,
+        string? skip,
+        string? count,
+        out ODataPagingParameters? paging)
+    {
+        if (!TryParsePaging(context, validationService, top, skip, count, out paging, out var error))
+        {
+            return error;
+        }
+
+        return null;
+    }
+
+    public static IResult? TryGetPagingValues(
+        HttpContext context,
+        ODataValidationService validationService,
+        string? top,
+        string? skip,
+        string? count,
+        out PaginationValues pagination,
+        out int? topValue,
+        out int? skipValue,
+        out bool? countValue)
+    {
+        var error = TryParsePagingOrError(context, validationService, top, skip, count, out var paging);
+        if (error != null)
+        {
+            pagination = new PaginationValues(0, 0);
+            topValue = null;
+            skipValue = null;
+            countValue = null;
+            return error;
+        }
+
+        pagination = paging!.Pagination;
+        topValue = paging.Top;
+        skipValue = paging.Skip;
+        countValue = paging.Count;
+        return null;
     }
 }

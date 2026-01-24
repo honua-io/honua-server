@@ -28,6 +28,11 @@ public sealed record EsriDiscoveryRequest
 public sealed record EsriImportRequest
 {
     /// <summary>
+    /// Optional job identifier for progress tracking.
+    /// </summary>
+    public string? JobId { get; init; }
+
+    /// <summary>
     /// The base URL of the ArcGIS Server service.
     /// </summary>
     public required string ServiceUrl { get; init; }

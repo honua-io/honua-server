@@ -509,7 +509,7 @@ internal static class MapLibreToGeoServicesConverter
     private static PictureMarkerLayout ParsePictureMarkerLayout(JsonElement layout)
     {
         var iconSize = layout.TryGetProperty("icon-size", out var iconSizeElement)
-            && TryGetDouble(iconSizeElement, out var sizeValue)
+            && StyleParsingHelpers.TryGetDouble(iconSizeElement, out var sizeValue)
             ? (double?)sizeValue
             : null;
 
@@ -520,8 +520,8 @@ internal static class MapLibreToGeoServicesConverter
         {
             var values = offsetElement.EnumerateArray().ToArray();
             if (values.Length >= 2
-                && TryGetDouble(values[0], out var xValue)
-                && TryGetDouble(values[1], out var yValue))
+                && StyleParsingHelpers.TryGetDouble(values[0], out var xValue)
+                && StyleParsingHelpers.TryGetDouble(values[1], out var yValue))
             {
                 xOffset = xValue;
                 yOffset = yValue;
@@ -529,7 +529,7 @@ internal static class MapLibreToGeoServicesConverter
         }
 
         var angle = layout.TryGetProperty("icon-rotate", out var rotateElement)
-            && TryGetDouble(rotateElement, out var rotateValue)
+            && StyleParsingHelpers.TryGetDouble(rotateElement, out var rotateValue)
             ? (double?)rotateValue
             : null;
 
@@ -599,31 +599,31 @@ internal static class MapLibreToGeoServicesConverter
             : null;
 
         double? width = null;
-        if (imageElement.TryGetProperty("width", out var widthElement) && TryGetDouble(widthElement, out var widthValue))
+        if (imageElement.TryGetProperty("width", out var widthElement) && StyleParsingHelpers.TryGetDouble(widthElement, out var widthValue))
         {
             width = widthValue;
         }
 
         double? height = null;
-        if (imageElement.TryGetProperty("height", out var heightElement) && TryGetDouble(heightElement, out var heightValue))
+        if (imageElement.TryGetProperty("height", out var heightElement) && StyleParsingHelpers.TryGetDouble(heightElement, out var heightValue))
         {
             height = heightValue;
         }
 
         double? xOffset = null;
-        if (imageElement.TryGetProperty("xoffset", out var xOffsetElement) && TryGetDouble(xOffsetElement, out var xOffsetValue))
+        if (imageElement.TryGetProperty("xoffset", out var xOffsetElement) && StyleParsingHelpers.TryGetDouble(xOffsetElement, out var xOffsetValue))
         {
             xOffset = xOffsetValue;
         }
 
         double? yOffset = null;
-        if (imageElement.TryGetProperty("yoffset", out var yOffsetElement) && TryGetDouble(yOffsetElement, out var yOffsetValue))
+        if (imageElement.TryGetProperty("yoffset", out var yOffsetElement) && StyleParsingHelpers.TryGetDouble(yOffsetElement, out var yOffsetValue))
         {
             yOffset = yOffsetValue;
         }
 
         double? angle = null;
-        if (imageElement.TryGetProperty("angle", out var angleElement) && TryGetDouble(angleElement, out var angleValue))
+        if (imageElement.TryGetProperty("angle", out var angleElement) && StyleParsingHelpers.TryGetDouble(angleElement, out var angleValue))
         {
             angle = angleValue;
         }
@@ -846,7 +846,7 @@ internal static class MapLibreToGeoServicesConverter
                 break;
             }
 
-            if (!TryGetDouble(items[i], out var stop))
+            if (!StyleParsingHelpers.TryGetDouble(items[i], out var stop))
             {
                 continue;
             }
@@ -985,7 +985,7 @@ internal static class MapLibreToGeoServicesConverter
             _ => "fill-opacity"
         };
 
-        return paint.TryGetProperty(property, out var element) && TryGetDouble(element, out var value)
+        return paint.TryGetProperty(property, out var element) && StyleParsingHelpers.TryGetDouble(element, out var value)
             ? StyleJsonUtilities.ClampOpacity(value)
             : null;
     }
@@ -998,7 +998,7 @@ internal static class MapLibreToGeoServicesConverter
                 && StyleJsonUtilities.TryParseMapLibreColor(strokeColor, out var color))
             {
                 var width = paint.TryGetProperty("circle-stroke-width", out var widthElement)
-                    && TryGetDouble(widthElement, out var widthValue)
+                    && StyleParsingHelpers.TryGetDouble(widthElement, out var widthValue)
                     ? widthValue
                     : (double?)StyleDefaults.DefaultOutlineWidth;
 
@@ -1019,12 +1019,12 @@ internal static class MapLibreToGeoServicesConverter
                 && StyleJsonUtilities.TryParseMapLibreColor(colorElement, out var color))
             {
                 var width = outlinePaint.TryGetProperty("line-width", out var widthElement)
-                    && TryGetDouble(widthElement, out var widthValue)
+                    && StyleParsingHelpers.TryGetDouble(widthElement, out var widthValue)
                     ? widthValue
                     : (double?)StyleDefaults.DefaultOutlineWidth;
 
                 var outlineOpacity = outlinePaint.TryGetProperty("line-opacity", out var opacityElement)
-                    && TryGetDouble(opacityElement, out var opacity)
+                    && StyleParsingHelpers.TryGetDouble(opacityElement, out var opacity)
                     ? (double?)opacity
                     : null;
 
@@ -1087,7 +1087,7 @@ internal static class MapLibreToGeoServicesConverter
         var values = new List<double>();
         foreach (var item in dashElement.EnumerateArray())
         {
-            if (!TryGetDouble(item, out var value))
+            if (!StyleParsingHelpers.TryGetDouble(item, out var value))
             {
                 return false;
             }
@@ -1143,7 +1143,7 @@ internal static class MapLibreToGeoServicesConverter
             return null;
         }
 
-        return paint.TryGetProperty("line-width", out var element) && TryGetDouble(element, out var value)
+        return paint.TryGetProperty("line-width", out var element) && StyleParsingHelpers.TryGetDouble(element, out var value)
             ? value
             : (double?)StyleDefaults.DefaultLineWidth;
     }
@@ -1160,7 +1160,7 @@ internal static class MapLibreToGeoServicesConverter
             return StyleDefaults.DefaultPointSize;
         }
 
-        return TryGetDouble(element, out var value)
+        return StyleParsingHelpers.TryGetDouble(element, out var value)
             ? value * 2d
             : (double?)StyleDefaults.DefaultPointSize;
     }
@@ -1264,7 +1264,7 @@ internal static class MapLibreToGeoServicesConverter
                 break;
             }
 
-            if (!TryGetDouble(items[i], out var stop))
+            if (!StyleParsingHelpers.TryGetDouble(items[i], out var stop))
             {
                 continue;
             }
@@ -1320,26 +1320,6 @@ internal static class MapLibreToGeoServicesConverter
             JsonValueKind.False => false,
             _ => element.ToString()
         };
-    }
-
-    private static bool TryGetDouble(JsonElement element, out double value)
-    {
-        value = 0;
-
-        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out var numeric))
-        {
-            value = numeric;
-            return true;
-        }
-
-        if (element.ValueKind == JsonValueKind.String
-            && double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-        {
-            value = parsed;
-            return true;
-        }
-
-        return false;
     }
 
     private readonly record struct PictureMarkerPayload(

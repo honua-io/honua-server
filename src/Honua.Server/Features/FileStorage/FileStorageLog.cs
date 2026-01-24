@@ -99,4 +99,10 @@ internal static partial class FileStorageLog
         Level = LogLevel.Information,
         Message = "Loaded {Count} files from existing metadata")]
     public static partial void MetadataLoaded(ILogger logger, int count);
+
+    [LoggerMessage(
+        EventId = 5420,
+        Level = LogLevel.Warning,
+        Message = "Failed to report upload progress for {UploadId}")]
+    public static partial void ProgressUpdateFailed(ILogger logger, Exception exception, string uploadId);
 }

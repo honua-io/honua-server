@@ -154,7 +154,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Batch_WithDeleteRequest_DeletesFeature()
     {
         // Create a feature to delete
-        var createdId = await InsertFeatureAsync("To Delete");
+        var createdId = await _fixture.InsertFeatureAsync(TestLayerId, "To Delete");
 
         var batchRequest = new ODataBatchRequest
         {
@@ -312,23 +312,6 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         createStatus.Should().Be(424);
         var finalCount = await CountFeaturesAsync();
         finalCount.Should().Be(initialCount);
-    }
-
-    private async Task<long> InsertFeatureAsync(string name)
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO features (layer_id, geometry, attributes)
-            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
-            RETURNING objectid;
-            """;
-        command.Parameters.AddWithValue("layerId", TestLayerId);
-        command.Parameters.AddWithValue("name", name);
-
-        var result = await command.ExecuteScalarAsync();
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private async Task<long> CountFeaturesAsync()

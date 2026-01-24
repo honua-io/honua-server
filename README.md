@@ -28,6 +28,8 @@ Current entrypoints:
 - `/ogc/tiles`
 - `/odata`
 - `/tiles/{layerId}/{z}/{x}/{y}.mvt`
+- `/tiles/{layerId}/tile.json`
+- `/api/styles/{layerId}.json`
 - `/openapi.json`
 
 ## Quick Start
@@ -61,6 +63,8 @@ Implemented (server + admin API):
 - OGC API Tiles: tilesets metadata + vector tiles.
 - OData v4: CRUD with spatial functions (`geo.distance`, `geo.intersects`); $batch/$apply/$search endpoints exist with limited coverage.
 - Vector tiles (MVT): PostGIS `ST_AsMVT` via `/tiles/{layerId}/{z}/{x}/{y}.mvt`.
+- TileJSON metadata: `/tiles/{layerId}/tile.json` with MapLibre style discovery.
+- Public MapLibre styles: `/api/styles/{layerId}.json`.
 - File import: GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ — no GDAL required.
 - CRS support: PostGIS-based reprojection, EPSG via `spatial_ref_sys`, auto-detect from source files.
 - Admin APIs: connections, services/layers/relationships/styles, import jobs, operations progress.
@@ -68,7 +72,6 @@ Implemented (server + admin API):
 - .NET Aspire local dev orchestration with dashboard (traces, logs, metrics, health).
 
 Pending MVP items (open issues):
-- TileJSON metadata endpoint (#20).
 - Service enable/disable controls (#58).
 - Admin UI (project setup, connections, publishing, health dashboard, map preview) (#25, #26, #27, #42, #43).
 - Embedded Maputnik style editor (#30).

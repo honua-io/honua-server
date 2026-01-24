@@ -241,56 +241,6 @@ internal sealed partial class ODataMetadataService
             """;
     }
 
-    /// <summary>
-    /// Sanitizes a name to be a valid OData entity type name.
-    /// Ensures name starts with a letter and contains only alphanumeric characters and underscores.
-    /// </summary>
-    private static string SanitizeEntityTypeName(string name)
-    {
-        // Remove invalid characters, ensure starts with letter
-        var sb = new StringBuilder();
-        var startedWithLetter = false;
-
-        foreach (var c in name)
-        {
-            if (char.IsLetter(c))
-            {
-                sb.Append(c);
-                startedWithLetter = true;
-            }
-            else if (startedWithLetter && (char.IsLetterOrDigit(c) || c == '_'))
-            {
-                sb.Append(c);
-            }
-        }
-
-        return sb.Length > 0 ? sb.ToString() : "Entity";
-    }
-
-    /// <summary>
-    /// Maps a FieldType to an OData EDM type.
-    /// </summary>
-    private static string MapFieldTypeToEdm(FieldType fieldType, string geometryEdmType)
-    {
-        return fieldType switch
-        {
-            FieldType.String => "Edm.String",
-            FieldType.Integer => "Edm.Int32",
-            FieldType.BigInteger => "Edm.Int64",
-            FieldType.Double => "Edm.Double",
-            FieldType.Float => "Edm.Single",
-            FieldType.Boolean => "Edm.Boolean",
-            FieldType.DateTime => "Edm.DateTimeOffset",
-            FieldType.Date => "Edm.Date",
-            FieldType.Time => "Edm.TimeOfDay",
-            FieldType.Geometry => geometryEdmType,
-            FieldType.Json => "Edm.String",
-            FieldType.Binary => "Edm.Binary",
-            FieldType.Uuid => "Edm.Guid",
-            _ => "Edm.String"
-        };
-    }
-
     private static (string GeometryEdmType, string SridAttribute) ResolveGeometryEdmType(LayerDefinition[] layers)
     {
         if (layers.Length == 0)

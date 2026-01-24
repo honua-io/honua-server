@@ -15,6 +15,7 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -344,20 +345,15 @@ internal static partial class FeatureServerEndpoints
                 $"Invalid tile coordinates: x={x}, y={y}, z={z}");
         }
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
-        if (!layerResult.IsValid)
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            layerId,
+            cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
         {
-            var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return layerValidation.ErrorResult!;
         }
-
-        var layer = layerResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-        if (accessError != null)
-        {
-            return accessError;
-        }
+        var layer = layerValidation.Layer!;
 
         var where = GetValueString(ToCaseInsensitiveDictionary(context.Request.Query), "where");
         SqlFragment? sqlFilter = null;

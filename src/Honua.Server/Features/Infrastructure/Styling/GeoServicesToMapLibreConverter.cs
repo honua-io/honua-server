@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
@@ -186,7 +185,7 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
-            if (!TryGetDouble(maxElement, out var maxValue))
+            if (!StyleParsingHelpers.TryGetDouble(maxElement, out var maxValue))
             {
                 continue;
             }
@@ -558,7 +557,7 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
-            if (!TryGetDouble(maxElement, out var maxValue))
+            if (!StyleParsingHelpers.TryGetDouble(maxElement, out var maxValue))
             {
                 continue;
             }
@@ -983,27 +982,7 @@ internal static class GeoServicesToMapLibreConverter
             return null;
         }
 
-        return TryGetDouble(prop, out var value) ? value : null;
-    }
-
-    private static bool TryGetDouble(JsonElement element, out double value)
-    {
-        value = 0;
-
-        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out var numeric))
-        {
-            value = numeric;
-            return true;
-        }
-
-        if (element.ValueKind == JsonValueKind.String
-            && double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-        {
-            value = parsed;
-            return true;
-        }
-
-        return false;
+        return StyleParsingHelpers.TryGetDouble(prop, out var value) ? value : null;
     }
 
     private static object ConvertValueToken(JsonElement element)

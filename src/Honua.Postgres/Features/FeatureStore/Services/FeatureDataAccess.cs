@@ -1173,17 +1173,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     {
         if (value is JsonElement element)
         {
-            return element.ValueKind switch
-            {
-                JsonValueKind.String => element.GetString(),
-                JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                                        element.TryGetDouble(out var doubleVal) ? doubleVal :
-                                        element.GetDecimal(),
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Null => null,
-                _ => value
-            };
+            return JsonElementConverter.ConvertToScalar(element);
         }
 
         return value;

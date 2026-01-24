@@ -29,22 +29,22 @@ internal static class StandardErrorResponseFormatter
 
         var path = context.Request.Path;
 
-        if (IsOData(path))
+        if (ProtocolRequestClassifier.IsOData(path))
         {
             return FormatODataError(context, errorResponse, options);
         }
 
-        if (IsOgc(path))
+        if (ProtocolRequestClassifier.IsOgc(path))
         {
             return FormatOgcError(context, errorResponse, options);
         }
 
-        if (IsAdmin(path))
+        if (ProtocolRequestClassifier.IsAdmin(path))
         {
             return FormatAdminError(context, errorResponse, options);
         }
 
-        if (IsGeoServices(path))
+        if (ProtocolRequestClassifier.IsGeoServices(path))
         {
             return FormatGeoServicesError(context, errorResponse, options);
         }
@@ -73,7 +73,7 @@ internal static class StandardErrorResponseFormatter
     {
         SetODataHeaders(context, options);
 
-        var code = MapODataCode(errorResponse.StatusCode);
+        var code = ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true);
         var details = BuildODataDetails(context, errorResponse, options);
 
         var error = new ODataError
@@ -170,7 +170,7 @@ internal static class StandardErrorResponseFormatter
         {
             detailsList.Add(new ErrorDetail
             {
-                Code = MapODataCode(errorResponse.StatusCode),
+                Code = ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true),
                 Message = errorResponse.Detail
             });
         }
@@ -182,7 +182,7 @@ internal static class StandardErrorResponseFormatter
             {
                 detailsList.Add(new ErrorDetail
                 {
-                    Code = MapODataCode(errorResponse.StatusCode),
+                    Code = ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true),
                     Message = detail
                 });
             }
@@ -310,80 +310,4 @@ internal static class StandardErrorResponseFormatter
         return new ErrorMetadata(correlationId, timestamp);
     }
 
-    /// <summary>
-    /// Maps HTTP status code to OData error code.
-    /// </summary>
-    private static string MapODataCode(int statusCode) => statusCode switch
-    {
-        StatusCodes.Status400BadRequest => "BadRequest",
-        StatusCodes.Status401Unauthorized => "Unauthorized",
-        StatusCodes.Status403Forbidden => "Forbidden",
-        StatusCodes.Status404NotFound => "ResourceNotFound",
-        StatusCodes.Status408RequestTimeout => "RequestTimeout",
-        StatusCodes.Status409Conflict => "Conflict",
-        StatusCodes.Status413PayloadTooLarge => "PayloadTooLarge",
-        StatusCodes.Status429TooManyRequests => "TooManyRequests",
-        StatusCodes.Status500InternalServerError => "InternalServerError",
-        StatusCodes.Status503ServiceUnavailable => "ServiceUnavailable",
-        _ => "Error"
-    };
-
-    /// <summary>
-    /// Determines if the request path indicates OData protocol.
-    /// </summary>
-    private static bool IsOData(PathString path) => path.StartsWithSegments("/odata");
-
-    /// <summary>
-    /// Determines if the request path indicates OGC protocol.
-    /// </summary>
-    private static bool IsOgc(PathString path) =>
-        path.StartsWithSegments("/ogc/features") ||
-        path.StartsWithSegments("/ogc/tiles") ||
-        path.StartsWithSegments("/collections");
-
-    /// <summary>
-    /// Determines if the request path indicates Admin API protocol.
-    /// </summary>
-    private static bool IsAdmin(PathString path)
-    {
-        if (!path.StartsWithSegments("/api", out var remaining))
-        {
-            return false;
-        }
-
-        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments is null || segments.Length < 2)
-        {
-            return false;
-        }
-
-        var versionSegment = segments[0];
-        if (!versionSegment.StartsWith("v", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var versionPart = versionSegment.AsSpan(1);
-        if (versionPart.IsEmpty)
-        {
-            return false;
-        }
-
-        foreach (var ch in versionPart)
-        {
-            if (!char.IsDigit(ch) && ch != '.')
-            {
-                return false;
-            }
-        }
-
-        return string.Equals(segments[1], "admin", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Determines if the request path indicates GeoServices protocol.
-    /// </summary>
-    private static bool IsGeoServices(PathString path) =>
-        path.StartsWithSegments("/rest/services") ||
-        path.StartsWithSegments("/tiles");
 }

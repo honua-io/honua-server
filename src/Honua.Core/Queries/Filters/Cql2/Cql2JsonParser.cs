@@ -190,7 +190,7 @@ public sealed class Cql2JsonParser
             }
 
             var negate = normalizedLower.StartsWith("not", StringComparison.Ordinal);
-            return BuildBetweenExpression(expressions[0], expressions[1], expressions[2], negate);
+            return FilterExpressionHelpers.BuildBetweenExpression(expressions[0], expressions[1], expressions[2], negate);
         }
 
         if (normalizedLower is "=" or "==" or "!=" or "<>" or "<" or "<=" or ">" or ">=")
@@ -352,22 +352,6 @@ public sealed class Cql2JsonParser
         }
 
         return expressions;
-    }
-
-    private static BinaryExpression BuildBetweenExpression(FilterExpression target, FilterExpression lower, FilterExpression upper, bool negate)
-    {
-        var lowerExpr = new BinaryExpression(target, BinaryOperator.GreaterThanOrEqual, lower);
-        var upperExpr = new BinaryExpression(target, BinaryOperator.LessThanOrEqual, upper);
-        var combined = new BinaryExpression(lowerExpr, BinaryOperator.And, upperExpr);
-
-        if (!negate)
-        {
-            return combined;
-        }
-
-        var lowerNot = new BinaryExpression(target, BinaryOperator.LessThan, lower);
-        var upperNot = new BinaryExpression(target, BinaryOperator.GreaterThan, upper);
-        return new BinaryExpression(lowerNot, BinaryOperator.Or, upperNot);
     }
 
     private ArrayLiteral ParseArrayLiteral(JsonElement element)

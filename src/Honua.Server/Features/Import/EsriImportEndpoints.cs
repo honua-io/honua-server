@@ -221,6 +221,7 @@ internal static partial class EsriImportEndpoints
             // Create import request
             var importRequest = new EsriImportRequest
             {
+                JobId = jobId,
                 ServiceUrl = request.ServiceUrl,
                 LayerId = request.LayerId,
                 TableName = request.TableName,
@@ -257,8 +258,8 @@ internal static partial class EsriImportEndpoints
             {
                 JobId = jobId,
                 Message = "Import job queued for processing",
-                StatusUrl = $"/api/v1/admin/operations/{jobId}",
-                CancelUrl = $"/api/v1/admin/operations/{jobId}/cancel"
+                StatusUrl = $"/api/v1/admin/import/esri/jobs/{jobId}",
+                CancelUrl = $"/api/v1/admin/import/esri/jobs/{jobId}/cancel"
             };
 
             await Results.Json(response, EsriImportApiJsonContext.Default.EsriImportJobResponse,
@@ -332,6 +333,14 @@ internal static partial class EsriImportEndpoints
             return;
         }
 
+        if (!IsActiveStatus(progress.Status))
+        {
+            await WriteErrorAsync(context,
+                $"Import job is already {progress.Status}",
+                StatusCodes.Status409Conflict);
+            return;
+        }
+
         var cancelledProgress = progress with
         {
             Status = EsriImportStatus.Cancelled,
@@ -374,7 +383,7 @@ internal static partial class EsriImportEndpoints
         foreach (var jobId in jobIds)
         {
             var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-            if (progress != null)
+            if (progress != null && IsActiveStatus(progress.Status))
             {
                 jobs.Add(progress);
             }
@@ -393,6 +402,9 @@ internal static partial class EsriImportEndpoints
         return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
                (char.IsLetter(tableName[0]) || tableName[0] == '_');
     }
+
+    private static bool IsActiveStatus(EsriImportStatus status)
+        => status is not (EsriImportStatus.Completed or EsriImportStatus.Failed or EsriImportStatus.Cancelled);
 
     private static ILogger<EsriImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<EsriImportEndpointsLog>>();

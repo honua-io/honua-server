@@ -49,12 +49,14 @@ public sealed record ImportRequest
     /// <exception cref="InvalidOperationException">Thrown when neither FileStream nor CloudFileId is provided</exception>
     public void Validate()
     {
-        if (FileStream == null && string.IsNullOrEmpty(CloudFileId))
+        var cloudFileId = string.IsNullOrWhiteSpace(CloudFileId) ? null : CloudFileId;
+
+        if (FileStream == null && cloudFileId == null)
         {
             throw new InvalidOperationException("Either FileStream or CloudFileId must be provided.");
         }
 
-        if (FileStream != null && !string.IsNullOrEmpty(CloudFileId))
+        if (FileStream != null && cloudFileId != null)
         {
             throw new InvalidOperationException("Only one of FileStream or CloudFileId should be provided, not both.");
         }
@@ -63,5 +65,5 @@ public sealed record ImportRequest
     /// <summary>
     /// Gets a value indicating whether this request uses cloud storage
     /// </summary>
-    public bool UsesCloudStorage => !string.IsNullOrEmpty(CloudFileId);
+    public bool UsesCloudStorage => !string.IsNullOrWhiteSpace(CloudFileId);
 }

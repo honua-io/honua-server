@@ -185,6 +185,75 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected virtual Task<int> DeleteByPrefixAsync(string batchId, CancellationToken cancellationToken)
         => Task.FromResult(0);
 
+    protected static void ValidatePresignedUploadArguments(
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken,
+        bool checkCancellation = true)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+
+        if (checkCancellation)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
+
+    protected async Task<UploadResult> ReportFailedUploadAsync(
+        string uploadId,
+        FileUploadRequest request,
+        Stopwatch stopwatch,
+        long totalBytes,
+        DateTimeOffset startedAt,
+        Exception ex,
+        string progressMessage,
+        string resultMessage)
+    {
+        stopwatch.Stop();
+
+        var failedProgress = new UploadProgress
+        {
+            UploadId = uploadId,
+            Status = OperationStatus.Failed,
+            BytesUploaded = 0,
+            TotalBytes = totalBytes,
+            FileName = request.FileName,
+            ContentType = request.ContentType,
+            StartedAt = startedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = progressMessage,
+            CurrentPhase = "Failed"
+        };
+        await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+        request.Progress?.Report(failedProgress);
+        FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
+        return UploadResult.CreateFailure(resultMessage, stopwatch.Elapsed);
+    }
+
+    protected async Task ReportCancelledUploadAsync(
+        string uploadId,
+        FileUploadRequest request,
+        long totalBytes,
+        DateTimeOffset startedAt)
+    {
+        var cancelledProgress = new UploadProgress
+        {
+            UploadId = uploadId,
+            Status = OperationStatus.Cancelled,
+            BytesUploaded = 0,
+            TotalBytes = totalBytes,
+            FileName = request.FileName,
+            ContentType = request.ContentType,
+            StartedAt = startedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = "Upload was cancelled",
+            CurrentPhase = "Cancelled"
+        };
+        await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+        request.Progress?.Report(cancelledProgress);
+    }
+
     protected async Task<bool> CancelUploadInternalAsync(string uploadId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(uploadId);

@@ -344,31 +344,28 @@ internal static class AttachmentEndpoints
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, context.RequestAborted);
-        if (!resourceResult.IsValid)
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger,
+            context.RequestAborted);
+        if (!validationResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                await StandardErrorHelpers.CreateBadRequest(context, errorMessage).ExecuteAsync(context);
-            }
-            else
-            {
-                await StandardErrorHelpers.CreateNotFound(context, errorMessage).ExecuteAsync(context);
-            }
-
+            await validationResult.ErrorResult!.ExecuteAsync(context);
             return null;
         }
 
-        var resource = resourceResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, resource.Layer, resource.Service, scope);
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, validationResult.Layer!, validationResult.Service!, scope);
         if (accessError != null)
         {
             await accessError.ExecuteAsync(context);
             return null;
         }
 
-        return resource;
+        return (validationResult.Service!, validationResult.Layer!);
     }
 
     // Handlers delegate directly to AttachmentHandler methods for implementation.

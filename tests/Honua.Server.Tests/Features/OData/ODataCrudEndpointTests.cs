@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -93,7 +92,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
     [Endpoint("PATCH /odata/Features({layerId},{objectId})")]
     public async Task UpdateFeature_WithValidPayload_ReturnsUpdatedFeature()
     {
-        var existingId = await InsertFeatureAsync("Original");
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
 
         var request = new ODataFeatureRequest
         {
@@ -126,7 +125,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
     [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task UpdateFeature_WithNamedKeys_ReturnsUpdatedFeature()
     {
-        var existingId = await InsertFeatureAsync("Original");
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
 
         var request = new ODataFeatureRequest
         {
@@ -159,7 +158,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
     [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
     public async Task UpdateFeature_WithLayerPath_ReturnsUpdatedFeature()
     {
-        var existingId = await InsertFeatureAsync("Original");
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
 
         var request = new ODataFeatureRequest
         {
@@ -192,7 +191,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
     [Endpoint("DELETE /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task DeleteFeature_WithValidId_ReturnsNoContent()
     {
-        var existingId = await InsertFeatureAsync("Delete Me");
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Delete Me");
 
         var response = await _fixture.Client.DeleteAsync(
             $"/odata/Features(LayerId={TestLayerId},ObjectId={existingId})");
@@ -200,20 +199,4 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    private async Task<long> InsertFeatureAsync(string name)
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO features (layer_id, geometry, attributes)
-            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
-            RETURNING objectid;
-            """;
-        command.Parameters.AddWithValue("layerId", TestLayerId);
-        command.Parameters.AddWithValue("name", name);
-
-        var result = await command.ExecuteScalarAsync();
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
-    }
 }

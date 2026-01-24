@@ -187,49 +187,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
-            var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
+            var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
                 context.Request,
                 layer,
+                requestFeature,
                 _crsRegistry,
+                _geometryServices,
+                _mutationValidator,
+                objectId,
                 cancellationToken);
-            if (!crsResult.IsValid)
+            if (!buildResult.IsValid)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, crsResult.Error ?? "Invalid Content-Crs header.");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    buildResult.ErrorMessage ?? "Invalid feature payload.");
             }
 
-            var inputCrs = crsResult.Definition;
-
-            byte[]? geometryWkb = null;
-            if (requestFeature.Geometry != null)
-            {
-                var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
-                    requestFeature.Geometry,
-                    inputCrs.Srid,
-                    inputCrs.AxisOrder);
-                if (!wkbResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, wkbResult.ErrorMessage!);
-                }
-                geometryWkb = wkbResult.Wkb;
-            }
-
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
-            if (!geometryValidation.IsValid)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid geometry: {geometryValidation.ErrorMessage}");
-            }
-            geometryWkb = geometryValidation.Geometry;
-
-            var attributesResult = _mutationValidator.ValidateAttributes(
-                layer,
-                requestFeature.Properties,
-                ValidationExtensions.AttributeValidationMode.Strict);
-            if (!attributesResult.IsValid)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, attributesResult.ErrorMessage ?? "Invalid attributes.");
-            }
-
-            var feature = Feature.Create(objectId, geometryWkb, attributesResult.Value!);
+            var inputCrs = buildResult.InputCrs!.Value;
+            var feature = buildResult.Feature
+                ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
 
             try
             {
@@ -323,55 +299,27 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             };
         }
 
-        byte[]? geometryWkb = null;
-        if (operation.Feature.Geometry != null)
-        {
-            var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
-                operation.Feature.Geometry,
-                inputCrs.Srid,
-                inputCrs.AxisOrder);
-            if (!wkbResult.IsSuccess)
-            {
-                return new BatchOperationResult
-                {
-                    OperationId = operation.Id,
-                    IsSuccess = false,
-                    ErrorMessage = wkbResult.ErrorMessage!,
-                    StatusCode = 400
-                };
-            }
-            geometryWkb = wkbResult.Wkb;
-        }
-
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
-        if (!geometryValidation.IsValid)
-        {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Invalid geometry: {geometryValidation.ErrorMessage}",
-                StatusCode = 400
-            };
-        }
-        geometryWkb = geometryValidation.Geometry;
-
-        var attributesResult = _mutationValidator.ValidateAttributes(
+        var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
             layer,
-            operation.Feature.Properties,
-            ValidationExtensions.AttributeValidationMode.Strict);
-        if (!attributesResult.IsValid)
+            operation.Feature,
+            inputCrs,
+            _geometryServices,
+            _mutationValidator,
+            objectId: 0,
+            cancellationToken);
+        if (!buildResult.IsValid)
         {
             return new BatchOperationResult
             {
                 OperationId = operation.Id,
                 IsSuccess = false,
-                ErrorMessage = attributesResult.ErrorMessage ?? "Invalid attributes.",
+                ErrorMessage = buildResult.ErrorMessage ?? "Invalid feature payload.",
                 StatusCode = 400
             };
         }
 
-        var feature = Feature.Create(0, geometryWkb, attributesResult.Value!);
+        var feature = buildResult.Feature
+            ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
         var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
 
         return new BatchOperationResult
@@ -412,55 +360,27 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             };
         }
 
-        byte[]? geometryWkb = null;
-        if (operation.Feature.Geometry != null)
-        {
-            var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
-                operation.Feature.Geometry,
-                inputCrs.Srid,
-                inputCrs.AxisOrder);
-            if (!wkbResult.IsSuccess)
-            {
-                return new BatchOperationResult
-                {
-                    OperationId = operation.Id,
-                    IsSuccess = false,
-                    ErrorMessage = wkbResult.ErrorMessage!,
-                    StatusCode = 400
-                };
-            }
-            geometryWkb = wkbResult.Wkb;
-        }
-
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
-        if (!geometryValidation.IsValid)
-        {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Invalid geometry: {geometryValidation.ErrorMessage}",
-                StatusCode = 400
-            };
-        }
-        geometryWkb = geometryValidation.Geometry;
-
-        var attributesResult = _mutationValidator.ValidateAttributes(
+        var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
             layer,
-            operation.Feature.Properties,
-            ValidationExtensions.AttributeValidationMode.Strict);
-        if (!attributesResult.IsValid)
+            operation.Feature,
+            inputCrs,
+            _geometryServices,
+            _mutationValidator,
+            objectId,
+            cancellationToken);
+        if (!buildResult.IsValid)
         {
             return new BatchOperationResult
             {
                 OperationId = operation.Id,
                 IsSuccess = false,
-                ErrorMessage = attributesResult.ErrorMessage ?? "Invalid attributes.",
+                ErrorMessage = buildResult.ErrorMessage ?? "Invalid feature payload.",
                 StatusCode = 400
             };
         }
 
-        var feature = Feature.Create(objectId, geometryWkb, attributesResult.Value!);
+        var feature = buildResult.Feature
+            ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
 
         try
         {

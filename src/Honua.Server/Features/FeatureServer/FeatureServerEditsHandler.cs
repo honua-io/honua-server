@@ -50,30 +50,20 @@ internal sealed class FeatureServerEditsHandler(
                 request.Deletes?.Length ?? 0);
 
             // Validate service and layer exist
-            var resourceResult = await _resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-            if (!resourceResult.IsValid)
+            var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+                _resourceValidator,
+                serviceId,
+                layerId,
+                httpContext,
+                _logger,
+                cancellationToken);
+            if (!validationResult.IsValid)
             {
-                var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-
-                if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(httpContext, errorMessage);
-                }
-
-                if (errorMessage.StartsWith("Service", StringComparison.OrdinalIgnoreCase))
-                {
-                    FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                }
-                else if (errorMessage.StartsWith("Layer", StringComparison.OrdinalIgnoreCase))
-                {
-                    FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(httpContext, errorMessage);
+                return validationResult.ErrorResult!;
             }
 
-            var service = resourceResult.Resource!.Service;
-            var layer = resourceResult.Resource.Layer;
+            var service = validationResult.Service!;
+            var layer = validationResult.Layer!;
             var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(httpContext, layer, service);
             if (accessError != null)
             {

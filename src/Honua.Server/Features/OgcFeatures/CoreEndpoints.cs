@@ -165,15 +165,8 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
                 // OGC API Features Part 3 - Filtering
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
-
-                // OGC API Common
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landing-page",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html",
-                "http://www.opengis.net/spec/ogcapi-common-2/1.0/conf/collections"
-            ),
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
+            ).AddRange(OgcConformanceUris.Common),
             Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
                 $"{context.Request.Scheme}://{context.Request.Host}/ogc/features/conformance",

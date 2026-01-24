@@ -3,9 +3,11 @@
 
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcTiles;
+using Honua.Server.Features.Tiles;
 
 namespace Honua.Server.Features.Infrastructure.Hosting;
 
@@ -39,6 +41,8 @@ internal static class FeatureRegistrationExtensions
 
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapAttachmentEndpoints();
+        endpoints.MapTileJsonEndpoints();
+        endpoints.MapStyleEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapODataEndpoints();

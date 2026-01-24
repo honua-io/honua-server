@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.IO;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -113,39 +114,12 @@ public static class PooledGeometryProcessor
         return new WKBWriter().Write(geometry);
     }
 
-    private sealed class NonClosingStream : Stream
+    private sealed class NonClosingStream : DelegatingStream
     {
-        private readonly Stream _inner;
-
         public NonClosingStream(Stream inner)
+            : base(inner)
         {
-            _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
-
-        public override bool CanRead => _inner.CanRead;
-        public override bool CanSeek => _inner.CanSeek;
-        public override bool CanWrite => _inner.CanWrite;
-        public override long Length => _inner.Length;
-
-        public override long Position
-        {
-            get => _inner.Position;
-            set => _inner.Position = value;
-        }
-
-        public override void Flush() => _inner.Flush();
-
-        public override int Read(byte[] buffer, int offset, int count)
-            => _inner.Read(buffer, offset, count);
-
-        public override long Seek(long offset, SeekOrigin origin)
-            => _inner.Seek(offset, origin);
-
-        public override void SetLength(long value)
-            => _inner.SetLength(value);
-
-        public override void Write(byte[] buffer, int offset, int count)
-            => _inner.Write(buffer, offset, count);
 
         protected override void Dispose(bool disposing)
         {

@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -414,7 +416,9 @@ internal sealed class ODataAggregationHandler
             var dict = FeatureToDictionary(f);
 
             var value1 = GetNumericValue(GetFieldValue(f, field1));
-            var value2 = double.TryParse(field2, out var constVal) ? constVal : GetNumericValue(GetFieldValue(f, field2));
+            var value2 = double.TryParse(field2, NumberStyles.Float, CultureInfo.InvariantCulture, out var constVal)
+                ? constVal
+                : GetNumericValue(GetFieldValue(f, field2));
 
             dict[alias] = operation switch
             {
@@ -431,7 +435,13 @@ internal sealed class ODataAggregationHandler
 
     private static string GetGroupKey(Feature feature, ImmutableArray<string> fields)
     {
-        return string.Join("|", fields.Select(f => GetFieldValue(feature, f)?.ToString() ?? "null"));
+        var builder = new StringBuilder(fields.Length * 16);
+        foreach (var field in fields)
+        {
+            AppendKeyPart(builder, GetFieldValue(feature, field));
+        }
+
+        return builder.ToString();
     }
 
     private static object? GetFieldValue(Feature feature, string field)
@@ -494,10 +504,66 @@ internal sealed class ODataAggregationHandler
             float f => f,
             double d => d,
             decimal dec => (double)dec,
-            string s when double.TryParse(s, out var parsed) => parsed,
+            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) => parsed,
             System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.Number => je.GetDouble(),
             _ => 0
         };
+    }
+
+    private static void AppendKeyPart(StringBuilder builder, object? value)
+    {
+        if (value == null)
+        {
+            AppendKey(builder, "null", "");
+            return;
+        }
+
+        switch (value)
+        {
+            case string s:
+                AppendKey(builder, "s", s);
+                return;
+            case int i:
+                AppendKey(builder, "i", i.ToString(CultureInfo.InvariantCulture));
+                return;
+            case long l:
+                AppendKey(builder, "l", l.ToString(CultureInfo.InvariantCulture));
+                return;
+            case float f:
+                AppendKey(builder, "f", f.ToString("R", CultureInfo.InvariantCulture));
+                return;
+            case double d:
+                AppendKey(builder, "d", d.ToString("R", CultureInfo.InvariantCulture));
+                return;
+            case decimal dec:
+                AppendKey(builder, "m", dec.ToString(CultureInfo.InvariantCulture));
+                return;
+            case bool b:
+                AppendKey(builder, "b", b ? "1" : "0");
+                return;
+            case DateTime dt:
+                AppendKey(builder, "dt", dt.ToString("O", CultureInfo.InvariantCulture));
+                return;
+            case DateTimeOffset dto:
+                AppendKey(builder, "dto", dto.ToString("O", CultureInfo.InvariantCulture));
+                return;
+            case System.Text.Json.JsonElement je:
+                AppendKey(builder, "j", je.GetRawText());
+                return;
+            default:
+                AppendKey(builder, "o", value.ToString() ?? "");
+                return;
+        }
+    }
+
+    private static void AppendKey(StringBuilder builder, string type, string value)
+    {
+        builder.Append(type);
+        builder.Append(':');
+        builder.Append(value.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(':');
+        builder.Append(value);
+        builder.Append('|');
     }
 
     private static object? CalculateAggregate(List<double> values, string function)
