@@ -35,7 +35,7 @@ public sealed class RedisImportJobManagerIntegrationTests
     {
         var queueKey = $"test:queue:{Guid.NewGuid():N}";
         using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
-        var queue = new RedisJobQueue(null, multiplexer, NullLogger.Instance, queueKey);
+        var queue = new RedisJobQueue(multiplexer, NullLogger.Instance, queueKey);
 
         await queue.EnqueueAsync("job-1");
         var length = await queue.GetQueueLengthAsync();

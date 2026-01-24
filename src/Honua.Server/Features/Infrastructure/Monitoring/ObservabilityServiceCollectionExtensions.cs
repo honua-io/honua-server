@@ -232,6 +232,22 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("mvt-tiles", "tiles");
             });
 
+            // TileJSON metadata caching policy
+            options.AddPolicy("TileJson", policy =>
+            {
+                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.SetVaryByRouteValue("layerId");
+                policy.Tag("mvt-tiles", "metadata");
+            });
+
+            // Layer style caching policy
+            options.AddPolicy("LayerStyle", policy =>
+            {
+                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.SetVaryByRouteValue("layerId");
+                policy.Tag("layer-styles", "metadata");
+            });
+
             // Note: No default base policy - endpoints must explicitly opt into caching for security
         });
 

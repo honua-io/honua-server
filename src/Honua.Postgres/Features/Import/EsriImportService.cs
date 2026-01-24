@@ -64,14 +64,17 @@ internal sealed partial class EsriImportService : IEsriImportService
     {
         var stopwatch = Stopwatch.StartNew();
         var warnings = new List<string>();
-        var jobId = Guid.NewGuid().ToString("N")[..8];
+        var jobId = string.IsNullOrWhiteSpace(request.JobId)
+            ? Guid.NewGuid().ToString("N")[..8]
+            : request.JobId;
+        var startedAt = DateTimeOffset.UtcNow;
 
         Log.ImportStarting(_logger, request.ServiceUrl, request.LayerId, request.TableName);
 
         try
         {
             // Phase 1: Discover layer metadata
-            ReportProgress(progress, jobId, EsriImportStatus.Discovering, request,
+            ReportProgress(progress, jobId, startedAt, EsriImportStatus.Discovering, request,
                 "Discovering layer metadata", 0, null);
 
             var layerInfo = await _restClient.GetLayerInfoAsync(
@@ -87,7 +90,7 @@ internal sealed partial class EsriImportService : IEsriImportService
             var batchSize = request.BatchSize ?? layerInfo.MaxRecordCount ?? 1000;
 
             // Phase 2: Create table
-            ReportProgress(progress, jobId, EsriImportStatus.CreatingTable, request,
+            ReportProgress(progress, jobId, startedAt, EsriImportStatus.CreatingTable, request,
                 "Creating PostGIS table", 0, totalFeatures, layerInfo.Name);
 
             await CreateTableAsync(request.TableName, layerInfo, request.TargetSrid,
@@ -103,7 +106,7 @@ internal sealed partial class EsriImportService : IEsriImportService
             while (hasMore && !cancellationToken.IsCancellationRequested)
             {
                 batchNumber++;
-                ReportProgress(progress, jobId, EsriImportStatus.RetrievingFeatures, request,
+                ReportProgress(progress, jobId, startedAt, EsriImportStatus.RetrievingFeatures, request,
                     $"Retrieving batch {batchNumber}", featuresProcessed, totalFeatures, layerInfo.Name);
 
                 // Query features from remote service
@@ -126,7 +129,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                 }
 
                 // Insert features into PostGIS
-                ReportProgress(progress, jobId, EsriImportStatus.InsertingFeatures, request,
+                ReportProgress(progress, jobId, startedAt, EsriImportStatus.InsertingFeatures, request,
                     $"Inserting batch {batchNumber} ({queryResult.Features.Length} features)",
                     featuresProcessed, totalFeatures, layerInfo.Name);
 
@@ -152,7 +155,7 @@ internal sealed partial class EsriImportService : IEsriImportService
             }
 
             // Phase 4: Create spatial index
-            ReportProgress(progress, jobId, EsriImportStatus.Publishing, request,
+            ReportProgress(progress, jobId, startedAt, EsriImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
             await CreateSpatialIndexAsync(request.TableName, cancellationToken);
@@ -164,7 +167,7 @@ internal sealed partial class EsriImportService : IEsriImportService
                 stopwatch.Elapsed.TotalSeconds);
 
             // Report final progress
-            ReportProgress(progress, jobId, EsriImportStatus.Completed, request,
+            ReportProgress(progress, jobId, startedAt, EsriImportStatus.Completed, request,
                 "Import completed", featuresProcessed, featuresProcessed, layerInfo.Name);
 
             return EsriImportResult.CreateSuccess(
@@ -552,6 +555,7 @@ internal sealed partial class EsriImportService : IEsriImportService
     private static void ReportProgress(
         IProgress<EsriImportProgress>? progress,
         string jobId,
+        DateTimeOffset startedAt,
         EsriImportStatus status,
         EsriImportRequest request,
         string phase,
@@ -569,7 +573,7 @@ internal sealed partial class EsriImportService : IEsriImportService
             SourceLayerId = request.LayerId,
             SourceLayerName = layerName,
             TableName = request.TableName,
-            StartedAt = DateTimeOffset.UtcNow,
+            StartedAt = startedAt,
             CurrentPhase = phase
         });
     }

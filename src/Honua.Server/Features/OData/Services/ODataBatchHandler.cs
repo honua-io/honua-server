@@ -69,35 +69,70 @@ internal sealed partial class ODataBatchHandler
     {
         var responses = new List<ODataBatchResponseItem>();
 
-        // Group requests by atomicity group
-        var atomicGroups = batchRequest.Requests
-            .GroupBy(r => r.AtomicityGroup ?? Guid.NewGuid().ToString())
-            .ToList();
+        // Group requests by atomicity group while preserving first-seen ordering.
+        var groupOrder = new List<string>();
+        var groupMap = new Dictionary<string, List<ODataBatchRequestItem>>(StringComparer.Ordinal);
 
-        foreach (var group in atomicGroups)
+        foreach (var request in batchRequest.Requests)
         {
-            var isAtomicGroup = group.First().AtomicityGroup != null;
+            var groupKey = request.AtomicityGroup == null
+                ? NonAtomicGroupKey
+                : $"{AtomicGroupPrefix}{request.AtomicityGroup}";
+
+            if (!groupMap.TryGetValue(groupKey, out var groupList))
+            {
+                groupList = new List<ODataBatchRequestItem>();
+                groupMap[groupKey] = groupList;
+                groupOrder.Add(groupKey);
+            }
+
+            groupList.Add(request);
+        }
+
+        foreach (var groupKey in groupOrder)
+        {
+            var groupRequests = groupMap[groupKey].ToImmutableArray();
+            var isAtomicGroup = groupKey.StartsWith(AtomicGroupPrefix, StringComparison.Ordinal);
 
             if (isAtomicGroup)
             {
+                if (HasDependencies(groupRequests))
+                {
+                    responses.AddRange(CreateAtomicDependencyErrors(groupRequests));
+                    continue;
+                }
+
                 // Process atomic group - all succeed or all fail
                 var groupResponses = await ProcessAtomicGroupAsync(
-                    group.ToImmutableArray(),
+                    groupRequests,
                     baseUrl,
                     cancellationToken);
                 responses.AddRange(groupResponses);
+                continue;
             }
-            else
+
+            var dependencyOrder = OrderRequestsByDependencies(groupRequests);
+            if (dependencyOrder.ErrorsById.Count > 0)
             {
-                // Process individual requests
-                foreach (var request in group)
+                var addedErrors = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var request in groupRequests)
                 {
-                    var response = await ProcessSingleRequestAsync(
-                        request,
-                        baseUrl,
-                        cancellationToken);
-                    responses.Add(response);
+                    if (dependencyOrder.ErrorsById.TryGetValue(request.Id, out var error) &&
+                        addedErrors.Add(request.Id))
+                    {
+                        responses.Add(error);
+                    }
                 }
+            }
+
+            // Process individual requests in dependency order
+            foreach (var request in dependencyOrder.OrderedRequests)
+            {
+                var response = await ProcessSingleRequestAsync(
+                    request,
+                    baseUrl,
+                    cancellationToken);
+                responses.Add(response);
             }
         }
 
@@ -106,6 +141,188 @@ internal sealed partial class ODataBatchHandler
             Responses = responses.ToArray()
         };
     }
+
+    private const string NonAtomicGroupKey = "__non-atomic__";
+    private const string AtomicGroupPrefix = "atomic:";
+
+    private static bool HasDependencies(ImmutableArray<ODataBatchRequestItem> requests)
+        => requests.Any(r => r.DependsOn is { Length: > 0 });
+
+    private static List<ODataBatchResponseItem> CreateAtomicDependencyErrors(
+        ImmutableArray<ODataBatchRequestItem> requests)
+    {
+        const string message = "dependsOn is not supported for atomicity groups.";
+        return requests.Select(r => CreateErrorResponse(r.Id, 400, "InvalidRequest", message)).ToList();
+    }
+
+    private static DependencyOrderResult OrderRequestsByDependencies(ImmutableArray<ODataBatchRequestItem> requests)
+    {
+        var errorsById = new Dictionary<string, ODataBatchResponseItem>(StringComparer.Ordinal);
+        var requestById = new Dictionary<string, ODataBatchRequestItem>(StringComparer.Ordinal);
+        var orderedIds = new List<string>(requests.Length);
+        var invalid = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var request in requests)
+        {
+            if (!requestById.TryAdd(request.Id, request))
+            {
+                errorsById[request.Id] = CreateErrorResponse(
+                    request.Id,
+                    400,
+                    "InvalidRequest",
+                    $"Duplicate request id '{request.Id}'.");
+                invalid.Add(request.Id);
+                continue;
+            }
+
+            orderedIds.Add(request.Id);
+        }
+
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var request in requests)
+            {
+                if (invalid.Contains(request.Id) || errorsById.ContainsKey(request.Id))
+                {
+                    continue;
+                }
+
+                if (request.DependsOn == null || request.DependsOn.Length == 0)
+                {
+                    continue;
+                }
+
+                foreach (var dependencyId in request.DependsOn)
+                {
+                    if (string.IsNullOrWhiteSpace(dependencyId))
+                    {
+                        errorsById[request.Id] = CreateErrorResponse(
+                            request.Id,
+                            400,
+                            "InvalidRequest",
+                            "dependsOn contains an empty request id.");
+                        invalid.Add(request.Id);
+                        changed = true;
+                        break;
+                    }
+
+                    if (string.Equals(dependencyId, request.Id, StringComparison.Ordinal))
+                    {
+                        errorsById[request.Id] = CreateErrorResponse(
+                            request.Id,
+                            400,
+                            "InvalidRequest",
+                            "dependsOn cannot reference the same request id.");
+                        invalid.Add(request.Id);
+                        changed = true;
+                        break;
+                    }
+
+                    if (!requestById.ContainsKey(dependencyId))
+                    {
+                        errorsById[request.Id] = CreateErrorResponse(
+                            request.Id,
+                            400,
+                            "InvalidRequest",
+                            $"dependsOn references unknown request id '{dependencyId}'.");
+                        invalid.Add(request.Id);
+                        changed = true;
+                        break;
+                    }
+
+                    if (invalid.Contains(dependencyId))
+                    {
+                        errorsById[request.Id] = CreateErrorResponse(
+                            request.Id,
+                            400,
+                            "InvalidRequest",
+                            $"dependsOn references invalid request id '{dependencyId}'.");
+                        invalid.Add(request.Id);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        while (changed);
+
+        var validIds = orderedIds
+            .Where(id => !invalid.Contains(id) && !errorsById.ContainsKey(id))
+            .ToList();
+        var validSet = new HashSet<string>(validIds, StringComparer.Ordinal);
+
+        var indegree = new Dictionary<string, int>(StringComparer.Ordinal);
+        var dependents = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var id in validIds)
+        {
+            indegree[id] = 0;
+            dependents[id] = [];
+        }
+
+        foreach (var request in requests)
+        {
+            if (!validSet.Contains(request.Id))
+            {
+                continue;
+            }
+
+            if (request.DependsOn == null || request.DependsOn.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var dependencyId in request.DependsOn)
+            {
+                if (!validSet.Contains(dependencyId))
+                {
+                    continue;
+                }
+
+                indegree[request.Id]++;
+                dependents[dependencyId].Add(request.Id);
+            }
+        }
+
+        var queue = new Queue<string>(validIds.Where(id => indegree[id] == 0));
+        var orderedRequests = new List<ODataBatchRequestItem>(validIds.Count);
+        var processed = new HashSet<string>(StringComparer.Ordinal);
+
+        while (queue.Count > 0)
+        {
+            var id = queue.Dequeue();
+            processed.Add(id);
+            orderedRequests.Add(requestById[id]);
+
+            foreach (var dependent in dependents[id])
+            {
+                indegree[dependent]--;
+                if (indegree[dependent] == 0)
+                {
+                    queue.Enqueue(dependent);
+                }
+            }
+        }
+
+        if (processed.Count != validSet.Count)
+        {
+            foreach (var id in validSet.Where(id => !processed.Contains(id)))
+            {
+                errorsById[id] = CreateErrorResponse(
+                    id,
+                    400,
+                    "InvalidRequest",
+                    "dependsOn contains a cyclic dependency.");
+            }
+        }
+
+        return new DependencyOrderResult(orderedRequests.ToImmutableArray(), errorsById);
+    }
+
+    private sealed record DependencyOrderResult(
+        ImmutableArray<ODataBatchRequestItem> OrderedRequests,
+        Dictionary<string, ODataBatchResponseItem> ErrorsById);
 
     private async Task<ImmutableArray<ODataBatchResponseItem>> ProcessAtomicGroupAsync(
         ImmutableArray<ODataBatchRequestItem> requests,
@@ -191,105 +408,155 @@ internal sealed partial class ODataBatchHandler
                         break;
 
                     case "POST":
-                        if (request.Body != null)
+                    {
+                        if (request.Body == null)
                         {
-                            var feature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
-                            if (!createRequests.TryGetValue(layerId.Value, out var createList))
-                            {
-                                createList = new List<(string requestId, Feature feature)>();
-                                createRequests[layerId.Value] = createList;
-                            }
-
-                            createList.Add((request.Id, feature));
-                            writeLayerIds.Add(layerId.Value);
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                400,
+                                "InvalidRequest",
+                                "Request body is required for POST operations."));
+                            rollback = true;
+                            break;
                         }
+
+                        var feature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
+                        if (!createRequests.TryGetValue(layerId.Value, out var createList))
+                        {
+                            createList = new List<(string requestId, Feature feature)>();
+                            createRequests[layerId.Value] = createList;
+                        }
+
+                        createList.Add((request.Id, feature));
+                        writeLayerIds.Add(layerId.Value);
                         break;
+                    }
 
                     case "PATCH":
                     case "PUT":
-                        if (objectId.HasValue && request.Body != null)
+                    {
+                        if (!objectId.HasValue)
                         {
-                            var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
-                            if (!existing.HasValue)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    404,
-                                    "ResourceNotFound",
-                                    $"Feature {objectId} not found in layer {layerId}."));
-                                rollback = true;
-                                break;
-                            }
-
-                            var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
-                            if (!precondition.IsValid)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    412,
-                                    "PreconditionFailed",
-                                    precondition.ErrorMessage ?? "Precondition failed."));
-                                rollback = true;
-                                break;
-                            }
-
-                            Feature? mergeExisting = request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase)
-                                ? existing.Value
-                                : null;
-
-                            var feature = await CreateFeatureFromBodyAsync(
-                                request.Body,
-                                layer,
-                                objectId.Value,
-                                mergeExisting,
-                                cancellationToken: cancellationToken);
-                            if (!updateRequests.TryGetValue(layerId.Value, out var updateList))
-                            {
-                                updateList = new List<(string requestId, long objectId, Feature feature)>();
-                                updateRequests[layerId.Value] = updateList;
-                            }
-
-                            updateList.Add((request.Id, objectId.Value, feature));
-                            writeLayerIds.Add(layerId.Value);
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                400,
+                                "InvalidRequest",
+                                "ObjectId is required for update operations."));
+                            rollback = true;
+                            break;
                         }
+
+                        if (request.Body == null)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                400,
+                                "InvalidRequest",
+                                "Request body is required for update operations."));
+                            rollback = true;
+                            break;
+                        }
+
+                        var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
+                        if (!existing.HasValue)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                404,
+                                "ResourceNotFound",
+                                $"Feature {objectId} not found in layer {layerId}."));
+                            rollback = true;
+                            break;
+                        }
+
+                        var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
+                        if (!precondition.IsValid)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                412,
+                                "PreconditionFailed",
+                                precondition.ErrorMessage ?? "Precondition failed."));
+                            rollback = true;
+                            break;
+                        }
+
+                        Feature? mergeExisting = request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase)
+                            ? existing.Value
+                            : null;
+
+                        var feature = await CreateFeatureFromBodyAsync(
+                            request.Body,
+                            layer,
+                            objectId.Value,
+                            mergeExisting,
+                            cancellationToken: cancellationToken);
+                        if (!updateRequests.TryGetValue(layerId.Value, out var updateList))
+                        {
+                            updateList = new List<(string requestId, long objectId, Feature feature)>();
+                            updateRequests[layerId.Value] = updateList;
+                        }
+
+                        updateList.Add((request.Id, objectId.Value, feature));
+                        writeLayerIds.Add(layerId.Value);
                         break;
+                    }
 
                     case "DELETE":
-                        if (objectId.HasValue)
+                    {
+                        if (!objectId.HasValue)
                         {
-                            var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
-                            if (!existing.HasValue)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    404,
-                                    "ResourceNotFound",
-                                    $"Feature {objectId} not found in layer {layerId}."));
-                                rollback = true;
-                                break;
-                            }
-
-                            var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
-                            if (!precondition.IsValid)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    412,
-                                    "PreconditionFailed",
-                                    precondition.ErrorMessage ?? "Precondition failed."));
-                                rollback = true;
-                                break;
-                            }
-
-                            if (!deleteRequests.TryGetValue(layerId.Value, out var deleteList))
-                            {
-                                deleteList = new List<(string requestId, long objectId)>();
-                                deleteRequests[layerId.Value] = deleteList;
-                            }
-
-                            deleteList.Add((request.Id, objectId.Value));
-                            writeLayerIds.Add(layerId.Value);
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                400,
+                                "InvalidRequest",
+                                "ObjectId is required for delete operations."));
+                            rollback = true;
+                            break;
                         }
+
+                        var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
+                        if (!existing.HasValue)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                404,
+                                "ResourceNotFound",
+                                $"Feature {objectId} not found in layer {layerId}."));
+                            rollback = true;
+                            break;
+                        }
+
+                        var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
+                        if (!precondition.IsValid)
+                        {
+                            responses.Add(CreateErrorResponse(
+                                request.Id,
+                                412,
+                                "PreconditionFailed",
+                                precondition.ErrorMessage ?? "Precondition failed."));
+                            rollback = true;
+                            break;
+                        }
+
+                        if (!deleteRequests.TryGetValue(layerId.Value, out var deleteList))
+                        {
+                            deleteList = new List<(string requestId, long objectId)>();
+                            deleteRequests[layerId.Value] = deleteList;
+                        }
+
+                        deleteList.Add((request.Id, objectId.Value));
+                        writeLayerIds.Add(layerId.Value);
+                        break;
+                    }
+
+                    default:
+                        responses.Add(CreateErrorResponse(
+                            request.Id,
+                            405,
+                            "MethodNotAllowed",
+                            $"Method {request.Method} is not supported."));
+                        rollback = true;
                         break;
                 }
             }

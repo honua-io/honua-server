@@ -12,10 +12,10 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Honua.ServiceDefaults;
@@ -33,7 +33,6 @@ internal sealed partial class ODataQueryHandler(
 {
     private readonly ILayerCatalog _layerCatalog = dependencies?.LayerCatalog
         ?? throw new ArgumentNullException(nameof(dependencies));
-    private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
     private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
     private readonly IGeometryService _geometryService = dependencies.GeometryService;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
@@ -74,20 +73,21 @@ internal sealed partial class ODataQueryHandler(
                 return formatValidation;
             }
 
-            if (!ODataRequestValidation.TryParsePaging(
+            var pagingError = ODataRequestValidation.TryGetPagingValues(
                 context,
                 _validationService,
                 top,
                 skip,
                 count,
-                out var paging,
-                out var pagingError))
+                out var pagination,
+                out _,
+                out _,
+                out var countValue);
+            if (pagingError != null)
             {
-                return pagingError!;
+                return pagingError;
             }
 
-            var pagination = paging!.Pagination;
-            var countValue = paging.Count;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
             var visibleLayers = layers
@@ -181,21 +181,16 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
-            if (!layerResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId,
+                LayerValidationHelpers.ValidationProtocol.OData,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
-                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
+                return layerValidation.ErrorResult!;
             }
-
-            var layer = layerResult.Resource!;
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+            var layer = layerValidation.Layer!;
 
             var payload = ODataUtilityService.BuildLayerPayload(layer);
             if (!string.IsNullOrWhiteSpace(select))
@@ -333,23 +328,16 @@ internal sealed partial class ODataQueryHandler(
 
             var pagination = paginationResult.Value!;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-
-            // Verify layer exists
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
-            if (!layerResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId,
+                LayerValidationHelpers.ValidationProtocol.OData,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-                var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-                var errorCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? "InvalidRequest" : "ResourceNotFound";
-                return ODataUtilityService.CreateODataError(context, errorCode, errorMessage, statusCode);
+                return layerValidation.ErrorResult!;
             }
-
-            var layer = layerResult.Resource!;
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+            var layer = layerValidation.Layer!;
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -440,11 +428,11 @@ internal sealed partial class ODataQueryHandler(
 
             // Calculate @odata.nextLink if there are more results
             string? nextLink = null;
-            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, (int)queryResult.TotalCount, pagination.Limit))
+            if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = ODataUtilityService.GenerateNextLink(context.Request, nextSkip, pagination.Limit,
-                    filter, select, orderby, count);
+                    filter, select, orderby, count, expand);
             }
 
             var response = new ODataResponse

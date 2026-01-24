@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.OData.Models;
 
@@ -28,7 +29,7 @@ internal static class ODataAttributeSerializer
 
         if (value is JsonElement element)
         {
-            return ConvertJsonElement(element);
+            return JsonElementConverter.ConvertToObject(element);
         }
 
         if (value is IReadOnlyDictionary<string, object?> readOnlyDict)
@@ -55,21 +56,4 @@ internal static class ODataAttributeSerializer
         return value;
     }
 
-    private static object? ConvertJsonElement(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal :
-                element.TryGetDouble(out var doubleVal) ? doubleVal :
-                element.GetDecimal(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(prop => prop.Name, prop => ConvertJsonElement(prop.Value)),
-            JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToArray(),
-            _ => element.GetRawText()
-        };
-    }
 }

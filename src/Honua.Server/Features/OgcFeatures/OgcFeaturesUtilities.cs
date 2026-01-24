@@ -6,10 +6,11 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -215,10 +216,11 @@ internal static class OgcFeaturesUtilities
         }
 
         var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        var validationResult = validator.ValidateAllowedParameters(request.Query.Keys.ToArray(), allowed);
-        return validationResult.IsValid
-            ? null
-            : TypedResults.BadRequest(validationResult.ErrorMessage ?? "Invalid query parameter.");
+        var error = QueryParameterValidationHelpers.GetValidationError(
+            validator,
+            request.Query.Keys.ToArray(),
+            allowed);
+        return error == null ? null : TypedResults.BadRequest(error);
     }
 
     /// <summary>
@@ -241,99 +243,22 @@ internal static class OgcFeaturesUtilities
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
-        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
-        {
-            return null;
-        }
-
-        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
-            layer.Id,
-            startField!.Name,
-            startField.Type,
+        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+            layer,
+            featureReader,
             cancellationToken).ConfigureAwait(false);
-
-        TemporalExtentResult? endExtent = null;
-        if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            endExtent = await featureReader.GetTemporalExtentAsync(
-                layer.Id,
-                endField.Name,
-                endField.Type,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        if (startExtent == null)
+        if (temporalRange == null || !temporalRange.Value.HasExtent)
         {
             return null;
         }
 
-        var min = startExtent?.Start;
-        var max = endField == null
-            ? startExtent?.End
-            : endExtent?.End ?? endExtent?.Start;
-
+        var range = temporalRange.Value;
         return new TemporalExtent
         {
             Interval = ImmutableArray.Create(ImmutableArray.Create(
-                FormatTemporalValue(min),
-                FormatTemporalValue(max)))
+                FormatTemporalValue(range.Min),
+                FormatTemporalValue(range.Max)))
         };
-    }
-
-    private static bool TryResolveTemporalFields(
-        LayerDefinition layer,
-        out FieldDefinition? startField,
-        out FieldDefinition? endField)
-    {
-        startField = null;
-        endField = null;
-
-        var timeInfo = layer.Metadata?.TimeInfo;
-        if (timeInfo != null)
-        {
-            if (string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
-            {
-                return false;
-            }
-
-            startField = FindTemporalField(layer, timeInfo.StartTimeField);
-            if (startField == null)
-            {
-                return false;
-            }
-
-            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
-            {
-                endField = FindTemporalField(layer, timeInfo.EndTimeField);
-                if (endField == null)
-                {
-                    return false;
-                }
-            }
-        }
-        else
-        {
-            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
-        }
-
-        if (startField == null)
-        {
-            return false;
-        }
-
-        if (endField != null && endField.Type != startField.Type)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
-    {
-        return layer.AttributeFields.FirstOrDefault(field =>
-            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
-            field.Type is FieldType.DateTime or FieldType.Date);
     }
 
     private static string? FormatTemporalValue(DateTimeOffset? value)

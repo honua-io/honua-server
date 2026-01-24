@@ -15,13 +15,11 @@ namespace Honua.Server.Features.OData;
 internal sealed class ODataMetadataHandler(
     ODataMetadataService metadataService,
     ILayerCatalog layerCatalog,
-    ODataValidationService validationService,
-    ILogger<ODataMetadataHandler> logger)
+    ODataValidationService validationService)
 {
     private readonly ODataMetadataService _metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
     private readonly ILayerCatalog _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
-    private readonly ILogger<ODataMetadataHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
     /// Handles OData service document request

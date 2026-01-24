@@ -131,7 +131,8 @@ internal static class ODataUtilityService
         string? filter,
         string? select,
         string? orderby,
-        bool? count)
+        bool? count,
+        string? expand = null)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>
@@ -158,6 +159,11 @@ internal static class ODataUtilityService
         if (count == true)
         {
             queryParams.Add("$count=true");
+        }
+
+        if (!string.IsNullOrWhiteSpace(expand))
+        {
+            queryParams.Add($"$expand={Uri.EscapeDataString(expand)}");
         }
 
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
@@ -263,10 +269,9 @@ internal static class ODataUtilityService
     /// <summary>
     /// Checks if pagination should be applied based on result size and current parameters.
     /// </summary>
-    public static bool ShouldPaginate(int resultCount, int currentSkip, int totalCount, int? top)
+    public static bool ShouldPaginate(int resultCount, int currentSkip, long totalCount, int? top)
     {
-        var currentTop = top ?? 1000; // Default page size
-        return currentSkip + resultCount < totalCount;
+        return (long)currentSkip + resultCount < totalCount;
     }
 
     /// <summary>

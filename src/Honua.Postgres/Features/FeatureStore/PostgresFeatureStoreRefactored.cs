@@ -299,6 +299,11 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
             return QueryResult<Feature>.Empty();
         }
 
+        for (var i = 0; i < features.Count; i++)
+        {
+            features[i] = RemoveInternalAttributes(features[i]);
+        }
+
         var offset = query.Offset ?? 0;
         var hasMoreResults = totalCount > offset + features.Count;
         return QueryResult<Feature>.Create(totalCount, features.ToImmutableArray(), hasMoreResults);
@@ -340,9 +345,36 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
             return QueryResult<GmlFeature>.Empty();
         }
 
+        for (var i = 0; i < features.Count; i++)
+        {
+            features[i] = RemoveInternalAttributes(features[i]);
+        }
+
         var offset = query.Offset ?? 0;
         var hasMoreResults = totalCount > offset + features.Count;
         return QueryResult<GmlFeature>.Create(totalCount, features.ToImmutableArray(), hasMoreResults);
+    }
+
+    private static Feature RemoveInternalAttributes(Feature feature)
+    {
+        if (!feature.Attributes.ContainsKey("total_count"))
+        {
+            return feature;
+        }
+
+        var cleaned = feature.Attributes.Remove("total_count");
+        return feature with { Attributes = cleaned };
+    }
+
+    private static GmlFeature RemoveInternalAttributes(GmlFeature feature)
+    {
+        if (!feature.Attributes.ContainsKey("total_count"))
+        {
+            return feature;
+        }
+
+        var cleaned = feature.Attributes.Remove("total_count");
+        return feature with { Attributes = cleaned };
     }
 
     #endregion

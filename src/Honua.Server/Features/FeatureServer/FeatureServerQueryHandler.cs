@@ -20,6 +20,7 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -63,30 +64,20 @@ internal sealed class FeatureServerQueryHandler(
         {
             FeatureServerLog.QueryRequested(_logger, serviceId, layerId, queryParams.Where);
 
-            var resourceResult = await _resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-            if (!resourceResult.IsValid)
+            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+                _resourceValidator,
+                serviceId,
+                layerId,
+                context,
+                _logger,
+                cancellationToken);
+            if (!resourceValidationResult.IsValid)
             {
-                var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-
-                if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-
-                if (errorMessage.StartsWith("Service", StringComparison.OrdinalIgnoreCase))
-                {
-                    FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                }
-                else if (errorMessage.StartsWith("Layer", StringComparison.OrdinalIgnoreCase))
-                {
-                    FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+                return resourceValidationResult.ErrorResult!;
             }
 
-            ServiceDefinition service = resourceResult.Resource!.Service;
-            LayerDefinition layer = resourceResult.Resource.Layer;
+            ServiceDefinition service = resourceValidationResult.Service!;
+            LayerDefinition layer = resourceValidationResult.Layer!;
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
             requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
@@ -117,15 +108,15 @@ internal sealed class FeatureServerQueryHandler(
             var queryLimits = queryValidator.QueryLimits;
 
             // Apply limits enforcement
-            QueryValidationResult validationResult = _queryServices.ValidateQueryLimits(queryParams);
-            if (!validationResult.IsValid)
+            QueryValidationResult queryValidationResult = _queryServices.ValidateQueryLimits(queryParams);
+            if (!queryValidationResult.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Query parameters exceed configured limits",
-                    [validationResult.ErrorMessage!]);
+                    [queryValidationResult.ErrorMessage!]);
             }
 
-            QueryParameters validatedParams = validationResult.ValidatedParameters!;
+            QueryParameters validatedParams = queryValidationResult.ValidatedParameters!;
 
             if (!TryValidateUnsupportedParameters(validatedParams, out var unsupportedError))
             {
@@ -327,7 +318,7 @@ internal sealed class FeatureServerQueryHandler(
                 HonuaTelemetry.SetSuccess(featureActivity);
                 var response = new QueryResponse
                 {
-                    Extent = extent.HasValue ? MapExtent(extent.Value) : null,
+                    Extent = extent.HasValue ? extent.Value.ToExtentInfo() : null,
                     Features = null
                 };
 
@@ -541,7 +532,10 @@ internal sealed class FeatureServerQueryHandler(
                     throw new InvalidOperationException("Geometry is required for nearest neighbor queries");
                 }
 
-                SpatialFilter spatialFilter = ParseSpatialFilter(queryParams, parsedGeometry!, inputSrid);
+                SpatialFilter spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+                    queryParams,
+                    parsedGeometry!,
+                    inputSrid);
                 query = query with { SpatialFilter = spatialFilter };
             }
             catch (ArgumentException ex)
@@ -634,107 +628,6 @@ internal sealed class FeatureServerQueryHandler(
         };
     }
 
-    private static ExtentInfo MapExtent(FeatureExtent extent)
-    {
-        return new ExtentInfo
-        {
-            Xmin = extent.MinX,
-            Ymin = extent.MinY,
-            Xmax = extent.MaxX,
-            Ymax = extent.MaxY,
-            SpatialReference = new SpatialReferenceInfo { Wkid = extent.SpatialReference }
-        };
-    }
-
-    /// <summary>
-    /// Parses GeoServices JSON geometry and spatial relationship into a SpatialFilter
-    /// </summary>
-    private SpatialFilter ParseSpatialFilter(QueryParameters queryParams, GeoServicesGeometry geometry, int? inputSrid)
-    {
-        // Convert GeoServices JSON geometry to WKB bytes
-        byte[] wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, inputSrid);
-
-        // Check if this is a KNN query (NearestCount specified)
-        if (queryParams.NearestCount.HasValue && queryParams.NearestCount.Value > 0)
-        {
-            return SpatialFilter.CreateKnnFilter(
-                wkbBytes,
-                queryParams.NearestCount.Value,
-                queryParams.ReturnDistance,
-                inputSrid);
-        }
-
-        // Map GeoServices spatial relationship to enum
-        SpatialRelationship relationship = ParseSpatialRelationship(queryParams.SpatialRel);
-
-        // Handle distance-based queries
-        if (relationship == SpatialRelationship.WithinDistance ||
-            relationship == SpatialRelationship.BeyondDistance)
-        {
-            if (!queryParams.Distance.HasValue || queryParams.Distance.Value <= 0)
-            {
-                throw new ArgumentException("Distance parameter is required for distance-based spatial queries");
-            }
-
-            var unit = ParseDistanceUnit(queryParams.Units);
-            return SpatialFilter.CreateDistanceFilter(
-                wkbBytes,
-                queryParams.Distance.Value,
-                unit,
-                relationship == SpatialRelationship.WithinDistance,
-                inputSrid);
-        }
-
-        return new SpatialFilter
-        {
-            Geometry = wkbBytes,
-            SpatialRelationship = relationship,
-            Srid = inputSrid
-        };
-    }
-
-    /// <summary>
-    /// Maps GeoServices spatial relationship strings to SpatialRelationship enum
-    /// </summary>
-    private static SpatialRelationship ParseSpatialRelationship(string? spatialRel)
-    {
-        return spatialRel?.ToLowerInvariant() switch
-        {
-            "esrispatialrelintersects" or null => SpatialRelationship.Intersects,
-            "esrispatialrelcontains" => SpatialRelationship.Contains,
-            "esrispatialrelwithin" => SpatialRelationship.Within,
-            "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,
-            "esrispatialrelcrosses" => SpatialRelationship.Crosses,
-            "esrispatialreltouches" => SpatialRelationship.Touches,
-            "esrispatialreloverlaps" => SpatialRelationship.Overlaps,
-            "esrispatialreldisjoint" => SpatialRelationship.Disjoint,
-            "esrispatialrelequals" => SpatialRelationship.Equals,
-            "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
-            "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
-            _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
-        };
-    }
-
-    /// <summary>
-    /// Maps GeoServices distance unit strings to DistanceUnit enum
-    /// </summary>
-    private static DistanceUnit ParseDistanceUnit(string? units)
-    {
-        return units?.ToLowerInvariant() switch
-        {
-            "esrisrunit_meter" or null => DistanceUnit.Meters,
-            "esrisrunit_foot" => DistanceUnit.Feet,
-            "esrisrunit_kilometer" => DistanceUnit.Kilometers,
-            "esrisrunit_statutemile" => DistanceUnit.Miles,
-            // Also support simple unit names
-            "meters" or "m" => DistanceUnit.Meters,
-            "feet" or "ft" => DistanceUnit.Feet,
-            "kilometers" or "km" => DistanceUnit.Kilometers,
-            "miles" or "mi" => DistanceUnit.Miles,
-            _ => DistanceUnit.Meters // Default to meters for unknown units
-        };
-    }
-
     private static bool TryValidateUnsupportedParameters(QueryParameters queryParams, out string? errorMessage)
     {
         var unsupported = new List<string>();
@@ -805,8 +698,6 @@ internal sealed class FeatureServerQueryHandler(
         return false;
     }
 
-    private sealed record TemporalFieldSelection(FieldDefinition StartField, FieldDefinition? EndField);
-
     private enum TimeRelation
     {
         Intersects,
@@ -837,7 +728,7 @@ internal sealed class FeatureServerQueryHandler(
             return null;
         }
 
-        var selection = ResolveTemporalFields(layer);
+        var selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
         if (!TryParseTimeParameter(queryParams.Time, out var startTime, out var endTime))
         {
             throw new ArgumentException($"Invalid time parameter format: {queryParams.Time}");
@@ -860,51 +751,6 @@ internal sealed class FeatureServerQueryHandler(
                 });
 
         return BuildTemporalRelationExpression(relation, startExpression, endExpression, queryStart, queryEnd);
-    }
-
-    private static TemporalFieldSelection ResolveTemporalFields(LayerDefinition layer)
-    {
-        var timeInfo = layer.Metadata?.TimeInfo;
-        FieldDefinition? startField = null;
-        FieldDefinition? endField = null;
-
-        if (!string.IsNullOrWhiteSpace(timeInfo?.StartTimeField))
-        {
-            startField = FindTemporalField(layer, timeInfo.StartTimeField);
-            if (startField == null)
-            {
-                throw new ArgumentException($"Temporal field '{timeInfo.StartTimeField}' is not defined on layer '{layer.Name}'.");
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(timeInfo?.EndTimeField))
-        {
-            endField = FindTemporalField(layer, timeInfo.EndTimeField);
-            if (endField == null)
-            {
-                throw new ArgumentException($"Temporal field '{timeInfo.EndTimeField}' is not defined on layer '{layer.Name}'.");
-            }
-        }
-
-        if (startField == null)
-        {
-            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date)
-                ?? throw new ArgumentException($"No temporal field found in layer '{layer.Name}' for temporal query.");
-        }
-
-        if (endField != null && endField.Type != startField.Type)
-        {
-            throw new ArgumentException("Start and end time fields must use the same temporal type.");
-        }
-
-        return new TemporalFieldSelection(startField, endField);
-    }
-
-    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
-    {
-        return layer.AttributeFields.FirstOrDefault(field =>
-            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
-            field.Type is FieldType.DateTime or FieldType.Date);
     }
 
     private static TimeRelation ParseTimeRelation(string? timeRelation)

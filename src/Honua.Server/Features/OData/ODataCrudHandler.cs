@@ -19,13 +19,11 @@ namespace Honua.Server.Features.OData;
 internal sealed class ODataCrudHandler(
     ODataCrudService crudService,
     ODataValidationService validationService,
-    Honua.Server.Features.Infrastructure.Caching.IETagService etagService,
-    ILogger<ODataCrudHandler> logger)
+    Honua.Server.Features.Infrastructure.Caching.IETagService etagService)
 {
     private readonly ODataCrudService _crudService = crudService ?? throw new ArgumentNullException(nameof(crudService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Server.Features.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
-    private readonly ILogger<ODataCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
     /// Handles getting a single feature by ID

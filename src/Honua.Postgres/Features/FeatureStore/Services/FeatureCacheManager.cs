@@ -220,7 +220,6 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
         catch
         {
-            _hasLayerCatalog = false;
             return false;
         }
     }

@@ -25,22 +25,22 @@ internal static class ProtocolErrorWriter
     {
         var path = context.Request.Path;
 
-        if (IsOData(path))
+        if (ProtocolRequestClassifier.IsOData(path))
         {
             return CreateODataError(context, statusCode, title, detail);
         }
 
-        if (IsOgc(path))
+        if (ProtocolRequestClassifier.IsOgc(path))
         {
             return ProblemDetailsHelpers.CreateOgcProblem(context, statusCode, title, detail);
         }
 
-        if (IsAdmin(path))
+        if (ProtocolRequestClassifier.IsAdmin(path))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, title, detail);
         }
 
-        if (IsGeoServices(path))
+        if (ProtocolRequestClassifier.IsGeoServices(path))
         {
             return CreateGeoServicesError(statusCode, title, detail);
         }
@@ -52,7 +52,7 @@ internal static class ProtocolErrorWriter
     {
         SetODataHeaders(context);
 
-        var code = MapODataCode(statusCode);
+        var code = ProtocolRequestClassifier.MapODataCode(statusCode, includeConflict: false);
         ErrorDetail[]? details = string.IsNullOrWhiteSpace(detail)
             ? null
             : [new ErrorDetail { Code = code, Message = detail }];
@@ -90,64 +90,4 @@ internal static class ProtocolErrorWriter
         context.Response.Headers["OData-Version"] = ODataVersion;
     }
 
-    private static string MapODataCode(int statusCode) => statusCode switch
-    {
-        StatusCodes.Status400BadRequest => "BadRequest",
-        StatusCodes.Status401Unauthorized => "Unauthorized",
-        StatusCodes.Status403Forbidden => "Forbidden",
-        StatusCodes.Status404NotFound => "ResourceNotFound",
-        StatusCodes.Status408RequestTimeout => "RequestTimeout",
-        StatusCodes.Status413PayloadTooLarge => "PayloadTooLarge",
-        StatusCodes.Status429TooManyRequests => "TooManyRequests",
-        StatusCodes.Status500InternalServerError => "InternalServerError",
-        StatusCodes.Status503ServiceUnavailable => "ServiceUnavailable",
-        _ => "Error"
-    };
-
-    private static bool IsOData(PathString path) => path.StartsWithSegments("/odata");
-
-    private static bool IsOgc(PathString path) =>
-        path.StartsWithSegments("/ogc/features") ||
-        path.StartsWithSegments("/ogc/tiles") ||
-        path.StartsWithSegments("/collections");
-
-    private static bool IsAdmin(PathString path)
-    {
-        if (!path.StartsWithSegments("/api", out var remaining))
-        {
-            return false;
-        }
-
-        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments is null || segments.Length < 2)
-        {
-            return false;
-        }
-
-        var versionSegment = segments[0];
-        if (!versionSegment.StartsWith("v", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var versionPart = versionSegment.AsSpan(1);
-        if (versionPart.IsEmpty)
-        {
-            return false;
-        }
-
-        foreach (var ch in versionPart)
-        {
-            if (!char.IsDigit(ch) && ch != '.')
-            {
-                return false;
-            }
-        }
-
-        return string.Equals(segments[1], "admin", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsGeoServices(PathString path) =>
-        path.StartsWithSegments("/rest/services") ||
-        path.StartsWithSegments("/tiles");
 }

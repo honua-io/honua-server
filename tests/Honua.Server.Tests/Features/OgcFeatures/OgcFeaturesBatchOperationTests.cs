@@ -37,7 +37,7 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithCreateAndUpdate_ReturnsSuccess()
     {
-        var existingId = await InsertFeatureAsync("Batch Original");
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Batch Original");
 
         var batchRequest = new BatchRequest
         {
@@ -197,20 +197,4 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
         };
     }
 
-    private async Task<long> InsertFeatureAsync(string name)
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO features (layer_id, geometry, attributes)
-            VALUES (@layerId, NULL, jsonb_build_object('name', @name))
-            RETURNING objectid;
-            """;
-        command.Parameters.AddWithValue("layerId", TestLayerId);
-        command.Parameters.AddWithValue("name", name);
-
-        var result = await command.ExecuteScalarAsync();
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
-    }
 }

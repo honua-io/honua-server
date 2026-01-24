@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Server.Features.Import;
 
@@ -79,18 +80,144 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
         var stopwatch = Stopwatch.StartNew();
         Log.JobStarted(_logger, jobId);
 
-        try
+        EsriImportRequest? request = null;
+        EsriImportProgress? progress = null;
+        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        CancellationTokenSource? monitorCancellation = null;
+        Task? monitorTask = null;
+
+        using var progressGate = new SemaphoreSlim(1, 1);
+        var finalized = 0;
+
+        async Task SetProgressAsync(EsriImportProgress update, CancellationToken token)
         {
-            // Get the import request
-            var request = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken);
-            if (request == null)
+            if (Volatile.Read(ref finalized) != 0)
             {
-                Log.JobRequestNotFound(_logger, jobId);
                 return;
             }
 
+            await progressGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                if (Volatile.Read(ref finalized) != 0)
+                {
+                    return;
+                }
+
+                await _jobManager.ProgressStore.SetProgressAsync(jobId, update, cancellationToken: token)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                progressGate.Release();
+            }
+        }
+
+        async Task SetFinalProgressAsync(EsriImportProgress update, CancellationToken token)
+        {
+            Volatile.Write(ref finalized, 1);
+            await progressGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await _jobManager.ProgressStore.SetProgressAsync(jobId, update,
+                        TimeSpan.FromHours(24), token)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                progressGate.Release();
+            }
+        }
+
+        async Task ReportProgressAsync(EsriImportProgress update)
+        {
+            if (jobCancellation.IsCancellationRequested || Volatile.Read(ref finalized) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                await SetProgressAsync(update, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.ProgressUpdateFailed(_logger, jobId, ex);
+            }
+        }
+
+        async Task MonitorCancellationAsync(string id, CancellationTokenSource jobCts, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested && !jobCts.IsCancellationRequested)
+            {
+                try
+                {
+                    var current = await _jobManager.ProgressStore.GetProgressAsync(id, token).ConfigureAwait(false);
+                    if (current?.Status == EsriImportStatus.Cancelled)
+                    {
+                        jobCts.Cancel();
+                        return;
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+        }
+
+        try
+        {
+            progress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken);
+            if (progress?.Status == EsriImportStatus.Cancelled)
+            {
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken);
+                Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                return;
+            }
+
+            // Get the import request
+            request = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken);
+            if (request == null)
+            {
+                Log.JobRequestNotFound(_logger, jobId);
+
+                if (progress == null ||
+                    progress.Status is EsriImportStatus.Completed or EsriImportStatus.Failed or EsriImportStatus.Cancelled)
+                {
+                    return;
+                }
+
+                var failedProgress = progress with
+                {
+                    Status = EsriImportStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = "Import request not found.",
+                    CurrentPhase = "Import request missing"
+                };
+
+                await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(request.JobId))
+            {
+                request = request with { JobId = jobId };
+            }
+
             // Update progress to processing
-            var progress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken);
             if (progress != null)
             {
                 progress = progress with
@@ -98,28 +225,21 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
                     Status = EsriImportStatus.Discovering,
                     CurrentPhase = "Discovering layer metadata"
                 };
-                await _jobManager.ProgressStore.SetProgressAsync(jobId, progress, cancellationToken: stoppingToken);
+                await SetProgressAsync(progress, stoppingToken).ConfigureAwait(false);
             }
 
             // Create a scope for the import service
             using var scope = _scopeFactory.CreateScope();
             var importService = scope.ServiceProvider.GetRequiredService<IEsriImportService>();
 
+            monitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            monitorTask = MonitorCancellationAsync(jobId, jobCancellation, monitorCancellation.Token);
+
             // Create progress reporter
-            var progressReporter = new Progress<EsriImportProgress>(async p =>
-            {
-                try
-                {
-                    await _jobManager.ProgressStore.SetProgressAsync(jobId, p, cancellationToken: CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    Log.ProgressUpdateFailed(_logger, jobId, ex);
-                }
-            });
+            var progressReporter = new Progress<EsriImportProgress>(p => _ = ReportProgressAsync(p));
 
             // Execute the import
-            var result = await importService.ImportLayerAsync(request, progressReporter, stoppingToken);
+            var result = await importService.ImportLayerAsync(request, progressReporter, jobCancellation.Token);
 
             stopwatch.Stop();
 
@@ -141,8 +261,7 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
                 CurrentPhase = result.Success ? "Import completed" : "Import failed"
             };
 
-            await _jobManager.ProgressStore.SetProgressAsync(jobId, finalProgress,
-                TimeSpan.FromHours(24), stoppingToken);
+            await SetFinalProgressAsync(finalProgress, stoppingToken).ConfigureAwait(false);
 
             // Clean up request store
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken);
@@ -156,7 +275,7 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
                 Log.JobFailed(_logger, jobId, result.ErrorMessage ?? "Unknown error", stopwatch.Elapsed.TotalSeconds);
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
         {
             stopwatch.Stop();
 
@@ -164,19 +283,17 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
             {
                 JobId = jobId,
                 Status = EsriImportStatus.Cancelled,
-                SourceServiceUrl = "",
-                SourceLayerId = 0,
-                TableName = "",
-                StartedAt = DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                SourceServiceUrl = request?.ServiceUrl ?? progress?.SourceServiceUrl ?? string.Empty,
+                SourceLayerId = request?.LayerId ?? progress?.SourceLayerId ?? 0,
+                TableName = request?.TableName ?? progress?.TableName ?? string.Empty,
+                StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Import cancelled"
             };
 
-            await _jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress,
-                TimeSpan.FromHours(24), CancellationToken.None);
+            await SetFinalProgressAsync(cancelledProgress, CancellationToken.None).ConfigureAwait(false);
 
             Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
-            throw;
         }
         catch (Exception ex)
         {
@@ -186,19 +303,37 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
             {
                 JobId = jobId,
                 Status = EsriImportStatus.Failed,
-                SourceServiceUrl = "",
-                SourceLayerId = 0,
-                TableName = "",
-                StartedAt = DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                SourceServiceUrl = request?.ServiceUrl ?? progress?.SourceServiceUrl ?? string.Empty,
+                SourceLayerId = request?.LayerId ?? progress?.SourceLayerId ?? 0,
+                TableName = request?.TableName ?? progress?.TableName ?? string.Empty,
+                StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = "Import failed.",
                 CurrentPhase = "Import failed with exception"
             };
 
-            await _jobManager.ProgressStore.SetProgressAsync(jobId, failedProgress,
-                TimeSpan.FromHours(24), CancellationToken.None);
+            await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
 
             Log.JobException(_logger, jobId, ex);
+        }
+        finally
+        {
+            if (monitorCancellation != null)
+            {
+                monitorCancellation.Cancel();
+                if (monitorTask != null)
+                {
+                    try
+                    {
+                        await monitorTask.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (monitorCancellation.IsCancellationRequested)
+                    {
+                    }
+                }
+
+                monitorCancellation.Dispose();
+            }
         }
     }
 

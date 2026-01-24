@@ -23,6 +23,7 @@ public sealed class VerticalSliceIsolationTests
         "Ogc",
         "OgcFeatures",
         "OgcTiles",
+        "Tiles",
         "OData",
         "Import",
         "FileStorage",
@@ -211,6 +212,11 @@ public sealed class VerticalSliceIsolationTests
         var typeNamespace = typeToCheck.Namespace;
         if (string.IsNullOrEmpty(typeNamespace))
             return null;
+
+        if (!typeNamespace.StartsWith("Honua.Server.Features.", StringComparison.Ordinal))
+        {
+            return null;
+        }
 
         foreach (var otherFeature in otherFeatures)
         {

@@ -174,64 +174,32 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         catch (OperationCanceledException) when (linkedCancellationSource.Token.IsCancellationRequested)
         {
             stopwatch.Stop();
-            var cancelledProgress = new UploadProgress
-            {
-                UploadId = uploadId,
-                Status = OperationStatus.Cancelled,
-                BytesUploaded = 0,
-                TotalBytes = totalBytes,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                StartedAt = initialProgress.StartedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "Upload was cancelled",
-                CurrentPhase = "Cancelled"
-            };
-            await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-            request.Progress?.Report(cancelledProgress);
+            await ReportCancelledUploadAsync(uploadId, request, totalBytes, initialProgress.StartedAt);
             throw;
         }
         catch (ArgumentException ex)
         {
-            stopwatch.Stop();
-            var failedProgress = new UploadProgress
-            {
-                UploadId = uploadId,
-                Status = OperationStatus.Failed,
-                BytesUploaded = 0,
-                TotalBytes = totalBytes,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                StartedAt = initialProgress.StartedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = ex.Message,
-                CurrentPhase = "Failed"
-            };
-            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-            request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
-            return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
+            return await ReportFailedUploadAsync(
+                uploadId,
+                request,
+                stopwatch,
+                totalBytes,
+                initialProgress.StartedAt,
+                ex,
+                ex.Message,
+                ex.Message);
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
-            var failedProgress = new UploadProgress
-            {
-                UploadId = uploadId,
-                Status = OperationStatus.Failed,
-                BytesUploaded = 0,
-                TotalBytes = totalBytes,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                StartedAt = initialProgress.StartedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "File upload failed",
-                CurrentPhase = "Failed"
-            };
-            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-            request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
-            return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
+            return await ReportFailedUploadAsync(
+                uploadId,
+                request,
+                stopwatch,
+                totalBytes,
+                initialProgress.StartedAt,
+                ex,
+                "File upload failed",
+                "File upload failed.");
         }
         finally
         {
@@ -384,9 +352,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         string? folder = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
-        cancellationToken.ThrowIfCancellationRequested();
+        ValidatePresignedUploadArguments(fileName, contentType, cancellationToken);
 
         var objectKey = CloudStoragePath.BuildObjectKey(
             CloudStoragePath.GenerateFileId(),

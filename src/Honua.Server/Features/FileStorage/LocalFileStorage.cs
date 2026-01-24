@@ -93,11 +93,28 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 Stream sourceStream = request.Content;
                 if (request.Progress != null)
                 {
-                    var progressTracker = new Progress<UploadProgress>(async progress =>
+                    async Task ReportProgressAsync(UploadProgress progress)
                     {
-                        await ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
-                        request.Progress.Report(progress);
-                    });
+                        try
+                        {
+                            await ProgressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+                        }
+                        catch (Exception ex)
+                        {
+                            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
+                        }
+
+                        try
+                        {
+                            request.Progress.Report(progress);
+                        }
+                        catch (Exception ex)
+                        {
+                            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
+                        }
+                    }
+
+                    var progressTracker = new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
                     sourceStream = new ProgressTrackingStream(request.Content, progressTracker, uploadId, request.FileName, totalBytes);
                 }
 
@@ -165,64 +182,35 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         catch (OperationCanceledException) when (linkedCancellationSource.Token.IsCancellationRequested)
         {
             stopwatch.Stop();
-            var cancelledProgress = new UploadProgress
-            {
-                UploadId = uploadId,
-                Status = OperationStatus.Cancelled,
-                BytesUploaded = 0,
-                TotalBytes = request.SizeBytes ?? 0,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                StartedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "Upload was cancelled",
-                CurrentPhase = "Cancelled"
-            };
-            await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-            request.Progress?.Report(cancelledProgress);
+            var startedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed;
+            await ReportCancelledUploadAsync(uploadId, request, request.SizeBytes ?? 0, startedAt);
             throw;
         }
         catch (ArgumentException ex) when (string.Equals(ex.ParamName, "folder", StringComparison.Ordinal))
         {
-            stopwatch.Stop();
-            var failedProgress = new UploadProgress
-            {
-                UploadId = uploadId,
-                Status = OperationStatus.Failed,
-                BytesUploaded = 0,
-                TotalBytes = request.SizeBytes ?? 0,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                StartedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = ex.Message,
-                CurrentPhase = "Failed"
-            };
-            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-            request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
-            return UploadResult.CreateFailure(ex.Message, stopwatch.Elapsed);
+            var startedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed;
+            return await ReportFailedUploadAsync(
+                uploadId,
+                request,
+                stopwatch,
+                request.SizeBytes ?? 0,
+                startedAt,
+                ex,
+                ex.Message,
+                ex.Message);
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
-            var failedProgress = new UploadProgress
-            {
-                UploadId = uploadId,
-                Status = OperationStatus.Failed,
-                BytesUploaded = 0,
-                TotalBytes = request.SizeBytes ?? 0,
-                FileName = request.FileName,
-                ContentType = request.ContentType,
-                StartedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "File upload failed",
-                CurrentPhase = "Failed"
-            };
-            await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
-            request.Progress?.Report(failedProgress);
-            FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
-            return UploadResult.CreateFailure("File upload failed.", stopwatch.Elapsed);
+            var startedAt = DateTimeOffset.UtcNow - stopwatch.Elapsed;
+            return await ReportFailedUploadAsync(
+                uploadId,
+                request,
+                stopwatch,
+                request.SizeBytes ?? 0,
+                startedAt,
+                ex,
+                "File upload failed",
+                "File upload failed.");
         }
         finally
         {
@@ -362,8 +350,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         string? folder = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        ValidatePresignedUploadArguments(fileName, contentType, cancellationToken, checkCancellation: false);
 
         // For local storage, we generate a file ID and path
         // Real cloud implementations would provide presigned upload URLs

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,10 +35,11 @@ internal static class OgcCommonUtilities
     public static BadRequest<string>? ValidateQueryParameters(HttpRequest request, IReadOnlySet<string> allowedParameters)
     {
         var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        var validationResult = validator.ValidateAllowedParameters(request.Query.Keys.ToArray(), allowedParameters);
-        return validationResult.IsValid
-            ? null
-            : TypedResults.BadRequest(validationResult.ErrorMessage ?? "Invalid query parameter.");
+        var error = QueryParameterValidationHelpers.GetValidationError(
+            validator,
+            request.Query.Keys.ToArray(),
+            allowedParameters);
+        return error == null ? null : TypedResults.BadRequest(error);
     }
 
     /// <summary>

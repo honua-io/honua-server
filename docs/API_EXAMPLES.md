@@ -389,7 +389,11 @@ curl "http://localhost:8080/rest/services/1/FeatureServer/0/tiles/10/163/395.pbf
 
 ```bash
 # Get TileJSON metadata for the layer
-curl "http://localhost:8080/rest/services/1/FeatureServer/0/tiles/metadata" \
+curl "http://localhost:8080/tiles/0/tile.json" \
+  -H "Accept: application/json"
+
+# Get MapLibre style JSON for the layer
+curl "http://localhost:8080/api/styles/0.json" \
   -H "Accept: application/json"
 ```
 

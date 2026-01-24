@@ -43,30 +43,20 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             string objectIdsString = string.Join(",", queryParams.ObjectIds);
             FeatureServerLog.RelatedRecordsQueryRequested(_logger, serviceId, layerId, objectIdsString, queryParams.RelationshipId);
 
-            var resourceResult = await _resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-            if (!resourceResult.IsValid)
+            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+                _resourceValidator,
+                serviceId,
+                layerId,
+                httpContext,
+                _logger,
+                cancellationToken);
+            if (!resourceValidationResult.IsValid)
             {
-                var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-
-                if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(httpContext, errorMessage);
-                }
-
-                if (errorMessage.StartsWith("Service", StringComparison.OrdinalIgnoreCase))
-                {
-                    FeatureServerLog.ServiceNotFound(_logger, serviceId);
-                }
-                else if (errorMessage.StartsWith("Layer", StringComparison.OrdinalIgnoreCase))
-                {
-                    FeatureServerLog.LayerNotFound(_logger, serviceId, layerId);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(httpContext, errorMessage);
+                return resourceValidationResult.ErrorResult!;
             }
 
-            ServiceDefinition service = resourceResult.Resource!.Service;
-            LayerDefinition layer = resourceResult.Resource.Layer;
+            ServiceDefinition service = resourceValidationResult.Service!;
+            LayerDefinition layer = resourceValidationResult.Layer!;
             var accessError = AccessPolicyHelpers.RequireLayerAccess(httpContext, layer, service);
             if (accessError != null)
             {
@@ -90,15 +80,15 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             }
 
             // Apply limits enforcement
-            RelatedRecordsValidationResult validationResult = _queryServices.ValidateRelatedRecordsLimits(queryParams);
-            if (!validationResult.IsValid)
+            RelatedRecordsValidationResult limitValidationResult = _queryServices.ValidateRelatedRecordsLimits(queryParams);
+            if (!limitValidationResult.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(httpContext,
                     "Query parameters exceed configured limits",
-                    [validationResult.ErrorMessage!]);
+                    [limitValidationResult.ErrorMessage!]);
             }
 
-            QueryRelatedRecordsParameters validatedParams = validationResult.ValidatedParameters!;
+            QueryRelatedRecordsParameters validatedParams = limitValidationResult.ValidatedParameters!;
 
             // Get related layer information
             var relatedLayer = service.Layers.FirstOrDefault(l => l.Id == relationship.RelatedLayerId);

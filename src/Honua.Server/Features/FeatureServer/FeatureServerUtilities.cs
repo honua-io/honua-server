@@ -6,10 +6,10 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
@@ -152,8 +152,8 @@ internal static partial class FeatureServerEndpoints
             ServiceDescription = service.Description,
             Layers = [.. service.Layers.Select(MapLayerInfo)],
             SpatialReference = service.SpatialReference.ToSpatialReferenceInfo(),
-            InitialExtent = service.EffectiveExtent.HasValue ? MapExtent(service.EffectiveExtent.Value) : null,
-            FullExtent = service.EffectiveExtent.HasValue ? MapExtent(service.EffectiveExtent.Value) : null,
+            InitialExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
+            FullExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = service.SupportedFormats,
             Capabilities = string.Join(",", service.Capabilities),
@@ -192,7 +192,7 @@ internal static partial class FeatureServerEndpoints
             Type = "Feature Layer",
             GeometryType = MapGeometryType(layer.GeometryType),
             SpatialReference = layer.SpatialReference.ToSpatialReferenceInfo(),
-            Extent = layer.Extent.HasValue ? MapExtent(layer.Extent.Value) : null,
+            Extent = layer.Extent.HasValue ? layer.Extent.Value.ToExtentInfo() : null,
             TimeInfo = timeInfo,
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
@@ -206,98 +206,26 @@ internal static partial class FeatureServerEndpoints
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
-        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
+        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+            layer,
+            featureReader,
+            cancellationToken).ConfigureAwait(false);
+        if (temporalRange == null)
         {
             return null;
         }
 
-        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
-            layer.Id,
-            startField!.Name,
-            startField.Type,
-            cancellationToken).ConfigureAwait(false);
-
-        TemporalExtentResult? endExtent = null;
-        if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            endExtent = await featureReader.GetTemporalExtentAsync(
-                layer.Id,
-                endField.Name,
-                endField.Type,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        var min = startExtent?.Start;
-        var max = endField == null
-            ? startExtent?.End
-            : endExtent?.End ?? endExtent?.Start;
-
-        long? minMs = min?.ToUnixTimeMilliseconds();
-        long? maxMs = max?.ToUnixTimeMilliseconds();
+        var range = temporalRange.Value;
+        long? minMs = range.Min?.ToUnixTimeMilliseconds();
+        long? maxMs = range.Max?.ToUnixTimeMilliseconds();
 
         return new FeatureServerTimeInfo
         {
-            StartTimeField = startField.Name,
-            EndTimeField = endField?.Name,
+            StartTimeField = range.StartField.Name,
+            EndTimeField = range.EndField?.Name,
             TrackIdField = layer.Metadata?.TimeInfo?.TrackIdField,
             TimeExtent = new long?[] { minMs, maxMs }
         };
-    }
-
-    private static bool TryResolveTemporalFields(
-        LayerDefinition layer,
-        out FieldDefinition? startField,
-        out FieldDefinition? endField)
-    {
-        startField = null;
-        endField = null;
-
-        var timeInfo = layer.Metadata?.TimeInfo;
-        if (timeInfo != null)
-        {
-            if (string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
-            {
-                return false;
-            }
-
-            startField = FindTemporalField(layer, timeInfo.StartTimeField);
-            if (startField == null)
-            {
-                return false;
-            }
-
-            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
-            {
-                endField = FindTemporalField(layer, timeInfo.EndTimeField);
-                if (endField == null)
-                {
-                    return false;
-                }
-            }
-        }
-        else
-        {
-            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
-        }
-
-        if (startField == null)
-        {
-            return false;
-        }
-
-        if (endField != null && endField.Type != startField.Type)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
-    {
-        return layer.AttributeFields.FirstOrDefault(field =>
-            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
-            field.Type is FieldType.DateTime or FieldType.Date);
     }
 
     /// <summary>
@@ -316,27 +244,6 @@ internal static partial class FeatureServerEndpoints
             GeometryType = MapGeometryType(layer.GeometryType)
         };
     }
-
-    /// <summary>
-    /// Maps extent to FeatureServer extent format
-    /// </summary>
-    private static ExtentInfo MapExtent(FeatureExtent extent)
-    {
-        return new ExtentInfo
-        {
-            Xmin = extent.MinX,
-            Ymin = extent.MinY,
-            Xmax = extent.MaxX,
-            Ymax = extent.MaxY,
-            SpatialReference = new SpatialReferenceInfo { Wkid = extent.SpatialReference }
-        };
-    }
-
-    /// <summary>
-    /// Maps spatial reference to FeatureServer format
-    /// </summary>
-    private static SpatialReferenceInfo MapSpatialReference(SpatialReference spatialReference)
-        => spatialReference.ToSpatialReferenceInfo();
 
     /// <summary>
     /// Maps field definition to field info
@@ -387,14 +294,10 @@ internal static partial class FeatureServerEndpoints
         FrozenSet<string> allowedParameters,
         out string? error)
     {
-        var validationResult = queryValidator.ValidateAllowedParameters(query.Keys.ToArray(), allowedParameters);
-        if (!validationResult.IsValid)
-        {
-            error = validationResult.ErrorMessage;
-            return false;
-        }
-
-        error = null;
-        return true;
+        error = QueryParameterValidationHelpers.GetValidationError(
+            queryValidator,
+            query.Keys.ToArray(),
+            allowedParameters);
+        return error == null;
     }
 }

@@ -180,7 +180,7 @@ public sealed class Cql2Parser
             var lower = ParseScalarExpression();
             Consume(Cql2TokenType.And, "Expected AND in BETWEEN predicate");
             var upper = ParseScalarExpression();
-            return BuildBetweenExpression(left, lower, upper, negate: true);
+            return FilterExpressionHelpers.BuildBetweenExpression(left, lower, upper, negate: true);
         }
 
         // BETWEEN
@@ -189,7 +189,7 @@ public sealed class Cql2Parser
             var lower = ParseScalarExpression();
             Consume(Cql2TokenType.And, "Expected AND in BETWEEN predicate");
             var upper = ParseScalarExpression();
-            return BuildBetweenExpression(left, lower, upper, negate: false);
+            return FilterExpressionHelpers.BuildBetweenExpression(left, lower, upper, negate: false);
         }
 
         // NOT IN
@@ -235,22 +235,6 @@ public sealed class Cql2Parser
 
         Consume(Cql2TokenType.RightParen, "Expected ')' after value list");
         return new ValueList(values);
-    }
-
-    private BinaryExpression BuildBetweenExpression(FilterExpression target, FilterExpression lower, FilterExpression upper, bool negate)
-    {
-        var lowerExpr = new BinaryExpression(target, BinaryOperator.GreaterThanOrEqual, lower);
-        var upperExpr = new BinaryExpression(target, BinaryOperator.LessThanOrEqual, upper);
-        var combined = new BinaryExpression(lowerExpr, BinaryOperator.And, upperExpr);
-
-        if (!negate)
-        {
-            return combined;
-        }
-
-        var lowerNot = new BinaryExpression(target, BinaryOperator.LessThan, lower);
-        var upperNot = new BinaryExpression(target, BinaryOperator.GreaterThan, upper);
-        return new BinaryExpression(lowerNot, BinaryOperator.Or, upperNot);
     }
 
     private FilterExpression ParseScalarExpression()

@@ -128,13 +128,8 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/dataset-tilesets",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/geodata-tilesets",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt",
-                "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landing-page",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json",
-                "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html",
-                "http://www.opengis.net/spec/ogcapi-common-2/1.0/conf/collections"
-            ),
+                "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30"
+            ).AddRange(OgcConformanceUris.Common),
             Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
                 $"{context.Request.Scheme}://{context.Request.Host}/ogc/tiles/conformance",
