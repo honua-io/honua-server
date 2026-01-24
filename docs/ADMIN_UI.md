@@ -15,6 +15,9 @@ Enable/disable:
 HONUA_SERVE_ADMIN_UI=true
 ```
 
+Note: AOT publishes of Honua.Server do **not** bundle the Admin UI. For AOT builds,
+set `HONUA_SERVE_ADMIN_UI=false` and host the UI separately.
+
 Run the server and open:
 ```
 http://localhost:8080/admin/
