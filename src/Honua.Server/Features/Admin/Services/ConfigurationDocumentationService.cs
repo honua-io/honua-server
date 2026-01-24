@@ -93,6 +93,8 @@ internal sealed class ConfigurationDocumentationService
             [
                 BuildProperty("HONUA_ADMIN_UI", "HONUA_ADMIN_UI", "boolean",
                     "Enables the web admin interface", false, isSensitive: false),
+                BuildProperty("HONUA_SERVE_ADMIN_UI", "HONUA_SERVE_ADMIN_UI", "boolean",
+                    "Serve the admin UI from /admin (integrated hosting)", true, isSensitive: false),
                 BuildProperty("HONUA_OBSERVABILITY", "HONUA_OBSERVABILITY", "boolean",
                     "Activates metrics and health endpoints", false, isSensitive: false),
                 BuildProperty("HONUA_OPENTELEMETRY", "HONUA_OPENTELEMETRY", "boolean",
@@ -439,6 +441,8 @@ internal sealed class ConfigurationDocumentationService
             [
                 BuildProperty("HONUA_ADMIN_PASSWORD", "HONUA_ADMIN_PASSWORD", "string",
                     "Admin API password", null, isSensitive: true),
+                BuildProperty("HONUA_ADMIN_UI_CORS_ORIGINS", "HONUA_ADMIN_UI_CORS_ORIGINS", "string",
+                    "Comma-separated allowed origins for standalone Admin UI", null),
                 BuildProperty("Cors:AllowedOrigins:0", "Cors__AllowedOrigins__0", "string",
                     "First allowed CORS origin", null),
                 BuildProperty("Cors:AllowCredentials", "Cors__AllowCredentials", "boolean",
@@ -609,11 +613,13 @@ internal sealed class ConfigurationDocumentationService
         {
             // Feature flags
             new() { Name = "HONUA_ADMIN_UI", ConfigPath = "Features", Description = "Enable web admin interface", Default = "false", Example = "true" },
+            new() { Name = "HONUA_SERVE_ADMIN_UI", ConfigPath = "Features", Description = "Serve the admin UI at /admin", Default = "true", Example = "false" },
             new() { Name = "HONUA_OBSERVABILITY", ConfigPath = "Features", Description = "Enable metrics endpoints", Default = "false", Example = "true" },
             new() { Name = "HONUA_OPENTELEMETRY", ConfigPath = "Features", Description = "Enable distributed tracing", Default = "false", Example = "true" },
             new() { Name = "HONUA_SKIP_MIGRATIONS", ConfigPath = "Features", Description = "Skip database migrations", Default = "false", Example = "true" },
             new() { Name = "HONUA_DEV_AUTH", ConfigPath = "Security", Description = "Development auth bypass", Required = false, Example = "dev-token" },
             new() { Name = "HONUA_ADMIN_PASSWORD", ConfigPath = "Security", Description = "Admin API password", Required = false, Example = "secure-password" },
+            new() { Name = "HONUA_ADMIN_UI_CORS_ORIGINS", ConfigPath = "Security", Description = "Standalone Admin UI origins", Required = false, Example = "https://admin.example.com" },
 
             // Database
             new() { Name = "ConnectionStrings__DefaultConnection", ConfigPath = "Database", Description = "PostgreSQL connection string", Required = true, Example = "Host=localhost;Database=honua;Username=postgres;Password=password" },

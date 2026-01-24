@@ -57,7 +57,7 @@ public static class CorsConfiguration
     /// </summary>
     private static void ConfigureProductionPolicy(CorsPolicyBuilder policy, IConfiguration configuration)
     {
-        var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+        var allowedOrigins = ResolveAllowedOrigins(configuration);
         var allowCredentials = configuration.GetValue("Cors:AllowCredentials", false);
         var preflightMaxAgeMinutes = configuration.GetValue("Cors:PreflightMaxAgeMinutes", 10);
 
@@ -84,6 +84,21 @@ public static class CorsConfiguration
             // No origins configured - explicitly deny all cross-origin requests.
             policy.SetIsOriginAllowed(_ => false);
         }
+    }
+
+    private static string[] ResolveAllowedOrigins(IConfiguration configuration)
+    {
+        var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+        var adminUiOrigins = configuration["HONUA_ADMIN_UI_CORS_ORIGINS"];
+        if (string.IsNullOrWhiteSpace(adminUiOrigins))
+        {
+            return allowedOrigins;
+        }
+
+        var merged = allowedOrigins.Concat(
+            adminUiOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        return merged.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     /// <summary>

@@ -1,0 +1,38 @@
+﻿@page "/"
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Honua Admin</MudText>
+<MudText Typo="Typo.body1" Class="mb-4">
+    Manage connections, publish layers, monitor health, and configure styles from one place.
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="4">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6">Connections</MudText>
+            <MudText Typo="Typo.body2">Configure secure connections to data sources.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="connections">
+                Open connections
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="4">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6">Layers</MudText>
+            <MudText Typo="Typo.body2">Publish, enable, and tune layer settings.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="layers">
+                Manage layers
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="4">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6">Health</MudText>
+            <MudText Typo="Typo.body2">Review system health and background operations.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="health">
+                View health
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>

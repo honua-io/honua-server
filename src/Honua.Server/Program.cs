@@ -54,6 +54,9 @@ var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHE
 var forwardedHeadersEnabled = ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 ResolveEnvironmentSecretReferences(builder.Configuration);
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
+var serveAdminUi = builder.Configuration.GetValue(
+    "ServeAdminUI",
+    builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
 
 // Load optional security configuration without overriding environment-specific settings.
 AddSecurityConfiguration(builder.Configuration, builder.Environment);
@@ -341,6 +344,12 @@ app.UseSecurityHeaders();
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();
 
+if (serveAdminUi)
+{
+    app.UseBlazorFrameworkFiles("/admin");
+    app.UseStaticFiles(new StaticFileOptions { RequestPath = "/admin" });
+}
+
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
 
@@ -425,6 +434,11 @@ app.MapEsriImportEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
+
+if (serveAdminUi)
+{
+    app.MapFallbackToFile("/admin/{*path:nonfile}", "index.html");
+}
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)
