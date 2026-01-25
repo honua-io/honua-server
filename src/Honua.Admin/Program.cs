@@ -39,5 +39,6 @@ builder.Services.AddHttpClient("AdminApi", (sp, client) =>
 
 builder.Services.AddScoped(sp =>
     new HonuaApiClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("AdminApi")));
+builder.Services.AddScoped<ISecureConnectionsClient, SecureConnectionsClient>();
 
 await builder.Build().RunAsync();
