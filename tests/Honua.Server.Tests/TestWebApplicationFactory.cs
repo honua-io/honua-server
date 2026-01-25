@@ -1,9 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using System.Text;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -36,6 +41,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();
             services.AddScoped<IConnectionEncryptionService, NullConnectionEncryptionService>();
             services.AddScoped<ISecureConnectionResolver, NullSecureConnectionResolver>();
+            services.AddScoped<ILayerPublishingService, NullLayerPublishingService>();
+            services.AddSingleton<IDatabaseMigrationRunner, NullDatabaseMigrationRunner>();
             services.AddSingleton<IMetadataResourceStore, InMemoryMetadataResourceStore>();
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
         });
@@ -121,6 +128,46 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             SslMode sslMode)
         {
             return $"Host={host};Port={port};Database={databaseName};Username={username};Password={password};SslMode={sslMode}";
+        }
+    }
+
+    private sealed class NullLayerPublishingService : ILayerPublishingService
+    {
+        public Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
+            string connectionString,
+            string serviceName,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<PublishedLayerSummary>>(Array.Empty<PublishedLayerSummary>());
+        }
+
+        public Task<PublishedLayerSummary> PublishLayerAsync(
+            string connectionString,
+            LayerPublishRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Layer publishing is not available in this test fixture.");
+        }
+
+        public Task<PublishedLayerSummary?> SetLayerEnabledAsync(
+            string connectionString,
+            int layerId,
+            string serviceName,
+            bool enabled,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<PublishedLayerSummary?>(null);
+        }
+    }
+
+    private sealed class NullDatabaseMigrationRunner : IDatabaseMigrationRunner
+    {
+        public Task<DatabaseMigrationResult> RunMigrationsAsync(
+            string connectionString,
+            Assembly migrationsAssembly,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(DatabaseMigrationResult.Succeeded());
         }
     }
 }
