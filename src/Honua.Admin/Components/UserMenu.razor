@@ -1,0 +1,21 @@
+<AuthorizeView>
+    <Authorized Context="authState">
+        <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle">
+                    @(authState.User.Identity?.Name ?? "Account")
+                </MudButton>
+            </ActivatorContent>
+            <ChildContent>
+                <MudMenuItem Href="authentication/logout" Icon="@Icons.Material.Filled.Logout" data-testid="user-signout">
+                    Sign out
+                </MudMenuItem>
+            </ChildContent>
+        </MudMenu>
+    </Authorized>
+    <NotAuthorized>
+        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Login" Href="authentication/login" data-testid="user-signin">
+            Sign in
+        </MudButton>
+    </NotAuthorized>
+</AuthorizeView>
