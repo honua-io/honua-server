@@ -74,26 +74,37 @@ public sealed class LayerPublishRequest
 /// </summary>
 public sealed class PublishedLayerSummary
 {
+    /// <inheritdoc/>
     public required int LayerId { get; init; }
 
+    /// <inheritdoc/>
     public required string LayerName { get; init; }
 
+    /// <inheritdoc/>
     public required string Schema { get; init; }
 
+    /// <inheritdoc/>
     public required string Table { get; init; }
 
+    /// <inheritdoc/>
     public string? Description { get; init; }
 
+    /// <inheritdoc/>
     public required string GeometryType { get; init; }
 
+    /// <inheritdoc/>
     public int Srid { get; init; }
 
+    /// <inheritdoc/>
     public string? PrimaryKey { get; init; }
 
+    /// <inheritdoc/>
     public int FieldCount { get; init; }
 
+    /// <inheritdoc/>
     public bool Enabled { get; init; }
 
+    /// <inheritdoc/>
     public required string ServiceName { get; init; }
 }
 
@@ -102,9 +113,13 @@ public sealed class PublishedLayerSummary
 /// </summary>
 public enum LayerPublishingErrorKind
 {
+    /// <inheritdoc/>
     Validation,
+    /// <inheritdoc/>
     NotFound,
+    /// <inheritdoc/>
     Conflict,
+    /// <inheritdoc/>
     Unknown
 }
 
@@ -113,8 +128,10 @@ public enum LayerPublishingErrorKind
 /// </summary>
 public sealed class LayerPublishingException : Exception
 {
+    /// <inheritdoc/>
     public LayerPublishingErrorKind ErrorKind { get; }
 
+    /// <inheritdoc/>
     public LayerPublishingException(LayerPublishingErrorKind errorKind, string message)
         : base(message)
     {

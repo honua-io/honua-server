@@ -10,8 +10,8 @@ namespace Honua.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureDataAccessTimeoutTests
 {
-    private static readonly OpCode[] SingleByteOpCodes = new OpCode[0x100];
-    private static readonly OpCode[] MultiByteOpCodes = new OpCode[0x100];
+    private static readonly OpCode[] _singleByteOpCodes = new OpCode[0x100];
+    private static readonly OpCode[] _multiByteOpCodes = new OpCode[0x100];
 
     static FeatureDataAccessTimeoutTests()
     {
@@ -25,11 +25,11 @@ public sealed class FeatureDataAccessTimeoutTests
             var value = (ushort)opCode.Value;
             if (value < 0x100)
             {
-                SingleByteOpCodes[value] = opCode;
+                _singleByteOpCodes[value] = opCode;
             }
             else if ((value & 0xFF00) == 0xFE00)
             {
-                MultiByteOpCodes[value & 0xFF] = opCode;
+                _multiByteOpCodes[value & 0xFF] = opCode;
             }
         }
     }
@@ -107,11 +107,11 @@ public sealed class FeatureDataAccessTimeoutTests
         var code = il[index++];
         if (code != 0xFE)
         {
-            return SingleByteOpCodes[code];
+            return _singleByteOpCodes[code];
         }
 
         var code2 = il[index++];
-        return MultiByteOpCodes[code2];
+        return _multiByteOpCodes[code2];
     }
 
     private static int GetOperandSize(OperandType operandType)

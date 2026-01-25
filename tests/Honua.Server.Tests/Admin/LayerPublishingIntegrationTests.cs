@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Admin;
 [Protocol(Protocols.Admin)]
 public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true
@@ -87,11 +87,11 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var publishResponse = await _client.PostAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: JsonOptions));
+            JsonContent.Create(publishRequest, options: _jsonOptions));
 
         var publishPayload = await publishResponse.Content.ReadAsStringAsync();
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, JsonOptions);
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
 
         publishApi.Should().NotBeNull();
         publishApi!.Success.Should().BeTrue();
@@ -114,7 +114,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         listResponse.Be200Ok();
 
         var listPayload = await listResponse.Content.ReadAsStringAsync();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(listPayload, JsonOptions);
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(listPayload, _jsonOptions);
 
         listApi.Should().NotBeNull();
         listApi!.Success.Should().BeTrue();
@@ -127,12 +127,12 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var toggleResponse = await _client.PutAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers/{_layerId}/enabled?serviceName={_serviceName}",
-            JsonContent.Create(toggleRequest, options: JsonOptions));
+            JsonContent.Create(toggleRequest, options: _jsonOptions));
 
         toggleResponse.Be200Ok();
 
         var togglePayload = await toggleResponse.Content.ReadAsStringAsync();
-        var toggleApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(togglePayload, JsonOptions);
+        var toggleApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(togglePayload, _jsonOptions);
 
         toggleApi.Should().NotBeNull();
         toggleApi!.Success.Should().BeTrue();

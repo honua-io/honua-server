@@ -4,9 +4,9 @@
 using Honua.Admin.Models;
 using Honua.Admin.Pages;
 using Honua.Admin.Services;
+using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Admin.Tests.Pages;
 
