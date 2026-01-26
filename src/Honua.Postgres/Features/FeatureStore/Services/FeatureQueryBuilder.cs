@@ -251,7 +251,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
             AppendWhereClause(sql, effectiveQuery, ref paramIndex, parameters);
             AppendTemporalFilter(sql, effectiveQuery, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, effectiveQuery, geometryStorageType, ref paramIndex);
+            AppendSpatialFilter(sql, effectiveQuery, geometryStorageType, ref paramIndex, parameters);
 
             sql.Append(") AS extent_query");
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -378,7 +378,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             {
                 AppendWhereClause(sql, (FeatureQuery)query, ref paramIndex, parameters);
                 AppendTemporalFilter(sql, (FeatureQuery)query, ref paramIndex, parameters);
-                AppendSpatialFilter(sql, (FeatureQuery)query, geometryStorageType, ref paramIndex);
+                AppendSpatialFilter(sql, (FeatureQuery)query, geometryStorageType, ref paramIndex, parameters);
             }
 
             sql.Append(CultureInfo.InvariantCulture, $@"
@@ -449,6 +449,17 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
         }
+    }
+
+    private string BuildSpatialFilterGeometryExpression(
+        SpatialFilter filter,
+        FeatureQuery query,
+        ref int paramIndex,
+        List<object>? parameters)
+    {
+        var geometryExpression = _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+        parameters?.Add(filter.Geometry);
+        return geometryExpression;
     }
 
     private string BuildGeographyFilterExpression(SpatialFilter filter, FeatureQuery query, ref int paramIndex)
@@ -572,7 +583,8 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         StringBuilder sql,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType,
-        ref int paramIndex)
+        ref int paramIndex,
+        List<object>? parameters = null)
     {
         if (!query.SpatialFilter.HasValue)
         {
@@ -589,64 +601,76 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             case SpatialRelationship.Intersects:
                 // PERFORMANCE OPTIMIZATION: Use bbox operator && for fast spatial index filtering
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Within:
                 // PERFORMANCE OPTIMIZATION: Pre-filter with bbox before expensive ST_Within
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Within({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Contains:
                 // PERFORMANCE OPTIMIZATION: Use spatial index hint for containment queries
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:
                 // Already optimized - pure index operation
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry}";
                 break;
 
             case SpatialRelationship.Crosses:
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Crosses({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Touches:
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Touches({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Overlaps:
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Overlaps({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Disjoint:
                 // PERFORMANCE NOTE: Disjoint operations cannot effectively use spatial indexes
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"ST_Disjoint({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.Equals:
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Equals({geometryOperand}, {filterGeometry})";
                 break;
 
             case SpatialRelationship.WithinDistance:
                 // Use ST_DWithin with geography type for accurate geodesic distance calculations
                 var geographyFilter = BuildGeographyFilterExpression(filter, query, ref paramIndex);
+                parameters?.Add(filter.Geometry);
                 clause = $"ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})";
+                if (parameters != null)
+                {
+                    var distanceInMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
+                    parameters.Add(distanceInMeters);
+                }
                 break;
 
             case SpatialRelationship.BeyondDistance:
                 // ST_Distance > threshold for features beyond a certain distance
                 var geographyFilterDistance = BuildGeographyFilterExpression(filter, query, ref paramIndex);
+                parameters?.Add(filter.Geometry);
                 clause = $"ST_Distance({geographyOperand}, {geographyFilterDistance}) > ${paramIndex++}";
+                if (parameters != null)
+                {
+                    var distanceInMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
+                    parameters.Add(distanceInMeters);
+                }
                 break;
 
             case SpatialRelationship.NearestNeighbor:
@@ -656,7 +680,7 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
 
             default:
                 // PERFORMANCE OPTIMIZATION: Default to bbox + intersects for best performance
-                filterGeometry ??= _geometryProcessor.BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex);
+                filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
                 clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
                 break;
         }
@@ -889,8 +913,16 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
                 var fieldSql = MapWhereField(fieldName, out var isAttributeField);
                 var normalizedOperator = NormalizeOperator(operatorValue);
                 var forceTextComparison = normalizedOperator.Contains("LIKE", StringComparison.OrdinalIgnoreCase);
+                var isQuoted = IsQuotedStringLiteral(valueToken);
+                var isNumericLiteral = !isQuoted &&
+                    decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
 
-                var parameterizedValue = ParseValueToken(valueToken, forceTextComparison || isAttributeField);
+                if (isAttributeField && isNumericLiteral && !forceTextComparison)
+                {
+                    fieldSql = $"NULLIF({fieldSql}, '')::numeric";
+                }
+
+                var parameterizedValue = ParseValueToken(valueToken, forceTextComparison);
                 parameterizedExpressions.Add($"{fieldSql} {normalizedOperator} ${paramIndex}");
                 parameters.Add(parameterizedValue);
                 paramIndex++;
@@ -948,6 +980,11 @@ internal sealed class FeatureQueryBuilder : IFeatureQueryBuilder
     {
         return operatorValue.Replace("<>", "!=", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsQuotedStringLiteral(string valueToken)
+        => valueToken.Length >= 2 &&
+           valueToken.StartsWith('\'') &&
+           valueToken.EndsWith('\'');
 
     private static object ParseValueToken(string valueToken, bool forceText)
     {
