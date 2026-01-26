@@ -47,6 +47,7 @@ internal static class SecurityServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<ConnectionEncryptionService>>()));
 
         services.TryAddSingleton<IDatabaseConnectionStringBuilder, PostgresConnectionStringBuilder>();
+        services.TryAddSingleton<IConnectionHealthTester, PostgresConnectionHealthTester>();
 
         // Register secret resolvers
         services.AddAwsSecretsManagerSupport(configuration);

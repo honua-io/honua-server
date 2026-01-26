@@ -54,6 +54,10 @@ internal static class SecureConnectionEndpoints
             .WithDisplayName("Create Secure Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        group.MapPost("/test", HandleTestDraftConnection)
+            .WithDisplayName("Test Secure Connection Draft")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
         group.MapPut("/{id:guid}", HandleUpdateConnection)
             .WithDisplayName("Update Secure Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
@@ -75,6 +79,87 @@ internal static class SecureConnectionEndpoints
         group.MapPost("/encryption/rotate-key", HandleRotateEncryptionKey)
             .WithDisplayName("Rotate Encryption Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+    }
+
+    /// <summary>
+    /// POST /api/v1/admin/connections/test - Test a draft connection before saving.
+    /// </summary>
+    private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>>>
+        HandleTestDraftConnection(
+            CreateSecureConnectionRequest request,
+            [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
+            [FromServices] IConnectionSecretResolver secretResolver,
+            [FromServices] IConnectionHealthTester connectionTester,
+            HttpContext context,
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
+    {
+        try
+        {
+            var validationResults = new List<ValidationResult>();
+            var validationContext = new ValidationContext(request);
+            if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
+            {
+                var errors = validationResults.Select(r => r.ErrorMessage).ToList();
+                logger.LogWarning("Invalid test connection request: {Errors}", string.Join(", ", errors));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {string.Join(", ", errors)}"));
+            }
+
+            if (!request.IsValid(out var validationError))
+            {
+                logger.LogWarning("Invalid test connection request: {Error}", validationError);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {validationError}"));
+            }
+
+            if (!Enum.TryParse<SslMode>(request.SslMode, true, out _))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid SSL mode"));
+            }
+
+            string connectionString;
+
+            if (!string.IsNullOrWhiteSpace(request.SecretReference))
+            {
+                connectionString = await secretResolver.ResolveConnectionStringAsync(
+                    request.SecretReference,
+                    context.RequestAborted);
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(request.Password))
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure("Password is required when not using secret reference"));
+                }
+
+                var effectiveSslMode = request.SslRequired
+                    ? SslMode.Require
+                    : SslMode.Prefer;
+
+                connectionString = connectionStringBuilder.BuildConnectionString(
+                    request.Host,
+                    request.Port,
+                    request.DatabaseName,
+                    request.Username,
+                    request.Password,
+                    effectiveSslMode);
+            }
+
+            var isHealthy = await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);
+            var result = new ConnectionTestResult
+            {
+                ConnectionId = Guid.Empty,
+                ConnectionName = request.Name,
+                IsHealthy = isHealthy,
+                TestedAt = DateTimeOffset.UtcNow,
+                Message = isHealthy ? "Connection is healthy" : "Connection test failed"
+            };
+
+            return TypedResults.Ok(ApiResponse<ConnectionTestResult>.CreateSuccess(result));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to test draft connection");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to test connection"));
+        }
     }
 
     /// <summary>

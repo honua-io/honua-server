@@ -224,9 +224,10 @@ internal sealed partial class EsriImportService : IEsriImportService
 
     private static string BuildCreateTableSql(string tableName, EsriLayerInfo layerInfo, int targetSrid)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE \"{tableName}\" (");
-        sb.AppendLine("    fid SERIAL PRIMARY KEY,");
+        var columns = new List<string>
+        {
+            "fid SERIAL PRIMARY KEY"
+        };
 
         // Add attribute fields
         foreach (var field in layerInfo.Fields)
@@ -236,20 +237,23 @@ internal sealed partial class EsriImportService : IEsriImportService
 
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
             var nullable = field.Nullable ? "" : " NOT NULL";
-            sb.AppendLine(CultureInfo.InvariantCulture, $"    \"{field.Name.SanitizeFieldName()}\" {pgType}{nullable},");
+            columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}{nullable}");
         }
 
         // Add geometry column if the layer has geometry
         if (!string.IsNullOrEmpty(layerInfo.GeometryType))
         {
             var pgGeomType = MapEsriGeometryType(layerInfo.GeometryType);
-            sb.AppendLine(CultureInfo.InvariantCulture, $"    geom geometry({pgGeomType}, {targetSrid})");
+            columns.Add($"geom geometry({pgGeomType}, {targetSrid})");
         }
-        else
+
+        var sb = new StringBuilder();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE \"{tableName}\" (");
+
+        for (var i = 0; i < columns.Count; i++)
         {
-            // Remove trailing comma from last field
-            sb.Length -= 3;
-            sb.AppendLine();
+            var suffix = i == columns.Count - 1 ? string.Empty : ",";
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    {columns[i]}{suffix}");
         }
 
         sb.AppendLine(");");

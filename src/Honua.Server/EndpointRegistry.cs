@@ -21,6 +21,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
+        new("GET", "/api/v1/admin/connections/{id}/layers"),
+        new("POST", "/api/v1/admin/connections/{id}/layers"),
+        new("PUT", "/api/v1/admin/connections/{id}/layers/{layerId}/enabled"),
         new("GET", "/api/v1/admin/version"),
         new("GET", "/api/v1/admin/capabilities"),
         new("GET", "/api/v1/admin/manifest"),
@@ -42,6 +45,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/resources"),
         new("PUT", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
         new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
 
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),
