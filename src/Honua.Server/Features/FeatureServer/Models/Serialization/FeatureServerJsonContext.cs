@@ -11,6 +11,10 @@ namespace Honua.Server.Features.FeatureServer.Models;
 /// <summary>
 /// JSON serialization context for FeatureServer API models with source generation for AOT compatibility.
 /// </summary>
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    PropertyNameCaseInsensitive = true,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(FeatureServerResponse))]
 [JsonSerializable(typeof(LayerResponse))]
 [JsonSerializable(typeof(LayerInfo))]

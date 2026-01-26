@@ -17,10 +17,11 @@ public sealed class FeatureQueryBuilderWhereClauseTests
 
         sql.Should().Contain("NULLIF");
         sql.Should().Contain("::numeric");
-        sql.Should().Contain("attributes->>'population'");
-        parameters.Should().ContainSingle();
-        parameters[0].Should().Be(1000m);
-        paramIndex.Should().Be(2);
+        sql.Should().Contain("attributes->> $1");
+        parameters.Should().HaveCount(2);
+        parameters[0].Should().Be("population");
+        parameters[1].Should().Be(1000m);
+        paramIndex.Should().Be(3);
     }
 
     [Fact]
@@ -32,9 +33,10 @@ public sealed class FeatureQueryBuilderWhereClauseTests
         var sql = FeatureQueryBuilder.ParseAndParameterizeWhereClause("population = '1000'", ref paramIndex, parameters);
 
         sql.Should().NotContain("::numeric");
-        sql.Should().Contain("attributes->>'population'");
-        parameters.Should().ContainSingle();
-        parameters[0].Should().Be("1000");
-        paramIndex.Should().Be(2);
+        sql.Should().Contain("attributes->> $1");
+        parameters.Should().HaveCount(2);
+        parameters[0].Should().Be("population");
+        parameters[1].Should().Be("1000");
+        paramIndex.Should().Be(3);
     }
 }

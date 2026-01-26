@@ -384,6 +384,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         Action<NpgsqlCommand>? configureParameters,
         CancellationToken cancellationToken)
     {
+        // codeql[cs/sql-injection] SQL is generated from validated builders with parameterized inputs.
         var command = new NpgsqlCommand(sql, connection);
         configureParameters?.Invoke(command);
 
