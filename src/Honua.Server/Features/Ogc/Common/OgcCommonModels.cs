@@ -139,6 +139,11 @@ public static class RelationTypes
     public const string Items = "items";
 
     /// <summary>
+    /// Refers to a style resource for the collection.
+    /// </summary>
+    public const string Style = "style";
+
+    /// <summary>
     /// Indicates the link target provides service documentation.
     /// </summary>
     public const string ServiceDoc = "service-doc";
