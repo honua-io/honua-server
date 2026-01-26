@@ -40,13 +40,15 @@
                           ValueChanged="HandleServiceUrlChanged"
                           Error="@(!string.IsNullOrWhiteSpace(_serviceUrlError))"
                           ErrorText="@_serviceUrlError"
-                          Disabled="@_isDiscovering" />
+                          Disabled="@_isDiscovering"
+                          data-testid="import-service-url" />
 
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            OnClick="DiscoverAsync"
-                           Disabled="@_isDiscovering">
+                           Disabled="@_isDiscovering"
+                           data-testid="import-discover">
                     Discover
                 </MudButton>
                 @if (_isDiscovering)
@@ -110,7 +112,7 @@
             }
             else
             {
-                <MudTable Items="_layers" Dense="true" Hover="true">
+                <MudTable Items="_layers" Dense="true" Hover="true" data-testid="import-layers-table">
                     <HeaderContent>
                         <MudTh>Select</MudTh>
                         <MudTh>Layer</MudTh>
@@ -125,7 +127,8 @@
                             <MudCheckBox T="bool"
                                          Value="@row.Selected"
                                          ValueChanged="@(value => SetLayerSelected(row, value))"
-                                         Disabled="@_isStartingImport" />
+                                         Disabled="@_isStartingImport"
+                                         data-testid="@($"import-layer-select-{row.Layer.Id}")" />
                         </MudTd>
                         <MudTd DataLabel="Layer">
                             <MudText Typo="Typo.body2">@row.Layer.Name</MudText>
@@ -158,7 +161,8 @@
                                           Placeholder="table_name"
                                           Error="@(!string.IsNullOrWhiteSpace(tableError))"
                                           ErrorText="@tableError"
-                                          Disabled="@_isStartingImport" />
+                                          Disabled="@_isStartingImport"
+                                          data-testid="@($"import-layer-table-{row.Layer.Id}")" />
                         </MudTd>
                         <MudTd>
                             @if (!string.IsNullOrWhiteSpace(row.StartError))
@@ -194,7 +198,8 @@
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            OnClick="StartImportAsync"
-                           Disabled="@(!CanStartImport)">
+                           Disabled="@(!CanStartImport)"
+                           data-testid="import-start">
                     Start import
                 </MudButton>
                 @if (_isStartingImport)
@@ -221,7 +226,7 @@
                 <MudAlert Severity="Severity.Error" Dense="true">@_jobsError</MudAlert>
             }
 
-            <MudTable Items="JobList" Dense="true" Hover="true">
+            <MudTable Items="JobList" Dense="true" Hover="true" data-testid="import-jobs-table">
                 <HeaderContent>
                     <MudTh>Status</MudTh>
                     <MudTh>Layer</MudTh>
@@ -235,7 +240,10 @@
                 <RowTemplate>
                     <MudTd DataLabel="Status">
                         <MudStack Spacing="0">
-                            <MudChip T="string" Color="@GetStatusColor(context.Status)" Size="Size.Small">
+                            <MudChip T="string"
+                                     Color="@GetStatusColor(context.Status)"
+                                     Size="Size.Small"
+                                     data-testid="@($"import-job-status-{context.JobId}")">
                                 @FormatStatus(context.Status)
                             </MudChip>
                             @if (!string.IsNullOrWhiteSpace(context.CurrentPhase))
@@ -279,7 +287,8 @@
                                 <MudIconButton Icon="@Icons.Material.Filled.Cancel"
                                                Color="Color.Warning"
                                                OnClick="@(async () => await CancelJobAsync(context))"
-                                               Disabled="@IsJobActionBusy(context.JobId)" />
+                                               Disabled="@IsJobActionBusy(context.JobId)"
+                                               data-testid="@($"import-job-cancel-{context.JobId}")" />
                             </MudTooltip>
                         }
                         else if (context.Status is EsriImportStatus.Failed or EsriImportStatus.Cancelled)
@@ -288,7 +297,8 @@
                                 <MudIconButton Icon="@Icons.Material.Filled.Replay"
                                                Color="Color.Primary"
                                                OnClick="@(async () => await RetryJobAsync(context))"
-                                               Disabled="@IsJobActionBusy(context.JobId)" />
+                                               Disabled="@IsJobActionBusy(context.JobId)"
+                                               data-testid="@($"import-job-retry-{context.JobId}")" />
                             </MudTooltip>
                         }
                     </MudTd>
