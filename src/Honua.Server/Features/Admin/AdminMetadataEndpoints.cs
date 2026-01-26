@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -57,7 +58,7 @@ internal static class AdminMetadataEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -70,7 +71,7 @@ internal static class AdminMetadataEndpoints
         };
 
         var payload = ApiResponse<AdminVersionResponse>.CreateSuccess(response);
-        await WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminVersionResponse);
+        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminVersionResponse);
     }
 
     private static async Task HandleGetCapabilities(
@@ -79,7 +80,7 @@ internal static class AdminMetadataEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -99,7 +100,7 @@ internal static class AdminMetadataEndpoints
         };
 
         var payload = ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response);
-        await WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
     }
 
     private static async Task HandleGetManifest(
@@ -109,7 +110,7 @@ internal static class AdminMetadataEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -150,7 +151,7 @@ internal static class AdminMetadataEndpoints
         };
 
         var payload = ApiResponse<MetadataManifest>.CreateSuccess(manifest);
-        await WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseMetadataManifest);
+        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseMetadataManifest);
     }
 
     private static async Task HandleApplyManifest(
@@ -162,7 +163,7 @@ internal static class AdminMetadataEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -392,7 +393,7 @@ internal static class AdminMetadataEndpoints
         };
 
         var payload = ApiResponse<ManifestApplyResult>.CreateSuccess(result);
-        await WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseManifestApplyResult);
+        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseManifestApplyResult);
     }
 
     private static MetadataResource NormalizeResource(
@@ -499,9 +500,7 @@ internal static class AdminMetadataEndpoints
     }
 
     private static Task WriteError(HttpContext context, int statusCode, string message)
-    {
-        return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message).ExecuteAsync(context);
-    }
+        => AdminResponseWriter.WriteErrorAsync(context, message, statusCode);
 
     private static string CanonicalizeJson(JsonElement element)
     {
@@ -554,20 +553,4 @@ internal static class AdminMetadataEndpoints
         }
     }
 
-    private static Task WriteMethodNotAllowed(HttpContext context)
-    {
-        return ProblemDetailsHelpers.CreateAdminProblem(
-            context,
-            StatusCodes.Status405MethodNotAllowed,
-            "Method not allowed").ExecuteAsync(context);
-    }
-
-    private static async Task WriteJsonAsync<T>(
-        HttpContext context,
-        T response,
-        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
-    {
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await JsonSerializer.SerializeAsync(context.Response.Body, response, typeInfo, context.RequestAborted);
-    }
 }

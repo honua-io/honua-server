@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.OData;
 
@@ -41,14 +41,17 @@ internal static partial class ODataEndpoints
         var layers = endpoints.MapGet("/odata/Layers",
             (HttpContext context,
                 ODataQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$select")] string? select,
-                [FromQuery(Name = "$top")] string? top,
-                [FromQuery(Name = "$skip")] string? skip,
-                [FromQuery(Name = "$count")] string? count,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetLayersAsync(context, filter, select, top, skip, count, format, cancellationToken))
+                handler.HandleGetLayersAsync(
+                    context,
+                    query.Filter,
+                    query.Select,
+                    query.Top,
+                    query.Skip,
+                    query.Count,
+                    query.Format,
+                    cancellationToken))
             .WithDisplayName("OData Layers Collection")
             .WithName("ODataLayers")
             .WithSummary("Get layers collection with OData query parameters")
@@ -60,10 +63,9 @@ internal static partial class ODataEndpoints
         var layersCount = endpoints.MapGet("/odata/Layers/$count",
             (HttpContext context,
                 ODataQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetLayersCountAsync(context, filter, format, cancellationToken))
+                handler.HandleGetLayersCountAsync(context, query.Filter, query.Format, cancellationToken))
             .WithDisplayName("OData Layers Count")
             .WithName("ODataLayersCount")
             .WithSummary("Get the count of layers")
@@ -77,10 +79,9 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataQueryHandler handler,
-                [FromQuery(Name = "$select")] string? select,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetLayerAsync(context, layerId, select, format, cancellationToken))
+                handler.HandleGetLayerAsync(context, layerId, query.Select, query.Format, cancellationToken))
             .WithDisplayName("OData Layer")
             .WithName("ODataLayer")
             .WithSummary("Get a single layer by ID")
@@ -92,18 +93,22 @@ internal static partial class ODataEndpoints
         var features = endpoints.MapGet("/odata/Features",
             (HttpContext context,
                 ODataStreamingQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$select")] string? select,
-                [FromQuery(Name = "$orderby")] string? orderby,
-                [FromQuery(Name = "$top")] string? top,
-                [FromQuery(Name = "$skip")] string? skip,
-                [FromQuery(Name = "$count")] string? count,
-                [FromQuery(Name = "$expand")] string? expand,
-                [FromQuery(Name = "$search")] string? search,
-                [FromQuery(Name = "$apply")] string? apply,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetFeaturesAsync(context, null, filter, select, orderby, top, skip, count, expand, search, apply, format, cancellationToken))
+                handler.HandleGetFeaturesAsync(
+                    context,
+                    null,
+                    query.Filter,
+                    query.Select,
+                    query.Orderby,
+                    query.Top,
+                    query.Skip,
+                    query.Count,
+                    query.Expand,
+                    query.Search,
+                    query.Apply,
+                    query.Format,
+                    cancellationToken))
             .WithDisplayName("OData Features Collection")
             .WithName("ODataFeatures")
             .WithSummary("Get features with OData query parameters ($filter, $select, $orderby, $top, $skip, $count, $search, $apply)")
@@ -115,10 +120,9 @@ internal static partial class ODataEndpoints
         var featuresCount = endpoints.MapGet("/odata/Features/$count",
             (HttpContext context,
                 ODataStreamingQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetFeaturesCountAsync(context, null, filter, format, cancellationToken))
+                handler.HandleGetFeaturesCountAsync(context, null, query.Filter, query.Format, cancellationToken))
             .WithDisplayName("OData Features Count")
             .WithName("ODataFeaturesCount")
             .WithSummary("Get the count of features")
@@ -132,18 +136,22 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataStreamingQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$select")] string? select,
-                [FromQuery(Name = "$orderby")] string? orderby,
-                [FromQuery(Name = "$top")] string? top,
-                [FromQuery(Name = "$skip")] string? skip,
-                [FromQuery(Name = "$count")] string? count,
-                [FromQuery(Name = "$expand")] string? expand,
-                [FromQuery(Name = "$search")] string? search,
-                [FromQuery(Name = "$apply")] string? apply,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetFeaturesAsync(context, layerId, filter, select, orderby, top, skip, count, expand, search, apply, format, cancellationToken))
+                handler.HandleGetFeaturesAsync(
+                    context,
+                    layerId,
+                    query.Filter,
+                    query.Select,
+                    query.Orderby,
+                    query.Top,
+                    query.Skip,
+                    query.Count,
+                    query.Expand,
+                    query.Search,
+                    query.Apply,
+                    query.Format,
+                    cancellationToken))
             .WithDisplayName("OData Layer Features Collection")
             .WithName("ODataLayerFeatures")
             .WithSummary("Get features for a layer with OData query parameters")
@@ -156,10 +164,9 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataStreamingQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetFeaturesCountAsync(context, layerId, filter, format, cancellationToken))
+                handler.HandleGetFeaturesCountAsync(context, layerId, query.Filter, query.Format, cancellationToken))
             .WithDisplayName("OData Layer Features Count")
             .WithName("ODataLayerFeaturesCount")
             .WithSummary("Get the count of features for a layer")
@@ -172,10 +179,9 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataStreamingQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetFeaturesCountAsync(context, layerId, filter, format, cancellationToken))
+                handler.HandleGetFeaturesCountAsync(context, layerId, query.Filter, query.Format, cancellationToken))
             .WithDisplayName("OData Layer Features Count (Legacy)")
             .WithName("ODataLayerFeaturesCountLegacy")
             .WithSummary("Legacy count endpoint for layer features")
@@ -189,18 +195,22 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataStreamingQueryHandler handler,
-                [FromQuery(Name = "$filter")] string? filter,
-                [FromQuery(Name = "$select")] string? select,
-                [FromQuery(Name = "$orderby")] string? orderby,
-                [FromQuery(Name = "$top")] string? top,
-                [FromQuery(Name = "$skip")] string? skip,
-                [FromQuery(Name = "$count")] string? count,
-                [FromQuery(Name = "$expand")] string? expand,
-                [FromQuery(Name = "$search")] string? search,
-                [FromQuery(Name = "$apply")] string? apply,
-                [FromQuery(Name = "$format")] string? format,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleGetFeaturesAsync(context, layerId, filter, select, orderby, top, skip, count, expand, search, apply, format, cancellationToken))
+                handler.HandleGetFeaturesAsync(
+                    context,
+                    layerId,
+                    query.Filter,
+                    query.Select,
+                    query.Orderby,
+                    query.Top,
+                    query.Skip,
+                    query.Count,
+                    query.Expand,
+                    query.Search,
+                    query.Apply,
+                    query.Format,
+                    cancellationToken))
             .WithDisplayName("OData Features Collection (Legacy)")
             .WithName("ODataFeaturesLegacy")
             .WithSummary("Legacy layer-scoped features endpoint")
@@ -237,8 +247,13 @@ internal static partial class ODataEndpoints
 
         // GET - Get a single feature
         var getFeature = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, [FromQuery(Name = "$select")] string? select, [FromQuery(Name = "$format")] string? format, CancellationToken cancellationToken) =>
-                handler.HandleGetSingleFeatureAsync(context, layerId, objectId, select, format, cancellationToken))
+            (HttpContext context,
+                int layerId,
+                long objectId,
+                ODataCrudHandler handler,
+                [AsParameters] ODataQueryOptions query,
+                CancellationToken cancellationToken) =>
+                handler.HandleGetSingleFeatureAsync(context, layerId, objectId, query.Select, query.Format, cancellationToken))
             .WithDisplayName("OData Get Feature")
             .WithName("ODataGetFeature")
             .WithSummary("Get a single feature by ID")
@@ -247,8 +262,13 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         var getLayerFeature = endpoints.MapGet("/odata/Layers({layerId:int})/Features({objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, [FromQuery(Name = "$select")] string? select, [FromQuery(Name = "$format")] string? format, CancellationToken cancellationToken) =>
-                handler.HandleGetSingleFeatureAsync(context, layerId, objectId, select, format, cancellationToken))
+            (HttpContext context,
+                int layerId,
+                long objectId,
+                ODataCrudHandler handler,
+                [AsParameters] ODataQueryOptions query,
+                CancellationToken cancellationToken) =>
+                handler.HandleGetSingleFeatureAsync(context, layerId, objectId, query.Select, query.Format, cancellationToken))
             .WithDisplayName("OData Get Feature (Layer)")
             .WithName("ODataGetLayerFeature")
             .WithSummary("Get a single feature in a layer")
@@ -258,8 +278,13 @@ internal static partial class ODataEndpoints
 
         // Legacy feature key format
         var legacyGetFeature = endpoints.MapGet("/odata/Features({layerId:int},{objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, [FromQuery(Name = "$select")] string? select, [FromQuery(Name = "$format")] string? format, CancellationToken cancellationToken) =>
-                handler.HandleGetSingleFeatureAsync(context, layerId, objectId, select, format, cancellationToken))
+            (HttpContext context,
+                int layerId,
+                long objectId,
+                ODataCrudHandler handler,
+                [AsParameters] ODataQueryOptions query,
+                CancellationToken cancellationToken) =>
+                handler.HandleGetSingleFeatureAsync(context, layerId, objectId, query.Select, query.Format, cancellationToken))
             .WithDisplayName("OData Get Feature (Legacy)")
             .WithName("ODataGetFeatureLegacy")
             .WithSummary("Legacy feature key format")
@@ -355,10 +380,9 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataAdvancedQueryHandler handler,
-                [FromQuery(Name = "$apply")] string? apply,
-                [FromQuery(Name = "$filter")] string? filter,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleApplyAsync(context, layerId, apply, filter, cancellationToken))
+                handler.HandleApplyAsync(context, layerId, query.Apply, query.Filter, cancellationToken))
             .WithDisplayName("OData Aggregation")
             .WithName("ODataApply")
             .WithSummary("Aggregate features using $apply transformations (aggregate, groupby, filter, compute)")
@@ -372,12 +396,9 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 ODataAdvancedQueryHandler handler,
-                [FromQuery(Name = "$search")] string? search,
-                [FromQuery(Name = "$top")] string? top,
-                [FromQuery(Name = "$skip")] string? skip,
-                [FromQuery(Name = "$count")] string? count,
+                [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleSearchAsync(context, layerId, search, top, skip, count, cancellationToken))
+                handler.HandleSearchAsync(context, layerId, query.Search, query.Top, query.Skip, query.Count, cancellationToken))
             .WithDisplayName("OData Search")
             .WithName("ODataSearch")
             .WithSummary("Full-text search across feature attributes using PostgreSQL text search")

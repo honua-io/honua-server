@@ -37,6 +37,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: csharp
+          config-file: ./.github/codeql/codeql-config.yml
           # Use extended security queries for more comprehensive analysis
           queries: security-extended
 

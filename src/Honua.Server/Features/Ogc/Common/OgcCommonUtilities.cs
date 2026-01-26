@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -152,6 +154,43 @@ internal static class OgcCommonUtilities
     }
 
     /// <summary>
+    /// Creates a standardized error response for invalid format negotiation.
+    /// </summary>
+    public static IResult CreateFormatError(HttpContext context, IResult? formatError)
+    {
+        if (formatError is BadRequest<string> badRequest)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+        }
+
+        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
+        {
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
+        }
+
+        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
+    }
+
+    /// <summary>
+    /// Gets a query parameter value, optionally trimmed.
+    /// </summary>
+    public static string? GetQueryValue(HttpRequest request, string key, bool trim = true)
+    {
+        if (!request.Query.TryGetValue(key, out var values))
+        {
+            return null;
+        }
+
+        var value = values.ToString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return trim ? value.Trim() : value;
+    }
+
+    /// <summary>
     /// Builds URL with format parameter.
     /// </summary>
     public static string BuildUrlWithFormat(HttpRequest request, string basePath, string? formatValue)
@@ -265,10 +304,12 @@ internal static class OgcCommonUtilities
 
     private static string BuildHtmlDocument(string title, string json)
     {
+        var encodedTitle = WebUtility.HtmlEncode(title);
+        var encodedJson = WebUtility.HtmlEncode(json);
         return $@"<!DOCTYPE html>
 <html>
 <head>
-    <title>{title}</title>
+    <title>{encodedTitle}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; }}
         pre {{ background: #f5f5f5; padding: 20px; border-radius: 5px; overflow: auto; }}
@@ -276,8 +317,8 @@ internal static class OgcCommonUtilities
     </style>
 </head>
 <body>
-    <h1 class=""title"">{title}</h1>
-    <pre><code>{json}</code></pre>
+    <h1 class=""title"">{encodedTitle}</h1>
+    <pre><code>{encodedJson}</code></pre>
 </body>
 </html>";
     }

@@ -10,10 +10,11 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -88,10 +89,10 @@ internal static class CollectionsEndpoints
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
             var visibleLayers = layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer)).ToList();
             var collectionTasks = visibleLayers
@@ -123,7 +124,7 @@ internal static class CollectionsEndpoints
             return OgcCommonUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
         }
         catch (OperationCanceledException)
-            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+            when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
             throw;
         }
@@ -161,7 +162,6 @@ internal static class CollectionsEndpoints
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
         try
         {
@@ -173,16 +173,23 @@ internal static class CollectionsEndpoints
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            if (!int.TryParse(collectionId, out var layerId))
+            if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
             {
+                if (errorResult != null)
+                {
+                    return errorResult;
+                }
+
                 OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            var cancellationToken = GetTimeoutAwareCancellationToken(context);
+            collectionId = resolvedCollectionId;
+
+            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
@@ -215,7 +222,7 @@ internal static class CollectionsEndpoints
                 collection.Title ?? collection.Id);
         }
         catch (OperationCanceledException)
-            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+            when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
             throw;
         }
@@ -259,17 +266,25 @@ internal static class CollectionsEndpoints
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            if (!int.TryParse(collectionId, out var layerId))
+            if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
             {
+                if (errorResult != null)
+                {
+                    return errorResult;
+                }
+
                 OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
+            collectionId = resolvedCollectionId;
+            OgcFeaturesLog.CollectionRequested(logger, collectionId);
+
             // Verify collection/layer exists
-            var effectiveToken = GetTimeoutAwareCancellationToken(context);
+            var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
             if (layer == null)
             {
@@ -288,7 +303,7 @@ internal static class CollectionsEndpoints
             return OgcCommonUtilities.FormatMetadataResponse(queryables, OgcJsonContext.Default.QueryablesSchema, outputFormat, "Queryables");
         }
         catch (OperationCanceledException)
-            when (GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
+            when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
             throw;
         }
@@ -508,36 +523,36 @@ internal static class CollectionsEndpoints
             _ => ("string", null)
         };
 
-    /// <summary>
-    /// Creates a standardized error response for invalid format negotiation.
-    /// </summary>
-    private static IResult CreateFormatError(HttpContext context, IResult? formatError)
+    private static bool TryResolveCollectionId(
+        HttpContext context,
+        string collectionId,
+        out string resolvedCollectionId,
+        out int layerId,
+        out IResult? errorResult)
     {
-        if (formatError is BadRequest<string> badRequest)
+        resolvedCollectionId = collectionId;
+        layerId = default;
+        errorResult = null;
+
+        var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+        var collectionResult = routeValidator.ValidateCollectionId(context);
+        if (!collectionResult.IsValid || string.IsNullOrWhiteSpace(collectionResult.Value))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+            errorResult = StandardErrorHelpers.CreateBadRequest(
+                context,
+                collectionResult.ErrorMessage ?? "Collection ID is required.");
+            return false;
         }
 
-        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
+        resolvedCollectionId = collectionResult.Value!;
+        if (!int.TryParse(resolvedCollectionId, out layerId))
         {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
+            return false;
         }
 
-        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
+        return true;
     }
 
-    /// <summary>
-    /// Gets timeout-aware cancellation token from context
-    /// </summary>
-    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            return timeoutToken;
-        }
-
-        return context.RequestAborted;
-    }
 }
 
 /// <summary>

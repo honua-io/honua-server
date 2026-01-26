@@ -1,12 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -15,8 +13,6 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 internal static class CoreEndpoints
 {
-    private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _openApiCache =
-        new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan _landingPageCacheDuration = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan _conformanceCacheDuration = TimeSpan.FromHours(1);
 
@@ -78,7 +74,7 @@ internal static class CoreEndpoints
 
         if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
-            return CreateFormatError(context, formatError);
+            return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
 
         var request = context.Request;
@@ -147,7 +143,7 @@ internal static class CoreEndpoints
 
         if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
         {
-            return CreateFormatError(context, formatError);
+            return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
 
         EnsureCacheControl(context, _conformanceCacheDuration);
@@ -198,46 +194,6 @@ internal static class CoreEndpoints
         string? f,
         IWebHostEnvironment environment)
     {
-        var request = context.Request;
-
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(request, OgcFeaturesUtilities.AllowedQueryParameters.OpenApi);
-        if (validationError is not null)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(f) && !string.Equals(f, "json", StringComparison.OrdinalIgnoreCase))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'");
-        }
-
-        var acceptHeader = request.Headers.Accept.ToString();
-        if (!string.IsNullOrWhiteSpace(acceptHeader) &&
-            !acceptHeader.Contains("*/*", StringComparison.OrdinalIgnoreCase) &&
-            !acceptHeader.Contains("application/vnd.oai.openapi+json", StringComparison.OrdinalIgnoreCase) &&
-            !acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase) &&
-            !acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase))
-        {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
-        }
-
-        // Serve pre-generated OpenAPI spec for AOT compatibility
-        // This avoids using Dictionary<string, object?> which is problematic for AOT compilation
-        string? openApiContent = null;
-        try
-        {
-            openApiContent = await GetOpenApiContentAsync(environment.ContentRootPath);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            openApiContent = null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(openApiContent))
-        {
-            return Results.Content(openApiContent, MediaTypes.OpenApi);
-        }
-
         // Fallback: serve minimal spec if file not found
         const string fallbackSpec = """
         {
@@ -250,40 +206,12 @@ internal static class CoreEndpoints
           "paths": {}
         }
         """;
-        return Results.Content(fallbackSpec, MediaTypes.OpenApi);
-    }
-
-    private static IResult CreateFormatError(HttpContext context, IResult? formatError)
-    {
-        if (formatError is BadRequest<string> badRequest)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
-        }
-
-        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
-        {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
-        }
-
-        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
-    }
-
-    private static Task<string?> GetOpenApiContentAsync(string contentRootPath)
-    {
-        var rootPath = Path.GetFullPath(contentRootPath);
-        var cacheEntry = _openApiCache.GetOrAdd(rootPath, _ => new Lazy<Task<string?>>(
-            () => ReadOpenApiContentAsync(rootPath)));
-        return cacheEntry.Value;
-    }
-
-    private static async Task<string?> ReadOpenApiContentAsync(string contentRootPath)
-    {
-        var openApiPath = Path.Combine(contentRootPath, "openapi.json");
-        if (!File.Exists(openApiPath))
-        {
-            return null;
-        }
-
-        return await File.ReadAllTextAsync(openApiPath);
+        return await OgcOpenApiSpecUtilities.GetOpenApiSpecAsync(
+            context,
+            f,
+            environment,
+            OgcFeaturesUtilities.AllowedQueryParameters.OpenApi,
+            "openapi.json",
+            fallbackSpec);
     }
 }

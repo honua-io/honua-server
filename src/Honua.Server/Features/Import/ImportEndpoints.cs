@@ -7,6 +7,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
 using Microsoft.Extensions.Options;
@@ -164,13 +165,13 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        CancellationToken cancellationToken = GetTimeoutAwareCancellationToken(context);
+        CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
         IFormFile? file = GetFormFile(form, "file", "File");
 
         if (file == null || file.Length == 0)
         {
-            await WriteErrorAsync(context, "File is empty", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "File is empty", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -183,7 +184,7 @@ internal static partial class ImportEndpoints
             cancellationToken);
         if (!previewValidation.IsValid)
         {
-            await WriteErrorAsync(context, previewValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, previewValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -191,7 +192,7 @@ internal static partial class ImportEndpoints
         var extension = Path.GetExtension(safeFileName);
         if (string.Equals(extension, ".shp", StringComparison.OrdinalIgnoreCase))
         {
-            await WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
+            await AdminResponseWriter.WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -199,7 +200,7 @@ internal static partial class ImportEndpoints
         SupportedFileFormat? format = importService.DetectFormat(safeFileName);
         if (format == null)
         {
-            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
+            await AdminResponseWriter.WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -219,13 +220,13 @@ internal static partial class ImportEndpoints
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
-            await WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
-            await WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status500InternalServerError);
+            await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -245,27 +246,29 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        CancellationToken cancellationToken = GetTimeoutAwareCancellationToken(context);
+        CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
 
         IFormFile? file = GetFormFile(form, "File", "file");
         if (file == null || file.Length == 0)
         {
-            await WriteErrorAsync(context, "File is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "File is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         string tableName = form["TableName"].ToString();
         if (string.IsNullOrWhiteSpace(tableName))
         {
-            await WriteErrorAsync(context, "Table name is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Table name is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         // Validate table name (basic SQL injection prevention)
-        if (!IsValidTableName(tableName))
+        if (!ImportValidationHelpers.IsValidTableName(tableName))
         {
-            await WriteErrorAsync(context, "Invalid table name. Use only letters, numbers, and underscores.",
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Invalid table name. Use only letters, numbers, and underscores.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -280,7 +283,7 @@ internal static partial class ImportEndpoints
             cancellationToken);
         if (!uploadValidation.IsValid)
         {
-            await WriteErrorAsync(context, uploadValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, uploadValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -288,7 +291,7 @@ internal static partial class ImportEndpoints
         var extension = Path.GetExtension(safeFileName);
         if (string.Equals(extension, ".shp", StringComparison.OrdinalIgnoreCase))
         {
-            await WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
+            await AdminResponseWriter.WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -296,7 +299,7 @@ internal static partial class ImportEndpoints
         SupportedFileFormat? format = importService.DetectFormat(safeFileName);
         if (format == null)
         {
-            await WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
+            await AdminResponseWriter.WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -371,7 +374,7 @@ internal static partial class ImportEndpoints
                 var uploadResult = await cloudStorage.UploadAsync(uploadRequest, cancellationToken);
                 if (!uploadResult.Success)
                 {
-                    await WriteErrorAsync(context, $"Failed to upload file to cloud storage: {uploadResult.ErrorMessage}",
+                    await AdminResponseWriter.WriteErrorAsync(context, $"Failed to upload file to cloud storage: {uploadResult.ErrorMessage}",
                         StatusCodes.Status500InternalServerError);
                     return;
                 }
@@ -417,7 +420,7 @@ internal static partial class ImportEndpoints
                     var jobService = context.RequestServices.GetService<IImportJobService>();
                     if (jobService == null)
                     {
-                        await WriteErrorAsync(context,
+                        await AdminResponseWriter.WriteErrorAsync(context,
                             "Background import service not available. File is too large for synchronous import.",
                             StatusCodes.Status503ServiceUnavailable);
                         return;
@@ -462,13 +465,13 @@ internal static partial class ImportEndpoints
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, tableName, ex);
             // Provide generic error message - details logged for debugging
-            await WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, tableName, ex);
-            await WriteErrorAsync(context, "Import failed", StatusCodes.Status500InternalServerError);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import failed", StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -513,14 +516,14 @@ internal static partial class ImportEndpoints
         var uploadId = context.GetRouteValue("uploadId")?.ToString();
         if (string.IsNullOrEmpty(uploadId))
         {
-            await WriteErrorAsync(context, "Upload ID is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Upload ID is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
         {
-            await WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -529,7 +532,7 @@ internal static partial class ImportEndpoints
 
         if (progress == null)
         {
-            await WriteErrorAsync(context, "Upload not found", StatusCodes.Status404NotFound);
+            await AdminResponseWriter.WriteErrorAsync(context, "Upload not found", StatusCodes.Status404NotFound);
             return;
         }
 
@@ -555,14 +558,14 @@ internal static partial class ImportEndpoints
         var uploadId = context.GetRouteValue("uploadId")?.ToString();
         if (string.IsNullOrEmpty(uploadId))
         {
-            await WriteErrorAsync(context, "Upload ID is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Upload ID is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
         {
-            await WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -571,7 +574,7 @@ internal static partial class ImportEndpoints
 
         if (!cancelled)
         {
-            await WriteErrorAsync(context, "Upload not found or already completed", StatusCodes.Status404NotFound);
+            await AdminResponseWriter.WriteErrorAsync(context, "Upload not found or already completed", StatusCodes.Status404NotFound);
             return;
         }
 
@@ -598,7 +601,7 @@ internal static partial class ImportEndpoints
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
         {
-            await WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -628,7 +631,7 @@ internal static partial class ImportEndpoints
         var jobService = context.RequestServices.GetService<IImportJobService>();
         if (jobService == null)
         {
-            await WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -645,7 +648,7 @@ internal static partial class ImportEndpoints
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, "jobs", ex);
-            await WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
         }
     }
 
@@ -667,14 +670,14 @@ internal static partial class ImportEndpoints
         var jobId = context.GetRouteValue("jobId")?.ToString();
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         var jobService = context.RequestServices.GetService<IImportJobService>();
         if (jobService == null)
         {
-            await WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -685,7 +688,7 @@ internal static partial class ImportEndpoints
 
             if (progress == null)
             {
-                await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+                await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
                 return;
             }
 
@@ -696,7 +699,7 @@ internal static partial class ImportEndpoints
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, jobId, ex);
-            await WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
         }
     }
 
@@ -718,14 +721,14 @@ internal static partial class ImportEndpoints
         var jobId = context.GetRouteValue("jobId")?.ToString();
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         var jobService = context.RequestServices.GetService<IImportJobService>();
         if (jobService == null)
         {
-            await WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
@@ -736,7 +739,7 @@ internal static partial class ImportEndpoints
 
             if (!cancelled)
             {
-                await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+                await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
                 return;
             }
 
@@ -753,31 +756,8 @@ internal static partial class ImportEndpoints
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, jobId, ex);
-            await WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
         }
-    }
-
-    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            return timeoutToken;
-        }
-
-        return context.RequestAborted;
-    }
-
-    /// <summary>
-    /// Validate table name to prevent SQL injection
-    /// </summary>
-    private static bool IsValidTableName(string tableName)
-    {
-        if (string.IsNullOrWhiteSpace(tableName) || tableName.Length > 63) // PostgreSQL limit
-            return false;
-
-        // Allow letters, numbers, underscores; must start with letter or underscore
-        return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
-               (char.IsLetter(tableName[0]) || tableName[0] == '_');
     }
 
     private static IFormFile? GetFormFile(IFormCollection form, string primaryName, string fallbackName) => form.Files.GetFile(primaryName) ?? form.Files.GetFile(fallbackName);
@@ -812,11 +792,6 @@ internal static partial class ImportEndpoints
         public static partial void ProgressUpdateFailed(ILogger logger, string uploadId, Exception exception);
     }
 
-    private static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
-    {
-        IResult result = ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
-        return result.ExecuteAsync(context);
-    }
 }
 
 /// <summary>

@@ -94,9 +94,9 @@ internal sealed class OgcFilterProcessor
     {
         try
         {
-            var filterLang = GetQueryValue(request, "filter-lang");
-            var filterCrs = GetQueryValue(request, "filter-crs");
-            var bboxCrs = GetQueryValue(request, "bbox-crs");
+            var filterLang = OgcCommonUtilities.GetQueryValue(request, "filter-lang");
+            var filterCrs = OgcCommonUtilities.GetQueryValue(request, "filter-crs");
+            var bboxCrs = OgcCommonUtilities.GetQueryValue(request, "bbox-crs");
 
             var filterLangResult = TryResolveFilterLanguage(filterLang);
             if (!filterLangResult.IsSuccess)
@@ -368,17 +368,6 @@ internal sealed class OgcFilterProcessor
         }
 
         return TemporalFilterResult.Success(result.TemporalFilter);
-    }
-
-    private static string? GetQueryValue(HttpRequest request, string key)
-    {
-        if (!request.Query.TryGetValue(key, out var values))
-        {
-            return null;
-        }
-
-        var value = values.ToString();
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static FilterExpression? CombineFilters(FilterExpression? left, FilterExpression? right)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -40,6 +41,19 @@ internal static class RouteValidationHelpers
     }
 
     /// <summary>
+    /// Validates serviceId and returns a standardized error result when missing or invalid.
+    /// </summary>
+    public static IResult? ValidateServiceId(HttpContext context, out string serviceId)
+    {
+        if (TryValidateServiceId(context, out serviceId))
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateBadRequest(context, "Service ID is required");
+    }
+
+    /// <summary>
     /// Validates and extracts layerId from route values
     /// </summary>
     /// <param name="context">HTTP context</param>
@@ -51,6 +65,19 @@ internal static class RouteValidationHelpers
         var result = validator.ValidateLayerId(context);
         layerId = result.IsValid ? result.Value : default;
         return result.IsValid;
+    }
+
+    /// <summary>
+    /// Validates layerId and returns a standardized error result when missing or invalid.
+    /// </summary>
+    public static IResult? ValidateLayerId(HttpContext context, out int layerId)
+    {
+        if (TryValidateLayerId(context, out layerId))
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateBadRequest(context, "Layer ID is required");
     }
 
     /// <summary>

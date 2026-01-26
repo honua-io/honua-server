@@ -232,7 +232,7 @@ internal sealed partial class EsriImportService : IEsriImportService
         // Add attribute fields
         foreach (var field in layerInfo.Fields)
         {
-            if (field.IsObjectId)
+            if (field.IsObjectId || IsGeometryField(field))
                 continue; // We use fid instead
 
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
@@ -278,6 +278,9 @@ internal sealed partial class EsriImportService : IEsriImportService
         };
     }
 
+    private static bool IsGeometryField(EsriFieldInfo field)
+        => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
+
 
     private async Task<(int inserted, int failed)> InsertFeaturesAsync(
         string tableName,
@@ -288,11 +291,12 @@ internal sealed partial class EsriImportService : IEsriImportService
     {
         var inserted = 0;
         var failed = 0;
+        string? firstError = null;
 
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
         // Build insert statement
-        var fields = layerInfo.Fields.Where(f => !f.IsObjectId).ToArray();
+        var fields = layerInfo.Fields.Where(f => !f.IsObjectId && !IsGeometryField(f)).ToArray();
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
 
         var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
@@ -334,11 +338,13 @@ internal sealed partial class EsriImportService : IEsriImportService
                 if (hasGeometry && feature.Geometry.HasValue)
                 {
                     var geoJson = ConvertEsriGeometryToGeoJson(feature.Geometry.Value);
-                    cmd.Parameters.AddWithValue("geom", NpgsqlDbType.Jsonb, geoJson ?? (object)DBNull.Value);
+                    var geomParam = cmd.Parameters.Add("geom", NpgsqlDbType.Text);
+                    geomParam.Value = geoJson ?? (object)DBNull.Value;
                 }
                 else if (hasGeometry)
                 {
-                    cmd.Parameters.AddWithValue("geom", DBNull.Value);
+                    var geomParam = cmd.Parameters.Add("geom", NpgsqlDbType.Text);
+                    geomParam.Value = DBNull.Value;
                 }
 
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
@@ -346,9 +352,15 @@ internal sealed partial class EsriImportService : IEsriImportService
             }
             catch (Exception ex)
             {
+                firstError ??= ex.Message;
                 Log.FeatureInsertFailed(_logger, ex.Message);
                 failed++;
             }
+        }
+
+        if (firstError is not null)
+        {
+            Log.FeatureInsertFailures(_logger, failed, firstError);
         }
 
         return (inserted, failed);
@@ -615,5 +627,9 @@ internal sealed partial class EsriImportService : IEsriImportService
 
         [LoggerMessage(7809, LogLevel.Debug, "Feature insert failed: {ErrorMessage}")]
         public static partial void FeatureInsertFailed(ILogger logger, string errorMessage);
+
+        [LoggerMessage(7810, LogLevel.Warning,
+            "Esri import encountered {FailedCount} insert failures. First error: {ErrorMessage}")]
+        public static partial void FeatureInsertFailures(ILogger logger, int failedCount, string errorMessage);
     }
 }

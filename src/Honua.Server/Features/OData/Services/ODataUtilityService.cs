@@ -174,14 +174,7 @@ internal static class ODataUtilityService
     /// Prefers the limits timeout token if available, otherwise uses request cancellation.
     /// </summary>
     public static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            return timeoutToken;
-        }
-
-        return context.RequestAborted;
-    }
+        => TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
     /// <summary>
     /// Builds an OData context URL for the given base URL and entity type.

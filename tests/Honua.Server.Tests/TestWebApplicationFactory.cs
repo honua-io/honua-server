@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -38,6 +39,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
             services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
             services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+            services.AddScoped<ILayerCatalog>(_ => new TestLayerCatalog());
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();
             services.AddScoped<IConnectionEncryptionService, NullConnectionEncryptionService>();
             services.AddScoped<ISecureConnectionResolver, NullSecureConnectionResolver>();

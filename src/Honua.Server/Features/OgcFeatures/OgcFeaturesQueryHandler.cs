@@ -25,7 +25,7 @@ using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
 using Honua.ServiceDefaults;
-using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -70,6 +70,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         try
         {
+            var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+            var collectionValidation = routeValidator.ValidateCollectionId(context);
+            if (!collectionValidation.IsValid || string.IsNullOrWhiteSpace(collectionValidation.Value))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    collectionValidation.ErrorMessage ?? "Collection ID is required.");
+            }
+
+            collectionId = collectionValidation.Value!;
+
             // Use centralized resource validation
             var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
             if (!collectionResult.IsValid)
@@ -105,7 +116,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
             // Use filter processor for comprehensive filter handling
@@ -277,6 +288,26 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         try
         {
+            var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+            var collectionValidation = routeValidator.ValidateCollectionId(context);
+            if (!collectionValidation.IsValid || string.IsNullOrWhiteSpace(collectionValidation.Value))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    collectionValidation.ErrorMessage ?? "Collection ID is required.");
+            }
+
+            var featureValidation = routeValidator.ValidateFeatureId(context);
+            if (!featureValidation.IsValid || string.IsNullOrWhiteSpace(featureValidation.Value))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    featureValidation.ErrorMessage ?? "Feature ID is required.");
+            }
+
+            collectionId = collectionValidation.Value!;
+            featureId = featureValidation.Value!;
+
             // Use centralized resource validation
             var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
             if (!collectionResult.IsValid)
@@ -311,7 +342,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
             var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
@@ -531,21 +562,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         return queryParts.Count > 0
             ? $"{basePath}?{string.Join("&", queryParts)}"
             : basePath;
-    }
-
-    private static IResult CreateFormatError(HttpContext context, IResult? formatError)
-    {
-        if (formatError is BadRequest<string> badRequest)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
-        }
-
-        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
-        {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
-        }
-
-        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
     }
 
     private static IResult FormatFeatureResponse<T>(

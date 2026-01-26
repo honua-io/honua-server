@@ -41,5 +41,6 @@ builder.Services.AddScoped(sp =>
     new HonuaApiClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("AdminApi")));
 builder.Services.AddScoped<ISecureConnectionsClient, SecureConnectionsClient>();
 builder.Services.AddScoped<ILayerPublishingClient, LayerPublishingClient>();
+builder.Services.AddScoped<IEsriImportClient, EsriImportClient>();
 
 await builder.Build().RunAsync();

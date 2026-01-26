@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -42,10 +43,12 @@ internal static class OgcResponseFormatter
     /// </summary>
     public static string BuildHtmlDocument(string title, string json)
     {
+        var encodedTitle = WebUtility.HtmlEncode(title);
+        var encodedJson = WebUtility.HtmlEncode(json);
         return $@"<!DOCTYPE html>
 <html>
 <head>
-    <title>{title}</title>
+    <title>{encodedTitle}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; }}
         pre {{ background: #f5f5f5; padding: 20px; border-radius: 5px; overflow: auto; }}
@@ -74,14 +77,14 @@ internal static class OgcResponseFormatter
     </style>
 </head>
 <body>
-    <h1 class=""title"">{title}</h1>
+    <h1 class=""title"">{encodedTitle}</h1>
     <div class=""metadata"">
         <h3>OGC API Features Response</h3>
         <p><strong>Content Type:</strong> application/geo+json</p>
         <p><strong>Generated:</strong> {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} UTC</p>
     </div>
     <div class=""json-container"">
-        <pre><code>{json}</code></pre>
+        <pre><code>{encodedJson}</code></pre>
     </div>
 </body>
 </html>";

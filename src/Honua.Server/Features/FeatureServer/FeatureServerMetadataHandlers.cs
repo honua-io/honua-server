@@ -46,9 +46,10 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
+        var serviceError = RouteValidationHelpers.ValidateServiceId(context, out string? serviceId);
+        if (serviceError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Service ID is required");
+            return serviceError;
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
@@ -135,14 +136,16 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out string? serviceId))
+        var serviceError = RouteValidationHelpers.ValidateServiceId(context, out string? serviceId);
+        if (serviceError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Service ID is required");
+            return serviceError;
         }
 
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out int layerId))
+        var layerError = RouteValidationHelpers.ValidateLayerId(context, out int layerId);
+        if (layerError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Layer ID is required");
+            return layerError;
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();

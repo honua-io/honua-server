@@ -73,7 +73,7 @@ internal sealed partial class ArcGisRestClient
             MaxRecordCount = serviceResponse.MaxRecordCount,
             Capabilities = ParseCapabilities(serviceResponse.Capabilities),
             Layers = layers.ToArray(),
-            Version = serviceResponse.CurrentVersion,
+            Version = FormatVersion(serviceResponse.CurrentVersion),
             SupportedQueryFormats = ParseQueryFormats(serviceResponse.SupportedQueryFormats)
         };
     }
@@ -323,7 +323,7 @@ internal sealed partial class ArcGisRestClient
             Type = f.Type ?? "esriFieldTypeString",
             Alias = f.Alias,
             Length = f.Length,
-            Nullable = f.Nullable
+            Nullable = f.Nullable ?? true
         }).ToArray();
     }
 
@@ -339,6 +339,22 @@ internal sealed partial class ArcGisRestClient
             Xmax = extent.Xmax,
             Ymax = extent.Ymax,
             SpatialReferenceWkid = extent.SpatialReference?.Wkid
+        };
+    }
+
+    private static string? FormatVersion(JsonElement? version)
+    {
+        if (version is null)
+        {
+            return null;
+        }
+
+        var element = version.Value;
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.String => element.GetString(),
+            _ => element.ToString()
         };
     }
 
@@ -401,7 +417,7 @@ internal sealed record ArcGisServiceResponse
     public string? Description { get; init; }
 
     [JsonPropertyName("currentVersion")]
-    public string? CurrentVersion { get; init; }
+    public JsonElement? CurrentVersion { get; init; }
 
     [JsonPropertyName("maxRecordCount")]
     public int? MaxRecordCount { get; init; }
@@ -506,7 +522,7 @@ internal sealed record ArcGisField
     public int? Length { get; init; }
 
     [JsonPropertyName("nullable")]
-    public bool Nullable { get; init; } = true;
+    public bool? Nullable { get; init; }
 }
 
 internal sealed record ArcGisCountResponse

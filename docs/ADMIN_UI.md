@@ -83,6 +83,18 @@ Use **Save & Test** (or the row-level test action) to validate connectivity.
 External secret references cannot be edited in place; delete and recreate the
 connection to update the reference.
 
+## Esri Service Import Wizard
+
+Use the Import page to ingest ArcGIS Server FeatureServer/MapServer layers into
+PostGIS.
+
+1. Paste an ArcGIS service URL and click **Discover** to list available layers.
+2. Select one or more layers, adjust the target table names, and choose options
+   (overwrite existing tables and auto-publish).
+3. Click **Start import** to queue jobs. Progress, warnings, and completion
+   status update live in the Import Jobs list. Failed or cancelled jobs can be
+   retried and active jobs can be cancelled.
+
 ## Tests
 
 ### bUnit

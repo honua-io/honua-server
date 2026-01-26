@@ -147,6 +147,10 @@ public sealed class DependencyInjectionLimitsTests
             if (paramType == typeof(CancellationToken))
                 continue;
 
+            // Skip delegates - these are typically handler-local callbacks, not DI services
+            if (typeof(Delegate).IsAssignableFrom(paramType))
+                continue;
+
             // Everything else is likely an injected service
             injectedCount++;
         }

@@ -217,5 +217,16 @@ internal static class DatabaseSchema
         return $"{columnName}->>'{escapedAttributeName}'";
     }
 
+    /// <summary>
+    /// Builds a JSON path expression using a parameter placeholder for the attribute name.
+    /// </summary>
+    /// <param name="parameterIndex">The SQL parameter index for the attribute name</param>
+    /// <param name="columnName">Base column name (default: attributes)</param>
+    /// <returns>PostgreSQL JSON path expression like "attributes->> $2"</returns>
+    public static string BuildJsonPathParameter(int parameterIndex, string columnName = AttributesColumn)
+    {
+        return $"{columnName}->> ${parameterIndex}";
+    }
+
     #endregion
 }

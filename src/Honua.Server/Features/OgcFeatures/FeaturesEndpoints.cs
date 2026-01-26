@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 
@@ -111,7 +112,7 @@ internal static partial class FeaturesEndpoints
         string? crs,
         OgcFeaturesQueryHandler queryHandler)
     {
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await queryHandler.HandleGetItemsAsync(
             collectionId, context, f, limit, offset, bbox, datetime, filter, crs, cancellationToken);
     }
@@ -127,7 +128,7 @@ internal static partial class FeaturesEndpoints
         string? crs,
         OgcFeaturesQueryHandler queryHandler)
     {
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await queryHandler.HandleGetItemAsync(
             collectionId, featureId, context, f, crs, cancellationToken);
     }
@@ -140,7 +141,7 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         OgcFeaturesCrudHandler crudHandler)
     {
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await crudHandler.HandleCreateFeatureAsync(collectionId, context, cancellationToken);
     }
 
@@ -153,7 +154,7 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         OgcFeaturesTransactionHandler transactionHandler)
     {
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         return await transactionHandler.HandleReplaceFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
@@ -167,7 +168,7 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         OgcFeaturesCrudHandler crudHandler)
     {
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await crudHandler.HandleDeleteFeatureAsync(collectionId, featureId, context, cancellationToken);
     }
 
@@ -179,20 +180,8 @@ internal static partial class FeaturesEndpoints
         HttpContext context,
         OgcFeaturesTransactionHandler transactionHandler)
     {
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await transactionHandler.HandleBatchOperationAsync(collectionId, context, cancellationToken);
     }
 
-    /// <summary>
-    /// Gets a timeout-aware cancellation token from the context.
-    /// </summary>
-    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            return timeoutToken;
-        }
-
-        return context.RequestAborted;
-    }
 }
