@@ -1,0 +1,205 @@
+<EditForm EditContext="_editContext">
+    <DataAnnotationsValidator />
+    <MudForm @ref="_form">
+        <MudStack Spacing="3">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="Model.Name"
+                                  Label="Connection name"
+                                  Required="true"
+                                  Disabled="@Model.IsEdit"
+                                  For="@(() => Model.Name)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="Model.Description"
+                                  Label="Description"
+                                  Lines="2"
+                                  For="@(() => Model.Description)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="Model.Host"
+                                  Label="Host"
+                                  Required="true"
+                                  For="@(() => Model.Host)" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudNumericField T="int" @bind-Value="Model.Port"
+                                     Label="Port"
+                                     Required="true"
+                                     For="@(() => Model.Port)" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="Model.DatabaseName"
+                                  Label="Database"
+                                  Required="true"
+                                  For="@(() => Model.DatabaseName)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="Model.Username"
+                                  Label="Username"
+                                  Required="true"
+                                  For="@(() => Model.Username)" />
+                </MudItem>
+            </MudGrid>
+
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Credentials</MudText>
+                <MudRadioGroup T="bool" @bind-Value="Model.UseSecretReference" Disabled="@Model.CredentialModeLocked">
+                    <MudRadio T="bool" Value="false">Managed (encrypted)</MudRadio>
+                    <MudRadio T="bool" Value="true">External secret</MudRadio>
+                </MudRadioGroup>
+                @if (Model.CredentialModeLocked)
+                {
+                    <MudText Typo="Typo.caption" Class="mt-1">Credential mode cannot be changed for existing connections.</MudText>
+                }
+
+                @if (Model.UseSecretReference)
+                {
+                    <MudGrid Class="mt-2">
+                        <MudItem xs="12" md="8">
+                            <MudTextField @bind-Value="Model.SecretReference"
+                                          Label="Secret reference"
+                                          Required="@(!Model.IsEdit)"
+                                          Disabled="@Model.CredentialModeLocked"
+                                          Placeholder="aws:secretsmanager:prod-db"
+                                          For="@(() => Model.SecretReference)" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="Model.SecretType"
+                                          Label="Secret type"
+                                          Required="@(!Model.IsEdit)"
+                                          Disabled="@Model.CredentialModeLocked"
+                                          Placeholder="aws / azure / env"
+                                          For="@(() => Model.SecretType)" />
+                        </MudItem>
+                    </MudGrid>
+                    <MudText Typo="Typo.caption" Class="mt-1">Secret values are resolved at runtime. Update references by deleting and recreating the connection.</MudText>
+                }
+                else
+                {
+                    <MudGrid Class="mt-2">
+                        <MudItem xs="12" md="6">
+                            <MudTextField @bind-Value="Model.Password"
+                                          Label="Password"
+                                          InputType="InputType.Password"
+                                          Required="@(!Model.IsEdit)"
+                                          For="@(() => Model.Password)" />
+                            @if (Model.IsEdit)
+                            {
+                                <MudText Typo="Typo.caption">Leave blank to keep the existing password.</MudText>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Security</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudSwitch T="bool" @bind-Value="Model.SslRequired" Color="Color.Primary" Label="Require SSL" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="string" @bind-Value="Model.SslMode" Label="SSL mode" Required="true" For="@(() => Model.SslMode)">
+                            @foreach (var mode in _sslModes)
+                            {
+                                <MudSelectItem Value="@mode" Disabled="@(Model.SslRequired && mode == "Disable")">@mode</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.caption" Class="mt-1">Passwords are encrypted and stored server-side. API responses never expose credentials.</MudText>
+            </MudPaper>
+
+            <MudPaper Class="pa-3" Elevation="0">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Connection string preview</MudText>
+                <MudTextField Value="@BuildPreview()" ReadOnly="true" Lines="2" Variant="Variant.Outlined" />
+            </MudPaper>
+
+            <ValidationSummary />
+
+            <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
+                <MudButton Variant="Variant.Text" OnClick="OnCancel" Disabled="@IsBusy">Cancel</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => SubmitAsync(true)" Disabled="@IsBusy">Save &amp; Test</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SubmitAsync(false)" Disabled="@IsBusy" data-testid="connection-save">Save</MudButton>
+            </MudStack>
+        </MudStack>
+    </MudForm>
+</EditForm>
+
+@code {
+    private static readonly string[] _sslModes =
+    [
+        "Disable",
+        "Allow",
+        "Prefer",
+        "Require",
+        "VerifyCA",
+        "VerifyFull"
+    ];
+
+    private MudForm? _form;
+    private EditContext? _editContext;
+
+    [Parameter, EditorRequired]
+    public ConnectionFormModel Model { get; set; } = new();
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnSubmit { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (_editContext == null || !ReferenceEquals(_editContext.Model, Model))
+        {
+            _editContext = new EditContext(Model);
+        }
+    }
+
+    private async Task SubmitAsync(bool runTest)
+    {
+        if (_form is null)
+        {
+            return;
+        }
+
+        var editContextValid = _editContext?.Validate() ?? false;
+        await _form.Validate();
+
+        if (_form.IsValid && editContextValid)
+        {
+            await OnSubmit.InvokeAsync(runTest);
+        }
+    }
+
+    private string BuildPreview()
+    {
+        if (string.IsNullOrWhiteSpace(Model.Host) ||
+            string.IsNullOrWhiteSpace(Model.DatabaseName) ||
+            string.IsNullOrWhiteSpace(Model.Username))
+        {
+            return "Complete the required fields to preview the connection string.";
+        }
+
+        var credential = Model.UseSecretReference
+            ? "Password=<secret reference>"
+            : string.IsNullOrWhiteSpace(Model.Password)
+                ? "Password=<hidden>"
+                : "Password=********";
+
+        return string.Join("; ", new[]
+        {
+            $"Host={Model.Host}",
+            $"Port={Model.Port}",
+            $"Database={Model.DatabaseName}",
+            $"Username={Model.Username}",
+            credential,
+            $"SslMode={Model.SslMode}"
+        });
+    }
+}

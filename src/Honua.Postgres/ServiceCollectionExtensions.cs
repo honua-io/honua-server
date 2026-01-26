@@ -94,6 +94,9 @@ internal static class ServiceCollectionExtensions
         // Register table discovery implementation
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
+        // Register layer publishing implementation
+        services.AddScoped<ILayerPublishingService, PostgreSqlLayerPublishingService>();
+
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
 
