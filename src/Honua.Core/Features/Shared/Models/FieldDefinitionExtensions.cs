@@ -92,7 +92,9 @@ public static class FieldDefinitionExtensions
             "ESRIFIELDTYPEOID" => "INTEGER",
             "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" => "INTEGER",
             "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" => "DOUBLE PRECISION",
-            "ESRIFIELDTYPESTRING" => length.HasValue && length > 0 ? $"VARCHAR({length})" : "TEXT",
+            "ESRIFIELDTYPESTRING" => length.HasValue && length > 0 && length <= 8000
+                ? $"VARCHAR({length})"
+                : "TEXT",
             "ESRIFIELDTYPEDATE" => "TIMESTAMP WITH TIME ZONE",
             "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" => "UUID",
             "ESRIFIELDTYPEBLOB" => "BYTEA",
