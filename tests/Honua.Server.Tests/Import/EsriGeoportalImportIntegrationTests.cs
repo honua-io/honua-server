@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Import;
 public sealed class EsriGeoportalImportIntegrationTests : IAsyncLifetime
 {
     private const string ExternalServicesEnv = "HONUA_TEST_ESRI_GEOPORTAL";
-    private static readonly EsriImportServiceCase[] ServiceCases =
+    private static readonly EsriImportServiceCase[] _serviceCases =
     [
         new("https://geodata.hawaii.gov/arcgis/rest/services/Infrastructure/MapServer", 10, "dams"),
         new("https://geodata.hawaii.gov/arcgis/rest/services/Infrastructure/MapServer", 12, "marine_sewerlines"),
@@ -44,7 +44,7 @@ public sealed class EsriGeoportalImportIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/esri/discover")]
     public async Task Discover_GeoportalServices_ReturnsLayerSummaries()
     {
-        foreach (var group in ServiceCases.GroupBy(service => service.ServiceUrl))
+        foreach (var group in _serviceCases.GroupBy(service => service.ServiceUrl))
         {
             var request = new { ServiceUrl = group.Key, TimeoutSeconds = 30 };
 
@@ -69,7 +69,7 @@ public sealed class EsriGeoportalImportIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/esri/start")]
     public async Task Import_GeoportalLayers_Completes()
     {
-        foreach (var serviceCase in ServiceCases)
+        foreach (var serviceCase in _serviceCases)
         {
             var tableName = $"{serviceCase.TablePrefix}_{Guid.NewGuid().ToString("N")[..8]}";
             var startRequest = new
