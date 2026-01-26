@@ -12,7 +12,6 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -65,7 +64,7 @@ internal static class CollectionsEndpoints
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
@@ -133,7 +132,7 @@ internal static class CollectionsEndpoints
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
             {
-                return CreateFormatError(context, formatError);
+                return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
             if (!int.TryParse(collectionId, out var layerId))
@@ -272,20 +271,6 @@ internal static class CollectionsEndpoints
         };
     }
 
-    private static IResult CreateFormatError(HttpContext context, IResult? formatError)
-    {
-        if (formatError is BadRequest<string> badRequest)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
-        }
-
-        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
-        {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
-        }
-
-        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
-    }
 }
 
 internal static partial class OgcTilesCollectionsEndpointLogging

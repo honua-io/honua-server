@@ -6,6 +6,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -150,6 +151,43 @@ internal static class OgcCommonUtilities
 
         error = Results.StatusCode(StatusCodes.Status406NotAcceptable);
         return false;
+    }
+
+    /// <summary>
+    /// Creates a standardized error response for invalid format negotiation.
+    /// </summary>
+    public static IResult CreateFormatError(HttpContext context, IResult? formatError)
+    {
+        if (formatError is BadRequest<string> badRequest)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, badRequest.Value ?? "Invalid format.");
+        }
+
+        if (formatError is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue)
+        {
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
+        }
+
+        return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
+    }
+
+    /// <summary>
+    /// Gets a query parameter value, optionally trimmed.
+    /// </summary>
+    public static string? GetQueryValue(HttpRequest request, string key, bool trim = true)
+    {
+        if (!request.Query.TryGetValue(key, out var values))
+        {
+            return null;
+        }
+
+        var value = values.ToString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return trim ? value.Trim() : value;
     }
 
     /// <summary>

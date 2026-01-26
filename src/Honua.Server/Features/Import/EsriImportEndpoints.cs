@@ -4,7 +4,7 @@
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Import;
 
@@ -62,7 +62,7 @@ internal static partial class EsriImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await WriteMethodNotAllowedAsync(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -78,20 +78,20 @@ internal static partial class EsriImportEndpoints
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
-            await WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
 
         if (request == null || string.IsNullOrWhiteSpace(request.ServiceUrl))
         {
-            await WriteErrorAsync(context, "ServiceUrl is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "ServiceUrl is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         if (!Uri.TryCreate(request.ServiceUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != "http" && uri.Scheme != "https"))
         {
-            await WriteErrorAsync(context, "ServiceUrl must be a valid HTTP(S) URL", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "ServiceUrl must be a valid HTTP(S) URL", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -130,21 +130,21 @@ internal static partial class EsriImportEndpoints
         catch (HttpRequestException ex)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
-            await WriteErrorAsync(context,
+            await AdminResponseWriter.WriteErrorAsync(context,
                 "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
-            await WriteErrorAsync(context,
+            await AdminResponseWriter.WriteErrorAsync(context,
                 "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
         }
         catch (Exception ex)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
-            await WriteErrorAsync(context,
+            await AdminResponseWriter.WriteErrorAsync(context,
                 "Failed to discover service",
                 StatusCodes.Status500InternalServerError);
         }
@@ -157,7 +157,7 @@ internal static partial class EsriImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await WriteMethodNotAllowedAsync(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -173,32 +173,32 @@ internal static partial class EsriImportEndpoints
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
-            await WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
 
         if (request == null)
         {
-            await WriteErrorAsync(context, "Request body is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Request body is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         // Validate required fields
         if (string.IsNullOrWhiteSpace(request.ServiceUrl))
         {
-            await WriteErrorAsync(context, "ServiceUrl is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "ServiceUrl is required", StatusCodes.Status400BadRequest);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(request.TableName))
         {
-            await WriteErrorAsync(context, "TableName is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "TableName is required", StatusCodes.Status400BadRequest);
             return;
         }
 
-        if (!IsValidTableName(request.TableName))
+        if (!ImportValidationHelpers.IsValidTableName(request.TableName))
         {
-            await WriteErrorAsync(context,
+            await AdminResponseWriter.WriteErrorAsync(context,
                 "Invalid table name. Use only letters, numbers, and underscores.",
                 StatusCodes.Status400BadRequest);
             return;
@@ -207,7 +207,7 @@ internal static partial class EsriImportEndpoints
         if (!Uri.TryCreate(request.ServiceUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != "http" && uri.Scheme != "https"))
         {
-            await WriteErrorAsync(context, "ServiceUrl must be a valid HTTP(S) URL", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "ServiceUrl must be a valid HTTP(S) URL", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -269,7 +269,7 @@ internal static partial class EsriImportEndpoints
         catch (Exception ex)
         {
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
-            await WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
+            await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -280,14 +280,14 @@ internal static partial class EsriImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowedAsync(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
         var jobId = context.GetRouteValue("jobId")?.ToString();
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -297,7 +297,7 @@ internal static partial class EsriImportEndpoints
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
         if (progress == null)
         {
-            await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
             return;
         }
 
@@ -312,14 +312,14 @@ internal static partial class EsriImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await WriteMethodNotAllowedAsync(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
         var jobId = context.GetRouteValue("jobId")?.ToString();
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            await WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, "Job ID is required", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -329,13 +329,13 @@ internal static partial class EsriImportEndpoints
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
         if (progress == null)
         {
-            await WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
             return;
         }
 
         if (!IsActiveStatus(progress.Status))
         {
-            await WriteErrorAsync(context,
+            await AdminResponseWriter.WriteErrorAsync(context,
                 $"Import job is already {progress.Status}",
                 StatusCodes.Status409Conflict);
             return;
@@ -370,7 +370,7 @@ internal static partial class EsriImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowedAsync(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -394,27 +394,11 @@ internal static partial class EsriImportEndpoints
             .ExecuteAsync(context);
     }
 
-    private static bool IsValidTableName(string tableName)
-    {
-        if (string.IsNullOrWhiteSpace(tableName) || tableName.Length > 63)
-            return false;
-
-        return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
-               (char.IsLetter(tableName[0]) || tableName[0] == '_');
-    }
-
     private static bool IsActiveStatus(EsriImportStatus status)
         => status is not (EsriImportStatus.Completed or EsriImportStatus.Failed or EsriImportStatus.Cancelled);
 
     private static ILogger<EsriImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<EsriImportEndpointsLog>>();
-
-    private static Task WriteErrorAsync(HttpContext context, string message, int statusCode) =>
-        ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message).ExecuteAsync(context);
-
-    private static Task WriteMethodNotAllowedAsync(HttpContext context) =>
-        ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status405MethodNotAllowed, "Method not allowed")
-            .ExecuteAsync(context);
 
     internal sealed class EsriImportEndpointsLog;
 

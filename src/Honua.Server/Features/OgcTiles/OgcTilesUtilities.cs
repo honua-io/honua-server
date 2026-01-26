@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 
@@ -149,12 +150,5 @@ internal static class OgcTilesUtilities
     }
 
     public static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            return timeoutToken;
-        }
-
-        return context.RequestAborted;
-    }
+        => TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 }

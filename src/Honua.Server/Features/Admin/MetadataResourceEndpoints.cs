@@ -1,12 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -64,7 +64,7 @@ internal static class MetadataResourceEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -77,7 +77,7 @@ internal static class MetadataResourceEndpoints
             context.RequestAborted);
 
         var response = ApiResponse<MetadataResource[]>.CreateSuccess(resources.ToArray());
-        await WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResourceArray);
+        await AdminResponseWriter.WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResourceArray);
     }
 
     private static async Task HandleGetResource(
@@ -90,7 +90,7 @@ internal static class MetadataResourceEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -109,7 +109,7 @@ internal static class MetadataResourceEndpoints
         }
 
         var response = ApiResponse<MetadataResource>.CreateSuccess(resource);
-        await WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
+        await AdminResponseWriter.WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
     }
 
     private static async Task HandleCreateResource(
@@ -121,7 +121,7 @@ internal static class MetadataResourceEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -177,7 +177,7 @@ internal static class MetadataResourceEndpoints
 
         context.Response.StatusCode = StatusCodes.Status201Created;
         var response = ApiResponse<MetadataResource>.CreateSuccess(result.Resource);
-        await WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
+        await AdminResponseWriter.WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
     }
 
     private static async Task HandleUpdateResource(
@@ -193,7 +193,7 @@ internal static class MetadataResourceEndpoints
     {
         if (!HttpMethods.IsPut(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -265,7 +265,7 @@ internal static class MetadataResourceEndpoints
         await store.StoreCompiledArtifactAsync(artifact, context.RequestAborted);
 
         var response = ApiResponse<MetadataResource>.CreateSuccess(updateResult.Resource);
-        await WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
+        await AdminResponseWriter.WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
     }
 
     private static async Task HandleDeleteResource(
@@ -278,7 +278,7 @@ internal static class MetadataResourceEndpoints
     {
         if (!HttpMethods.IsDelete(context.Request.Method))
         {
-            await WriteMethodNotAllowed(context);
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
             return;
         }
 
@@ -307,7 +307,7 @@ internal static class MetadataResourceEndpoints
         }
 
         var response = ApiResponse<object>.SuccessWithMessage("Resource deleted.");
-        await WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseObject);
+        await AdminResponseWriter.WriteJsonAsync(context, response, MetadataResourceJsonContext.Default.ApiResponseObject);
     }
 
     private static MetadataResource NormalizeResource(
@@ -393,24 +393,5 @@ internal static class MetadataResourceEndpoints
     }
 
     private static Task WriteError(HttpContext context, int statusCode, string message)
-    {
-        return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message).ExecuteAsync(context);
-    }
-
-    private static Task WriteMethodNotAllowed(HttpContext context)
-    {
-        return ProblemDetailsHelpers.CreateAdminProblem(
-            context,
-            StatusCodes.Status405MethodNotAllowed,
-            "Method not allowed").ExecuteAsync(context);
-    }
-
-    private static async Task WriteJsonAsync<T>(
-        HttpContext context,
-        T response,
-        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
-    {
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await JsonSerializer.SerializeAsync(context.Response.Body, response, typeInfo, context.RequestAborted);
-    }
+        => AdminResponseWriter.WriteErrorAsync(context, message, statusCode);
 }
