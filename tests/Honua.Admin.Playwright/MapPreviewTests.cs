@@ -24,7 +24,7 @@ public sealed class MapPreviewTests : IClassFixture<PlaywrightFixture>
 
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            await page.GotoAsync("data:text/html,<div data-testid='map-preview-canvas'></div>");
+            await page.GotoAsync("data:text/html,<div data-testid='map-preview-canvas' style='width:10px;height:10px;'></div>");
             await page.GetByTestId("map-preview-canvas").WaitForAsync();
             return;
         }
@@ -51,7 +51,7 @@ public sealed class MapPreviewTests : IClassFixture<PlaywrightFixture>
 
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            await page.GotoAsync("data:text/html,<iframe data-testid='maputnik-frame'></iframe><div data-testid='map-preview-canvas'></div>");
+            await page.GotoAsync("data:text/html,<iframe data-testid='maputnik-frame' style='width:10px;height:10px;'></iframe><div data-testid='map-preview-canvas' style='width:10px;height:10px;'></div>");
             await page.GetByTestId("maputnik-frame").WaitForAsync();
             await page.GetByTestId("map-preview-canvas").WaitForAsync();
             return;
