@@ -15,7 +15,6 @@ public interface ILayerStyleClient
 
 internal sealed class LayerStyleClient : ILayerStyleClient
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _httpClient;
 
     public LayerStyleClient(IHttpClientFactory httpClientFactory)
@@ -27,7 +26,7 @@ internal sealed class LayerStyleClient : ILayerStyleClient
     public async Task<ApiResult<LayerStyleResponse>> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default)
     {
         var response = await _httpClient.GetAsync($"metadata/layers/{layerId}/style", cancellationToken);
-        return await ReadResponseAsync<LayerStyleResponse>(response, cancellationToken);
+        return await ReadResponseAsync(response, cancellationToken);
     }
 
     public async Task<ApiResult<LayerStyleResponse>> UpdateLayerStyleAsync(
@@ -35,42 +34,43 @@ internal sealed class LayerStyleClient : ILayerStyleClient
         LayerStyleUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"metadata/layers/{layerId}/style", request, cancellationToken);
-        return await ReadResponseAsync<LayerStyleResponse>(response, cancellationToken);
+        using var content = JsonContent.Create(request, AdminJsonContext.Default.LayerStyleUpdateRequest);
+        var response = await _httpClient.PutAsync($"metadata/layers/{layerId}/style", content, cancellationToken);
+        return await ReadResponseAsync(response, cancellationToken);
     }
 
-    private static async Task<ApiResult<T>> ReadResponseAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<ApiResult<LayerStyleResponse>> ReadResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (!response.IsSuccessStatusCode)
         {
             var error = await ReadErrorAsync(response, cancellationToken);
-            return ApiResult.Fail<T>(error ?? response.ReasonPhrase ?? "Request failed.");
+            return ApiResult.Fail<LayerStyleResponse>(error ?? response.ReasonPhrase ?? "Request failed.");
         }
 
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(payload))
         {
-            return ApiResult.Fail<T>("Empty response from server.");
+            return ApiResult.Fail<LayerStyleResponse>("Empty response from server.");
         }
 
-        ApiResponse<T>? apiResponse;
+        ApiResponse<LayerStyleResponse>? apiResponse;
         try
         {
-            apiResponse = JsonSerializer.Deserialize<ApiResponse<T>>(payload, _jsonOptions);
+            apiResponse = JsonSerializer.Deserialize(payload, AdminJsonContext.Default.ApiResponseLayerStyleResponse);
         }
         catch (JsonException)
         {
-            return ApiResult.Fail<T>("Unable to parse response from server.");
+            return ApiResult.Fail<LayerStyleResponse>("Unable to parse response from server.");
         }
 
         if (apiResponse is null)
         {
-            return ApiResult.Fail<T>("Unable to parse response from server.");
+            return ApiResult.Fail<LayerStyleResponse>("Unable to parse response from server.");
         }
 
         if (!apiResponse.Success)
         {
-            return ApiResult.Fail<T>(apiResponse.Message ?? "Request failed.");
+            return ApiResult.Fail<LayerStyleResponse>(apiResponse.Message ?? "Request failed.");
         }
 
         return ApiResult.Ok(apiResponse.Data, apiResponse.Message);

@@ -231,7 +231,9 @@
 
         try
         {
-            var tileJson = await Http.GetFromJsonAsync<TileJsonResponse>($"/tiles/{_selectedLayerId.Value}/tile.json");
+            var tileJson = await Http.GetFromJsonAsync<TileJsonResponse>(
+                $"/tiles/{_selectedLayerId.Value}/tile.json",
+                AdminJsonContext.Default.Options);
             _mapBounds = tileJson?.Bounds;
         }
         catch (HttpRequestException)
