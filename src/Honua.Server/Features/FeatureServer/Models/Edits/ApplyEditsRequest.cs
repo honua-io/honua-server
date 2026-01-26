@@ -1,0 +1,120 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Text.Json.Serialization;
+
+namespace Honua.Server.Features.FeatureServer.Models;
+
+/// <summary>
+/// Request model for the applyEdits endpoint
+/// </summary>
+public class ApplyEditsRequest
+{
+    /// <summary>
+    /// Array of features to add
+    /// </summary>
+    [JsonPropertyName("adds")]
+    public GeoServicesFeature[]? Adds { get; set; }
+
+    /// <summary>
+    /// Array of features to update
+    /// </summary>
+    [JsonPropertyName("updates")]
+    public GeoServicesFeature[]? Updates { get; set; }
+
+    /// <summary>
+    /// Array of objectIds to delete
+    /// </summary>
+    [JsonPropertyName("deletes")]
+    public object[]? Deletes { get; set; }
+
+    /// <summary>
+    /// Whether to rollback all changes on failure
+    /// </summary>
+    [JsonPropertyName("rollbackOnFailure")]
+    public bool RollbackOnFailure { get; set; } = false; // GeoServices default is partial success
+
+    /// <summary>
+    /// Whether to use global IDs
+    /// </summary>
+    [JsonPropertyName("useGlobalIds")]
+    public bool UseGlobalIds { get; set; } = false;
+}
+
+/// <summary>
+/// Response model for the applyEdits endpoint
+/// </summary>
+public class ApplyEditsResponse
+{
+    /// <summary>
+    /// Results of add operations
+    /// </summary>
+    [JsonPropertyName("addResults")]
+    public EditResult[]? AddResults { get; set; }
+
+    /// <summary>
+    /// Results of update operations
+    /// </summary>
+    [JsonPropertyName("updateResults")]
+    public EditResult[]? UpdateResults { get; set; }
+
+    /// <summary>
+    /// Results of delete operations
+    /// </summary>
+    [JsonPropertyName("deleteResults")]
+    public EditResult[]? DeleteResults { get; set; }
+
+    /// <summary>
+    /// Whether the entire transaction succeeded
+    /// </summary>
+    [JsonPropertyName("success")]
+    public bool Success { get; set; } = true;
+}
+
+/// <summary>
+/// Result of an individual edit operation
+/// </summary>
+public class EditResult
+{
+    /// <summary>
+    /// Object ID of the affected feature
+    /// </summary>
+    [JsonPropertyName("objectId")]
+    public long? ObjectId { get; set; }
+
+    /// <summary>
+    /// Global ID of the affected feature (if applicable)
+    /// </summary>
+    [JsonPropertyName("globalId")]
+    public string? GlobalId { get; set; }
+
+    /// <summary>
+    /// Whether this operation succeeded
+    /// </summary>
+    [JsonPropertyName("success")]
+    public bool Success { get; set; } = true;
+
+    /// <summary>
+    /// Error information if operation failed
+    /// </summary>
+    [JsonPropertyName("error")]
+    public EditError? Error { get; set; }
+}
+
+/// <summary>
+/// Error information for failed edit operations
+/// </summary>
+public class EditError
+{
+    /// <summary>
+    /// Error code
+    /// </summary>
+    [JsonPropertyName("code")]
+    public int Code { get; set; }
+
+    /// <summary>
+    /// Error description
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+}

@@ -384,8 +384,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         Action<NpgsqlCommand>? configureParameters,
         CancellationToken cancellationToken)
     {
-        // Prepared statements are only created for parameterized, internally-generated SQL.
-        // lgtm[cs/sql-injection]
         var command = new NpgsqlCommand(sql, connection);
         configureParameters?.Invoke(command);
 
