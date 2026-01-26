@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
@@ -13,10 +14,12 @@ namespace Honua.Server.Features.Infrastructure.Styling;
 internal sealed class LayerStyleService : ILayerStyleService
 {
     private readonly ILayerStyleCatalog _styleCatalog;
+    private readonly ILogger<LayerStyleService> _logger;
 
-    public LayerStyleService(ILayerStyleCatalog styleCatalog)
+    public LayerStyleService(ILayerStyleCatalog styleCatalog, ILogger<LayerStyleService> logger)
     {
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc />
@@ -93,7 +96,6 @@ internal sealed class LayerStyleService : ILayerStyleService
             }
 
             var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, layer);
-            _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, generatedDrawingInfoJson, cancellationToken).ConfigureAwait(false);
 
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
@@ -104,6 +106,11 @@ internal sealed class LayerStyleService : ILayerStyleService
         }
 
         var drawingInfoJson = drawingInfo!.Value.GetRawText();
+        if (TryGetRendererType(drawingInfo.Value, out var rendererType)
+            && !IsSupportedRendererType(rendererType))
+        {
+            LayerStyleLog.UnsupportedRendererType(_logger, rendererType ?? "unknown", layer.Id);
+        }
         var mapLibreJson = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, layer);
 
         var saved = await _styleCatalog.SetStyleAsync(layer.Id, mapLibreJson, drawingInfoJson, cancellationToken)
@@ -120,4 +127,27 @@ internal sealed class LayerStyleService : ILayerStyleService
                 StyleJsonUtilities.ParseJsonElement(drawingInfoJson)),
             null);
     }
+
+    private static bool TryGetRendererType(JsonElement drawingInfo, out string? rendererType)
+    {
+        rendererType = null;
+
+        if (!drawingInfo.TryGetProperty("renderer", out var renderer) || renderer.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (!renderer.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        rendererType = typeElement.GetString();
+        return !string.IsNullOrWhiteSpace(rendererType);
+    }
+
+    private static bool IsSupportedRendererType(string? rendererType)
+        => string.Equals(rendererType, "simple", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(rendererType, "uniqueValue", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(rendererType, "classBreaks", StringComparison.OrdinalIgnoreCase);
 }

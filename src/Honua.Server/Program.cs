@@ -266,6 +266,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.EsriImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
@@ -417,6 +418,9 @@ app.MapLayerPublishingEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();
+
+// Configure admin layer style endpoints
+app.MapAdminLayerStyleEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
