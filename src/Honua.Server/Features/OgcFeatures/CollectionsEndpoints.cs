@@ -364,6 +364,14 @@ internal static class CollectionsEndpoints
                 title: "Queryables"
             ),
 
+            // Style link (MapLibre style JSON)
+            Link.Create(
+                href: $"{baseUrl}/api/styles/{layer.Id}.json",
+                rel: RelationTypes.Style,
+                type: MediaTypes.Json,
+                title: "Style"
+            ),
+
             // Tilesets list link (OGC API Tiles)
             Link.Create(
                 href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
