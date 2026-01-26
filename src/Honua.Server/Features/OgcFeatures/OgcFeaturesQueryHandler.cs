@@ -26,6 +26,7 @@ using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -70,6 +71,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         try
         {
+            var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+            var collectionValidation = routeValidator.ValidateCollectionId(context);
+            if (!collectionValidation.IsValid || string.IsNullOrWhiteSpace(collectionValidation.Value))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    collectionValidation.ErrorMessage ?? "Collection ID is required.");
+            }
+
+            collectionId = collectionValidation.Value!;
+
             // Use centralized resource validation
             var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
             if (!collectionResult.IsValid)
@@ -277,6 +289,26 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         try
         {
+            var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+            var collectionValidation = routeValidator.ValidateCollectionId(context);
+            if (!collectionValidation.IsValid || string.IsNullOrWhiteSpace(collectionValidation.Value))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    collectionValidation.ErrorMessage ?? "Collection ID is required.");
+            }
+
+            var featureValidation = routeValidator.ValidateFeatureId(context);
+            if (!featureValidation.IsValid || string.IsNullOrWhiteSpace(featureValidation.Value))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    featureValidation.ErrorMessage ?? "Feature ID is required.");
+            }
+
+            collectionId = collectionValidation.Value!;
+            featureId = featureValidation.Value!;
+
             // Use centralized resource validation
             var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
             if (!collectionResult.IsValid)

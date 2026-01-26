@@ -11,6 +11,8 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Validation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -331,17 +333,27 @@ internal static class AttachmentEndpoints
         HttpContext context,
         AccessScope scope = AccessScope.Read)
     {
-        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
+        var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+        var serviceResult = routeValidator.ValidateServiceId(context);
+        if (!serviceResult.IsValid || string.IsNullOrWhiteSpace(serviceResult.Value))
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Service ID is required");
+            await RouteValidationHelpers.WriteValidationErrorAsync(
+                context,
+                serviceResult.ErrorMessage ?? "Service ID is required");
             return null;
         }
 
-        if (!RouteValidationHelpers.TryValidateLayerId(context, out var layerId))
+        var layerResult = routeValidator.ValidateLayerId(context);
+        if (!layerResult.IsValid)
         {
-            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Layer ID must be a valid integer");
+            await RouteValidationHelpers.WriteValidationErrorAsync(
+                context,
+                layerResult.ErrorMessage ?? "Layer ID must be a valid integer");
             return null;
         }
+
+        var serviceId = serviceResult.Value!;
+        var layerId = layerResult.Value;
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();

@@ -10,10 +10,12 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -161,7 +163,6 @@ internal static class CollectionsEndpoints
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
         try
         {
@@ -176,11 +177,18 @@ internal static class CollectionsEndpoints
                 return CreateFormatError(context, formatError);
             }
 
-            if (!int.TryParse(collectionId, out var layerId))
+            if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
             {
+                if (errorResult != null)
+                {
+                    return errorResult;
+                }
+
                 OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
+
+            collectionId = resolvedCollectionId;
 
             var cancellationToken = GetTimeoutAwareCancellationToken(context);
             var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
@@ -262,11 +270,19 @@ internal static class CollectionsEndpoints
                 return CreateFormatError(context, formatError);
             }
 
-            if (!int.TryParse(collectionId, out var layerId))
+            if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
             {
+                if (errorResult != null)
+                {
+                    return errorResult;
+                }
+
                 OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
+
+            collectionId = resolvedCollectionId;
+            OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
             // Verify collection/layer exists
             var effectiveToken = GetTimeoutAwareCancellationToken(context);
@@ -524,6 +540,36 @@ internal static class CollectionsEndpoints
         }
 
         return StandardErrorHelpers.CreateBadRequest(context, "Invalid format.");
+    }
+
+    private static bool TryResolveCollectionId(
+        HttpContext context,
+        string collectionId,
+        out string resolvedCollectionId,
+        out int layerId,
+        out IResult? errorResult)
+    {
+        resolvedCollectionId = collectionId;
+        layerId = default;
+        errorResult = null;
+
+        var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
+        var collectionResult = routeValidator.ValidateCollectionId(context);
+        if (!collectionResult.IsValid || string.IsNullOrWhiteSpace(collectionResult.Value))
+        {
+            errorResult = StandardErrorHelpers.CreateBadRequest(
+                context,
+                collectionResult.ErrorMessage ?? "Collection ID is required.");
+            return false;
+        }
+
+        resolvedCollectionId = collectionResult.Value!;
+        if (!int.TryParse(resolvedCollectionId, out layerId))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

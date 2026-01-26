@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Validation.Abstractions;
@@ -265,10 +266,12 @@ internal static class OgcCommonUtilities
 
     private static string BuildHtmlDocument(string title, string json)
     {
+        var encodedTitle = WebUtility.HtmlEncode(title);
+        var encodedJson = WebUtility.HtmlEncode(json);
         return $@"<!DOCTYPE html>
 <html>
 <head>
-    <title>{title}</title>
+    <title>{encodedTitle}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; }}
         pre {{ background: #f5f5f5; padding: 20px; border-radius: 5px; overflow: auto; }}
@@ -276,8 +279,8 @@ internal static class OgcCommonUtilities
     </style>
 </head>
 <body>
-    <h1 class=""title"">{title}</h1>
-    <pre><code>{json}</code></pre>
+    <h1 class=""title"">{encodedTitle}</h1>
+    <pre><code>{encodedJson}</code></pre>
 </body>
 </html>";
     }
