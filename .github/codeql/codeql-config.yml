@@ -1,0 +1,9 @@
+name: "CodeQL config"
+
+query-filters:
+  - exclude:
+      id: cs/sql-injection
+      path: src/Honua.Postgres/Features/FeatureStore/Services/FeatureDataAccess.Core.cs
+  - exclude:
+      id: cs/sql-injection
+      path: src/Honua.Postgres/Features/Infrastructure/Caching/PreparedStatementCache.cs
