@@ -33,5 +33,7 @@ public sealed class AdminSmokeTests : IClassFixture<PlaywrightFixture>
         await page.GotoAsync(baseUrl);
         await page.GetByTestId("nav-dashboard").WaitForAsync();
         await page.GetByTestId("nav-connections").WaitForAsync();
+        await page.GetByTestId("nav-preview").WaitForAsync();
+        await page.GetByTestId("nav-styles").WaitForAsync();
     }
 }

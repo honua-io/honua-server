@@ -1,0 +1,209 @@
+@using System.Text.Json
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="map-preview" data-testid="map-preview">
+    <div id="@_containerId" class="map-preview__canvas" data-testid="map-preview-canvas"></div>
+    @if (!_mapInitialized)
+    {
+        <div class="map-preview__empty">@EmptyMessage</div>
+    }
+    <FeaturePopup Attributes="_featureAttributes" OnClose="ClearFeature" />
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_mapError))
+{
+    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_mapError</MudAlert>
+}
+
+@code {
+    private readonly string _containerId = $"map-preview-{Guid.NewGuid():N}";
+    private DotNetObjectReference<MapPreview>? _dotNetRef;
+    private IReadOnlyList<KeyValuePair<string, string>>? _featureAttributes;
+    private string? _mapError;
+    private bool _mapInitialized;
+    private bool _pendingRemoval;
+    private string? _pendingStyleJson;
+    private string? _activeStyleJson;
+    private double[]? _pendingBounds;
+    private double[]? _activeBounds;
+
+    [Parameter] public JsonElement? Style { get; set; }
+    [Parameter] public double[]? Bounds { get; set; }
+    [Parameter] public string EmptyMessage { get; set; } = "Select a layer to preview.";
+
+    protected override void OnParametersSet()
+    {
+        if (!Style.HasValue)
+        {
+            _pendingStyleJson = null;
+            _pendingBounds = null;
+            _pendingRemoval = true;
+            return;
+        }
+
+        _pendingRemoval = false;
+        _pendingStyleJson = Style.Value.GetRawText();
+        _pendingBounds = Bounds;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+        }
+
+        if (_pendingRemoval && _mapInitialized)
+        {
+            await JS.InvokeVoidAsync("maplibreInterop.removeMap", _containerId);
+            _mapInitialized = false;
+            _activeStyleJson = null;
+            _activeBounds = null;
+            _pendingRemoval = false;
+            _featureAttributes = null;
+            _mapError = null;
+            StateHasChanged();
+            return;
+        }
+
+        if (!_mapInitialized)
+        {
+            if (!string.IsNullOrWhiteSpace(_pendingStyleJson))
+            {
+                await CreateMapAsync(_pendingStyleJson, _pendingBounds);
+            }
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_pendingStyleJson) && _pendingStyleJson != _activeStyleJson)
+        {
+            await JS.InvokeVoidAsync("maplibreInterop.updateStyle", _containerId, _pendingStyleJson, new
+            {
+                bounds = _pendingBounds
+            });
+            _activeStyleJson = _pendingStyleJson;
+            _activeBounds = _pendingBounds;
+            return;
+        }
+
+        if (!BoundsEqual(_activeBounds, _pendingBounds))
+        {
+            await JS.InvokeVoidAsync("maplibreInterop.fitBounds", _containerId, _pendingBounds);
+            _activeBounds = _pendingBounds;
+        }
+    }
+
+    private async Task CreateMapAsync(string styleJson, double[]? bounds)
+    {
+        await JS.InvokeVoidAsync("maplibreInterop.createMap", _containerId, styleJson, new
+        {
+            bounds
+        }, _dotNetRef);
+        _mapInitialized = true;
+        _activeStyleJson = styleJson;
+        _activeBounds = bounds;
+    }
+
+    [JSInvokable]
+    public void OnMapError(string message)
+    {
+        _mapError = message;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnMapLoaded()
+    {
+        _mapError = null;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnFeatureSelected(string? featureJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureJson))
+        {
+            _featureAttributes = null;
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureJson);
+            var list = new List<KeyValuePair<string, string>>();
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                list.Add(new KeyValuePair<string, string>(property.Name, FormatValue(property.Value)));
+            }
+
+            _featureAttributes = list.Count > 0 ? list : null;
+        }
+        catch (JsonException)
+        {
+            _featureAttributes = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private void ClearFeature()
+    {
+        _featureAttributes = null;
+        StateHasChanged();
+    }
+
+    private static string FormatValue(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.ToString() ?? string.Empty,
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => string.Empty,
+            JsonValueKind.Object => value.GetRawText(),
+            JsonValueKind.Array => value.GetRawText(),
+            _ => value.ToString() ?? string.Empty
+        };
+    }
+
+    private static bool BoundsEqual(double[]? left, double[]? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left is null || right is null)
+        {
+            return false;
+        }
+
+        if (left.Length != right.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < left.Length; i++)
+        {
+            if (Math.Abs(left[i] - right[i]) > 0.00001)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_mapInitialized)
+        {
+            await JS.InvokeVoidAsync("maplibreInterop.removeMap", _containerId);
+        }
+
+        _dotNetRef?.Dispose();
+    }
+}

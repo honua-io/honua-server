@@ -95,6 +95,26 @@ PostGIS.
    status update live in the Import Jobs list. Failed or cancelled jobs can be
    retried and active jobs can be cancelled.
 
+## Map Preview (MapLibre)
+
+The **Preview** page (`/admin/preview`) embeds MapLibre GL JS for validating
+published layers. Select a connection and layer to load vector tiles, then
+pan/zoom and click features to view attribute popups.
+
+MapLibre assets live under `src/Honua.Admin/wwwroot/lib/maplibre-gl/` and the
+interop helpers live in `src/Honua.Admin/wwwroot/js/maplibre-interop.js`.
+
+## Style Editor (Maputnik)
+
+The **Styles** page (`/admin/styles`) embeds Maputnik for visual MapLibre style
+editing. Select a layer, edit its style in Maputnik, and save to persist it via
+the admin style API. The right-hand preview updates live against Honua tile
+data.
+
+Maputnik assets are bundled under `src/Honua.Admin/wwwroot/maputnik/`. If you
+need to refresh the embedded editor, download the latest `dist.zip` from
+Maputnik releases and replace the contents of that directory.
+
 ## Tests
 
 ### bUnit
