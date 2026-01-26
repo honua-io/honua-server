@@ -29,7 +29,7 @@ public sealed class MapPreviewTests : IClassFixture<PlaywrightFixture>
             return;
         }
 
-        var previewUrl = baseUrl.EndsWith("/", StringComparison.Ordinal)
+        var previewUrl = baseUrl.EndsWith('/', StringComparison.Ordinal)
             ? $"{baseUrl}preview"
             : $"{baseUrl}/preview";
 
@@ -57,7 +57,7 @@ public sealed class MapPreviewTests : IClassFixture<PlaywrightFixture>
             return;
         }
 
-        var stylesUrl = baseUrl.EndsWith("/", StringComparison.Ordinal)
+        var stylesUrl = baseUrl.EndsWith('/', StringComparison.Ordinal)
             ? $"{baseUrl}styles"
             : $"{baseUrl}/styles";
 
