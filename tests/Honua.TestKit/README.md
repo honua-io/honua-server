@@ -149,6 +149,14 @@ Set `HONUA_TEST_REDIS_URL` to use an existing Redis instance instead of Testcont
 export HONUA_TEST_REDIS_URL="localhost:6379"
 ```
 
+#### External Service Tests (opt-in)
+
+Enable Geoportal-backed Esri import integration tests:
+
+```bash
+export HONUA_TEST_ESRI_GEOPORTAL="1"
+```
+
 #### Shared YAML Seed
 
 Apply shared YAML seed data to a schema:
