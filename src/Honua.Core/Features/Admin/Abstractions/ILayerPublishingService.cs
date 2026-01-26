@@ -1,0 +1,49 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Admin.Domain;
+
+namespace Honua.Core.Features.Admin.Abstractions;
+
+/// <summary>
+/// Service for publishing PostGIS tables as Honua layers.
+/// </summary>
+public interface ILayerPublishingService
+{
+    /// <summary>
+    /// List published layers for the specified connection.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="serviceName">Service name to evaluate enablement against.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
+        string connectionString,
+        string serviceName,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Publish a PostGIS table as a layer.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="request">Layer publish request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<PublishedLayerSummary> PublishLayerAsync(
+        string connectionString,
+        LayerPublishRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enable or disable a layer within a service.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="layerId">Layer identifier.</param>
+    /// <param name="serviceName">Service name.</param>
+    /// <param name="enabled">Whether the layer should be enabled.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<PublishedLayerSummary?> SetLayerEnabledAsync(
+        string connectionString,
+        int layerId,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default);
+}

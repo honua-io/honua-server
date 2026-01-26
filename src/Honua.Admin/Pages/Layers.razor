@@ -1,15 +1,330 @@
-﻿@page "/layers"
+@page "/layers"
+@using Honua.Admin.Components.Layers
+@using Honua.Admin.Models
+
+@inject ISecureConnectionsClient ConnectionsClient
+@inject ILayerPublishingClient LayerPublishingClient
+@inject ISnackbar Snackbar
 
 <PageTitle>Layers</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-2">Layers</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">
-    Publish layers from PostGIS and manage service exposure.
-</MudText>
+<MudStack Spacing="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h4">Layers</MudText>
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="RefreshAsync"
+                   Disabled="@(!_selectedConnectionId.HasValue)">
+            Refresh
+        </MudButton>
+    </MudStack>
 
-<MudPaper Class="pa-4" Elevation="1">
-    <MudText Typo="Typo.subtitle2">Coming soon</MudText>
     <MudText Typo="Typo.body2">
-        Layer publishing UI will land with issue #27.
+        Publish layers from PostGIS tables and manage service exposure.
     </MudText>
-</MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+    }
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Connection</MudText>
+        <MudSelect T="Guid?" Value="_selectedConnectionId" ValueChanged="HandleConnectionChanged" Label="Choose connection">
+            @foreach (var connection in _connections)
+            {
+                <MudSelectItem Value="@((Guid?)connection.ConnectionId)">@connection.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.subtitle2">Published layers</MudText>
+            @if (_isLoadingLayers)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            }
+        </MudStack>
+
+        <MudTable Items="_publishedLayers" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Source</MudTh>
+                <MudTh>Geometry</MudTh>
+                <MudTh>SRID</MudTh>
+                <MudTh>Enabled</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name">@context.LayerName</MudTd>
+                <MudTd DataLabel="Source">@($"{context.Schema}.{context.Table}")</MudTd>
+                <MudTd DataLabel="Geometry">@context.GeometryType</MudTd>
+                <MudTd DataLabel="SRID">@context.Srid</MudTd>
+                <MudTd DataLabel="Enabled">
+                    <MudSwitch T="bool"
+                               Value="@context.Enabled"
+                               Color="Color.Primary"
+                               Disabled="@_isToggling"
+                               ValueChanged="@(checkedValue => ToggleLayerAsync(context, checkedValue))" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2" Class="pa-4">No layers published yet.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.subtitle2">Available tables</MudText>
+            @if (_isLoadingTables)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            }
+        </MudStack>
+
+        <MudTable Items="_tables" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Table</MudTh>
+                <MudTh>Geometry</MudTh>
+                <MudTh>SRID</MudTh>
+                <MudTh>Rows (est)</MudTh>
+                <MudTh>Columns</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Table">@($"{context.Schema}.{context.Table}")</MudTd>
+                <MudTd DataLabel="Geometry">@context.GeometryType</MudTd>
+                <MudTd DataLabel="SRID">@context.Srid</MudTd>
+                <MudTd DataLabel="Rows (est)">@FormatRowCount(context.EstimatedRows)</MudTd>
+                <MudTd DataLabel="Columns">@context.Columns.Count</MudTd>
+                <MudTd Style="text-align: right;">
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Primary"
+                               OnClick="@(() => StartPublish(context))"
+                               Disabled="@(!_selectedConnectionId.HasValue)">
+                        Publish
+                    </MudButton>
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2" Class="pa-4">No spatial tables found.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+
+    <MudCollapse Expanded="@_showPublishForm">
+        @if (_publishModel is not null)
+        {
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Publish layer</MudText>
+                <LayerPublishForm Model="_publishModel"
+                                  IsBusy="_isPublishing"
+                                  OnSubmit="PublishLayerAsync"
+                                  OnCancel="CancelPublish" />
+            </MudPaper>
+        }
+    </MudCollapse>
+</MudStack>
+
+@code {
+    private readonly List<SecureConnectionSummary> _connections = new();
+    private readonly List<TableInfo> _tables = new();
+    private readonly List<PublishedLayerSummary> _publishedLayers = new();
+    private Guid? _selectedConnectionId;
+    private LayerPublishFormModel? _publishModel;
+    private bool _isLoadingTables;
+    private bool _isLoadingLayers;
+    private bool _isPublishing;
+    private bool _isToggling;
+    private bool _showPublishForm;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConnectionsAsync();
+        if (_selectedConnectionId.HasValue)
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        _errorMessage = null;
+        var result = await ConnectionsClient.GetConnectionsAsync();
+        if (!result.Success)
+        {
+            _errorMessage = result.Message ?? "Failed to load connections.";
+            return;
+        }
+
+        _connections.Clear();
+        _connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
+
+        if (_connections.Count > 0 && !_selectedConnectionId.HasValue)
+        {
+            _selectedConnectionId = _connections[0].ConnectionId;
+        }
+    }
+
+    private async Task HandleConnectionChanged(Guid? connectionId)
+    {
+        _selectedConnectionId = connectionId;
+        _showPublishForm = false;
+        _publishModel = null;
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            return;
+        }
+
+        await Task.WhenAll(LoadTablesAsync(), LoadPublishedLayersAsync());
+    }
+
+    private async Task LoadTablesAsync()
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            return;
+        }
+
+        _isLoadingTables = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var result = await LayerPublishingClient.GetTablesAsync(_selectedConnectionId.Value);
+        if (!result.Success || result.Data is null)
+        {
+            _errorMessage = result.Message ?? "Failed to load tables.";
+            _isLoadingTables = false;
+            return;
+        }
+
+        _tables.Clear();
+        _tables.AddRange(result.Data.Tables);
+        _isLoadingTables = false;
+    }
+
+    private async Task LoadPublishedLayersAsync()
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            return;
+        }
+
+        _isLoadingLayers = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var result = await LayerPublishingClient.GetPublishedLayersAsync(_selectedConnectionId.Value);
+        if (!result.Success)
+        {
+            _errorMessage = result.Message ?? "Failed to load layers.";
+            _isLoadingLayers = false;
+            return;
+        }
+
+        _publishedLayers.Clear();
+        _publishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
+        _isLoadingLayers = false;
+    }
+
+    private void StartPublish(TableInfo table)
+    {
+        _publishModel = LayerPublishFormModel.FromTable(table);
+        _showPublishForm = true;
+    }
+
+    private void CancelPublish()
+    {
+        _showPublishForm = false;
+        _publishModel = null;
+    }
+
+    private async Task PublishLayerAsync(LayerPublishFormModel model)
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            Snackbar.Add("Select a connection before publishing.", Severity.Warning);
+            return;
+        }
+
+        _isPublishing = true;
+        try
+        {
+            var selectedFields = model.Fields
+                .Where(field => field.IsSelected)
+                .Select(field => field.Name)
+                .ToArray();
+
+            var request = new PublishLayerRequest
+            {
+                Schema = model.Schema,
+                Table = model.Table,
+                LayerName = model.LayerName,
+                GeometryColumn = model.GeometryColumn,
+                GeometryType = model.GeometryType,
+                Srid = model.Srid,
+                PrimaryKey = model.PrimaryKey,
+                Fields = selectedFields,
+                Enabled = model.Enabled
+            };
+
+            var result = await LayerPublishingClient.PublishLayerAsync(_selectedConnectionId.Value, request);
+            if (!result.Success || result.Data is null)
+            {
+                Snackbar.Add(result.Message ?? "Failed to publish layer.", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add($"Layer '{result.Data.LayerName}' published.", Severity.Success);
+            await LoadPublishedLayersAsync();
+            _showPublishForm = false;
+            _publishModel = null;
+        }
+        finally
+        {
+            _isPublishing = false;
+        }
+    }
+
+    private async Task ToggleLayerAsync(PublishedLayerSummary layer, bool enabled)
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            return;
+        }
+
+        _isToggling = true;
+        try
+        {
+            var result = await LayerPublishingClient.SetLayerEnabledAsync(_selectedConnectionId.Value, layer.LayerId, enabled);
+            if (!result.Success || result.Data is null)
+            {
+                Snackbar.Add(result.Message ?? "Failed to update layer.", Severity.Error);
+                return;
+            }
+
+            var index = _publishedLayers.FindIndex(item => item.LayerId == layer.LayerId);
+            if (index >= 0)
+            {
+                _publishedLayers[index] = result.Data;
+            }
+        }
+        finally
+        {
+            _isToggling = false;
+        }
+    }
+
+    private static string FormatRowCount(long? rows)
+    {
+        return rows.HasValue ? rows.Value.ToString("N0") : "-";
+    }
+}

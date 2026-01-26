@@ -70,6 +70,19 @@ dotnet run --project src/Honua.Server
 Then open `http://localhost:8080/admin/` (integrated) or run the Admin UI
 standalone via `dotnet run --project src/Honua.Admin`.
 
+## Connections
+
+Use the Connections page to manage secure PostGIS connections. Provide the host,
+port, database, and username, then choose one credential mode:
+
+- **Managed (encrypted)**: supply a password; it is encrypted and stored server-side.
+- **External secret**: supply a secret reference (for example
+  `aws:secretsmanager:prod-db`) and a secret type.
+
+Use **Save & Test** (or the row-level test action) to validate connectivity.
+External secret references cannot be edited in place; delete and recreate the
+connection to update the reference.
+
 ## Tests
 
 ### bUnit
