@@ -134,8 +134,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
     private static NpgsqlCommand CreateSafeCommand(NpgsqlConnection connection, string sql)
     {
-        // lgtm[cs/sql-injection] SQL is constructed from allowlisted templates with parameterized inputs.
-        return new NpgsqlCommand(sql, connection);
+        return new NpgsqlCommand(sql, connection); // lgtm[cs/sql-injection] SQL is constructed from allowlisted templates with parameterized inputs.
     }
 
     private async Task<NpgsqlCommand> CreateCommandAsync(
