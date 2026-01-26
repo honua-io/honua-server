@@ -322,7 +322,11 @@ internal sealed partial class ODataSearchService
                     .Replace("_", "\\_");
 
                 var fieldConditions = textFields
-                    .Select(f => $"COALESCE(attributes->>'{f}', '') ILIKE '%{escapedTerm}%'")
+                    .Select(f =>
+                    {
+                        var escapedField = f.Replace("'", "''", StringComparison.Ordinal);
+                        return $"COALESCE(attributes->>'{escapedField}', '') ILIKE '%{escapedTerm}%'";
+                    })
                     .ToList();
 
                 var condition = $"({string.Join(" OR ", fieldConditions)})";

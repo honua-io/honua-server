@@ -40,6 +40,8 @@ internal sealed class OutputCacheInvalidationService
         {
             tags.Add($"layer:{layerId.Value}");
             tags.Add($"collection:{layerId.Value}");
+            tags.Add("layer-metadata");
+            tags.Add("layer-styles");
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(
