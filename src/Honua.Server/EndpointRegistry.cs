@@ -45,6 +45,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/resources"),
         new("PUT", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
         new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
 
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),

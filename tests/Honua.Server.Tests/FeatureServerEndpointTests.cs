@@ -356,6 +356,23 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task GetLayerMetadata_IncludesDrawingInfo()
+    {
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var layerResponse = JsonSerializer.Deserialize<LayerResponse>(
+            content, FeatureServerJsonContext.Default.LayerResponse);
+
+        layerResponse.Should().NotBeNull();
+        layerResponse!.DrawingInfo.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithNonExistentService_Returns404()
     {
         // Act
