@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.Infrastructure.Models;
@@ -26,6 +27,8 @@ internal static class StandardErrorResponseFormatter
     public static IResult FormatError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         options ??= new ErrorResponseFormatterOptions();
+
+        TryRecordRecentError(context, errorResponse);
 
         var path = context.Request.Path;
 
@@ -308,6 +311,18 @@ internal static class StandardErrorResponseFormatter
         var correlationId = context.TraceIdentifier;
         var timestamp = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
         return new ErrorMetadata(correlationId, timestamp);
+    }
+
+    private static void TryRecordRecentError(HttpContext context, StandardErrorResponse errorResponse)
+    {
+        var services = context.RequestServices;
+        if (services is null)
+        {
+            return;
+        }
+
+        var buffer = services.GetService<RecentErrorBuffer>();
+        buffer?.Record(context, errorResponse);
     }
 
 }

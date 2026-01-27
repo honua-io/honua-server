@@ -49,6 +49,7 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 min_scale double precision,
                 max_scale double precision,
                 default_visibility boolean NOT NULL DEFAULT true,
+                enabled boolean NOT NULL DEFAULT true,
                 extent geometry,
                 metadata jsonb
             );

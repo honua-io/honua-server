@@ -64,16 +64,17 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
                     ST_SRID(l.extent) as extent_srid
                 FROM honua.layers l
                 WHERE l.layer_id = $1
+                  AND l.enabled = TRUE
                 """),
 
             // Layer existence check - used for validation
-            new HighPriorityQuery("layer_exists", "SELECT 1 FROM honua.layers WHERE layer_id = $1"),
+            new HighPriorityQuery("layer_exists", "SELECT 1 FROM honua.layers WHERE layer_id = $1 AND enabled = TRUE"),
 
             // Service existence check - used for validation
             new HighPriorityQuery("service_exists", "SELECT 1 FROM honua.services WHERE LOWER(service_name) = LOWER($1)"),
 
             // Layer SRID lookup - used for spatial queries
-            new HighPriorityQuery("layer_srid", "SELECT srid FROM honua.layers WHERE layer_id = $1"),
+            new HighPriorityQuery("layer_srid", "SELECT srid FROM honua.layers WHERE layer_id = $1 AND enabled = TRUE"),
 
             // Feature count query - used for metadata and pagination
             new HighPriorityQuery("feature_count", $"SELECT COUNT(*) FROM {featuresTableName} WHERE layer_id = $1"),

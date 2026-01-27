@@ -56,6 +56,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 ST_SRID(l.extent) as extent_srid
             FROM {_layersTable} l
             WHERE l.layer_id = @layerId
+              AND l.enabled = TRUE
             """;
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -98,6 +99,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 ST_YMax(l.extent) as ymax,
                 ST_SRID(l.extent) as extent_srid
             FROM {_layersTable} l
+            WHERE l.enabled = TRUE
             ORDER BY l.layer_id
             """;
 
@@ -217,7 +219,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     /// <inheritdoc />
     public async Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        string sql = $"SELECT 1 FROM {_layersTable} WHERE layer_id = @layerId";
+        string sql = $"SELECT 1 FROM {_layersTable} WHERE layer_id = @layerId AND enabled = TRUE";
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);

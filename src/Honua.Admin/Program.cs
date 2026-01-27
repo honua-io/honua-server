@@ -32,9 +32,18 @@ builder.Services.AddHttpClient("AdminApi", (sp, client) =>
     var options = sp.GetRequiredService<IOptions<AdminApiOptions>>().Value;
     var baseUrl = AdminApiUrlResolver.Resolve(options.BaseUrl, builder.HostEnvironment.BaseAddress);
     var scopes = options.Scopes.Length == 0 ? ["honua.admin"] : options.Scopes;
+    var baseUri = new Uri(baseUrl, UriKind.Absolute);
+    var metricsUri = new Uri(baseUri, "/api/v1/metrics/");
+    var healthUri = new Uri(baseUri, "/healthz/");
+    var authorizedUrls = new[]
+    {
+        baseUri.ToString(),
+        metricsUri.ToString(),
+        healthUri.ToString()
+    };
 
     return sp.GetRequiredService<AuthorizationMessageHandler>()
-        .ConfigureHandler([baseUrl], scopes);
+        .ConfigureHandler(authorizedUrls, scopes);
 });
 
 builder.Services.AddScoped(sp =>

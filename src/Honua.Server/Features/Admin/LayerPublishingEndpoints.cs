@@ -39,6 +39,10 @@ internal static class LayerPublishingEndpoints
         group.MapPut("/{layerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        group.MapPut("/enabled", HandleSetServiceLayersEnabled)
+            .WithDisplayName("Set Service Layers Enabled")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
     private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
@@ -222,6 +226,60 @@ internal static class LayerPublishingEndpoints
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Layer toggle connection not found");
+            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return TypedResults.Forbid();
+        }
+    }
+
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+        HandleSetServiceLayersEnabled(
+            string id,
+            LayerEnabledRequest request,
+            string? serviceName,
+            ISecureConnectionResolver resolver,
+            ILayerPublishingService publishingService,
+            IDatabaseMigrationRunner migrationRunner,
+            HttpContext context,
+            ILogger<LayerPublishingEndpointsLog> logger)
+    {
+        try
+        {
+            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var migrationResult = await migrationRunner.RunMigrationsAsync(
+                connectionString,
+                typeof(Program).Assembly,
+                context.RequestAborted);
+
+            if (!migrationResult.Successful)
+            {
+                logger.LogError(migrationResult.Error, "Layer bulk enable migration failed: {Message}", migrationResult.ErrorMessage);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+            }
+
+            var result = await publishingService.SetServiceLayersEnabledAsync(
+                connectionString,
+                serviceName ?? "default",
+                request.Enabled,
+                context.RequestAborted);
+
+            return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(result));
+        }
+        catch (LayerPublishingException ex)
+        {
+            logger.LogWarning(ex, "Layer bulk toggle failed");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Layer bulk toggle invalid request");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Layer bulk toggle connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
         }
         catch (UnauthorizedAccessException)

@@ -9,7 +9,7 @@
 
 <MudStack Spacing="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-        <MudText Typo="Typo.h4">Connections</MudText>
+        <MudText Typo="Typo.h4" HtmlTag="h1">Connections</MudText>
         <MudButton StartIcon="@Icons.Material.Filled.Add"
                    Variant="Variant.Filled"
                    Color="Color.Primary"
@@ -74,18 +74,21 @@
                     <MudTooltip Text="Test connection">
                         <MudIconButton Icon="@Icons.Material.Filled.Sync"
                                        OnClick="@(() => TestConnectionAsync(context))"
-                                       Disabled="@IsTesting(context.ConnectionId)" />
+                                       Disabled="@IsTesting(context.ConnectionId)"
+                                       data-testid="@($"connection-test-{context.ConnectionId}")" />
                     </MudTooltip>
                     <MudTooltip Text="Edit">
                         <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                        OnClick="@(() => EditConnectionAsync(context))"
-                                       Disabled="@_isSaving" />
+                                       Disabled="@_isSaving"
+                                       data-testid="@($"connection-edit-{context.ConnectionId}")" />
                     </MudTooltip>
                     <MudTooltip Text="Delete">
                         <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                        Color="Color.Error"
                                        OnClick="@(() => DeleteConnectionAsync(context))"
-                                       Disabled="@_isSaving" />
+                                       Disabled="@_isSaving"
+                                       data-testid="@($"connection-delete-{context.ConnectionId}")" />
                     </MudTooltip>
                 </MudTd>
             </RowTemplate>
@@ -299,6 +302,7 @@
         {
             return;
         }
+        StateHasChanged();
 
         try
         {

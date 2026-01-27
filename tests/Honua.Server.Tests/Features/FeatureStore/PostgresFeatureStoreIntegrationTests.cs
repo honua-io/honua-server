@@ -83,6 +83,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 min_scale DOUBLE PRECISION,
                 max_scale DOUBLE PRECISION,
                 default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
                 metadata JSONB,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );

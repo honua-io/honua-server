@@ -1,15 +1,581 @@
-﻿@page "/health"
+@page "/health"
+@using System.Globalization
+@using System.Text.Json
+@using Honua.Admin.Models
+@implements IAsyncDisposable
+@inject IHttpClientFactory HttpClientFactory
 
 <PageTitle>Health</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-2">Health</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">
-    Monitor system health, cache status, and background operations.
-</MudText>
+<MudStack Spacing="2" data-testid="health-dashboard">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h4" HtmlTag="h1">Health</MudText>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <MudSwitch T="bool" @bind-Value="AutoRefresh" Color="Color.Primary" Label="Auto-refresh" />
+            <MudTooltip Text="Refresh now">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Disabled="@_isLoading"
+                               OnClick="RefreshAsync"
+                               data-testid="health-refresh" />
+            </MudTooltip>
+        </MudStack>
+    </MudStack>
 
-<MudPaper Class="pa-4" Elevation="1">
-    <MudText Typo="Typo.subtitle2">Coming soon</MudText>
     <MudText Typo="Typo.body2">
-        Health dashboard UI will land with issue #42.
+        Live status, performance metrics, and recent errors for quick triage.
     </MudText>
-</MudPaper>
+
+    @if (_lastUpdated is not null)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Secondary">Last updated: @_lastUpdated.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</MudText>
+    }
+
+    <MudGrid>
+        <MudItem xs="12" md="6" lg="4">
+            <MudPaper Class="pa-4" Elevation="1" data-testid="health-status-card">
+                <MudText Typo="Typo.h6" Class="mb-2">Service status</MudText>
+                <MudStack Spacing="1">
+                    <MudChip T="string" Color="@GetStatusColor(_liveStatus.IsHealthy)" Variant="Variant.Filled" data-testid="health-live-status">
+                        Live: @GetStatusLabel(_liveStatus)
+                    </MudChip>
+                    <MudChip T="string" Color="@GetStatusColor(_readyStatus.IsHealthy)" Variant="Variant.Filled" data-testid="health-ready-status">
+                        Ready: @GetStatusLabel(_readyStatus)
+                    </MudChip>
+                </MudStack>
+                @if (_healthMetrics is not null)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">Health snapshot: @(_healthMetrics.Status ?? "unknown")</MudText>
+                    <MudText Typo="Typo.body2">GC collections: @FormatNumber(_healthMetrics.GCCollections)</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(_healthCheckError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_healthCheckError</MudAlert>
+                }
+                @if (!string.IsNullOrWhiteSpace(_healthMetricsError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_healthMetricsError</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6" lg="4">
+            <MudPaper Class="pa-4" Elevation="1" data-testid="health-requests-card">
+                <MudText Typo="Typo.h6" Class="mb-2">Requests &amp; errors</MudText>
+                @if (_performanceMetrics?.Http is not null)
+                {
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2">Total requests: @FormatNumber(_performanceMetrics.Http.TotalRequests)</MudText>
+                        <MudText Typo="Typo.body2">Server errors: @FormatNumber(_performanceMetrics.Http.TotalServerErrors)</MudText>
+                        <MudText Typo="Typo.body2">Error rate: @FormatPercent(_performanceMetrics.Http.ServerErrorRate)</MudText>
+                        <MudText Typo="Typo.body2">P95 latency: @FormatDuration(_performanceMetrics.Http.P95DurationMs)</MudText>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">No request metrics available.</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(_performanceError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_performanceError</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6" lg="4">
+            <MudPaper Class="pa-4" Elevation="1" data-testid="health-database-card">
+                <MudText Typo="Typo.h6" Class="mb-2">Database</MudText>
+                @if (_databaseMetrics is not null)
+                {
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2">Status: @GetStatusLabel(_readyStatus)</MudText>
+                        <MudText Typo="Typo.body2">Cache hit rate: @FormatPercent(_databaseMetrics.CacheHitRate)</MudText>
+                        <MudText Typo="Typo.body2">Ops observed: @FormatNumber(GetDatabaseOperationCount(_databaseMetrics))</MudText>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">No database metrics available.</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(_databaseError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_databaseError</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6" lg="4">
+            <MudPaper Class="pa-4" Elevation="1" data-testid="health-cache-card">
+                <MudText Typo="Typo.h6" Class="mb-2">Cache</MudText>
+                @if (_cacheMetrics is not null)
+                {
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2">Total requests: @FormatNumber(_cacheMetrics.TotalRequests)</MudText>
+                        <MudText Typo="Typo.body2">Hit ratio: @FormatPercent(_cacheMetrics.HitRatio)</MudText>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">No cache metrics available.</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(_cacheError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_cacheError</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6" lg="4">
+            <MudPaper Class="pa-4" Elevation="1" data-testid="health-memory-card">
+                <MudText Typo="Typo.h6" Class="mb-2">Memory</MudText>
+                @if (_memoryUsage is not null)
+                {
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2">Allocated: @FormatMemoryMb(_memoryUsage.AllocatedBytes)</MudText>
+                        <MudText Typo="Typo.body2">Pressure: @FormatPercent(_memoryUsage.MemoryPressurePercentage / 100.0)</MudText>
+                        <MudText Typo="Typo.body2">GC collections: @FormatNumber(_memoryUsage.TotalGCCollections)</MudText>
+                    </MudStack>
+                }
+                else if (_healthMetrics is not null)
+                {
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2">Allocated: @_healthMetrics.MemoryUsageMB.ToString("N1", CultureInfo.CurrentCulture) MB</MudText>
+                        <MudText Typo="Typo.body2">Pressure: @_healthMetrics.MemoryPressurePercent.ToString("N1", CultureInfo.CurrentCulture)%</MudText>
+                        <MudText Typo="Typo.body2">GC collections: @FormatNumber(_healthMetrics.GCCollections)</MudText>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">No memory metrics available.</MudText>
+                }
+                @{
+                    var memoryErrorMessage = _memoryError;
+                    if (string.IsNullOrWhiteSpace(memoryErrorMessage) && _memoryUsage is null && _healthMetrics is null)
+                    {
+                        memoryErrorMessage = _healthMetricsError;
+                    }
+                }
+                @if (!string.IsNullOrWhiteSpace(memoryErrorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@memoryErrorMessage</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4" Elevation="1" data-testid="health-recent-errors">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.h6">Recent errors</MudText>
+            <MudText Typo="Typo.caption">Showing @(_recentErrors?.Errors?.Count ?? 0) of @(_recentErrors?.Capacity ?? 0)</MudText>
+        </MudStack>
+
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_errorsError))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_errorsError</MudAlert>
+        }
+        else if (_recentErrors?.Errors is null || _recentErrors.Errors.Count == 0)
+        {
+            <MudText Typo="Typo.body2">No recent errors recorded.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_recentErrors.Errors" Dense="true" Hover="true" data-testid="health-recent-errors-table">
+                <HeaderContent>
+                    <MudTh>Timestamp</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Path</MudTh>
+                    <MudTh>Correlation</MudTh>
+                    <MudTh>Message</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Timestamp">@context.Timestamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string" Color="@GetStatusColor(context.StatusCode < 500)" Size="Size.Small">@context.StatusCode</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Path">@context.Path</MudTd>
+                    <MudTd DataLabel="Correlation">@context.CorrelationId</MudTd>
+                    <MudTd DataLabel="Message">@context.Message</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1" data-testid="health-telemetry">
+        <MudText Typo="Typo.h6" Class="mb-2">Telemetry</MudText>
+        @if (_observabilityStatus?.OtlpConfigured == true && !string.IsNullOrWhiteSpace(_observabilityStatus.OtlpEndpoint))
+        {
+            <MudText Typo="Typo.body2">OTLP exporter configured for @_observabilityStatus.OtlpEndpoint</MudText>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.OpenInNew"
+                       Href="@_observabilityStatus.OtlpEndpoint"
+                       Target="_blank"
+                       Class="mt-2">
+                View telemetry backend
+            </MudButton>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2">No external telemetry backend configured.</MudText>
+        }
+        @if (!string.IsNullOrWhiteSpace(_telemetryError))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_telemetryError</MudAlert>
+        }
+    </MudPaper>
+</MudStack>
+
+@code {
+    private const int RefreshIntervalSeconds = 15;
+    private static readonly JsonSerializerOptions _jsonOptions = AdminJsonContext.Default.Options;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+
+    private HttpClient? _apiClient;
+    private CancellationTokenSource? _refreshCts;
+    private PeriodicTimer? _refreshTimer;
+    private Task? _refreshLoop;
+
+    private bool _isLoading;
+    private bool _autoRefresh = true;
+    private DateTimeOffset? _lastUpdated;
+
+    private HealthCheckSnapshot _liveStatus = HealthCheckSnapshot.Unknown;
+    private HealthCheckSnapshot _readyStatus = HealthCheckSnapshot.Unknown;
+
+    private HealthMetrics? _healthMetrics;
+    private PerformanceMetricsResponse? _performanceMetrics;
+    private DatabaseMetrics? _databaseMetrics;
+    private CacheMetrics? _cacheMetrics;
+    private MemoryUsage? _memoryUsage;
+    private RecentErrorsResponse? _recentErrors;
+    private ObservabilityStatusResponse? _observabilityStatus;
+
+    private string? _healthCheckError;
+    private string? _healthMetricsError;
+    private string? _performanceError;
+    private string? _databaseError;
+    private string? _cacheError;
+    private string? _memoryError;
+    private string? _errorsError;
+    private string? _telemetryError;
+
+    private bool AutoRefresh
+    {
+        get => _autoRefresh;
+        set
+        {
+            if (_autoRefresh == value)
+            {
+                return;
+            }
+
+            _autoRefresh = value;
+            if (_autoRefresh)
+            {
+                StartAutoRefresh();
+            }
+            else
+            {
+                StopAutoRefresh();
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _apiClient = HttpClientFactory.CreateClient("AdminApi");
+        await LoadAllAsync();
+
+        if (AutoRefresh)
+        {
+            StartAutoRefresh();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadAllAsync();
+    }
+
+    private void StartAutoRefresh()
+    {
+        StopAutoRefresh();
+
+        _refreshCts = new CancellationTokenSource();
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(RefreshIntervalSeconds));
+        _refreshLoop = AutoRefreshLoopAsync(_refreshCts.Token);
+    }
+
+    private void StopAutoRefresh()
+    {
+        if (_refreshCts is null)
+        {
+            return;
+        }
+
+        _refreshCts.Cancel();
+        _refreshCts.Dispose();
+        _refreshCts = null;
+
+        _refreshTimer?.Dispose();
+        _refreshTimer = null;
+    }
+
+    private async Task AutoRefreshLoopAsync(CancellationToken token)
+    {
+        if (_refreshTimer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (await _refreshTimer.WaitForNextTickAsync(token))
+            {
+                await InvokeAsync(LoadAllAsync);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore cancellation.
+        }
+    }
+
+    private async Task LoadAllAsync()
+    {
+        if (_apiClient is null)
+        {
+            return;
+        }
+
+        if (!await _refreshGate.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
+            _isLoading = true;
+
+            await LoadHealthChecksAsync();
+            await LoadHealthMetricsAsync();
+            await LoadPerformanceMetricsAsync();
+            await LoadDatabaseMetricsAsync();
+            await LoadCacheMetricsAsync();
+            await LoadMemoryMetricsAsync();
+            await LoadRecentErrorsAsync();
+            await LoadTelemetryStatusAsync();
+
+            _lastUpdated = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            _isLoading = false;
+            _refreshGate.Release();
+            StateHasChanged();
+        }
+    }
+
+    private CancellationToken RefreshToken => _refreshCts?.Token ?? CancellationToken.None;
+
+    private async Task LoadHealthChecksAsync()
+    {
+        _healthCheckError = null;
+
+        try
+        {
+            _liveStatus = await GetHealthStatusAsync("/healthz/live");
+            _readyStatus = await GetHealthStatusAsync("/healthz/ready");
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore cancellation during refresh toggle.
+        }
+        catch (HttpRequestException)
+        {
+            _healthCheckError = "Unable to reach health endpoints.";
+            _liveStatus = HealthCheckSnapshot.Unknown;
+            _readyStatus = HealthCheckSnapshot.Unknown;
+        }
+    }
+
+    private async Task LoadHealthMetricsAsync()
+    {
+        _healthMetricsError = null;
+        _healthMetrics = await TryGetJsonAsync<HealthMetrics>("/api/v1/metrics/health", error => _healthMetricsError = error);
+    }
+
+    private async Task LoadPerformanceMetricsAsync()
+    {
+        _performanceError = null;
+        _performanceMetrics = await TryGetJsonAsync<PerformanceMetricsResponse>("/api/v1/metrics/performance", error => _performanceError = error);
+    }
+
+    private async Task LoadDatabaseMetricsAsync()
+    {
+        _databaseError = null;
+        _databaseMetrics = await TryGetJsonAsync<DatabaseMetrics>("/api/v1/metrics/database", error => _databaseError = error);
+    }
+
+    private async Task LoadCacheMetricsAsync()
+    {
+        _cacheError = null;
+        _cacheMetrics = await TryGetJsonAsync<CacheMetrics>("/api/v1/metrics/cache", error => _cacheError = error);
+    }
+
+    private async Task LoadMemoryMetricsAsync()
+    {
+        _memoryError = null;
+        _memoryUsage = await TryGetJsonAsync<MemoryUsage>("/api/v1/metrics/memory", error => _memoryError = error);
+    }
+
+    private async Task LoadRecentErrorsAsync()
+    {
+        _errorsError = null;
+        _recentErrors = await TryGetJsonAsync<RecentErrorsResponse>("observability/errors", error => _errorsError = error);
+    }
+
+    private async Task LoadTelemetryStatusAsync()
+    {
+        _telemetryError = null;
+        _observabilityStatus = await TryGetJsonAsync<ObservabilityStatusResponse>("observability/telemetry", error => _telemetryError = error);
+    }
+
+    private async Task<HealthCheckSnapshot> GetHealthStatusAsync(string uri)
+    {
+        if (_apiClient is null)
+        {
+            return HealthCheckSnapshot.Unknown;
+        }
+
+        using var response = await _apiClient.GetAsync(uri, RefreshToken);
+        string? message = null;
+        if (response.Content is not null)
+        {
+            message = await response.Content.ReadAsStringAsync(RefreshToken);
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                message = null;
+            }
+        }
+
+        return new HealthCheckSnapshot(response.IsSuccessStatusCode, (int)response.StatusCode, message);
+    }
+
+    private async Task<T?> TryGetJsonAsync<T>(string uri, Action<string?> setError)
+    {
+        if (_apiClient is null)
+        {
+            return default;
+        }
+
+        try
+        {
+            using var response = await _apiClient.GetAsync(uri, RefreshToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                setError($"Request failed ({(int)response.StatusCode}).");
+                return default;
+            }
+
+            var payload = await response.Content.ReadAsStringAsync(RefreshToken);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                setError("Empty response from server.");
+                return default;
+            }
+
+            var result = JsonSerializer.Deserialize<T>(payload, _jsonOptions);
+            if (result is null)
+            {
+                setError("Unable to parse server response.");
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            return default;
+        }
+        catch (Exception)
+        {
+            setError("Unable to load data.");
+            return default;
+        }
+    }
+
+    private static string GetStatusLabel(HealthCheckSnapshot status)
+    {
+        if (status.IsHealthy is null)
+        {
+            return "Unknown";
+        }
+
+        if (status.IsHealthy.Value)
+        {
+            return "Healthy";
+        }
+
+        return string.IsNullOrWhiteSpace(status.Message) ? "Unhealthy" : status.Message;
+    }
+
+    private static Color GetStatusColor(bool? isHealthy)
+    {
+        if (isHealthy is null)
+        {
+            return Color.Default;
+        }
+
+        return isHealthy.Value ? Color.Success : Color.Error;
+    }
+
+    private static string FormatNumber(long value)
+        => value.ToString("N0", CultureInfo.CurrentCulture);
+
+    private static string FormatPercent(double value)
+        => (value * 100).ToString("N1", CultureInfo.CurrentCulture) + "%";
+
+    private static string FormatDuration(double value)
+        => value.ToString("N0", CultureInfo.CurrentCulture) + " ms";
+
+    private static string FormatMemoryMb(long bytes)
+        => (bytes / (1024.0 * 1024.0)).ToString("N1", CultureInfo.CurrentCulture) + " MB";
+
+    private static long GetDatabaseOperationCount(DatabaseMetrics metrics)
+    {
+        if (metrics.Operations is null)
+        {
+            return 0;
+        }
+
+        return metrics.Operations.Values.Sum(operation => operation.Count);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopAutoRefresh();
+
+        if (_refreshLoop is not null)
+        {
+            try
+            {
+                await _refreshLoop;
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation.
+            }
+        }
+
+        _refreshGate.Dispose();
+    }
+
+    private readonly record struct HealthCheckSnapshot(bool? IsHealthy, int? StatusCode, string? Message)
+    {
+        public static HealthCheckSnapshot Unknown => new(null, null, null);
+    }
+}
