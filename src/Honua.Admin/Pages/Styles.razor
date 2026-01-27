@@ -1,0 +1,420 @@
+@page "/styles"
+
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject ISecureConnectionsClient ConnectionsClient
+@inject ILayerPublishingClient LayerPublishingClient
+@inject ILayerStyleClient LayerStyleClient
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>Style editor</PageTitle>
+
+<MudStack Spacing="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h4">Style editor</MudText>
+        <MudStack Row="true" Spacing="1">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RefreshAsync"
+                       Disabled="@(!_selectedConnectionId.HasValue)">
+                Refresh
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveStyleAsync"
+                       Disabled="@(!_hasChanges || !_selectedLayerId.HasValue || _isSaving)">
+                Save
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Restore"
+                       OnClick="ResetStyleAsync"
+                       Disabled="@(!_hasChanges || !_selectedLayerId.HasValue)">
+                Reset
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    <MudText Typo="Typo.body2">
+        Edit MapLibre styles with Maputnik and preview them against live tiles.
+    </MudText>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+    }
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Layer selection</MudText>
+        <MudStack Spacing="2">
+            <MudSelect T="Guid?"
+                       Value="_selectedConnectionId"
+                       ValueChanged="HandleConnectionChanged"
+                       Label="Connection"
+                       Disabled="@_isLoadingConnections"
+                       data-testid="styles-connection-select">
+                @foreach (var connection in _connections)
+                {
+                    <MudSelectItem Value="@((Guid?)connection.ConnectionId)">@connection.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?"
+                       Value="_selectedLayerId"
+                       ValueChanged="HandleLayerChanged"
+                       Label="Published layer"
+                       Disabled="@(!_selectedConnectionId.HasValue || _isLoadingLayers)"
+                       data-testid="styles-layer-select">
+                @foreach (var layer in _publishedLayers)
+                {
+                    <MudSelectItem Value="@((int?)layer.LayerId)">
+                        @layer.LayerName (@layer.ServiceName)
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
+    </MudPaper>
+
+    <MudGrid>
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                    <MudText Typo="Typo.subtitle2">Maputnik</MudText>
+                    @if (_isLoadingStyle)
+                    {
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                    }
+                </MudStack>
+                <div class="maputnik-wrapper">
+                    <iframe @ref="_maputnikFrame"
+                            src="maputnik/index.html"
+                            data-maputnik-src="maputnik/index.html"
+                            class="maputnik-frame"
+                            data-testid="maputnik-frame"
+                            @onload="OnMaputnikLoaded"></iframe>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.subtitle2">Live preview</MudText>
+                    <MapPreview Style="_workingStyle"
+                                Bounds="_mapBounds"
+                                EmptyMessage="Select a layer to edit its style." />
+                    @if (_selectedLayer != null)
+                    {
+                        <MudText Typo="Typo.body2">
+                            Editing <strong>@_selectedLayer.LayerName</strong> (@_selectedLayer.GeometryType, SRID @_selectedLayer.Srid).
+                        </MudText>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private readonly List<SecureConnectionSummary> _connections = new();
+    private readonly List<PublishedLayerSummary> _publishedLayers = new();
+    private Guid? _selectedConnectionId;
+    private int? _selectedLayerId;
+    private PublishedLayerSummary? _selectedLayer;
+    private JsonElement? _originalStyle;
+    private JsonElement? _workingStyle;
+    private JsonElement? _pendingStyle;
+    private string? _pendingStyleId;
+    private double[]? _mapBounds;
+    private bool _isLoadingConnections;
+    private bool _isLoadingLayers;
+    private bool _isLoadingStyle;
+    private bool _isSaving;
+    private bool _hasChanges;
+    private bool _maputnikLoaded;
+    private bool _ignoreNextStyleChange;
+    private string? _errorMessage;
+    private ElementReference _maputnikFrame;
+    private DotNetObjectReference<Styles>? _dotNetRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConnectionsAsync();
+        if (_selectedConnectionId.HasValue)
+        {
+            await LoadLayersAsync();
+            await SelectDefaultLayerAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("maputnikBridge.init", _maputnikFrame, _dotNetRef);
+        }
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        _isLoadingConnections = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var result = await ConnectionsClient.GetConnectionsAsync();
+        _isLoadingConnections = false;
+
+        if (!result.Success)
+        {
+            _errorMessage = result.Message ?? "Failed to load connections.";
+            return;
+        }
+
+        _connections.Clear();
+        _connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
+
+        if (_connections.Count > 0 && !_selectedConnectionId.HasValue)
+        {
+            _selectedConnectionId = _connections[0].ConnectionId;
+        }
+    }
+
+    private async Task HandleConnectionChanged(Guid? connectionId)
+    {
+        _selectedConnectionId = connectionId;
+        _selectedLayerId = null;
+        _selectedLayer = null;
+        _workingStyle = null;
+        _originalStyle = null;
+        _pendingStyle = null;
+        _pendingStyleId = null;
+        _mapBounds = null;
+        _hasChanges = false;
+        _ignoreNextStyleChange = false;
+        await RefreshAsync();
+    }
+
+    private async Task HandleLayerChanged(int? layerId)
+    {
+        _selectedLayerId = layerId;
+        _selectedLayer = _publishedLayers.FirstOrDefault(layer => layer.LayerId == layerId);
+        await LoadStyleAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            return;
+        }
+
+        await LoadLayersAsync();
+        await SelectDefaultLayerAsync();
+    }
+
+    private async Task LoadLayersAsync()
+    {
+        _isLoadingLayers = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        if (!_selectedConnectionId.HasValue)
+        {
+            _isLoadingLayers = false;
+            return;
+        }
+
+        var result = await LayerPublishingClient.GetPublishedLayersAsync(_selectedConnectionId.Value);
+        _isLoadingLayers = false;
+
+        if (!result.Success)
+        {
+            _errorMessage = result.Message ?? "Failed to load layers.";
+            _publishedLayers.Clear();
+            return;
+        }
+
+        _publishedLayers.Clear();
+        _publishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
+    }
+
+    private async Task SelectDefaultLayerAsync()
+    {
+        if (_selectedLayerId.HasValue)
+        {
+            return;
+        }
+
+        var candidate = _publishedLayers.FirstOrDefault(layer => layer.Enabled) ?? _publishedLayers.FirstOrDefault();
+        if (candidate is null)
+        {
+            _workingStyle = null;
+            _originalStyle = null;
+            _mapBounds = null;
+            return;
+        }
+
+        _selectedLayerId = candidate.LayerId;
+        _selectedLayer = candidate;
+        await LoadStyleAsync();
+    }
+
+    private async Task LoadStyleAsync()
+    {
+        _workingStyle = null;
+        _originalStyle = null;
+        _hasChanges = false;
+        _errorMessage = null;
+
+        if (!_selectedLayerId.HasValue)
+        {
+            return;
+        }
+
+        _isLoadingStyle = true;
+        StateHasChanged();
+
+        var styleResult = await LayerStyleClient.GetLayerStyleAsync(_selectedLayerId.Value);
+        if (!styleResult.Success)
+        {
+            _errorMessage = styleResult.Message ?? "Failed to load layer style.";
+            _isLoadingStyle = false;
+            return;
+        }
+
+        _originalStyle = styleResult.Data?.MapLibreStyle;
+        _workingStyle = _originalStyle;
+        _pendingStyle = _originalStyle;
+        _pendingStyleId = _selectedLayerId.HasValue ? BuildStyleId(_selectedLayerId.Value) : null;
+        _ignoreNextStyleChange = _pendingStyle.HasValue;
+
+        try
+        {
+            var tileJson = await Http.GetFromJsonAsync<TileJsonResponse>(
+                $"/tiles/{_selectedLayerId.Value}/tile.json",
+                AdminJsonContext.Default.Options);
+            _mapBounds = tileJson?.Bounds;
+        }
+        catch (HttpRequestException)
+        {
+            _mapBounds = null;
+        }
+
+        if (_maputnikLoaded && _pendingStyle.HasValue)
+        {
+            await ApplyStyleToMaputnikAsync();
+        }
+
+        _isLoadingStyle = false;
+    }
+
+    private async Task OnMaputnikLoaded()
+    {
+        _maputnikLoaded = true;
+
+        if (_pendingStyle.HasValue)
+        {
+            await ApplyStyleToMaputnikAsync();
+        }
+    }
+
+    [JSInvokable]
+    public void OnStyleChanged(JsonElement newStyle)
+    {
+        _workingStyle = newStyle;
+        if (_ignoreNextStyleChange)
+        {
+            _ignoreNextStyleChange = false;
+            _hasChanges = false;
+        }
+        else
+        {
+            _hasChanges = true;
+        }
+        StateHasChanged();
+    }
+
+    private async Task SaveStyleAsync()
+    {
+        if (!_selectedLayerId.HasValue)
+        {
+            return;
+        }
+
+        _isSaving = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        var style = await JS.InvokeAsync<JsonElement?>("maputnikBridge.getStyle");
+        if (!style.HasValue)
+        {
+            _errorMessage = "Unable to read style from Maputnik.";
+            _isSaving = false;
+            return;
+        }
+
+        var update = new LayerStyleUpdateRequest
+        {
+            MapLibreStyle = style.Value
+        };
+
+        var result = await LayerStyleClient.UpdateLayerStyleAsync(_selectedLayerId.Value, update);
+        if (!result.Success)
+        {
+            _errorMessage = result.Message ?? "Failed to save style.";
+            _isSaving = false;
+            return;
+        }
+
+        _originalStyle = result.Data?.MapLibreStyle ?? style.Value;
+        _workingStyle = _originalStyle;
+        _hasChanges = false;
+        _isSaving = false;
+    }
+
+    private async Task ResetStyleAsync()
+    {
+        if (!_originalStyle.HasValue)
+        {
+            return;
+        }
+
+        _pendingStyle = _originalStyle;
+        _pendingStyleId = _selectedLayerId.HasValue ? BuildStyleId(_selectedLayerId.Value) : null;
+        _ignoreNextStyleChange = true;
+
+        if (_maputnikLoaded)
+        {
+            await ApplyStyleToMaputnikAsync();
+        }
+        _workingStyle = _originalStyle;
+        _hasChanges = false;
+    }
+
+    private async Task ApplyStyleToMaputnikAsync()
+    {
+        if (!_pendingStyle.HasValue)
+        {
+            return;
+        }
+
+        var styleId = _pendingStyleId;
+        await JS.InvokeVoidAsync("maputnikBridge.loadStyle", _pendingStyle.Value, new
+        {
+            styleId
+        });
+        _pendingStyle = null;
+        _pendingStyleId = null;
+    }
+
+    private static string BuildStyleId(int layerId) => $"honua-layer-{layerId}";
+
+    public async ValueTask DisposeAsync()
+    {
+        await JS.InvokeVoidAsync("maputnikBridge.dispose");
+        _dotNetRef?.Dispose();
+    }
+}
