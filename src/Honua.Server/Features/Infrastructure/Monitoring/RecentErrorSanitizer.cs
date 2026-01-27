@@ -12,19 +12,19 @@ internal static class RecentErrorSanitizer
 {
     private const int MaxMessageLength = 240;
 
-    private static readonly Regex EmailPattern = new(
+    private static readonly Regex _emailPattern = new(
         "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private static readonly Regex KeyValuePattern = new(
+    private static readonly Regex _keyValuePattern = new(
         "(?i)\\b(password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)\\b\\s*([:=])\\s*([^;\\s]+)",
         RegexOptions.CultureInvariant);
 
-    private static readonly Regex AuthorizationPattern = new(
+    private static readonly Regex _authorizationPattern = new(
         "(?i)\\bauthorization\\b\\s*([:=])\\s*([^;\\s]+)",
         RegexOptions.CultureInvariant);
 
-    private static readonly Regex BearerPattern = new(
+    private static readonly Regex _bearerPattern = new(
         "(?i)\\bbearer\\s+[A-Za-z0-9-._~+/]+=*",
         RegexOptions.CultureInvariant);
 
@@ -41,10 +41,10 @@ internal static class RecentErrorSanitizer
             sanitized = sanitized[..MaxMessageLength] + "...";
         }
 
-        sanitized = EmailPattern.Replace(sanitized, "***");
-        sanitized = KeyValuePattern.Replace(sanitized, "$1$2***");
-        sanitized = AuthorizationPattern.Replace(sanitized, "Authorization$1***");
-        sanitized = BearerPattern.Replace(sanitized, "Bearer ***");
+        sanitized = _emailPattern.Replace(sanitized, "***");
+        sanitized = _keyValuePattern.Replace(sanitized, "$1$2***");
+        sanitized = _authorizationPattern.Replace(sanitized, "Authorization$1***");
+        sanitized = _bearerPattern.Replace(sanitized, "Bearer ***");
 
         return sanitized;
     }
