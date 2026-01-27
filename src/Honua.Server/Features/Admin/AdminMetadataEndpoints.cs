@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -496,7 +497,7 @@ internal static class AdminMetadataEndpoints
             return 0;
         }
 
-        return long.TryParse(resourceVersion, out var value) ? value : 0;
+        return long.TryParse(resourceVersion, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : 0;
     }
 
     private static Task WriteError(HttpContext context, int statusCode, string message)

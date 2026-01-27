@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -307,8 +308,12 @@ internal static partial class ImportEndpoints
         try
         {
             // Parse optional parameters
-            int? sourceSrid = int.TryParse(form["SourceSrid"], out int src) ? src : (int?)null;
-            int targetSrid = int.TryParse(form["TargetSrid"], out int tgt) ? tgt : 4326;
+            int? sourceSrid = int.TryParse(form["SourceSrid"], NumberStyles.Integer, CultureInfo.InvariantCulture, out int src)
+                ? src
+                : (int?)null;
+            int targetSrid = int.TryParse(form["TargetSrid"], NumberStyles.Integer, CultureInfo.InvariantCulture, out int tgt)
+                ? tgt
+                : 4326;
             bool overwriteExisting = bool.TryParse(form["OverwriteExisting"], out bool overwrite) && overwrite;
             bool forceBackground = bool.TryParse(form["ForceBackground"], out bool forceBg) && forceBg;
             bool trackProgress = bool.TryParse(form["TrackProgress"], out bool track) && track;

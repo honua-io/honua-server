@@ -1010,7 +1010,7 @@ internal sealed class FeatureServerQueryHandler(
             return false;
         }
 
-        if (long.TryParse(timeValue, out var unixMs))
+        if (long.TryParse(timeValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixMs))
         {
             try
             {
@@ -1023,7 +1023,11 @@ internal sealed class FeatureServerQueryHandler(
             }
         }
 
-        if (DateTimeOffset.TryParse(timeValue, out var parsedTime))
+        if (DateTimeOffset.TryParse(
+            timeValue,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var parsedTime))
         {
             time = parsedTime;
             return true;

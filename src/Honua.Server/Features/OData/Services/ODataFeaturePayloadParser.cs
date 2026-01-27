@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Server.Features.OData.Models;
 
@@ -141,10 +142,11 @@ internal static class ODataFeaturePayloadParser
         {
             int i => TryAssign(i, out result),
             long l when l is >= int.MinValue and <= int.MaxValue => TryAssign((int)l, out result),
-            string s when int.TryParse(s, out var parsed) => TryAssign(parsed, out result),
+            string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => TryAssign(parsed, out result),
             JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var parsed) =>
                 TryAssign(parsed, out result),
-            JsonElement element when element.ValueKind == JsonValueKind.String && int.TryParse(element.GetString(), out var parsed) =>
+            JsonElement element when element.ValueKind == JsonValueKind.String &&
+                                     int.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) =>
                 TryAssign(parsed, out result),
             _ => false
         };
@@ -157,10 +159,11 @@ internal static class ODataFeaturePayloadParser
         {
             long l => TryAssign(l, out result),
             int i => TryAssign(i, out result),
-            string s when long.TryParse(s, out var parsed) => TryAssign(parsed, out result),
+            string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => TryAssign(parsed, out result),
             JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var parsed) =>
                 TryAssign(parsed, out result),
-            JsonElement element when element.ValueKind == JsonValueKind.String && long.TryParse(element.GetString(), out var parsed) =>
+            JsonElement element when element.ValueKind == JsonValueKind.String &&
+                                     long.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) =>
                 TryAssign(parsed, out result),
             _ => false
         };
@@ -180,17 +183,36 @@ internal static class ODataFeaturePayloadParser
         {
             null => null,
             ODataSpatialGeometry geometry => geometry,
-            JsonElement element => element.ValueKind switch
-            {
-                JsonValueKind.Null or JsonValueKind.Undefined => null,
-                JsonValueKind.Object => JsonSerializer.Deserialize<ODataSpatialGeometry>(
-                    element.GetRawText(),
-                    ODataJsonContext.Default.ODataSpatialGeometry),
-                _ => SetError<ODataSpatialGeometry?>("Geometry must be an object in OData spatial format.", out errorMessage)
-            },
+            JsonElement element => ParseGeometryElement(element, out errorMessage),
             Dictionary<string, object?> dict => DeserializeGeometry(dict, out errorMessage),
             _ => SetError<ODataSpatialGeometry?>("Geometry must be an object in OData spatial format.", out errorMessage)
         };
+    }
+
+    private static ODataSpatialGeometry? ParseGeometryElement(JsonElement element, out string? errorMessage)
+    {
+        errorMessage = null;
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return null;
+            case JsonValueKind.Object:
+                try
+                {
+                    return JsonSerializer.Deserialize<ODataSpatialGeometry>(
+                        element.GetRawText(),
+                        ODataJsonContext.Default.ODataSpatialGeometry);
+                }
+                catch (JsonException)
+                {
+                    errorMessage = "Geometry must be a valid OData spatial object.";
+                    return null;
+                }
+            default:
+                return SetError<ODataSpatialGeometry?>("Geometry must be an object in OData spatial format.", out errorMessage);
+        }
     }
 
     private static Dictionary<string, object?> ParseAttributesValue(object? value, out string? errorMessage)

@@ -169,8 +169,17 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 LayerPublishingErrorKind.Validation,
                 "Primary key is required.");
 
-        var primaryKeyColumn = selectedColumns.First(col =>
+        var primaryKeyColumn = selectedColumns.FirstOrDefault(col =>
             string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
+        if (primaryKeyColumn == null)
+        {
+            var existsInTable = columns.Any(col =>
+                string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
+            var message = existsInTable
+                ? $"Primary key field '{primaryKeyName}' must be included in selected fields."
+                : $"Primary key field '{primaryKeyName}' was not found on the source table.";
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation, message);
+        }
         var primaryKeyType = MapPostgresType(primaryKeyColumn.DataType);
         if (primaryKeyType is not FieldType.Integer and not FieldType.BigInteger)
         {

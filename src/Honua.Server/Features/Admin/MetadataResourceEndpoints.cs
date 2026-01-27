@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -383,7 +384,7 @@ internal static class MetadataResourceEndpoints
             return 0;
         }
 
-        return long.TryParse(resourceVersion, out var value) ? value : 0;
+        return long.TryParse(resourceVersion, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : 0;
     }
 
     private static Task WriteValidationError(HttpContext context, IReadOnlyList<string> errors)

@@ -81,6 +81,31 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         };
     }
 
+    private static long? TryReadObjectId(JsonElement feature)
+    {
+        if (!feature.TryGetProperty("attributes", out var attributes))
+        {
+            return null;
+        }
+
+        if (attributes.TryGetProperty("objectid", out var objectId) ||
+            attributes.TryGetProperty("OBJECTID", out objectId))
+        {
+            if (objectId.ValueKind == JsonValueKind.Number && objectId.TryGetInt64(out var numericId))
+            {
+                return numericId;
+            }
+
+            if (objectId.ValueKind == JsonValueKind.String &&
+                long.TryParse(objectId.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId))
+            {
+                return parsedId;
+            }
+        }
+
+        return null;
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -107,6 +132,49 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
 
         // Verify temporal filtering was applied (implementation dependent on test data)
         // In a real test environment, this would verify against known test data
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_TimeParsing_UsesInvariantCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            var overrideCulture = new CultureInfo("en-GB");
+            CultureInfo.CurrentCulture = overrideCulture;
+            CultureInfo.CurrentUICulture = overrideCulture;
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var layerId = WebAppFixture.TestLayerId;
+            var encodedTime = Uri.EscapeDataString("07/06/2024");
+
+            var response = await _client.GetAsync(
+                $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+
+            document.RootElement.TryGetProperty("features", out var featuresElement).Should().BeTrue();
+
+            var objectIds = featuresElement.EnumerateArray()
+                .Select(feature => TryReadObjectId(feature))
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToArray();
+
+            objectIds.Should().Contain(4);
+            objectIds.Should().NotContain(2);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [IntegrationTest]

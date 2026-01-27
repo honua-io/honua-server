@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Catalog.Domain;
@@ -128,7 +129,7 @@ internal static class MapLibreStyleNormalizer
         }
 
         if (versionNode is JsonValue stringNode && stringNode.TryGetValue<string>(out var text)
-            && int.TryParse(text, out var parsedText))
+            && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedText))
         {
             version = parsedText;
             return true;

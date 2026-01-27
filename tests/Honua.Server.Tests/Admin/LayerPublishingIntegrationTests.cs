@@ -140,6 +140,39 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         toggleApi.Data!.Enabled.Should().BeFalse();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        var api = JsonSerializer.Deserialize<ApiResponse<object>>(payload, _jsonOptions);
+        api.Should().NotBeNull();
+        api!.Success.Should().BeFalse();
+        api.Message.Should().Contain("Primary key field 'id' must be included in selected fields.");
+    }
+
     private async Task CreatePostGisTableAsync()
     {
         var sql = $"""

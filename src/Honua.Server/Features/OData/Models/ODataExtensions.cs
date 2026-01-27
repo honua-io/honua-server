@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.OData.Models;
@@ -79,7 +80,7 @@ public static class ODataExtensions
         {
             long longId => longId,
             int intId => intId,
-            string strId when long.TryParse(strId, out var parsedId) => parsedId,
+            string strId when long.TryParse(strId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) => parsedId,
             _ => 0
         };
 

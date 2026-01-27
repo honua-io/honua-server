@@ -151,7 +151,7 @@ internal static class OgcFeaturesUtilities
         if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
         {
             var code = trimmed[5..];
-            if (int.TryParse(code, out var srid))
+            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
             {
                 return $"http://www.opengis.net/def/crs/EPSG/0/{srid}";
             }
@@ -161,7 +161,7 @@ internal static class OgcFeaturesUtilities
         if (trimmed.StartsWith(urnPrefix, StringComparison.OrdinalIgnoreCase))
         {
             var code = trimmed[urnPrefix.Length..];
-            if (int.TryParse(code, out var srid))
+            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
             {
                 return $"http://www.opengis.net/def/crs/EPSG/0/{srid}";
             }
