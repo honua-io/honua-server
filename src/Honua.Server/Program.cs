@@ -412,6 +412,7 @@ app.MapHealthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
+app.MapAdminObservabilityEndpoints();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();

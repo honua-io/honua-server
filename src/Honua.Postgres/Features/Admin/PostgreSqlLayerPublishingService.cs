@@ -248,7 +248,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        if (layerId <= 0)
+        if (layerId < 0)
         {
             return null;
         }

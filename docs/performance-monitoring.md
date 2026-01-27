@@ -173,6 +173,23 @@ Returns database performance statistics:
 }
 ```
 
+## Admin Health Dashboard (MVP)
+
+The Admin UI health dashboard (`/admin/health`) aggregates the built-in health/metrics endpoints along with a lightweight recent error buffer:
+
+- `/healthz/live` and `/healthz/ready` for service status.
+- `/api/v1/metrics/health`, `/performance`, `/database`, `/cache`, `/memory` for metrics snapshots.
+- `/api/v1/admin/observability/errors` for recent errors (in-memory ring buffer).
+- `/api/v1/admin/observability/telemetry` for telemetry configuration status.
+
+The recent error buffer is intentionally lightweight and non-persistent. Configure its size with
+`Monitoring:RecentErrors:Capacity` (environment variable: `HONUA__MONITORING__RECENTERRORS__CAPACITY`).
+Entries are sanitized to avoid exposing sensitive data.
+
+When OpenTelemetry OTLP export is configured (`Tracing:OtlpEndpoint` or `OTEL_EXPORTER_OTLP_ENDPOINT`), the
+dashboard surfaces a link to your telemetry backend. Without OTLP, the dashboard still works using only
+the built-in endpoints.
+
 ## Monitoring Integration
 
 ### Aspire Dashboard

@@ -208,10 +208,21 @@ window.maplibreInterop = (() => {
     maps.delete(containerId);
   };
 
+  const triggerFeature = (containerId, properties) => {
+    const entry = maps.get(containerId);
+    if (!entry || !entry.dotnetRef) {
+      return;
+    }
+
+    const payload = properties ? JSON.stringify(properties) : null;
+    entry.dotnetRef.invokeMethodAsync("OnFeatureSelected", payload);
+  };
+
   return {
     createMap,
     updateStyle,
     fitBounds,
-    removeMap
+    removeMap,
+    triggerFeature
   };
 })();

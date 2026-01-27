@@ -1,9 +1,8 @@
 @page "/styles"
+@inherits LayerSelectionPageBase
 
 @using System.Text.Json
 @implements IAsyncDisposable
-@inject ISecureConnectionsClient ConnectionsClient
-@inject ILayerPublishingClient LayerPublishingClient
 @inject ILayerStyleClient LayerStyleClient
 @inject HttpClient Http
 @inject IJSRuntime JS
@@ -12,27 +11,27 @@
 
 <MudStack Spacing="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-        <MudText Typo="Typo.h4">Style editor</MudText>
+        <MudText Typo="Typo.h4" HtmlTag="h1">Style editor</MudText>
         <MudStack Row="true" Spacing="1">
             <MudButton Variant="Variant.Outlined"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Refresh"
                        OnClick="RefreshAsync"
-                       Disabled="@(!_selectedConnectionId.HasValue)">
+                       Disabled="@(!SelectedConnectionId.HasValue)">
                 Refresh
             </MudButton>
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Save"
                        OnClick="SaveStyleAsync"
-                       Disabled="@(!_hasChanges || !_selectedLayerId.HasValue || _isSaving)">
+                       Disabled="@(!_hasChanges || !SelectedLayerId.HasValue || _isSaving)">
                 Save
             </MudButton>
             <MudButton Variant="Variant.Outlined"
                        Color="Color.Secondary"
                        StartIcon="@Icons.Material.Filled.Restore"
                        OnClick="ResetStyleAsync"
-                       Disabled="@(!_hasChanges || !_selectedLayerId.HasValue)">
+                       Disabled="@(!_hasChanges || !SelectedLayerId.HasValue)">
                 Reset
             </MudButton>
         </MudStack>
@@ -42,33 +41,33 @@
         Edit MapLibre styles with Maputnik and preview them against live tiles.
     </MudText>
 
-    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    @if (!string.IsNullOrWhiteSpace(ErrorMessage))
     {
-        <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+        <MudAlert Severity="Severity.Error" Dense="true">@ErrorMessage</MudAlert>
     }
 
     <MudPaper Class="pa-4" Elevation="1">
         <MudText Typo="Typo.subtitle2" Class="mb-2">Layer selection</MudText>
         <MudStack Spacing="2">
             <MudSelect T="Guid?"
-                       Value="_selectedConnectionId"
+                       Value="SelectedConnectionId"
                        ValueChanged="HandleConnectionChanged"
                        Label="Connection"
-                       Disabled="@_isLoadingConnections"
+                       Disabled="@IsLoadingConnections"
                        data-testid="styles-connection-select">
-                @foreach (var connection in _connections)
+                @foreach (var connection in Connections)
                 {
                     <MudSelectItem Value="@((Guid?)connection.ConnectionId)">@connection.Name</MudSelectItem>
                 }
             </MudSelect>
 
             <MudSelect T="int?"
-                       Value="_selectedLayerId"
+                       Value="SelectedLayerId"
                        ValueChanged="HandleLayerChanged"
                        Label="Published layer"
-                       Disabled="@(!_selectedConnectionId.HasValue || _isLoadingLayers)"
+                       Disabled="@(!SelectedConnectionId.HasValue || IsLoadingLayers)"
                        data-testid="styles-layer-select">
-                @foreach (var layer in _publishedLayers)
+                @foreach (var layer in PublishedLayers)
                 {
                     <MudSelectItem Value="@((int?)layer.LayerId)">
                         @layer.LayerName (@layer.ServiceName)
@@ -105,10 +104,10 @@
                     <MapPreview Style="_workingStyle"
                                 Bounds="_mapBounds"
                                 EmptyMessage="Select a layer to edit its style." />
-                    @if (_selectedLayer != null)
+                    @if (SelectedLayer != null)
                     {
                         <MudText Typo="Typo.body2">
-                            Editing <strong>@_selectedLayer.LayerName</strong> (@_selectedLayer.GeometryType, SRID @_selectedLayer.Srid).
+                            Editing <strong>@SelectedLayer.LayerName</strong> (@SelectedLayer.GeometryType, SRID @SelectedLayer.Srid).
                         </MudText>
                     }
                 </MudStack>
@@ -118,36 +117,18 @@
 </MudStack>
 
 @code {
-    private readonly List<SecureConnectionSummary> _connections = new();
-    private readonly List<PublishedLayerSummary> _publishedLayers = new();
-    private Guid? _selectedConnectionId;
-    private int? _selectedLayerId;
-    private PublishedLayerSummary? _selectedLayer;
     private JsonElement? _originalStyle;
     private JsonElement? _workingStyle;
     private JsonElement? _pendingStyle;
     private string? _pendingStyleId;
     private double[]? _mapBounds;
-    private bool _isLoadingConnections;
-    private bool _isLoadingLayers;
     private bool _isLoadingStyle;
     private bool _isSaving;
     private bool _hasChanges;
     private bool _maputnikLoaded;
     private bool _ignoreNextStyleChange;
-    private string? _errorMessage;
     private ElementReference _maputnikFrame;
     private DotNetObjectReference<Styles>? _dotNetRef;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadConnectionsAsync();
-        if (_selectedConnectionId.HasValue)
-        {
-            await LoadLayersAsync();
-            await SelectDefaultLayerAsync();
-        }
-    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -158,35 +139,8 @@
         }
     }
 
-    private async Task LoadConnectionsAsync()
+    protected override Task OnConnectionChangedAsync()
     {
-        _isLoadingConnections = true;
-        _errorMessage = null;
-        StateHasChanged();
-
-        var result = await ConnectionsClient.GetConnectionsAsync();
-        _isLoadingConnections = false;
-
-        if (!result.Success)
-        {
-            _errorMessage = result.Message ?? "Failed to load connections.";
-            return;
-        }
-
-        _connections.Clear();
-        _connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
-
-        if (_connections.Count > 0 && !_selectedConnectionId.HasValue)
-        {
-            _selectedConnectionId = _connections[0].ConnectionId;
-        }
-    }
-
-    private async Task HandleConnectionChanged(Guid? connectionId)
-    {
-        _selectedConnectionId = connectionId;
-        _selectedLayerId = null;
-        _selectedLayer = null;
         _workingStyle = null;
         _originalStyle = null;
         _pendingStyle = null;
@@ -194,71 +148,11 @@
         _mapBounds = null;
         _hasChanges = false;
         _ignoreNextStyleChange = false;
-        await RefreshAsync();
+        return Task.CompletedTask;
     }
 
-    private async Task HandleLayerChanged(int? layerId)
+    protected override async Task OnLayerChangedAsync()
     {
-        _selectedLayerId = layerId;
-        _selectedLayer = _publishedLayers.FirstOrDefault(layer => layer.LayerId == layerId);
-        await LoadStyleAsync();
-    }
-
-    private async Task RefreshAsync()
-    {
-        if (!_selectedConnectionId.HasValue)
-        {
-            return;
-        }
-
-        await LoadLayersAsync();
-        await SelectDefaultLayerAsync();
-    }
-
-    private async Task LoadLayersAsync()
-    {
-        _isLoadingLayers = true;
-        _errorMessage = null;
-        StateHasChanged();
-
-        if (!_selectedConnectionId.HasValue)
-        {
-            _isLoadingLayers = false;
-            return;
-        }
-
-        var result = await LayerPublishingClient.GetPublishedLayersAsync(_selectedConnectionId.Value);
-        _isLoadingLayers = false;
-
-        if (!result.Success)
-        {
-            _errorMessage = result.Message ?? "Failed to load layers.";
-            _publishedLayers.Clear();
-            return;
-        }
-
-        _publishedLayers.Clear();
-        _publishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
-    }
-
-    private async Task SelectDefaultLayerAsync()
-    {
-        if (_selectedLayerId.HasValue)
-        {
-            return;
-        }
-
-        var candidate = _publishedLayers.FirstOrDefault(layer => layer.Enabled) ?? _publishedLayers.FirstOrDefault();
-        if (candidate is null)
-        {
-            _workingStyle = null;
-            _originalStyle = null;
-            _mapBounds = null;
-            return;
-        }
-
-        _selectedLayerId = candidate.LayerId;
-        _selectedLayer = candidate;
         await LoadStyleAsync();
     }
 
@@ -267,9 +161,9 @@
         _workingStyle = null;
         _originalStyle = null;
         _hasChanges = false;
-        _errorMessage = null;
+        ErrorMessage = null;
 
-        if (!_selectedLayerId.HasValue)
+        if (!SelectedLayerId.HasValue)
         {
             return;
         }
@@ -277,10 +171,10 @@
         _isLoadingStyle = true;
         StateHasChanged();
 
-        var styleResult = await LayerStyleClient.GetLayerStyleAsync(_selectedLayerId.Value);
+        var styleResult = await LayerStyleClient.GetLayerStyleAsync(SelectedLayerId.Value);
         if (!styleResult.Success)
         {
-            _errorMessage = styleResult.Message ?? "Failed to load layer style.";
+            ErrorMessage = styleResult.Message ?? "Failed to load layer style.";
             _isLoadingStyle = false;
             return;
         }
@@ -288,13 +182,13 @@
         _originalStyle = styleResult.Data?.MapLibreStyle;
         _workingStyle = _originalStyle;
         _pendingStyle = _originalStyle;
-        _pendingStyleId = _selectedLayerId.HasValue ? BuildStyleId(_selectedLayerId.Value) : null;
+        _pendingStyleId = SelectedLayerId.HasValue ? BuildStyleId(SelectedLayerId.Value) : null;
         _ignoreNextStyleChange = _pendingStyle.HasValue;
 
         try
         {
             var tileJson = await Http.GetFromJsonAsync<TileJsonResponse>(
-                $"/tiles/{_selectedLayerId.Value}/tile.json",
+                $"/tiles/{SelectedLayerId.Value}/tile.json",
                 AdminJsonContext.Default.Options);
             _mapBounds = tileJson?.Bounds;
         }
@@ -339,19 +233,19 @@
 
     private async Task SaveStyleAsync()
     {
-        if (!_selectedLayerId.HasValue)
+        if (!SelectedLayerId.HasValue)
         {
             return;
         }
 
         _isSaving = true;
-        _errorMessage = null;
+        ErrorMessage = null;
         StateHasChanged();
 
         var style = await JS.InvokeAsync<JsonElement?>("maputnikBridge.getStyle");
         if (!style.HasValue)
         {
-            _errorMessage = "Unable to read style from Maputnik.";
+            ErrorMessage = "Unable to read style from Maputnik.";
             _isSaving = false;
             return;
         }
@@ -361,10 +255,10 @@
             MapLibreStyle = style.Value
         };
 
-        var result = await LayerStyleClient.UpdateLayerStyleAsync(_selectedLayerId.Value, update);
+        var result = await LayerStyleClient.UpdateLayerStyleAsync(SelectedLayerId.Value, update);
         if (!result.Success)
         {
-            _errorMessage = result.Message ?? "Failed to save style.";
+            ErrorMessage = result.Message ?? "Failed to save style.";
             _isSaving = false;
             return;
         }
@@ -383,7 +277,7 @@
         }
 
         _pendingStyle = _originalStyle;
-        _pendingStyleId = _selectedLayerId.HasValue ? BuildStyleId(_selectedLayerId.Value) : null;
+        _pendingStyleId = SelectedLayerId.HasValue ? BuildStyleId(SelectedLayerId.Value) : null;
         _ignoreNextStyleChange = true;
 
         if (_maputnikLoaded)

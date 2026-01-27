@@ -19,6 +19,18 @@ namespace Honua.Admin.Models;
 [JsonSerializable(typeof(LayerStyleResponse))]
 [JsonSerializable(typeof(TileJsonResponse))]
 [JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(HealthMetrics))]
+[JsonSerializable(typeof(PerformanceMetricsResponse))]
+[JsonSerializable(typeof(SystemInfo))]
+[JsonSerializable(typeof(HttpRequestMetrics))]
+[JsonSerializable(typeof(DatabaseMetrics))]
+[JsonSerializable(typeof(DatabaseOperationMetrics))]
+[JsonSerializable(typeof(CacheMetrics))]
+[JsonSerializable(typeof(CacheTypeMetrics))]
+[JsonSerializable(typeof(MemoryUsage))]
+[JsonSerializable(typeof(RecentErrorEntry))]
+[JsonSerializable(typeof(RecentErrorsResponse))]
+[JsonSerializable(typeof(ObservabilityStatusResponse))]
 internal sealed partial class AdminJsonContext : JsonSerializerContext
 {
 }
