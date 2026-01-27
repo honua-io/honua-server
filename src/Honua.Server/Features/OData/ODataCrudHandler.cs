@@ -157,6 +157,15 @@ internal sealed class ODataCrudHandler(
             return layerValidation.ErrorResult!;
         }
 
+        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            context,
+            resolvedLayerId.Value,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
+        }
+
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
@@ -237,6 +246,15 @@ internal sealed class ODataCrudHandler(
             return layerValidation.ErrorResult!;
         }
 
+        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            context,
+            layerId,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
+        }
+
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
@@ -302,6 +320,15 @@ internal sealed class ODataCrudHandler(
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            context,
+            layerId,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
         }
 
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);

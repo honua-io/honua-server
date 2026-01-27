@@ -14,10 +14,32 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddMudServices();
-builder.Services.AddAuthorizationCore();
+builder.Services.Configure<AdminAuthorizationOptions>(
+    builder.Configuration.GetSection(AdminAuthorizationOptions.SectionName));
+
+var authorizationOptions = builder.Configuration
+    .GetSection(AdminAuthorizationOptions.SectionName)
+    .Get<AdminAuthorizationOptions>() ?? new AdminAuthorizationOptions();
+
+builder.Services.AddAuthorizationCore(options =>
+{
+    options.AddPolicy(AdminAuthorizationPolicies.AdminPolicy, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        if (authorizationOptions.AdminRoles.Length > 0)
+        {
+            policy.RequireRole(authorizationOptions.AdminRoles);
+        }
+    });
+});
+
 builder.Services.AddOidcAuthentication(options =>
 {
     builder.Configuration.Bind("Oidc", options.ProviderOptions);
+    if (!string.IsNullOrWhiteSpace(authorizationOptions.RoleClaimType))
+    {
+        options.UserOptions.RoleClaim = authorizationOptions.RoleClaimType;
+    }
 });
 
 builder.Services.Configure<AdminApiOptions>(builder.Configuration.GetSection(AdminApiOptions.SectionName));
@@ -35,11 +57,13 @@ builder.Services.AddHttpClient("AdminApi", (sp, client) =>
     var baseUri = new Uri(baseUrl, UriKind.Absolute);
     var metricsUri = new Uri(baseUri, "/api/v1/metrics/");
     var healthUri = new Uri(baseUri, "/healthz/");
+    var tilesUri = new Uri(baseUri, "/tiles/");
     var authorizedUrls = new[]
     {
         baseUri.ToString(),
         metricsUri.ToString(),
-        healthUri.ToString()
+        healthUri.ToString(),
+        tilesUri.ToString()
     };
 
     return sp.GetRequiredService<AuthorizationMessageHandler>()
@@ -52,6 +76,7 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.
 builder.Services.AddScoped<ISecureConnectionsClient, SecureConnectionsClient>();
 builder.Services.AddScoped<ILayerPublishingClient, LayerPublishingClient>();
 builder.Services.AddScoped<IEsriImportClient, EsriImportClient>();
+builder.Services.AddScoped<IFileImportClient, FileImportClient>();
 builder.Services.AddScoped<ILayerStyleClient, LayerStyleClient>();
 
 await builder.Build().RunAsync();

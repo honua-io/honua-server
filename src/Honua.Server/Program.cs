@@ -225,6 +225,10 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions.SectionName));
 
+// Configure RBAC options
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.RbacOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.RbacOptions.SectionName));
+
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
 

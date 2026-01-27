@@ -95,6 +95,16 @@ PostGIS.
    status update live in the Import Jobs list. Failed or cancelled jobs can be
    retried and active jobs can be cancelled.
 
+## File Import (GeoJSON and Others)
+
+Use the Import page to upload supported geospatial files directly into Honua.
+
+1. Select a file and provide a target table name.
+2. Click **Preview** to inspect detected SRID and sample attributes.
+3. Adjust the target SRID if needed.
+4. Click **Import file** to upload; the result reports the created table name
+   and feature count.
+
 ## Map Preview (MapLibre)
 
 The **Preview** page (`/admin/preview`) embeds MapLibre GL JS for validating
@@ -130,6 +140,18 @@ dotnet build tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj
 HONUA_ADMIN_E2E_BASE_URL=http://localhost:8080/admin/ \
   dotnet test tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj
 ```
+
+Playwright failures write artifacts to `tests/TestResults/playwright/` (trace + screenshot).
+
+Optional DB isolation for E2E runs:
+```bash
+# Server must be started with HONUA_TEST_SCHEMA_HEADERS=true
+HONUA_ADMIN_E2E_DB_URL="Host=localhost;Username=honua;Password=honua;Database=honua_test" \
+  HONUA_ADMIN_E2E_BASE_URL=http://localhost:8080/admin/ \
+  dotnet test tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj
+```
+When `HONUA_ADMIN_E2E_DB_URL` is set, each test run creates a fresh schema and sends
+`X-Honua-Test-Schema` on admin API calls.
 
 If the container is missing browser dependencies, install them with:
 ```bash

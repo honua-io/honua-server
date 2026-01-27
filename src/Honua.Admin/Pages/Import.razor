@@ -1,8 +1,11 @@
 @page "/import"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
 @using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Forms
 @implements IAsyncDisposable
 
 @inject IEsriImportClient EsriImportClient
+@inject IFileImportClient FileImportClient
 @inject ISnackbar Snackbar
 
 <PageTitle>Import</PageTitle>
@@ -212,6 +215,134 @@
 
     <MudPaper Class="pa-4" Elevation="1">
         <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">File upload</MudText>
+            <MudText Typo="Typo.body2">
+                Upload GeoJSON and other supported formats directly into Honua.
+            </MudText>
+
+            @if (!string.IsNullOrWhiteSpace(_fileImportError))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_fileImportError</MudAlert>
+            }
+
+            <MudStack Spacing="1">
+                <MudText Typo="Typo.caption">File</MudText>
+                <InputFile OnChange="HandleFileSelected" data-testid="import-file-input" />
+                @if (!string.IsNullOrWhiteSpace(_fileImportFileName))
+                {
+                    <MudText Typo="Typo.caption" data-testid="import-file-name">@_fileImportFileName</MudText>
+                }
+            </MudStack>
+
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string"
+                                  Label="Table name"
+                                  Immediate="true"
+                                  Value="_fileTableName"
+                                  ValueChanged="HandleFileTableNameChanged"
+                                  Error="@(!string.IsNullOrWhiteSpace(_fileTableError))"
+                                  ErrorText="@_fileTableError"
+                                  Disabled="@_isImportingFile"
+                                  data-testid="import-file-table" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudNumericField T="int?"
+                                     Label="Target SRID"
+                                     Immediate="true"
+                                     Value="_fileTargetSrid"
+                                     ValueChanged="HandleFileTargetSridChanged"
+                                     Disabled="@_isImportingFile"
+                                     data-testid="import-file-target-srid" />
+                </MudItem>
+            </MudGrid>
+
+            <MudSwitch T="bool"
+                       @bind-Value="_fileOverwriteExisting"
+                       Color="Color.Primary"
+                       Label="Overwrite existing table" />
+
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Justify="Justify.FlexEnd">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           OnClick="PreviewFileAsync"
+                           Disabled="@(!CanPreviewFile)"
+                           data-testid="import-file-preview">
+                    Preview
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           OnClick="StartFileImportAsync"
+                           Disabled="@(!CanImportFile)"
+                           data-testid="import-file-start">
+                    Import file
+                </MudButton>
+                @if (_isPreviewingFile || _isImportingFile)
+                {
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                }
+            </MudStack>
+
+            @if (_filePreview is not null)
+            {
+                <MudPaper Class="pa-3" Elevation="0" data-testid="import-file-preview-result">
+                    <MudGrid>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.subtitle2">Preview</MudText>
+                            <MudText Typo="Typo.body2">Format: @_filePreview.Format</MudText>
+                            <MudText Typo="Typo.body2">Features: @_filePreview.TotalFeatureCount</MudText>
+                            <MudText Typo="Typo.body2">Detected SRID: @(_filePreview.DetectedSrid?.ToString() ?? "-")</MudText>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            @if (_filePreview.AvailableLayers.Length > 0)
+                            {
+                                <MudText Typo="Typo.subtitle2">Layers</MudText>
+                                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                                    @foreach (var layer in _filePreview.AvailableLayers)
+                                    {
+                                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">@layer</MudChip>
+                                    }
+                                </MudStack>
+                            }
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_filePreview.SampleProperties.Count > 0)
+                    {
+                        <MudTable Items="_filePreview.SampleProperties" Dense="true" Hover="true">
+                            <HeaderContent>
+                                <MudTh>Field</MudTh>
+                                <MudTh>Sample value</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="item">
+                                <MudTd DataLabel="Field">@item.Key</MudTd>
+                                <MudTd DataLabel="Sample value">@item.Value</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudPaper>
+            }
+
+            @if (_fileImportResult is not null)
+            {
+                <MudAlert Severity="@(_fileImportResult.Success ? Severity.Success : Severity.Error)"
+                          Dense="true"
+                          data-testid="import-file-result">
+                    @if (_fileImportResult.Success)
+                    {
+                        <span>Imported @_fileImportResult.FeatureCount features into @_fileImportResult.TableName.</span>
+                    }
+                    else
+                    {
+                        <span>@(_fileImportResult.ErrorMessage ?? "File import failed.")</span>
+                    }
+                </MudAlert>
+            }
+        </MudStack>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Spacing="2">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                 <MudText Typo="Typo.subtitle2">Import jobs</MudText>
                 <MudStack Row="true" Spacing="1">
@@ -334,6 +465,18 @@
     private bool _isLoadingJobs;
     private bool _overwriteExisting;
     private bool _autoPublish = true;
+    private IBrowserFile? _fileImportFile;
+    private string? _fileImportFileName;
+    private string? _fileTableName;
+    private string? _fileTableError;
+    private FilePreviewResponse? _filePreview;
+    private FileImportResult? _fileImportResult;
+    private string? _fileImportError;
+    private int? _fileSourceSrid;
+    private int? _fileTargetSrid = 4326;
+    private bool _fileOverwriteExisting;
+    private bool _isPreviewingFile;
+    private bool _isImportingFile;
 
     private int SelectedLayerCount => _layers.Count(layer => layer.Selected);
 
@@ -349,6 +492,17 @@
         .ToArray();
 
     private bool HasCompletedJobs => _jobProgress.Values.Any(job => !IsActiveStatus(job.Status));
+
+    private bool CanPreviewFile =>
+        !_isPreviewingFile &&
+        !_isImportingFile &&
+        _fileImportFile is not null;
+
+    private bool CanImportFile =>
+        !_isImportingFile &&
+        _fileImportFile is not null &&
+        string.IsNullOrWhiteSpace(_fileTableError) &&
+        !string.IsNullOrWhiteSpace(_fileTableName);
 
     protected override async Task OnInitializedAsync()
     {
@@ -471,6 +625,110 @@
         finally
         {
             _isStartingImport = false;
+        }
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs args)
+    {
+        _fileImportFile = args.File;
+        _fileImportFileName = _fileImportFile?.Name;
+        _fileTableName = string.IsNullOrWhiteSpace(_fileTableName)
+            ? DefaultTableName(_fileImportFileName)
+            : _fileTableName;
+        _fileTableError = ValidateFileTableName(_fileTableName);
+        _filePreview = null;
+        _fileImportResult = null;
+        _fileImportError = null;
+        _fileSourceSrid = null;
+        _fileTargetSrid ??= 4326;
+    }
+
+    private void HandleFileTableNameChanged(string value)
+    {
+        _fileTableName = value;
+        _fileTableError = ValidateFileTableName(value);
+    }
+
+    private void HandleFileTargetSridChanged(int? value)
+    {
+        _fileTargetSrid = value;
+    }
+
+    private async Task PreviewFileAsync()
+    {
+        if (_fileImportFile is null)
+        {
+            Snackbar.Add("Select a file to preview.", Severity.Warning);
+            return;
+        }
+
+        _isPreviewingFile = true;
+        _fileImportError = null;
+        _fileImportResult = null;
+        try
+        {
+            var result = await FileImportClient.PreviewAsync(_fileImportFile);
+            if (!result.Success || result.Data is null)
+            {
+                _fileImportError = result.Message ?? "Failed to preview file.";
+                return;
+            }
+
+            _filePreview = result.Data;
+            _fileSourceSrid = result.Data.DetectedSrid;
+            if (!_fileTargetSrid.HasValue)
+            {
+                _fileTargetSrid = result.Data.DetectedSrid ?? 4326;
+            }
+        }
+        finally
+        {
+            _isPreviewingFile = false;
+        }
+    }
+
+    private async Task StartFileImportAsync()
+    {
+        if (_fileImportFile is null)
+        {
+            Snackbar.Add("Select a file to import.", Severity.Warning);
+            return;
+        }
+
+        _fileTableError = ValidateFileTableName(_fileTableName);
+        if (!string.IsNullOrWhiteSpace(_fileTableError))
+        {
+            Snackbar.Add(_fileTableError, Severity.Warning);
+            return;
+        }
+
+        _isImportingFile = true;
+        _fileImportError = null;
+        _fileImportResult = null;
+        try
+        {
+            var result = await FileImportClient.UploadAsync(
+                _fileImportFile,
+                _fileTableName ?? string.Empty,
+                _fileSourceSrid,
+                _fileTargetSrid,
+                _fileOverwriteExisting);
+
+            if (!result.Success || result.Data is null)
+            {
+                _fileImportError = result.Message ?? "File import failed.";
+                return;
+            }
+
+            _fileImportResult = result.Data;
+            if (!_fileImportResult.Success)
+            {
+                _fileImportError = _fileImportResult.ErrorMessage ?? "File import failed.";
+            }
+        }
+        finally
+        {
+            _isImportingFile = false;
         }
     }
 
@@ -728,8 +986,42 @@
         return isDuplicate ? "Table name duplicates another selection." : null;
     }
 
+    private static string? ValidateFileTableName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Table name is required.";
+        }
+
+        if (!IsValidTableName(name))
+        {
+            return "Use letters, numbers, and underscores. Start with a letter or underscore.";
+        }
+
+        return null;
+    }
+
     private static bool IsValidTableName(string name)
         => _tableNamePattern.IsMatch(name.Trim());
+
+    private static string DefaultTableName(string? fileName)
+    {
+        var baseName = string.IsNullOrWhiteSpace(fileName)
+            ? "import_data"
+            : System.IO.Path.GetFileNameWithoutExtension(fileName);
+        var sanitized = _tableNameCleanup.Replace(baseName ?? string.Empty, "_").Trim('_');
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            sanitized = "import_data";
+        }
+
+        if (char.IsDigit(sanitized[0]))
+        {
+            sanitized = $"import_{sanitized}";
+        }
+
+        return sanitized.ToLowerInvariant();
+    }
 
     private static string DefaultTableName(EsriLayerSummary layer)
     {

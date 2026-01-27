@@ -1,4 +1,5 @@
 @page "/connections"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
 @using System.Globalization
 
 @inject ISecureConnectionsClient ConnectionsClient
@@ -120,18 +121,27 @@
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await ConnectionsClient.GetConnectionsAsync();
-        if (result.Success)
+        try
         {
-            _connections.Clear();
-            _connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
+            var result = await ConnectionsClient.GetConnectionsAsync();
+            if (result.Success)
+            {
+                _connections.Clear();
+                _connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
+            }
+            else
+            {
+                _errorMessage = result.Message ?? "Failed to load connections.";
+            }
         }
-        else
+        catch (Exception)
         {
-            _errorMessage = result.Message ?? "Failed to load connections.";
+            _errorMessage = "Failed to load connections.";
         }
-
-        _isLoading = false;
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     private void StartCreate()

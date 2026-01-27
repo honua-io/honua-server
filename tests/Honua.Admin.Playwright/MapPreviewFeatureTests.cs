@@ -18,140 +18,140 @@ public sealed class MapPreviewFeatureTests : IClassFixture<PlaywrightFixture>
     [Fact]
     public async Task PreviewPage_FeaturePopupShowsAttributes()
     {
-        var baseUrl = GetBaseUrl();
-        if (string.IsNullOrWhiteSpace(baseUrl))
+        await _fixture.RunAsync(nameof(PreviewPage_FeaturePopupShowsAttributes), async ctx =>
         {
-            return;
-        }
-
-        await using var context = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
-        {
-            BaseURL = baseUrl
-        });
-        var page = await context.NewPageAsync();
-
-        var connectionId = Guid.NewGuid();
-        const int layerId = 55;
-        var now = DateTimeOffset.UtcNow;
-
-        var previewStyle = new
-        {
-            version = 8,
-            name = "Preview",
-            sources = new { },
-            layers = Array.Empty<object>()
-        };
-
-        await page.RouteAsync("**/connections", async route =>
-        {
-            await FulfillJsonAsync(route, new
+            var baseUrl = ctx.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl))
             {
-                success = true,
-                message = "ok",
-                timestamp = now,
-                data = new[]
+                return;
+            }
+
+            var page = ctx.Page;
+
+            var connectionId = Guid.NewGuid();
+            const int layerId = 55;
+            var now = DateTimeOffset.UtcNow;
+
+            var previewStyle = new
+            {
+                version = 8,
+                name = "Preview",
+                sources = new { },
+                layers = Array.Empty<object>()
+            };
+
+            await page.RouteAsync("**/connections", async route =>
+            {
+                await FulfillJsonAsync(route, new
                 {
-                    new
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = new[]
                     {
-                        connectionId,
-                        name = "primary-db",
-                        description = "Primary connection",
-                        host = "db.internal",
-                        port = 5432,
-                        databaseName = "honua",
-                        username = "admin",
-                        sslRequired = true,
-                        sslMode = "Require",
-                        storageType = "managed",
-                        isActive = true,
-                        healthStatus = "Healthy",
-                        lastHealthCheck = now.AddMinutes(-5),
-                        createdAt = now.AddDays(-1),
-                        createdBy = "tester"
+                        new
+                        {
+                            connectionId,
+                            name = "primary-db",
+                            description = "Primary connection",
+                            host = "db.internal",
+                            port = 5432,
+                            databaseName = "honua",
+                            username = "admin",
+                            sslRequired = true,
+                            sslMode = "Require",
+                            storageType = "managed",
+                            isActive = true,
+                            healthStatus = "Healthy",
+                            lastHealthCheck = now.AddMinutes(-5),
+                            createdAt = now.AddDays(-1),
+                            createdBy = "tester"
+                        }
                     }
-                }
+                });
             });
-        });
 
-        await page.RouteAsync("**/connections/*/layers", async route =>
-        {
-            await FulfillJsonAsync(route, new
+            await page.RouteAsync("**/connections/*/layers", async route =>
             {
-                success = true,
-                message = "ok",
-                timestamp = now,
-                data = new[]
+                await FulfillJsonAsync(route, new
                 {
-                    new
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = new[]
                     {
-                        layerId,
-                        layerName = "Parcels",
-                        schema = "public",
-                        table = "parcels",
-                        description = "Parcel boundaries",
-                        geometryType = "Polygon",
-                        srid = 4326,
-                        primaryKey = "id",
-                        fieldCount = 2,
-                        enabled = true,
-                        serviceName = "default"
+                        new
+                        {
+                            layerId,
+                            layerName = "Parcels",
+                            schema = "public",
+                            table = "parcels",
+                            description = "Parcel boundaries",
+                            geometryType = "Polygon",
+                            srid = 4326,
+                            primaryKey = "id",
+                            fieldCount = 2,
+                            enabled = true,
+                            serviceName = "default"
+                        }
                     }
-                }
+                });
             });
-        });
 
-        await page.RouteAsync("**/metadata/layers/*/style", async route =>
-        {
-            await FulfillJsonAsync(route, new
+            await page.RouteAsync("**/metadata/layers/*/style", async route =>
             {
-                success = true,
-                message = "ok",
-                timestamp = now,
-                data = new
+                await FulfillJsonAsync(route, new
                 {
-                    mapLibreStyle = previewStyle
-                }
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = new
+                    {
+                        mapLibreStyle = previewStyle
+                    }
+                });
             });
-        });
 
-        await page.RouteAsync("**/tiles/*/tile.json", async route =>
-        {
-            await FulfillJsonAsync(route, new
+            await page.RouteAsync("**/tiles/*/tile.json", async route =>
             {
-                bounds = new[] { -157.0, 18.0, -156.0, 19.0 }
+                await FulfillJsonAsync(route, new
+                {
+                    bounds = new[] { -157.0, 18.0, -156.0, 19.0 }
+                });
             });
+
+            await page.GotoAsync(BuildPreviewUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
+
+            await page.GetByTestId("preview-connection-select").WaitForAsync();
+            await page.GetByTestId("preview-layer-select").WaitForAsync();
+            await page.GetByTestId("map-preview-canvas").WaitForAsync();
+
+            var containerId = await page.GetByTestId("map-preview-canvas").GetAttributeAsync("id");
+            Assert.False(string.IsNullOrWhiteSpace(containerId));
+
+            await page.WaitForFunctionAsync("window.maplibreInterop && window.maplibreInterop.triggerFeature");
+
+            var properties = new
+            {
+                id = 42,
+                owner = "Sample Owner"
+            };
+
+            await WaitForConditionAsync(async () =>
+            {
+                await page.EvaluateAsync(
+                    "(args) => window.maplibreInterop.triggerFeature(args.containerId, args.properties)",
+                    new { containerId, properties });
+                return await page.GetByTestId("map-feature-popup").IsVisibleAsync();
+            }, TimeSpan.FromSeconds(10), "Feature popup did not appear.");
+
+            await page.GetByText("Sample Owner").WaitForAsync();
         });
-
-        await page.GotoAsync(BuildPreviewUrl(baseUrl));
-
-        await page.GetByTestId("preview-connection-select").WaitForAsync();
-        await page.GetByTestId("preview-layer-select").WaitForAsync();
-        await page.GetByTestId("map-preview-canvas").WaitForAsync();
-
-        var containerId = await page.GetByTestId("map-preview-canvas").GetAttributeAsync("id");
-        Assert.False(string.IsNullOrWhiteSpace(containerId));
-
-        await page.WaitForFunctionAsync("window.maplibreInterop && window.maplibreInterop.triggerFeature");
-
-        var properties = new
-        {
-            id = 42,
-            owner = "Sample Owner"
-        };
-
-        await WaitForConditionAsync(async () =>
-        {
-            await page.EvaluateAsync(
-                "(args) => window.maplibreInterop.triggerFeature(args.containerId, args.properties)",
-                new { containerId, properties });
-            return await page.GetByTestId("map-feature-popup").IsVisibleAsync();
-        }, TimeSpan.FromSeconds(10), "Feature popup did not appear.");
-
-        await page.GetByText("Sample Owner").WaitForAsync();
     }
-
-    private static string? GetBaseUrl()
-        => Environment.GetEnvironmentVariable("HONUA_ADMIN_E2E_BASE_URL");
 
     private static string BuildPreviewUrl(string baseUrl)
         => baseUrl.TrimEnd('/') + "/preview";

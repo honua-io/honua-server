@@ -1,9 +1,10 @@
 @page "/preview"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
 @inherits LayerSelectionPageBase
 
 @using System.Text.Json
 @inject ILayerStyleClient LayerStyleClient
-@inject HttpClient Http
+@inject IHttpClientFactory HttpClientFactory
 
 <PageTitle>Map preview</PageTitle>
 
@@ -113,29 +114,37 @@
 
         _isLoadingStyle = true;
         StateHasChanged();
-
-        var styleResult = await LayerStyleClient.GetLayerStyleAsync(SelectedLayerId.Value);
-        if (!styleResult.Success)
-        {
-            ErrorMessage = styleResult.Message ?? "Failed to load layer style.";
-            _isLoadingStyle = false;
-            return;
-        }
-
-        _mapStyle = styleResult.Data?.MapLibreStyle;
-
         try
         {
-            var tileJson = await Http.GetFromJsonAsync<TileJsonResponse>(
-                $"/tiles/{SelectedLayerId.Value}/tile.json",
-                AdminJsonContext.Default.Options);
-            _mapBounds = tileJson?.Bounds;
-        }
-        catch (HttpRequestException)
-        {
-            _mapBounds = null;
-        }
+            var styleResult = await LayerStyleClient.GetLayerStyleAsync(SelectedLayerId.Value);
+            if (!styleResult.Success)
+            {
+                ErrorMessage = styleResult.Message ?? "Failed to load layer style.";
+                return;
+            }
 
-        _isLoadingStyle = false;
+            _mapStyle = styleResult.Data?.MapLibreStyle;
+
+            try
+            {
+                var adminClient = HttpClientFactory.CreateClient("AdminApi");
+                var tileJson = await adminClient.GetFromJsonAsync<TileJsonResponse>(
+                    $"/tiles/{SelectedLayerId.Value}/tile.json",
+                    AdminJsonContext.Default.Options);
+                _mapBounds = tileJson?.Bounds;
+            }
+            catch (HttpRequestException)
+            {
+                _mapBounds = null;
+            }
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Failed to load layer style.";
+        }
+        finally
+        {
+            _isLoadingStyle = false;
+        }
     }
 }

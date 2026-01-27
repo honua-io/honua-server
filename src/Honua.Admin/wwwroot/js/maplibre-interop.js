@@ -63,30 +63,37 @@ window.maplibreInterop = (() => {
     }
   };
 
-  const buildPopupHtml = (properties) => {
+  const buildPopupContent = (properties) => {
+    const container = document.createElement("div");
+    container.className = "maplibre-popup";
+
     const entries = Object.entries(properties ?? {});
     if (entries.length === 0) {
-      return "<div class=\"maplibre-popup-empty\">No attributes</div>";
+      const empty = document.createElement("div");
+      empty.className = "maplibre-popup-empty";
+      empty.textContent = "No attributes";
+      container.appendChild(empty);
+      return container;
     }
 
-    const rows = entries
-      .map(([key, value]) => {
-        const label = String(key);
-        const displayValue = value === null || value === undefined ? "" : String(value);
-        return `
-          <div class="maplibre-popup-row">
-            <span class="maplibre-popup-key">${label}</span>
-            <span class="maplibre-popup-value">${displayValue}</span>
-          </div>
-        `;
-      })
-      .join("");
+    for (const [key, value] of entries) {
+      const row = document.createElement("div");
+      row.className = "maplibre-popup-row";
 
-    return `
-      <div class="maplibre-popup">
-        ${rows}
-      </div>
-    `;
+      const label = document.createElement("span");
+      label.className = "maplibre-popup-key";
+      label.textContent = String(key);
+
+      const display = document.createElement("span");
+      display.className = "maplibre-popup-value";
+      display.textContent = value === null || value === undefined ? "" : String(value);
+
+      row.appendChild(label);
+      row.appendChild(display);
+      container.appendChild(row);
+    }
+
+    return container;
   };
 
   const clearPopup = (entry) => {
@@ -132,12 +139,12 @@ window.maplibreInterop = (() => {
 
       const feature = features[0];
       const properties = feature?.properties || {};
-      const popupHtml = buildPopupHtml(properties);
+      const popupContent = buildPopupContent(properties);
 
       clearPopup(entry);
       entry.popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: "320px" })
         .setLngLat(event.lngLat)
-        .setHTML(popupHtml)
+        .setDOMContent(popupContent)
         .addTo(map);
 
       if (entry.dotnetRef) {
@@ -218,11 +225,25 @@ window.maplibreInterop = (() => {
     entry.dotnetRef.invokeMethodAsync("OnFeatureSelected", payload);
   };
 
+  const getState = (containerId) => {
+    const entry = maps.get(containerId);
+    if (!entry) {
+      return null;
+    }
+
+    const center = entry.map.getCenter();
+    return {
+      center: [center.lng, center.lat],
+      zoom: entry.map.getZoom()
+    };
+  };
+
   return {
     createMap,
     updateStyle,
     fitBounds,
     removeMap,
-    triggerFeature
+    triggerFeature,
+    getState
   };
 })();

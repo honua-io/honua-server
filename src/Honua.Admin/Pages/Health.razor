@@ -1,4 +1,5 @@
 @page "/health"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
 @using System.Globalization
 @using System.Text.Json
 @using Honua.Admin.Models
@@ -342,6 +343,10 @@
         catch (OperationCanceledException)
         {
             // Ignore cancellation.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Timer disposed during shutdown.
         }
     }
 

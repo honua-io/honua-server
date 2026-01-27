@@ -1,10 +1,11 @@
 @page "/styles"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
 @inherits LayerSelectionPageBase
 
 @using System.Text.Json
 @implements IAsyncDisposable
 @inject ILayerStyleClient LayerStyleClient
-@inject HttpClient Http
+@inject IHttpClientFactory HttpClientFactory
 @inject IJSRuntime JS
 
 <PageTitle>Style editor</PageTitle>
@@ -170,39 +171,47 @@
 
         _isLoadingStyle = true;
         StateHasChanged();
-
-        var styleResult = await LayerStyleClient.GetLayerStyleAsync(SelectedLayerId.Value);
-        if (!styleResult.Success)
-        {
-            ErrorMessage = styleResult.Message ?? "Failed to load layer style.";
-            _isLoadingStyle = false;
-            return;
-        }
-
-        _originalStyle = styleResult.Data?.MapLibreStyle;
-        _workingStyle = _originalStyle;
-        _pendingStyle = _originalStyle;
-        _pendingStyleId = SelectedLayerId.HasValue ? BuildStyleId(SelectedLayerId.Value) : null;
-        _ignoreNextStyleChange = _pendingStyle.HasValue;
-
         try
         {
-            var tileJson = await Http.GetFromJsonAsync<TileJsonResponse>(
-                $"/tiles/{SelectedLayerId.Value}/tile.json",
-                AdminJsonContext.Default.Options);
-            _mapBounds = tileJson?.Bounds;
-        }
-        catch (HttpRequestException)
-        {
-            _mapBounds = null;
-        }
+            var styleResult = await LayerStyleClient.GetLayerStyleAsync(SelectedLayerId.Value);
+            if (!styleResult.Success)
+            {
+                ErrorMessage = styleResult.Message ?? "Failed to load layer style.";
+                return;
+            }
 
-        if (_maputnikLoaded && _pendingStyle.HasValue)
-        {
-            await ApplyStyleToMaputnikAsync();
-        }
+            _originalStyle = styleResult.Data?.MapLibreStyle;
+            _workingStyle = _originalStyle;
+            _pendingStyle = _originalStyle;
+            _pendingStyleId = SelectedLayerId.HasValue ? BuildStyleId(SelectedLayerId.Value) : null;
+            _ignoreNextStyleChange = _pendingStyle.HasValue;
 
-        _isLoadingStyle = false;
+            try
+            {
+                var adminClient = HttpClientFactory.CreateClient("AdminApi");
+                var tileJson = await adminClient.GetFromJsonAsync<TileJsonResponse>(
+                    $"/tiles/{SelectedLayerId.Value}/tile.json",
+                    AdminJsonContext.Default.Options);
+                _mapBounds = tileJson?.Bounds;
+            }
+            catch (HttpRequestException)
+            {
+                _mapBounds = null;
+            }
+
+            if (_maputnikLoaded && _pendingStyle.HasValue)
+            {
+                await ApplyStyleToMaputnikAsync();
+            }
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Failed to load layer style.";
+        }
+        finally
+        {
+            _isLoadingStyle = false;
+        }
     }
 
     private async Task OnMaputnikLoaded()
@@ -241,32 +250,39 @@
         _isSaving = true;
         ErrorMessage = null;
         StateHasChanged();
-
-        var style = await JS.InvokeAsync<JsonElement?>("maputnikBridge.getStyle");
-        if (!style.HasValue)
+        try
         {
-            ErrorMessage = "Unable to read style from Maputnik.";
-            _isSaving = false;
-            return;
+            var style = await JS.InvokeAsync<JsonElement?>("maputnikBridge.getStyle");
+            if (!style.HasValue)
+            {
+                ErrorMessage = "Unable to read style from Maputnik.";
+                return;
+            }
+
+            var update = new LayerStyleUpdateRequest
+            {
+                MapLibreStyle = style.Value
+            };
+
+            var result = await LayerStyleClient.UpdateLayerStyleAsync(SelectedLayerId.Value, update);
+            if (!result.Success)
+            {
+                ErrorMessage = result.Message ?? "Failed to save style.";
+                return;
+            }
+
+            _originalStyle = result.Data?.MapLibreStyle ?? style.Value;
+            _workingStyle = _originalStyle;
+            _hasChanges = false;
         }
-
-        var update = new LayerStyleUpdateRequest
+        catch (Exception)
         {
-            MapLibreStyle = style.Value
-        };
-
-        var result = await LayerStyleClient.UpdateLayerStyleAsync(SelectedLayerId.Value, update);
-        if (!result.Success)
-        {
-            ErrorMessage = result.Message ?? "Failed to save style.";
-            _isSaving = false;
-            return;
+            ErrorMessage = "Failed to save style.";
         }
-
-        _originalStyle = result.Data?.MapLibreStyle ?? style.Value;
-        _workingStyle = _originalStyle;
-        _hasChanges = false;
-        _isSaving = false;
+        finally
+        {
+            _isSaving = false;
+        }
     }
 
     private async Task ResetStyleAsync()

@@ -70,6 +70,15 @@ internal sealed class FeatureServerEditsHandler(
                 return accessError;
             }
 
+            var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+                httpContext,
+                service.Name,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
+
             // Validate edit limits
             var limitsValidationResult = ValidateEditLimits(request, editLimits, httpContext);
             if (limitsValidationResult != null)

@@ -51,6 +51,15 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
 
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layerId,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
+
             var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {
@@ -123,6 +132,15 @@ internal sealed partial class OgcFeaturesCrudHandler(
             }
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
+
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layerId,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
@@ -213,6 +231,15 @@ internal sealed partial class OgcFeaturesCrudHandler(
             }
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
+
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layerId,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {

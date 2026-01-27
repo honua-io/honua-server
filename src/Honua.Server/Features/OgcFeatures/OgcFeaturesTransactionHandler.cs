@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -53,6 +54,15 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
+
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layerId,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
 
             var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
                 context.Request,
@@ -160,6 +170,15 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
+
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layerId,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
