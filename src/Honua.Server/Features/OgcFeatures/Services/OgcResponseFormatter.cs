@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.IO;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 
@@ -110,6 +113,38 @@ internal static class OgcResponseFormatter
 
         builder.AppendLine("</wfs:FeatureCollection>");
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Streams GML representation of a feature collection.
+    /// </summary>
+    public static async Task StreamGmlFeatureCollectionAsync(
+        IAsyncEnumerable<GmlFeature> features,
+        System.IO.Pipelines.PipeWriter bodyWriter,
+        CancellationToken cancellationToken)
+    {
+        await using var writer = new StreamWriter(
+            bodyWriter.AsStream(),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            bufferSize: 8192,
+            leaveOpen: true);
+
+        await writer.WriteLineAsync(
+            $"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\">");
+
+        await foreach (var feature in features.WithCancellation(cancellationToken))
+        {
+            await writer.WriteLineAsync("  <wfs:member>");
+            await writer.WriteLineAsync($"    <gml:Feature gml:id=\"{feature.Id}\">");
+            WriteGmlGeometry(writer, feature.GeometryGml, "      ");
+            WriteGmlProperties(writer, feature.Attributes, "      ");
+            await writer.WriteLineAsync("    </gml:Feature>");
+            await writer.WriteLineAsync("  </wfs:member>");
+            await writer.FlushAsync(cancellationToken);
+        }
+
+        await writer.WriteLineAsync("</wfs:FeatureCollection>");
+        await writer.FlushAsync(cancellationToken);
     }
 
     /// <summary>
@@ -314,6 +349,47 @@ internal static class OgcResponseFormatter
                 .Replace("'", "&apos;", StringComparison.Ordinal);
 
             builder.AppendLine($"{indent}<gml:property name=\"{safeKey}\">{safeValue}</gml:property>");
+        }
+    }
+
+    private static void WriteGmlGeometry(TextWriter writer, string? geometryGml, string indent)
+    {
+        if (string.IsNullOrWhiteSpace(geometryGml))
+        {
+            writer.WriteLine($"{indent}<gml:Point />");
+            return;
+        }
+
+        var lines = geometryGml.Split('\n');
+        foreach (var line in lines)
+        {
+            writer.Write(indent);
+            writer.WriteLine(line.TrimEnd('\r'));
+        }
+    }
+
+    private static void WriteGmlProperties(TextWriter writer, ImmutableDictionary<string, object?> properties, string indent)
+    {
+        if (properties.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (var (key, value) in properties)
+        {
+            if (value == null)
+            {
+                continue;
+            }
+
+            var safeKey = key.Replace(" ", "_", StringComparison.Ordinal);
+            var safeValue = value.ToString()?.Replace("&", "&amp;", StringComparison.Ordinal)
+                .Replace("<", "&lt;", StringComparison.Ordinal)
+                .Replace(">", "&gt;", StringComparison.Ordinal)
+                .Replace("\"", "&quot;", StringComparison.Ordinal)
+                .Replace("'", "&apos;", StringComparison.Ordinal);
+
+            writer.WriteLine($"{indent}<gml:property name=\"{safeKey}\">{safeValue}</gml:property>");
         }
     }
 
