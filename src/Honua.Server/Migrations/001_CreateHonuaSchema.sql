@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     min_scale DOUBLE PRECISION,
     max_scale DOUBLE PRECISION,
     default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

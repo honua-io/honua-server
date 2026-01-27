@@ -141,6 +141,58 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
+    public async Task PublishLayer_BulkToggle_DisablesServiceLayers()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer bulk toggle integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        publishResponse.Be201Created();
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Success.Should().BeTrue();
+        publishApi.Data.Should().NotBeNull();
+
+        _layerId = publishApi.Data!.LayerId;
+
+        var bulkRequest = new LayerEnabledRequest { Enabled = false };
+
+        var bulkResponse = await _client.PutAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/enabled?serviceName={_serviceName}",
+            JsonContent.Create(bulkRequest, options: _jsonOptions));
+
+        bulkResponse.Be200Ok();
+
+        var bulkPayload = await bulkResponse.Content.ReadAsStringAsync();
+        var bulkApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(bulkPayload, _jsonOptions);
+
+        bulkApi.Should().NotBeNull();
+        bulkApi!.Success.Should().BeTrue();
+        bulkApi.Data.Should().NotBeNull();
+
+        bulkApi.Data!.Single(layer => layer.LayerId == _layerId).Enabled.Should().BeFalse();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest()

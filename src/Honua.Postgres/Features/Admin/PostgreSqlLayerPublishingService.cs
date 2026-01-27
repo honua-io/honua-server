@@ -49,7 +49,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.table_name,
                 l.geometry_type,
                 l.srid,
-                CASE WHEN sl.layer_id IS NULL THEN false ELSE true END as enabled
+                l.enabled
             FROM honua.layers l
             LEFT JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id AND sl.service_name = @serviceName
@@ -215,14 +215,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             table,
             geometryType,
             srid,
+            request.Enabled,
             cancellationToken);
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
 
-        if (request.Enabled)
-        {
-            await EnsureLayerEnabledAsync(connection, transaction, serviceName, layerId, cancellationToken);
-        }
+        await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -267,27 +265,53 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             return null;
         }
 
-        if (enabled)
-        {
-            await EnsureServiceAsync(connection, transaction, normalizedService, layer.Srid, null, cancellationToken);
-            await EnsureLayerEnabledAsync(connection, transaction, normalizedService, layerId, cancellationToken);
-            layer = CloneWithEnabled(layer, true);
-        }
-        else
-        {
-            const string deleteSql = """
-                DELETE FROM honua.service_layers
-                WHERE service_name = @serviceName AND layer_id = @layerId;
-                """;
-            await using var deleteCommand = new NpgsqlCommand(deleteSql, connection, transaction);
-            deleteCommand.Parameters.AddWithValue("@serviceName", normalizedService);
-            deleteCommand.Parameters.AddWithValue("@layerId", layerId);
-            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
-            layer = CloneWithEnabled(layer, false);
-        }
+        const string updateSql = """
+            UPDATE honua.layers
+            SET enabled = @enabled
+            WHERE layer_id = @layerId;
+            """;
+        await using var updateCommand = new NpgsqlCommand(updateSql, connection, transaction);
+        updateCommand.Parameters.AddWithValue("@enabled", enabled);
+        updateCommand.Parameters.AddWithValue("@layerId", layerId);
+        await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        layer = CloneWithEnabled(layer, enabled);
 
         await transaction.CommitAsync(cancellationToken);
         return layer;
+    }
+
+    public async Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(
+        string connectionString,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        var normalizedService = NormalizeServiceName(serviceName);
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        const string updateSql = """
+            UPDATE honua.layers
+            SET enabled = @enabled
+            WHERE layer_id IN (
+                SELECT layer_id
+                FROM honua.service_layers
+                WHERE service_name = @serviceName
+            );
+            """;
+
+        await using var updateCommand = new NpgsqlCommand(updateSql, connection, transaction);
+        updateCommand.Parameters.AddWithValue("@enabled", enabled);
+        updateCommand.Parameters.AddWithValue("@serviceName", normalizedService);
+        await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return await ListPublishedLayersAsync(connectionString, normalizedService, cancellationToken);
     }
 
     private async Task<TableInfo?> ResolveTableInfoAsync(
@@ -519,6 +543,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string table,
         string geometryType,
         int srid,
+        bool enabled,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -529,9 +554,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 table_name,
                 geometry_type,
                 srid,
-                default_visibility
+                default_visibility,
+                enabled
             )
-            VALUES (@name, @description, @schema, @table, @geometryType, @srid, TRUE)
+            VALUES (@name, @description, @schema, @table, @geometryType, @srid, TRUE, @enabled)
             RETURNING layer_id;
             """;
 
@@ -542,6 +568,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         command.Parameters.AddWithValue("@table", table);
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
+        command.Parameters.AddWithValue("@enabled", enabled);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is not int layerId)
@@ -649,7 +676,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task EnsureLayerEnabledAsync(
+    private static async Task EnsureServiceLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
@@ -697,7 +724,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.table_name,
                 l.geometry_type,
                 l.srid,
-                CASE WHEN sl.layer_id IS NULL THEN false ELSE true END as enabled
+                l.enabled
             FROM honua.layers l
             LEFT JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id AND sl.service_name = @serviceName

@@ -13,6 +13,7 @@ public interface ILayerPublishingClient
     Task<ApiResult<IReadOnlyList<PublishedLayerSummary>>> GetPublishedLayersAsync(Guid connectionId, string? serviceName = null, CancellationToken cancellationToken = default);
     Task<ApiResult<PublishedLayerSummary>> PublishLayerAsync(Guid connectionId, PublishLayerRequest request, CancellationToken cancellationToken = default);
     Task<ApiResult<PublishedLayerSummary>> SetLayerEnabledAsync(Guid connectionId, int layerId, bool enabled, string? serviceName = null, CancellationToken cancellationToken = default);
+    Task<ApiResult<IReadOnlyList<PublishedLayerSummary>>> SetServiceLayersEnabledAsync(Guid connectionId, bool enabled, string? serviceName = null, CancellationToken cancellationToken = default);
 }
 
 internal sealed class LayerPublishingClient : ILayerPublishingClient
@@ -88,6 +89,27 @@ internal sealed class LayerPublishingClient : ILayerPublishingClient
         var request = new LayerEnabledRequest { Enabled = enabled };
         var response = await _httpClient.PutAsJsonAsync(path, request, cancellationToken);
         return await ReadResponseAsync<PublishedLayerSummary>(response, cancellationToken);
+    }
+
+    public async Task<ApiResult<IReadOnlyList<PublishedLayerSummary>>> SetServiceLayersEnabledAsync(
+        Guid connectionId,
+        bool enabled,
+        string? serviceName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = $"connections/{connectionId}/layers/enabled";
+        if (!string.IsNullOrWhiteSpace(serviceName))
+        {
+            path += $"?serviceName={Uri.EscapeDataString(serviceName)}";
+        }
+
+        var request = new LayerEnabledRequest { Enabled = enabled };
+        var response = await _httpClient.PutAsJsonAsync(path, request, cancellationToken);
+        var result = await ReadResponseAsync<List<PublishedLayerSummary>>(response, cancellationToken);
+
+        return result.Success
+            ? ApiResult.Ok<IReadOnlyList<PublishedLayerSummary>>(result.Data ?? new List<PublishedLayerSummary>(), result.Message)
+            : ApiResult.Fail<IReadOnlyList<PublishedLayerSummary>>(result.Message);
     }
 
     private static async Task<ApiResult<T>> ReadResponseAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)

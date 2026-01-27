@@ -10,7 +10,7 @@
 
 <MudStack Spacing="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-        <MudText Typo="Typo.h4">Layers</MudText>
+        <MudText Typo="Typo.h4" Element="h1">Layers</MudText>
         <MudButton Variant="Variant.Outlined"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Refresh"
@@ -42,10 +42,22 @@
     <MudPaper Class="pa-4" Elevation="1">
         <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
             <MudText Typo="Typo.subtitle2">Published layers</MudText>
-            @if (_isLoadingLayers)
-            {
-                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-            }
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                @if (_isLoadingLayers)
+                {
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                }
+                <MudButtonGroup Variant="Variant.Outlined" Color="Color.Primary">
+                    <MudButton Disabled="@(!_selectedConnectionId.HasValue || _publishedLayers.Count == 0 || _isBulkToggling || _isToggling || _isLoadingLayers)"
+                               OnClick="@(() => ToggleAllLayersAsync(true))">
+                        Enable all
+                    </MudButton>
+                    <MudButton Disabled="@(!_selectedConnectionId.HasValue || _publishedLayers.Count == 0 || _isBulkToggling || _isToggling || _isLoadingLayers)"
+                               OnClick="@(() => ToggleAllLayersAsync(false))">
+                        Disable all
+                    </MudButton>
+                </MudButtonGroup>
+            </MudStack>
         </MudStack>
 
         <MudTable Items="_publishedLayers" Dense="true" Hover="true">
@@ -66,7 +78,8 @@
                                Value="@context.Enabled"
                                Color="Color.Primary"
                                Disabled="@_isToggling"
-                               ValueChanged="@(checkedValue => ToggleLayerAsync(context, checkedValue))" />
+                               ValueChanged="@(checkedValue => ToggleLayerAsync(context, checkedValue))"
+                               data-testid="@($"layer-toggle-{context.LayerId}")" />
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
@@ -103,7 +116,8 @@
                     <MudButton Variant="Variant.Text"
                                Color="Color.Primary"
                                OnClick="@(() => StartPublish(context))"
-                               Disabled="@(!_selectedConnectionId.HasValue)">
+                               Disabled="@(!_selectedConnectionId.HasValue)"
+                               data-testid="@($"table-publish-{context.Schema}-{context.Table}")">
                         Publish
                     </MudButton>
                 </MudTd>
@@ -138,6 +152,7 @@
     private bool _isLoadingLayers;
     private bool _isPublishing;
     private bool _isToggling;
+    private bool _isBulkToggling;
     private bool _showPublishForm;
     private string? _errorMessage;
 
@@ -320,6 +335,32 @@
         finally
         {
             _isToggling = false;
+        }
+    }
+
+    private async Task ToggleAllLayersAsync(bool enabled)
+    {
+        if (!_selectedConnectionId.HasValue)
+        {
+            return;
+        }
+
+        _isBulkToggling = true;
+        try
+        {
+            var result = await LayerPublishingClient.SetServiceLayersEnabledAsync(_selectedConnectionId.Value, enabled);
+            if (!result.Success || result.Data is null)
+            {
+                Snackbar.Add(result.Message ?? "Failed to update layers.", Severity.Error);
+                return;
+            }
+
+            _publishedLayers.Clear();
+            _publishedLayers.AddRange(result.Data);
+        }
+        finally
+        {
+            _isBulkToggling = false;
         }
     }
 

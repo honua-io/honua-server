@@ -46,4 +46,17 @@ public interface ILayerPublishingService
         string serviceName,
         bool enabled,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enable or disable all layers within a service.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="serviceName">Service name.</param>
+    /// <param name="enabled">Whether the layers should be enabled.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(
+        string connectionString,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default);
 }

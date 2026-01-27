@@ -158,5 +158,8 @@ public sealed class LayersTests
 
         public Task<ApiResult<PublishedLayerSummary>> SetLayerEnabledAsync(Guid connectionId, int layerId, bool enabled, string? serviceName = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+
+        public Task<ApiResult<IReadOnlyList<PublishedLayerSummary>>> SetServiceLayersEnabledAsync(Guid connectionId, bool enabled, string? serviceName = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(ApiResult.Ok<IReadOnlyList<PublishedLayerSummary>>(_publishedLayers));
     }
 }

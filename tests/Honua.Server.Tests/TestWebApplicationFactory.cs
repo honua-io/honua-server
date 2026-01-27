@@ -160,6 +160,15 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             return Task.FromResult<PublishedLayerSummary?>(null);
         }
+
+        public Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(
+            string connectionString,
+            string serviceName,
+            bool enabled,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<PublishedLayerSummary>>(Array.Empty<PublishedLayerSummary>());
+        }
     }
 
     private sealed class NullDatabaseMigrationRunner : IDatabaseMigrationRunner

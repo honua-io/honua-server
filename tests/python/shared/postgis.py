@@ -313,6 +313,7 @@ class PostGISFixture:
                         min_scale DOUBLE PRECISION,
                         max_scale DOUBLE PRECISION,
                         default_visibility BOOLEAN NOT NULL DEFAULT TRUE,
+                        enabled BOOLEAN NOT NULL DEFAULT TRUE,
                         metadata JSONB,
                         maplibre_style JSONB,
                         geoservices_drawing_info JSONB,
