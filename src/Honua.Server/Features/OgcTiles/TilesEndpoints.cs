@@ -255,7 +255,7 @@ internal static class TilesEndpoints
             return CreateFormatError(context, f);
         }
 
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
@@ -306,7 +306,7 @@ internal static class TilesEndpoints
             return CreateFormatError(context, f);
         }
 
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }

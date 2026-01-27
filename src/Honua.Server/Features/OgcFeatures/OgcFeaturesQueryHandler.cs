@@ -150,7 +150,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
             };
 
             var useStreaming = effectiveLimit > StreamingThreshold &&
-                               !string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
                                !string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase);
 
             var cacheableFormat = string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase) ||
@@ -191,6 +190,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
                 var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
                 var streamLinks = BuildItemsLinks(request, streamBasePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
+
+                if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new StreamingGmlItemsResult(
+                        _streamingFeatureStore,
+                        layer,
+                        query,
+                        filterResult.CrsDefinition.Uri);
+                }
 
                 return new StreamingItemsResult(
                     _streamingFeatureStore,
@@ -643,6 +651,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
         await context.Response.BodyWriter.CompleteAsync();
     }
 
+    private static void EnableChunkedEncodingIfHttp1(HttpContext context)
+    {
+        if (string.IsNullOrEmpty(context.Request.Protocol)
+            || context.Request.Protocol.StartsWith("HTTP/1", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.TransferEncoding = "chunked";
+        }
+    }
+
     private sealed class StreamingItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
@@ -684,6 +701,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             httpContext.Response.ContentType = _outputFormat;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
+            EnableChunkedEncodingIfHttp1(httpContext);
 
             var stream = _streamingFeatureStore.StreamFeaturesAsync(
                 _layer.Id,
@@ -700,6 +718,45 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _links,
                 _numberMatched,
                 httpContext.RequestAborted);
+        }
+    }
+
+    private sealed class StreamingGmlItemsResult : IResult
+    {
+        private readonly IStreamingFeatureStore _streamingFeatureStore;
+        private readonly LayerDefinition _layer;
+        private readonly FeatureQuery _query;
+        private readonly string _crsUri;
+
+        public StreamingGmlItemsResult(
+            IStreamingFeatureStore streamingFeatureStore,
+            LayerDefinition layer,
+            FeatureQuery query,
+            string crsUri)
+        {
+            _streamingFeatureStore = streamingFeatureStore;
+            _layer = layer;
+            _query = query;
+            _crsUri = crsUri;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.ContentType = MediaTypes.Gml;
+            httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
+            EnableChunkedEncodingIfHttp1(httpContext);
+
+            var stream = _streamingFeatureStore.StreamGmlFeaturesAsync(
+                _layer.Id,
+                _query,
+                httpContext.RequestAborted);
+
+            await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
+                stream,
+                httpContext.Response.BodyWriter,
+                httpContext.RequestAborted);
+
+            await httpContext.Response.BodyWriter.CompleteAsync();
         }
     }
 

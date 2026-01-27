@@ -395,6 +395,30 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry coordinate type")]
+    public async Task Create_InvalidGeometryCoordinateType_ReturnsBadRequest()
+    {
+        var payload = new
+        {
+            Geometry = new
+            {
+                type = "Point",
+                coordinates = 123
+            },
+            Attributes = new { name = "Test" }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            $"/odata/Layers({TestLayerId})/Features",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("PATCH /odata/Features({layerId},{objectId}) with invalid JSON")]
     public async Task Update_InvalidJson_ReturnsBadRequest()
     {

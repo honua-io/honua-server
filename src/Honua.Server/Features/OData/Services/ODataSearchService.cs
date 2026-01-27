@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
@@ -423,7 +424,7 @@ internal sealed partial class ODataSearchService
                 {
                     long l => l,
                     int i => i,
-                    string s when long.TryParse(s, out var parsed) => parsed,
+                    string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
                     System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.Number => je.GetInt64(),
                     _ => (long?)null
                 };

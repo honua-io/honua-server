@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
@@ -160,7 +161,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
 
-            if (!long.TryParse(featureId, out var objectId))
+            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
@@ -349,7 +350,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             };
         }
 
-        if (!long.TryParse(operation.FeatureId, out var objectId))
+        if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
         {
             return new BatchOperationResult
             {
@@ -421,7 +422,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             };
         }
 
-        if (!long.TryParse(operation.FeatureId, out var objectId))
+        if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
         {
             return new BatchOperationResult
             {

@@ -72,7 +72,7 @@ public static class ValidationExtensions
         CancellationToken cancellationToken = default)
     {
         // For OGC API Features, collection ID maps to layer ID
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
             return ValidationResult<LayerDefinition>.Failure($"Invalid collection ID '{collectionId}'");
         }

@@ -135,7 +135,7 @@ internal static class CollectionsEndpoints
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            if (!int.TryParse(collectionId, out var layerId))
+            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }

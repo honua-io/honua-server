@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -98,7 +99,7 @@ internal static class AttachmentEndpoints
         var layerId = resource.Value.Layer.Id;
 
         if (!context.Request.Query.TryGetValue("objectId", out var objectIdValue) ||
-            !long.TryParse(objectIdValue, out var featureId))
+            !long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
@@ -142,7 +143,7 @@ internal static class AttachmentEndpoints
         }
 
         if (string.IsNullOrWhiteSpace(objectIdValue) ||
-            !long.TryParse(objectIdValue, out var featureId))
+            !long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
@@ -199,14 +200,14 @@ internal static class AttachmentEndpoints
         var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
         if (!form.TryGetValue("objectId", out var objectIdValue) ||
-            !long.TryParse(objectIdValue, out var featureId))
+            !long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
         }
 
         if (!form.TryGetValue("attachmentId", out var attachmentIdValue) ||
-            !long.TryParse(attachmentIdValue, out var attachmentId))
+            !long.TryParse(attachmentIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var attachmentId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "attachmentId parameter is required");
             return;
@@ -244,7 +245,7 @@ internal static class AttachmentEndpoints
         var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
         if (!form.TryGetValue("objectId", out var objectIdValue) ||
-            !long.TryParse(objectIdValue, out var featureId))
+            !long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
             return;
@@ -262,7 +263,7 @@ internal static class AttachmentEndpoints
 
         foreach (var idString in attachmentIdStrings)
         {
-            if (long.TryParse(idString.Trim(), out var id))
+            if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
             {
                 attachmentIds.Add(id);
             }
@@ -301,14 +302,14 @@ internal static class AttachmentEndpoints
         var layerId = resource.Value.Layer.Id;
 
         if (!context.Request.RouteValues.TryGetValue("featureId", out var featureIdObj) ||
-            !long.TryParse(featureIdObj?.ToString(), out var featureId))
+            !long.TryParse(featureIdObj?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Feature ID must be a valid long integer");
             return;
         }
 
         if (!context.Request.RouteValues.TryGetValue("attachmentId", out var attachmentIdObj) ||
-            !long.TryParse(attachmentIdObj?.ToString(), out var attachmentId))
+            !long.TryParse(attachmentIdObj?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var attachmentId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "Attachment ID must be a valid long integer");
             return;

@@ -60,6 +60,12 @@ New to Honua Server? Start here:
 - **[API Examples](API_EXAMPLES.md)** - Sample requests for all protocols
 - **[Model Optimization Guide](MODEL_OPTIMIZATION_GUIDE.md)** - Data model best practices
 
+### Protocol Specification Coverage
+- **[Coverage Index](specifications/protocol-coverage.md)** - Entry point for protocol coverage docs
+- **[OGC API Features Coverage](specifications/ogc-api-features-coverage.md)** - Operations and query parameter support
+- **[OData v4 Coverage](specifications/odata-v4-coverage.md)** - Operations and OData query option support
+- **[GeoServices FeatureServer Coverage](feature-server-matrix.md)** - FeatureServer operations and parameter support
+
 ## 🎯 By Role
 
 ### For New Developers

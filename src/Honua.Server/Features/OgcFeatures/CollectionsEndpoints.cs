@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -545,7 +546,7 @@ internal static class CollectionsEndpoints
         }
 
         resolvedCollectionId = collectionResult.Value!;
-        if (!int.TryParse(resolvedCollectionId, out layerId))
+        if (!int.TryParse(resolvedCollectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId))
         {
             return false;
         }
