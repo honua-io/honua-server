@@ -10,6 +10,11 @@ Legend:
 - Stubbed: endpoint exists but returns "not implemented".
 - Not implemented: no endpoint or handler.
 
+## Esri REST Feature Service coverage
+
+This matrix tracks Honua coverage against the Esri REST Feature Service specification:
+- https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/
+
 ## Feature Service (root resource)
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
