@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <PublishAot Condition="'$(PublishAot)' == ''">false</PublishAot>
+    <PublishAot>true</PublishAot>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <InvariantGlobalization>true</InvariantGlobalization>
     <OptimizationPreference>Speed</OptimizationPreference>
@@ -27,7 +27,7 @@
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Admin\Honua.Admin.csproj"
-                      Condition="'$(PublishAot)' != 'true'" />
+                      Condition="'$(IsPublish)' != 'true'" />
   </ItemGroup>
 
   <ItemGroup>

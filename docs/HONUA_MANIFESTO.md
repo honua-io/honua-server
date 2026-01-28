@@ -17,14 +17,14 @@ Honua is the antidote: GIS democratized. We bring broad compatibility, cloud-nat
 ## The Honua antidote
 
 - Broad compatibility: Esri FeatureServer + OGC API Features + OData.
-- Zero switching cost: Esri import and drop-in interoperability.
+- Minimal switching cost: Esri import and drop-in interoperability.
 - Cloud-native by design: efficient infra with optional serverless paths.
 - Ops-friendly: observability, predictable upgrades, reliable rollouts.
 - Cost-efficient: lean infrastructure and transparent ownership.
 
 ## Cloud-native commitments
 
-- First-class deployment options: Docker, Kubernetes, and Terraform-based cloud deployments.
+- First-class deployment options: Docker, Kubernetes (Helm), and Terraform-based cloud deployments.
 - Serverless-ready: optional deployments on AWS Lambda and Azure Functions.
 - Efficient by default: scale down cleanly and avoid heavyweight operational overhead.
 
@@ -34,6 +34,10 @@ Honua is the antidote: GIS democratized. We bring broad compatibility, cloud-nat
 - Operational excellence by default.
 - Ownership over dependency.
 - Access for business users, not just GIS specialists.
+
+## AI-first partner ecosystem
+
+We’re building an AI GIS expert aligned to Honua ops: automated guidance, best-practice delivery, and runbook-grade operations that compress timelines and services cost. This enables automated data publishing, configuration hardening, and SLA-grade monitoring. This shifts routine GIS pro-services into software while keeping human experts for the hard problems.
 
 ## Licensing and tradeoffs
 
@@ -58,11 +62,11 @@ We are explicit about the tradeoff. The enterprise tier will prioritize features
 
 ## The roadmap (north star, not a promise)
 
-All your bases are belong to us. Honua’s long-term goal is a full-stack geospatial platform that spans ingestion, serving, analytics, and automation across both Esri and open standards.
+Honua’s long-term goal is a full-stack geospatial platform that spans ingestion, serving, analytics, and automation across both Esri and open standards.
 
 Directionally, that means:
 
-- Support for the full cloud-native geospatial protocol and format surface area (without forcing lock-in). See guide.cloudnativegeo.org.
+- Support for the core cloud-native geospatial standards and formats (without forcing lock-in). See guide.cloudnativegeo.org.
 - Raster and imagery as first-class citizens.
 - Broader data backends beyond PostGIS (cloud warehouses and enterprise databases).
 - Geo-events, geofencing, and real-time pipelines.
