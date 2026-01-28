@@ -356,8 +356,16 @@ app.UseResponseCompression();
 
 if (serveAdminUi)
 {
-    app.UseBlazorFrameworkFiles("/admin");
-    app.UseStaticFiles(new StaticFileOptions { RequestPath = "/admin" });
+    app.Map("/admin", adminApp =>
+    {
+        adminApp.UseBlazorFrameworkFiles();
+        adminApp.UseStaticFiles();
+        adminApp.UseRouting();
+        adminApp.UseEndpoints(endpoints =>
+        {
+            endpoints.MapFallbackToFile("index.html");
+        });
+    });
 }
 
 // Add correlation ID middleware early in pipeline (before request logging)
@@ -451,11 +459,6 @@ app.MapEsriImportEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
-
-if (serveAdminUi)
-{
-    app.MapFallbackToFile("/admin/{*path:nonfile}", "index.html");
-}
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)
