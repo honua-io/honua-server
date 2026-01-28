@@ -38,6 +38,7 @@ New to Honua Server? Start here:
 - **[Zero-Downtime Migrations](zero-downtime-migrations.md)** - Safe schema evolution strategy
 - **[Credential Rotation](credential-rotation.md)** - Rotation procedures for secrets and keys
 - **[Operational Excellence](OPERATIONAL_EXCELLENCE.md)** - Production best practices
+- **[Infrastructure Samples](../infrastructure/samples/README.md)** - Docker Compose and other IaC examples
 
 ### 🧪 Testing and Quality
 - **[Test Kit Documentation](../tests/Honua.TestKit/README.md)** - Shared testing infrastructure

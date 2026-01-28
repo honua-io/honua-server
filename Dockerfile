@@ -12,7 +12,7 @@ RUN addgroup -g 1001 -S builduser && \
 
 # Install native AOT build dependencies with version pinning for security
 RUN apk add --no-cache \
-    clang=20.1.8-r0 \
+    clang21=21.1.2-r2 \
     build-base=0.5-r3 \
     zlib-dev=1.3.1-r2 \
     && rm -rf /var/cache/apk/*
@@ -21,6 +21,8 @@ RUN apk add --no-cache \
 COPY Honua.sln Directory.Build.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
+COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
+COPY src/Honua.Admin/*.csproj src/Honua.Admin/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
 
 # Restore dependencies
@@ -31,15 +33,21 @@ COPY . .
 
 # Build Native AOT application for minimal image size
 ARG CONFIGURATION=Release
-RUN dotnet publish src/Honua.Server/Honua.Server.csproj \
-    --configuration $CONFIGURATION \
-    --runtime linux-musl-x64 \
-    --self-contained true \
-    --output /app \
-    -p:PublishAot=true \
-    -p:StripSymbols=true \
-    -p:OptimizationPreference=Speed \
-    -p:IlcOptimizationPreference=Speed
+ARG TARGETARCH
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) RUNTIME_ID="linux-musl-x64" ;; \
+        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet publish src/Honua.Server/Honua.Server.csproj \
+      --configuration "$CONFIGURATION" \
+      --runtime "$RUNTIME_ID" \
+      --self-contained true \
+      --output /app \
+      -p:PublishAot=true \
+      -p:StripSymbols=true \
+      -p:OptimizationPreference=Speed \
+      -p:IlcOptimizationPreference=Speed
 
 # Runtime stage - distroless-style minimal image for maximum security
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
@@ -49,8 +57,8 @@ RUN apk upgrade --no-cache && \
     apk add --no-cache \
     icu-libs=76.1-r1 \
     tzdata=2025c-r0 \
-    curl=8.14.1-r2 \
-    ca-certificates=20250911-r0 && \
+    curl=8.17.0-r1 \
+    ca-certificates=20251003-r0 && \
     rm -rf /var/cache/apk/* && \
     rm -rf /tmp/*
 

@@ -4756,7 +4756,7 @@ builder.Logging.AddOpenTelemetry(options =>
 For local development and lightweight production monitoring, we use the **Aspire Dashboard standalone container**. No full Aspire orchestration needed — just a container that receives OTLP telemetry.
 
 ```yaml
-# docker/docker-compose.yml
+# infrastructure/samples/docker-compose/docker-compose.yml
 services:
   honua:
     build: .
@@ -5298,7 +5298,7 @@ docker run -p 8080:8080 \
   -e Logging__LogLevel__Microsoft.AspNetCore="Warning" \
   -e Logging__LogLevel__Npgsql="Warning" \
   -e Logging__LogLevel__Honua="Debug" \
-  ghcr.io/honuaio/honua-server:latest
+  ghcr.io/honua-io/honua-server:latest
 ```
 
 | Environment Variable | Default | Description |
@@ -5317,7 +5317,7 @@ For container log aggregation (ELK, CloudWatch, etc.), use JSON output:
 ```bash
 docker run -p 8080:8080 \
   -e Logging__Console__FormatterName="json" \
-  ghcr.io/honuaio/honua-server:latest
+  ghcr.io/honua-io/honua-server:latest
 ```
 
 Produces structured logs like:
@@ -5537,7 +5537,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   honua:
-    image: ghcr.io/honuaio/honua-server:latest
+    image: ghcr.io/honua-io/honua-server:latest
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.honua.rule=Host(`api.example.com`)"
@@ -5937,7 +5937,7 @@ public async Task<IResult> UpdateLayerAsync(
 #### Docker Compose (Redis Optional)
 
 ```yaml
-# docker/docker-compose.yml
+# infrastructure/samples/docker-compose/docker-compose.yml
 services:
   honua:
     environment:
@@ -6024,7 +6024,7 @@ Docker deployments use environment variables exclusively. This is the primary co
 docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=db;Database=honua;Username=honua;Password=secret" \
   -e HONUA_ADMIN_PASSWORD="your-secret-key" \
-  ghcr.io/honuaio/honua-server:latest
+  ghcr.io/honua-io/honua-server:latest
 ```
 
 #### With CORS and Observability
@@ -6036,7 +6036,7 @@ docker run -p 8080:8080 \
   -e Cors__AllowedOrigins__0="https://myapp.example.com" \
   -e Cors__AllowedOrigins__1="https://admin.example.com" \
   -e OTEL_EXPORTER_OTLP_ENDPOINT="http://collector:4317" \
-  ghcr.io/honuaio/honua-server:latest
+  ghcr.io/honua-io/honua-server:latest
 ```
 
 #### With MapTiler Basemap
@@ -6046,7 +6046,7 @@ docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=db;Database=honua;Username=honua;Password=secret" \
   -e Basemap__Provider="maptiler" \
   -e Basemap__ApiKey="your-maptiler-key" \
-  ghcr.io/honuaio/honua-server:latest
+  ghcr.io/honua-io/honua-server:latest
 ```
 
 ### appsettings.json (Development Only)
@@ -6105,7 +6105,7 @@ Basemap__ApiKey               → Basemap:ApiKey
 #### Docker Compose
 
 ```yaml
-# docker/docker-compose.yml
+# infrastructure/samples/docker-compose/docker-compose.yml
 services:
   honua:
     image: honua-server:latest

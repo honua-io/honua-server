@@ -52,7 +52,7 @@ dotnet run
 docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres" \
   -e HONUA_ADMIN_PASSWORD="change-me" \
-  ghcr.io/honuaio/honua-server:latest
+  ghcr.io/honua-io/honua-server:latest
 ```
 
 ## MVP Scope (current tree)

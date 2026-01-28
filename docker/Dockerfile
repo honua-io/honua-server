@@ -6,30 +6,44 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 
 WORKDIR /src
 
-# Copy solution and project files first (for layer caching)
-COPY *.sln ./
+# Install native AOT build dependencies
+RUN apk add --no-cache \
+    clang21=21.1.2-r2 \
+    build-base=0.5-r3 \
+    zlib-dev=1.3.1-r2 \
+    && rm -rf /var/cache/apk/*
+
+# Copy project files first (for layer caching)
+COPY Directory.Build.props .editorconfig ./
 COPY src/Honua.Server/Honua.Server.csproj src/Honua.Server/
 COPY src/Honua.Core/Honua.Core.csproj src/Honua.Core/
 COPY src/Honua.Postgres/Honua.Postgres.csproj src/Honua.Postgres/
-COPY tests/Honua.TestKit/Honua.TestKit.csproj tests/Honua.TestKit/
-COPY tests/Honua.Server.Tests/Honua.Server.Tests.csproj tests/Honua.Server.Tests/
-COPY tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj tests/Honua.Architecture.Tests/
+COPY src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj src/Honua.ServiceDefaults/
+COPY src/Honua.Admin/Honua.Admin.csproj src/Honua.Admin/
 
 # Restore packages (cached layer)
-RUN dotnet restore Honua.sln
+RUN dotnet restore src/Honua.Server/Honua.Server.csproj
 
 # Copy source code
 COPY . .
 
 # Build and publish with Native AOT
-RUN dotnet publish src/Honua.Server \
-    --configuration Release \
-    --output /app \
-    --no-restore \
-    -p:PublishAot=true \
-    -p:StripSymbols=true \
-    -p:OptimizationPreference=Speed \
-    -p:InvariantGlobalization=true
+ARG TARGETARCH
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) RUNTIME_ID="linux-musl-x64" ;; \
+        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet publish src/Honua.Server \
+      --configuration Release \
+      --runtime "$RUNTIME_ID" \
+      --self-contained true \
+      --output /app \
+      --no-restore \
+      -p:PublishAot=true \
+      -p:StripSymbols=true \
+      -p:OptimizationPreference=Speed \
+      -p:InvariantGlobalization=true
 
 # Production stage - minimal Alpine image with runtime dependencies
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS production
