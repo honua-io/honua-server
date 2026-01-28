@@ -360,13 +360,13 @@ if (serveAdminUi)
     {
         adminApp.UseBlazorFrameworkFiles();
         adminApp.UseStaticFiles();
-    adminApp.UseRouting();
-    adminApp.UseEndpoints(endpoints =>
-    {
-        endpoints.MapStaticAssets();
-        endpoints.MapFallbackToFile("index.html");
+        adminApp.UseRouting();
+        adminApp.UseEndpoints(endpoints =>
+        {
+            endpoints.MapStaticAssets();
+            endpoints.MapFallbackToFile("index.html");
+        });
     });
-});
 }
 
 // Add correlation ID middleware early in pipeline (before request logging)
