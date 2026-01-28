@@ -57,6 +57,9 @@ var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
+var adminStaticAssetsManifestPath = Path.Combine(
+    AppContext.BaseDirectory,
+    "Honua.Admin.staticwebassets.endpoints.json");
 if (serveAdminUi && !builder.Environment.IsDevelopment())
 {
     builder.WebHost.UseStaticWebAssets();
@@ -363,7 +366,14 @@ if (serveAdminUi)
         adminApp.UseRouting();
         adminApp.UseEndpoints(endpoints =>
         {
-            endpoints.MapStaticAssets();
+            if (File.Exists(adminStaticAssetsManifestPath))
+            {
+                endpoints.MapStaticAssets(adminStaticAssetsManifestPath);
+            }
+            else
+            {
+                endpoints.MapStaticAssets();
+            }
             endpoints.MapFallbackToFile("index.html");
         });
     });
