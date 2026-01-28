@@ -29,33 +29,7 @@ public sealed class AuthStateTests : IClassFixture<PlaywrightFixture>
             }
 
             await page.GotoAsync(baseUrl);
-
-            var signIn = page.GetByTestId("user-signin");
-            var signOut = page.GetByTestId("user-signout");
-            var signInRequired = page.GetByRole(AriaRole.Heading, new() { Name = "Sign in required" });
-
-            await WaitForConditionAsync(async () =>
-                await signIn.IsVisibleAsync() ||
-                await signOut.IsVisibleAsync() ||
-                await signInRequired.IsVisibleAsync(),
-                TimeSpan.FromSeconds(10),
-                "Auth state did not render sign-in or sign-out UI.");
+            _ = await AuthTestHelpers.IsUnauthorizedAsync(page);
         });
-    }
-
-    private static async Task WaitForConditionAsync(Func<Task<bool>> predicate, TimeSpan timeout, string errorMessage)
-    {
-        var deadline = DateTimeOffset.UtcNow.Add(timeout);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await predicate())
-            {
-                return;
-            }
-
-            await Task.Delay(200);
-        }
-
-        throw new TimeoutException(errorMessage);
     }
 }

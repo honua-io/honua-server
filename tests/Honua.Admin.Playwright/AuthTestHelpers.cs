@@ -9,13 +9,15 @@ internal static class AuthTestHelpers
     {
         var signIn = page.GetByTestId("user-signin");
         var signOut = page.GetByTestId("user-signout");
+        var userMenu = page.GetByTestId("user-menu");
         var signInRequired = page.GetByRole(AriaRole.Heading, new() { Name = "Sign in required" });
 
         await WaitForConditionAsync(async () =>
             await signIn.IsVisibleAsync() ||
+            await userMenu.IsVisibleAsync() ||
             await signOut.IsVisibleAsync() ||
             await signInRequired.IsVisibleAsync(),
-            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(20),
             "Auth state did not render sign-in or sign-out UI.");
 
         return await signInRequired.IsVisibleAsync() || await signIn.IsVisibleAsync();

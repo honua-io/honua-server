@@ -357,7 +357,10 @@ if (configurationErrors.Count > 0)
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 
 // Add security headers middleware (first in pipeline for all requests)
-app.UseSecurityHeaders();
+if (!app.Environment.IsEnvironment("Test"))
+{
+    app.UseSecurityHeaders();
+}
 
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();

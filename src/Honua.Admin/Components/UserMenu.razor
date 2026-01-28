@@ -2,7 +2,7 @@
     <Authorized Context="authState">
         <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
             <ActivatorContent>
-                <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle">
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle" data-testid="user-menu">
                     @(authState.User.Identity?.Name ?? "Account")
                 </MudButton>
             </ActivatorContent>

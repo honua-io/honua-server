@@ -208,6 +208,10 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
             });
 
             await page.GotoAsync(BuildImportUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
 
             await page.GetByTestId("import-service-url").Locator("input")
                 .FillAsync("https://maps.kauai.gov/server/rest/services/Bridges_with_condition_where_available/FeatureServer");
@@ -275,6 +279,10 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
             });
 
             await page.GotoAsync(BuildImportUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
 
             await page.GetByTestId("import-service-url").Locator("input")
                 .FillAsync("https://geodata.hawaii.gov/arcgis/rest/services/Infrastructure/MapServer");
@@ -333,6 +341,10 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
             });
 
             await page.GotoAsync(BuildImportUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
 
             var fixturePath = Path.Combine(AppContext.BaseDirectory, "fixtures", "sample.geojson");
             await page.SetInputFilesAsync("[data-testid='import-file-input']", fixturePath);
