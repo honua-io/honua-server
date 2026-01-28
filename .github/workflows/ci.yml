@@ -150,6 +150,8 @@ jobs:
             HONUA_DEV_AUTH=true \
             HONUA_SKIP_MIGRATIONS=true \
             HONUA_TEST_SCHEMA_HEADERS=true \
+            Security__ConnectionEncryption__MasterKey="test-master-key-that-is-at-least-32-characters-long-for-security" \
+            Security__ConnectionEncryption__Salt="dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
             ASPNETCORE_URLS=http://localhost:8080 \
             dotnet run --project src/Honua.Server/Honua.Server.csproj \
               --configuration Release \
