@@ -8,8 +8,8 @@ namespace Honua.Admin.Services;
 
 internal sealed class AnonymousAuthenticationStateProvider : AuthenticationStateProvider
 {
-    private static readonly Task<AuthenticationState> AnonymousState =
+    private static readonly Task<AuthenticationState> _anonymousState =
         Task.FromResult(new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity())));
 
-    public override Task<AuthenticationState> GetAuthenticationStateAsync() => AnonymousState;
+    public override Task<AuthenticationState> GetAuthenticationStateAsync() => _anonymousState;
 }
