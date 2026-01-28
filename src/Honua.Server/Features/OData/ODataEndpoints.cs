@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
 
@@ -18,7 +19,7 @@ internal static partial class ODataEndpoints
     {
         // OData service document
         var serviceDocument = endpoints.MapGet("/odata",
-            (HttpContext context, ODataMetadataHandler handler) => handler.HandleGetServiceDocument(context))
+            (HttpContext context, [FromServices] ODataMetadataHandler handler) => handler.HandleGetServiceDocument(context))
             .WithDisplayName("OData Service Document")
             .WithName("ODataServiceDocument")
             .WithSummary("Get OData service document")
@@ -28,7 +29,7 @@ internal static partial class ODataEndpoints
 
         // OData metadata document
         var metadata = endpoints.MapGet("/odata/$metadata",
-            (HttpContext context, ODataMetadataHandler handler, CancellationToken cancellationToken) =>
+            (HttpContext context, [FromServices] ODataMetadataHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleGetMetadataAsync(context, cancellationToken))
             .WithDisplayName("OData Metadata Document")
             .WithName("ODataMetadata")
@@ -40,7 +41,7 @@ internal static partial class ODataEndpoints
         // OData entity sets (layers as collections)
         var layers = endpoints.MapGet("/odata/Layers",
             (HttpContext context,
-                ODataQueryHandler handler,
+                [FromServices] ODataQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetLayersAsync(
@@ -62,7 +63,7 @@ internal static partial class ODataEndpoints
 
         var layersCount = endpoints.MapGet("/odata/Layers/$count",
             (HttpContext context,
-                ODataQueryHandler handler,
+                [FromServices] ODataQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetLayersCountAsync(context, query.Filter, query.Format, cancellationToken))
@@ -78,7 +79,7 @@ internal static partial class ODataEndpoints
         var layer = endpoints.MapGet("/odata/Layers({layerId:int})",
             (HttpContext context,
                 int layerId,
-                ODataQueryHandler handler,
+                [FromServices] ODataQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetLayerAsync(context, layerId, query.Select, query.Format, cancellationToken))
@@ -92,7 +93,7 @@ internal static partial class ODataEndpoints
         // OData features collection (all layers requires LayerId filter)
         var features = endpoints.MapGet("/odata/Features",
             (HttpContext context,
-                ODataStreamingQueryHandler handler,
+                [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetFeaturesAsync(
@@ -119,7 +120,7 @@ internal static partial class ODataEndpoints
 
         var featuresCount = endpoints.MapGet("/odata/Features/$count",
             (HttpContext context,
-                ODataStreamingQueryHandler handler,
+                [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetFeaturesCountAsync(context, null, query.Filter, query.Format, cancellationToken))
@@ -135,7 +136,7 @@ internal static partial class ODataEndpoints
         var layerFeatures = endpoints.MapGet("/odata/Layers({layerId:int})/Features",
             (HttpContext context,
                 int layerId,
-                ODataStreamingQueryHandler handler,
+                [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetFeaturesAsync(
@@ -163,7 +164,7 @@ internal static partial class ODataEndpoints
         var layerFeaturesCount = endpoints.MapGet("/odata/Layers({layerId:int})/Features/$count",
             (HttpContext context,
                 int layerId,
-                ODataStreamingQueryHandler handler,
+                [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetFeaturesCountAsync(context, layerId, query.Filter, query.Format, cancellationToken))
@@ -178,7 +179,7 @@ internal static partial class ODataEndpoints
         var legacyLayerFeaturesCount = endpoints.MapGet("/odata/Features({layerId:int})/$count",
             (HttpContext context,
                 int layerId,
-                ODataStreamingQueryHandler handler,
+                [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetFeaturesCountAsync(context, layerId, query.Filter, query.Format, cancellationToken))
@@ -194,7 +195,7 @@ internal static partial class ODataEndpoints
         var legacyLayerFeatures = endpoints.MapGet("/odata/Features({layerId:int})",
             (HttpContext context,
                 int layerId,
-                ODataStreamingQueryHandler handler,
+                [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetFeaturesAsync(
@@ -221,7 +222,7 @@ internal static partial class ODataEndpoints
 
         // POST - Create a new feature (collection)
         var createFeature = endpoints.MapPost("/odata/Features",
-            (HttpContext context, ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
+            (HttpContext context, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
                 handler.HandleCreateFeatureAsync(context, null, request, cancellationToken))
             .WithDisplayName("OData Create Feature")
             .WithName("ODataCreateFeature")
@@ -234,7 +235,7 @@ internal static partial class ODataEndpoints
 
         // POST - Create a new feature for a layer
         var createLayerFeature = endpoints.MapPost("/odata/Layers({layerId:int})/Features",
-            (HttpContext context, int layerId, ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
                 handler.HandleCreateFeatureAsync(context, layerId, request, cancellationToken))
             .WithDisplayName("OData Create Feature")
             .WithName("ODataCreateLayerFeature")
@@ -250,7 +251,7 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 long objectId,
-                ODataCrudHandler handler,
+                [FromServices] ODataCrudHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetSingleFeatureAsync(context, layerId, objectId, query.Select, query.Format, cancellationToken))
@@ -265,7 +266,7 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 long objectId,
-                ODataCrudHandler handler,
+                [FromServices] ODataCrudHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetSingleFeatureAsync(context, layerId, objectId, query.Select, query.Format, cancellationToken))
@@ -281,7 +282,7 @@ internal static partial class ODataEndpoints
             (HttpContext context,
                 int layerId,
                 long objectId,
-                ODataCrudHandler handler,
+                [FromServices] ODataCrudHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleGetSingleFeatureAsync(context, layerId, objectId, query.Select, query.Format, cancellationToken))
@@ -294,7 +295,7 @@ internal static partial class ODataEndpoints
 
         // PATCH - Update an existing feature
         var updateFeature = endpoints.MapPatch("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
                 handler.HandleUpdateFeatureAsync(context, layerId, objectId, request, cancellationToken))
             .WithDisplayName("OData Update Feature")
             .WithName("ODataUpdateFeature")
@@ -306,7 +307,7 @@ internal static partial class ODataEndpoints
         updateFeature.RequireAuthorization();
 
         var updateLayerFeature = endpoints.MapPatch("/odata/Layers({layerId:int})/Features({objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
                 handler.HandleUpdateFeatureAsync(context, layerId, objectId, request, cancellationToken))
             .WithDisplayName("OData Update Feature (Layer)")
             .WithName("ODataUpdateLayerFeature")
@@ -318,7 +319,7 @@ internal static partial class ODataEndpoints
         updateLayerFeature.RequireAuthorization();
 
         var legacyUpdateFeature = endpoints.MapPatch("/odata/Features({layerId:int},{objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
                 handler.HandleUpdateFeatureAsync(context, layerId, objectId, request, cancellationToken))
             .WithDisplayName("OData Update Feature (Legacy)")
             .WithName("ODataUpdateFeatureLegacy")
@@ -331,7 +332,7 @@ internal static partial class ODataEndpoints
 
         // DELETE - Delete a feature
         var deleteFeature = endpoints.MapDelete("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleDeleteFeatureAsync(context, layerId, objectId, cancellationToken))
             .WithDisplayName("OData Delete Feature")
             .WithName("ODataDeleteFeature")
@@ -342,7 +343,7 @@ internal static partial class ODataEndpoints
         deleteFeature.RequireAuthorization();
 
         var deleteLayerFeature = endpoints.MapDelete("/odata/Layers({layerId:int})/Features({objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleDeleteFeatureAsync(context, layerId, objectId, cancellationToken))
             .WithDisplayName("OData Delete Feature (Layer)")
             .WithName("ODataDeleteLayerFeature")
@@ -353,7 +354,7 @@ internal static partial class ODataEndpoints
         deleteLayerFeature.RequireAuthorization();
 
         var legacyDeleteFeature = endpoints.MapDelete("/odata/Features({layerId:int},{objectId:long})",
-            (HttpContext context, int layerId, long objectId, ODataCrudHandler handler, CancellationToken cancellationToken) =>
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleDeleteFeatureAsync(context, layerId, objectId, cancellationToken))
             .WithDisplayName("OData Delete Feature (Legacy)")
             .WithName("ODataDeleteFeatureLegacy")
@@ -365,7 +366,7 @@ internal static partial class ODataEndpoints
 
         // POST - Batch operations
         var batch = endpoints.MapPost("/odata/$batch",
-            (HttpContext context, ODataBatchOperationHandler handler, CancellationToken cancellationToken) =>
+            (HttpContext context, [FromServices] ODataBatchOperationHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleBatchRequestAsync(context, cancellationToken))
             .WithDisplayName("OData Batch Operations")
             .WithName("ODataBatch")
@@ -379,7 +380,7 @@ internal static partial class ODataEndpoints
         var apply = endpoints.MapGet("/odata/Features({layerId:int})/$apply",
             (HttpContext context,
                 int layerId,
-                ODataAdvancedQueryHandler handler,
+                [FromServices] ODataAdvancedQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleApplyAsync(context, layerId, query.Apply, query.Filter, cancellationToken))
@@ -395,7 +396,7 @@ internal static partial class ODataEndpoints
         var search = endpoints.MapGet("/odata/Features({layerId:int})/$search",
             (HttpContext context,
                 int layerId,
-                ODataAdvancedQueryHandler handler,
+                [FromServices] ODataAdvancedQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
                 handler.HandleSearchAsync(context, layerId, query.Search, query.Top, query.Skip, query.Count, cancellationToken))

@@ -130,6 +130,18 @@ internal sealed partial class ODataBatchOperationHandler(
             var decision = AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope: scope);
             if (decision.IsAllowed)
             {
+                if (scope == AccessScope.Write)
+                {
+                    var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                        context,
+                        layerId,
+                        cancellationToken);
+                    if (rbacError != null)
+                    {
+                        return rbacError;
+                    }
+                }
+
                 continue;
             }
 

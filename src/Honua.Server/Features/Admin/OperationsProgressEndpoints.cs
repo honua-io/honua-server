@@ -5,6 +5,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -60,7 +61,7 @@ internal static class OperationsProgressEndpoints
     /// </summary>
     private static async Task<IResult> HandleGetOperationStatus(
         string operationId,
-        IUniversalProgressStore progressStore,
+        [FromServices] IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(operationId))
@@ -89,7 +90,7 @@ internal static class OperationsProgressEndpoints
     /// </summary>
     private static async Task<IResult> HandleCancelOperation(
         string operationId,
-        IUniversalProgressStore progressStore,
+        [FromServices] IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(operationId))
@@ -145,7 +146,7 @@ internal static class OperationsProgressEndpoints
     /// List all active operations, optionally filtered by type.
     /// </summary>
     private static async Task<IResult> HandleListActiveOperations(
-        IUniversalProgressStore progressStore,
+        [FromServices] IUniversalProgressStore progressStore,
         string? type = null,
         CancellationToken cancellationToken = default)
     {
@@ -191,7 +192,7 @@ internal static class OperationsProgressEndpoints
     /// </summary>
     private static async Task<IResult> HandleGetOperationsByType(
         string operationType,
-        IUniversalProgressStore progressStore,
+        [FromServices] IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
     {
         if (!Enum.TryParse<OperationType>(operationType, true, out var parsedType))

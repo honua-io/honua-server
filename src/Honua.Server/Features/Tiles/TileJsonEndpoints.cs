@@ -12,6 +12,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Tiles;
@@ -42,8 +43,8 @@ internal static class TileJsonEndpoints
     private static async Task<IResult> HandleGetTileJson(
         int layerId,
         HttpContext context,
-        IFeatureReader featureReader,
-        IOptions<LimitsOptions> limitsOptions,
+        [FromServices] IFeatureReader featureReader,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(

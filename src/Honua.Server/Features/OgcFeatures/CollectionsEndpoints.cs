@@ -71,10 +71,10 @@ internal static class CollectionsEndpoints
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -156,10 +156,10 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -254,8 +254,8 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         try
         {

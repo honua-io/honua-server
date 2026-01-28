@@ -15,25 +15,31 @@ public sealed class AdminSmokeTests : IClassFixture<PlaywrightFixture>
     [Fact]
     public async Task AdminShell_Loads()
     {
-        var baseUrl = Environment.GetEnvironmentVariable("HONUA_ADMIN_E2E_BASE_URL");
-        await using var context = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
+        await _fixture.RunAsync(nameof(AdminShell_Loads), async ctx =>
         {
-            BaseURL = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl
+            var baseUrl = ctx.BaseUrl;
+            var page = ctx.Page;
+
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                await page.GotoAsync("data:text/html,<h1>Honua Admin</h1>");
+                var heading = await page.Locator("h1").TextContentAsync();
+                Assert.Equal("Honua Admin", heading);
+                return;
+            }
+
+            await page.GotoAsync(baseUrl);
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                Assert.Equal(0, await page.GetByTestId("nav-dashboard").CountAsync());
+                Assert.Equal(0, await page.GetByTestId("nav-connections").CountAsync());
+                return;
+            }
+
+            await page.GetByTestId("nav-dashboard").WaitForAsync();
+            await page.GetByTestId("nav-connections").WaitForAsync();
+            await page.GetByTestId("nav-preview").WaitForAsync();
+            await page.GetByTestId("nav-styles").WaitForAsync();
         });
-        var page = await context.NewPageAsync();
-
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            await page.GotoAsync("data:text/html,<h1>Honua Admin</h1>");
-            var heading = await page.Locator("h1").TextContentAsync();
-            Assert.Equal("Honua Admin", heading);
-            return;
-        }
-
-        await page.GotoAsync(baseUrl);
-        await page.GetByTestId("nav-dashboard").WaitForAsync();
-        await page.GetByTestId("nav-connections").WaitForAsync();
-        await page.GetByTestId("nav-preview").WaitForAsync();
-        await page.GetByTestId("nav-styles").WaitForAsync();
     }
 }

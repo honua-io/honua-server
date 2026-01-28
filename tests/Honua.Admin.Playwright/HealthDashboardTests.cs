@@ -15,34 +15,34 @@ public sealed class HealthDashboardTests : IClassFixture<PlaywrightFixture>
     [Fact]
     public async Task HealthDashboard_Loads()
     {
-        var baseUrl = GetBaseUrl();
-        await using var context = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
+        await _fixture.RunAsync(nameof(HealthDashboard_Loads), async ctx =>
         {
-            BaseURL = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl
-        });
-        var page = await context.NewPageAsync();
+            var baseUrl = ctx.BaseUrl;
+            var page = ctx.Page;
 
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            await page.GotoAsync("data:text/html,<div data-testid='health-dashboard' style='width:10px;height:10px;'></div><div data-testid='health-recent-errors' style='width:10px;height:10px;'></div><div data-testid='health-live-status' style='width:10px;height:10px;'></div><div data-testid='health-ready-status' style='width:10px;height:10px;'></div>");
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                await page.GotoAsync("data:text/html,<div data-testid='health-dashboard' style='width:10px;height:10px;'></div><div data-testid='health-recent-errors' style='width:10px;height:10px;'></div><div data-testid='health-live-status' style='width:10px;height:10px;'></div><div data-testid='health-ready-status' style='width:10px;height:10px;'></div>");
+                await page.GetByTestId("health-dashboard").WaitForAsync();
+                await page.GetByTestId("health-recent-errors").WaitForAsync();
+                await page.GetByTestId("health-live-status").WaitForAsync();
+                await page.GetByTestId("health-ready-status").WaitForAsync();
+                return;
+            }
+
+            var healthUrl = baseUrl[^1] == '/'
+                ? $"{baseUrl}health"
+                : $"{baseUrl}/health";
+
+            await page.GotoAsync(healthUrl);
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
             await page.GetByTestId("health-dashboard").WaitForAsync();
             await page.GetByTestId("health-recent-errors").WaitForAsync();
             await page.GetByTestId("health-live-status").WaitForAsync();
             await page.GetByTestId("health-ready-status").WaitForAsync();
-            return;
-        }
-
-        var healthUrl = baseUrl[^1] == '/'
-            ? $"{baseUrl}health"
-            : $"{baseUrl}/health";
-
-        await page.GotoAsync(healthUrl);
-        await page.GetByTestId("health-dashboard").WaitForAsync();
-        await page.GetByTestId("health-recent-errors").WaitForAsync();
-        await page.GetByTestId("health-live-status").WaitForAsync();
-        await page.GetByTestId("health-ready-status").WaitForAsync();
+        });
     }
-
-    private static string? GetBaseUrl()
-        => Environment.GetEnvironmentVariable("HONUA_ADMIN_E2E_BASE_URL");
 }

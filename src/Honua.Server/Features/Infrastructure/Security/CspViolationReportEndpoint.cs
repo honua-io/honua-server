@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Infrastructure.Security;
 
@@ -35,7 +36,7 @@ public static class CspViolationReportEndpoint
     /// <returns>HTTP 204 No Content response</returns>
     private static async Task<IResult> HandleCspViolationReport(
         HttpRequest request,
-        ILogger<CspViolationReport> logger,
+        [FromServices] ILogger<CspViolationReport> logger,
         HttpContext context)
     {
         try

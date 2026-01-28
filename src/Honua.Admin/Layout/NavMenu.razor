@@ -1,26 +1,30 @@
-<MudNavMenu Class="nav-menu">
-    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard" data-testid="nav-dashboard">
-        Dashboard
-    </MudNavLink>
+<AuthorizeView Policy="@AdminAuthorizationPolicies.AdminPolicy">
+    <Authorized>
+        <MudNavMenu Class="nav-menu">
+            <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard" data-testid="nav-dashboard">
+                Dashboard
+            </MudNavLink>
 
-    <MudDivider Class="my-2" />
+            <MudDivider Class="my-2" />
 
-    <MudNavLink Href="connections" Icon="@Icons.Material.Filled.Link" data-testid="nav-connections">
-        Connections
-    </MudNavLink>
-    <MudNavLink Href="layers" Icon="@Icons.Material.Filled.Layers" data-testid="nav-layers">
-        Layers
-    </MudNavLink>
-    <MudNavLink Href="import" Icon="@Icons.Material.Filled.CloudUpload" data-testid="nav-import">
-        Import
-    </MudNavLink>
-    <MudNavLink Href="preview" Icon="@Icons.Material.Filled.Map" data-testid="nav-preview">
-        Preview
-    </MudNavLink>
-    <MudNavLink Href="styles" Icon="@Icons.Material.Filled.Brush" data-testid="nav-styles">
-        Styles
-    </MudNavLink>
-    <MudNavLink Href="health" Icon="@Icons.Material.Filled.MonitorHeart" data-testid="nav-health">
-        Health
-    </MudNavLink>
-</MudNavMenu>
+            <MudNavLink Href="connections" Icon="@Icons.Material.Filled.Link" data-testid="nav-connections">
+                Connections
+            </MudNavLink>
+            <MudNavLink Href="layers" Icon="@Icons.Material.Filled.Layers" data-testid="nav-layers">
+                Layers
+            </MudNavLink>
+            <MudNavLink Href="import" Icon="@Icons.Material.Filled.CloudUpload" data-testid="nav-import">
+                Import
+            </MudNavLink>
+            <MudNavLink Href="preview" Icon="@Icons.Material.Filled.Map" data-testid="nav-preview">
+                Preview
+            </MudNavLink>
+            <MudNavLink Href="styles" Icon="@Icons.Material.Filled.Brush" data-testid="nav-styles">
+                Styles
+            </MudNavLink>
+            <MudNavLink Href="health" Icon="@Icons.Material.Filled.MonitorHeart" data-testid="nav-health">
+                Health
+            </MudNavLink>
+        </MudNavMenu>
+    </Authorized>
+</AuthorizeView>

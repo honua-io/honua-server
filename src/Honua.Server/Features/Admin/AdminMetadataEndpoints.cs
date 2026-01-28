@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -55,7 +56,7 @@ internal static class AdminMetadataEndpoints
 
     private static async Task HandleGetVersion(
         HttpContext context,
-        IMetadataSchemaRegistry schemaRegistry)
+        [FromServices] IMetadataSchemaRegistry schemaRegistry)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -77,7 +78,7 @@ internal static class AdminMetadataEndpoints
 
     private static async Task HandleGetCapabilities(
         HttpContext context,
-        IMetadataSchemaRegistry schemaRegistry)
+        [FromServices] IMetadataSchemaRegistry schemaRegistry)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -106,8 +107,8 @@ internal static class AdminMetadataEndpoints
 
     private static async Task HandleGetManifest(
         HttpContext context,
-        IMetadataResourceStore store,
-        IMetadataSchemaRegistry schemaRegistry)
+        [FromServices] IMetadataResourceStore store,
+        [FromServices] IMetadataSchemaRegistry schemaRegistry)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -158,9 +159,9 @@ internal static class AdminMetadataEndpoints
     private static async Task HandleApplyManifest(
         HttpContext context,
         ManifestApplyRequest request,
-        IMetadataResourceStore store,
-        IMetadataSchemaRegistry schemaRegistry,
-        IMetadataCompiler compiler)
+        [FromServices] IMetadataResourceStore store,
+        [FromServices] IMetadataSchemaRegistry schemaRegistry,
+        [FromServices] IMetadataCompiler compiler)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {

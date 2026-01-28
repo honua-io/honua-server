@@ -4,6 +4,7 @@
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
@@ -32,7 +33,7 @@ internal static class ObservabilityEndpoints
             .Produces<ObservabilityStatusResponse>();
     }
 
-    private static IResult HandleGetRecentErrors(RecentErrorBuffer buffer)
+    private static IResult HandleGetRecentErrors([FromServices] RecentErrorBuffer buffer)
     {
         var response = new RecentErrorsResponse
         {
@@ -43,7 +44,9 @@ internal static class ObservabilityEndpoints
         return Results.Json(response, MetricsJsonContext.Default.RecentErrorsResponse);
     }
 
-    private static IResult HandleGetTelemetryStatus(IOptions<TracingOptions> options, IConfiguration configuration)
+    private static IResult HandleGetTelemetryStatus(
+        [FromServices] IOptions<TracingOptions> options,
+        [FromServices] IConfiguration configuration)
     {
         var tracingOptions = options.Value;
         var otlpEndpoint = ResolveOtlpEndpoint(tracingOptions, configuration);

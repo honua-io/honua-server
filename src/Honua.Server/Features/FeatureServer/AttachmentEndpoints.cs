@@ -378,6 +378,19 @@ internal static class AttachmentEndpoints
             return null;
         }
 
+        if (scope == AccessScope.Write)
+        {
+            var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+                context,
+                validationResult.Service!.Name,
+                context.RequestAborted);
+            if (rbacError != null)
+            {
+                await rbacError.ExecuteAsync(context);
+                return null;
+            }
+        }
+
         return (validationResult.Service!, validationResult.Layer!);
     }
 

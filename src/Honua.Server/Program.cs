@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
@@ -57,6 +58,13 @@ var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
+var adminStaticAssetsManifestPath = Path.Combine(
+    AppContext.BaseDirectory,
+    "Honua.Admin.staticwebassets.endpoints.json");
+if (serveAdminUi && !builder.Environment.IsDevelopment())
+{
+    builder.WebHost.UseStaticWebAssets();
+}
 
 // Load optional security configuration without overriding environment-specific settings.
 AddSecurityConfiguration(builder.Configuration, builder.Environment);
@@ -225,6 +233,10 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions.SectionName));
 
+// Configure RBAC options
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.RbacOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.RbacOptions.SectionName));
+
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
 
@@ -279,6 +291,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
+
+var adminDotnetJsAlias = serveAdminUi
+    ? ResolveAdminDotnetJsAlias(adminStaticAssetsManifestPath)
+    : null;
 
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
 if (activeDbConnectionTracker != null)
@@ -341,15 +357,47 @@ if (configurationErrors.Count > 0)
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 
 // Add security headers middleware (first in pipeline for all requests)
-app.UseSecurityHeaders();
+if (!app.Environment.IsEnvironment("Test"))
+{
+    app.UseSecurityHeaders();
+}
 
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();
 
 if (serveAdminUi)
 {
-    app.UseBlazorFrameworkFiles("/admin");
-    app.UseStaticFiles(new StaticFileOptions { RequestPath = "/admin" });
+    app.Map("/admin", adminApp =>
+    {
+        if (!string.IsNullOrWhiteSpace(adminDotnetJsAlias))
+        {
+            adminApp.Use(async (context, next) =>
+            {
+                if (context.Request.Path.Equals("/_framework/dotnet.js", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Request.Path = new PathString($"/_framework/{adminDotnetJsAlias}");
+                }
+
+                await next().ConfigureAwait(false);
+            });
+        }
+
+        adminApp.UseBlazorFrameworkFiles();
+        adminApp.UseStaticFiles();
+        adminApp.UseRouting();
+        adminApp.UseEndpoints(endpoints =>
+        {
+            if (File.Exists(adminStaticAssetsManifestPath))
+            {
+                endpoints.MapStaticAssets(adminStaticAssetsManifestPath);
+            }
+            else
+            {
+                endpoints.MapStaticAssets();
+            }
+            endpoints.MapFallbackToFile("index.html");
+        });
+    });
 }
 
 // Add correlation ID middleware early in pipeline (before request logging)
@@ -443,11 +491,6 @@ app.MapEsriImportEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
-
-if (serveAdminUi)
-{
-    app.MapFallbackToFile("/admin/{*path:nonfile}", "index.html");
-}
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)
@@ -775,4 +818,32 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
     services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
+}
+
+static string? ResolveAdminDotnetJsAlias(string endpointsManifestPath)
+{
+    if (!File.Exists(endpointsManifestPath))
+    {
+        return null;
+    }
+
+    using var stream = File.OpenRead(endpointsManifestPath);
+    using var document = JsonDocument.Parse(stream);
+    if (!document.RootElement.TryGetProperty("Endpoints", out var endpoints))
+    {
+        return null;
+    }
+
+    foreach (var endpoint in endpoints.EnumerateArray())
+    {
+        if (endpoint.TryGetProperty("Route", out var route) &&
+            string.Equals(route.GetString(), "_framework/dotnet.js", StringComparison.OrdinalIgnoreCase) &&
+            endpoint.TryGetProperty("AssetFile", out var assetFile))
+        {
+            var assetFilePath = assetFile.GetString();
+            return string.IsNullOrWhiteSpace(assetFilePath) ? null : Path.GetFileName(assetFilePath);
+        }
+    }
+
+    return null;
 }

@@ -85,6 +85,22 @@ jobs:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
+      HONUA_ADMIN_E2E_BASE_URL: http://localhost:8080/admin/
+      HONUA_ADMIN_E2E_DB_URL: Host=localhost;Username=honua;Password=honua;Database=honua_test
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -127,6 +143,32 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
+      - name: Start Admin UI Server
+        run: |
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release
+          ASPNETCORE_ENVIRONMENT=Test \
+            HONUA_DEV_AUTH=true \
+            HONUA_SKIP_MIGRATIONS=true \
+            HONUA_TEST_SCHEMA_HEADERS=true \
+            Security__ConnectionEncryption__MasterKey="test-master-key-that-is-at-least-32-characters-long-for-security" \
+            Security__ConnectionEncryption__Salt="dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
+            ASPNETCORE_URLS=http://localhost:8080 \
+            dotnet run --project src/Honua.Server/Honua.Server.csproj \
+              --configuration Release \
+              --no-launch-profile \
+              --no-build \
+              > ./tests/TestResults/admin-ui-server.log 2>&1 &
+          echo $! > /tmp/honua-admin-ui.pid
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8080/healthz/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Admin UI server failed to start."
+          cat ./tests/TestResults/admin-ui-server.log
+          exit 1
+
       - name: Pre-pull Docker images for faster tests
         run: |
           docker pull postgis/postgis:16-3.4-alpine || true
@@ -151,6 +193,7 @@ jobs:
         run: |
           dotnet build tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
             --configuration Release
+          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install
           dotnet test Honua.sln \
             --no-restore \

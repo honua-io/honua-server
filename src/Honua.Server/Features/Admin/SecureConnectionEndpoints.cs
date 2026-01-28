@@ -167,9 +167,9 @@ internal static class SecureConnectionEndpoints
     /// </summary>
     private static async Task<Results<Ok<ApiResponse<IReadOnlyList<SecureConnectionSummary>>>, BadRequest<ApiResponse<object>>>>
         HandleGetConnections(
-            ISecureConnectionRegistry registry,
+            [FromServices] ISecureConnectionRegistry registry,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
@@ -211,9 +211,9 @@ internal static class SecureConnectionEndpoints
     private static async Task<Results<Ok<ApiResponse<SecureConnectionDetail>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
         HandleGetConnection(
             Guid id,
-            ISecureConnectionRegistry registry,
+            [FromServices] ISecureConnectionRegistry registry,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
@@ -261,8 +261,8 @@ internal static class SecureConnectionEndpoints
     private static async Task<Results<Created<ApiResponse<SecureConnectionSummary>>, BadRequest<ApiResponse<object>>>>
         HandleCreateConnection(
             CreateSecureConnectionRequest request,
-            ISecureConnectionRegistry registry,
-            IConnectionEncryptionService encryptionService,
+            [FromServices] ISecureConnectionRegistry registry,
+            [FromServices] IConnectionEncryptionService encryptionService,
             [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
             HttpContext context)
     {
@@ -382,10 +382,10 @@ internal static class SecureConnectionEndpoints
     private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
         HandleTestConnection(
             Guid id,
-            ISecureConnectionResolver resolver,
-            ISecureConnectionRegistry registry,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ISecureConnectionRegistry registry,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
@@ -423,9 +423,9 @@ internal static class SecureConnectionEndpoints
     /// </summary>
     private static async Task<Results<Ok<ApiResponse<EncryptionValidationResult>>, BadRequest<ApiResponse<object>>>>
         HandleValidateEncryption(
-            IConnectionEncryptionService encryptionService,
+            [FromServices] IConnectionEncryptionService encryptionService,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
@@ -456,11 +456,11 @@ internal static class SecureConnectionEndpoints
         HandleUpdateConnection(
             Guid id,
             UpdateSecureConnectionRequest request,
-            ISecureConnectionRegistry registry,
-            IConnectionEncryptionService encryptionService,
-            IDatabaseConnectionStringBuilder connectionStringBuilder,
+            [FromServices] ISecureConnectionRegistry registry,
+            [FromServices] IConnectionEncryptionService encryptionService,
+            [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
@@ -578,9 +578,9 @@ internal static class SecureConnectionEndpoints
     private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
         HandleDeleteConnection(
             Guid id,
-            ISecureConnectionRegistry registry,
+            [FromServices] ISecureConnectionRegistry registry,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {
@@ -607,9 +607,9 @@ internal static class SecureConnectionEndpoints
 
     private static async Task<Results<Ok<ApiResponse<KeyRotationResult>>, BadRequest<ApiResponse<object>>>>
         HandleRotateEncryptionKey(
-            IConnectionEncryptionService encryptionService,
+            [FromServices] IConnectionEncryptionService encryptionService,
             HttpContext context,
-            ILogger<SecureConnectionEndpointsLog> logger)
+            [FromServices] ILogger<SecureConnectionEndpointsLog> logger)
     {
         try
         {

@@ -12,6 +12,9 @@ public abstract class LayerSelectionPageBase : ComponentBase
     [Inject] protected ISecureConnectionsClient ConnectionsClient { get; set; } = default!;
     [Inject] protected ILayerPublishingClient LayerPublishingClient { get; set; } = default!;
 
+    private int _connectionsRequestId;
+    private int _layersRequestId;
+
     protected List<SecureConnectionSummary> Connections { get; } = new();
     protected List<PublishedLayerSummary> PublishedLayers { get; } = new();
 
@@ -67,52 +70,97 @@ public abstract class LayerSelectionPageBase : ComponentBase
 
     protected async Task LoadConnectionsAsync()
     {
+        var requestId = Interlocked.Increment(ref _connectionsRequestId);
         IsLoadingConnections = true;
         ErrorMessage = null;
         StateHasChanged();
 
-        var result = await ConnectionsClient.GetConnectionsAsync();
-        IsLoadingConnections = false;
-
-        if (!result.Success)
+        try
         {
-            ErrorMessage = result.Message ?? "Failed to load connections.";
-            return;
+            var result = await ConnectionsClient.GetConnectionsAsync();
+            if (requestId != _connectionsRequestId)
+            {
+                return;
+            }
+
+            if (!result.Success)
+            {
+                ErrorMessage = result.Message ?? "Failed to load connections.";
+                return;
+            }
+
+            Connections.Clear();
+            Connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
+
+            if (Connections.Count > 0 && !SelectedConnectionId.HasValue)
+            {
+                SelectedConnectionId = Connections[0].ConnectionId;
+            }
         }
-
-        Connections.Clear();
-        Connections.AddRange(result.Data ?? Array.Empty<SecureConnectionSummary>());
-
-        if (Connections.Count > 0 && !SelectedConnectionId.HasValue)
+        catch (Exception)
         {
-            SelectedConnectionId = Connections[0].ConnectionId;
+            if (requestId == _connectionsRequestId)
+            {
+                ErrorMessage = "Failed to load connections.";
+            }
+        }
+        finally
+        {
+            if (requestId == _connectionsRequestId)
+            {
+                IsLoadingConnections = false;
+            }
         }
     }
 
     protected async Task LoadLayersAsync()
     {
+        var connectionId = SelectedConnectionId;
+        var requestId = Interlocked.Increment(ref _layersRequestId);
+
         IsLoadingLayers = true;
         ErrorMessage = null;
         StateHasChanged();
 
-        if (!SelectedConnectionId.HasValue)
+        if (!connectionId.HasValue)
         {
             IsLoadingLayers = false;
             return;
         }
 
-        var result = await LayerPublishingClient.GetPublishedLayersAsync(SelectedConnectionId.Value);
-        IsLoadingLayers = false;
-
-        if (!result.Success)
+        try
         {
-            ErrorMessage = result.Message ?? "Failed to load layers.";
-            PublishedLayers.Clear();
-            return;
-        }
+            var result = await LayerPublishingClient.GetPublishedLayersAsync(connectionId.Value);
+            if (requestId != _layersRequestId || connectionId != SelectedConnectionId)
+            {
+                return;
+            }
 
-        PublishedLayers.Clear();
-        PublishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
+            if (!result.Success)
+            {
+                ErrorMessage = result.Message ?? "Failed to load layers.";
+                PublishedLayers.Clear();
+                return;
+            }
+
+            PublishedLayers.Clear();
+            PublishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
+        }
+        catch (Exception)
+        {
+            if (requestId == _layersRequestId)
+            {
+                ErrorMessage = "Failed to load layers.";
+                PublishedLayers.Clear();
+            }
+        }
+        finally
+        {
+            if (requestId == _layersRequestId)
+            {
+                IsLoadingLayers = false;
+            }
+        }
     }
 
     protected async Task UpdateSelectedLayerAsync(int? layerId, bool forceReload)

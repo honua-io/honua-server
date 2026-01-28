@@ -7,6 +7,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Styling;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -40,8 +41,8 @@ internal static class AdminLayerStyleEndpoints
     private static async Task<IResult> HandleGetLayerStyle(
         int layerId,
         HttpContext context,
-        IResourceValidator resourceValidator,
-        ILayerStyleService styleService,
+        [FromServices] IResourceValidator resourceValidator,
+        [FromServices] ILayerStyleService styleService,
         CancellationToken cancellationToken)
     {
         var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
@@ -77,9 +78,9 @@ internal static class AdminLayerStyleEndpoints
         int layerId,
         LayerStyleUpdateRequest request,
         HttpContext context,
-        IResourceValidator resourceValidator,
-        ILayerStyleService styleService,
-        OutputCacheInvalidationService cacheInvalidator,
+        [FromServices] IResourceValidator resourceValidator,
+        [FromServices] ILayerStyleService styleService,
+        [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
         var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);

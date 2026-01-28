@@ -1,4 +1,6 @@
 @page "/layers"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
+@using System.Threading
 @using Honua.Admin.Components.Layers
 @using Honua.Admin.Models
 
@@ -146,6 +148,8 @@
     private readonly List<SecureConnectionSummary> _connections = new();
     private readonly List<TableInfo> _tables = new();
     private readonly List<PublishedLayerSummary> _publishedLayers = new();
+    private int _tablesRequestId;
+    private int _layersRequestId;
     private Guid? _selectedConnectionId;
     private LayerPublishFormModel? _publishModel;
     private bool _isLoadingTables;
@@ -209,21 +213,44 @@
             return;
         }
 
+        var connectionId = _selectedConnectionId.Value;
+        var requestId = Interlocked.Increment(ref _tablesRequestId);
+
         _isLoadingTables = true;
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await LayerPublishingClient.GetTablesAsync(_selectedConnectionId.Value);
-        if (!result.Success || result.Data is null)
+        try
         {
-            _errorMessage = result.Message ?? "Failed to load tables.";
-            _isLoadingTables = false;
-            return;
-        }
+            var result = await LayerPublishingClient.GetTablesAsync(connectionId);
+            if (requestId != _tablesRequestId || connectionId != _selectedConnectionId)
+            {
+                return;
+            }
 
-        _tables.Clear();
-        _tables.AddRange(result.Data.Tables);
-        _isLoadingTables = false;
+            if (!result.Success || result.Data is null)
+            {
+                _errorMessage = result.Message ?? "Failed to load tables.";
+                return;
+            }
+
+            _tables.Clear();
+            _tables.AddRange(result.Data.Tables);
+        }
+        catch (Exception)
+        {
+            if (requestId == _tablesRequestId)
+            {
+                _errorMessage = "Failed to load tables.";
+            }
+        }
+        finally
+        {
+            if (requestId == _tablesRequestId)
+            {
+                _isLoadingTables = false;
+            }
+        }
     }
 
     private async Task LoadPublishedLayersAsync()
@@ -233,21 +260,44 @@
             return;
         }
 
+        var connectionId = _selectedConnectionId.Value;
+        var requestId = Interlocked.Increment(ref _layersRequestId);
+
         _isLoadingLayers = true;
         _errorMessage = null;
         StateHasChanged();
 
-        var result = await LayerPublishingClient.GetPublishedLayersAsync(_selectedConnectionId.Value);
-        if (!result.Success)
+        try
         {
-            _errorMessage = result.Message ?? "Failed to load layers.";
-            _isLoadingLayers = false;
-            return;
-        }
+            var result = await LayerPublishingClient.GetPublishedLayersAsync(connectionId);
+            if (requestId != _layersRequestId || connectionId != _selectedConnectionId)
+            {
+                return;
+            }
 
-        _publishedLayers.Clear();
-        _publishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
-        _isLoadingLayers = false;
+            if (!result.Success)
+            {
+                _errorMessage = result.Message ?? "Failed to load layers.";
+                return;
+            }
+
+            _publishedLayers.Clear();
+            _publishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
+        }
+        catch (Exception)
+        {
+            if (requestId == _layersRequestId)
+            {
+                _errorMessage = "Failed to load layers.";
+            }
+        }
+        finally
+        {
+            if (requestId == _layersRequestId)
+            {
+                _isLoadingLayers = false;
+            }
+        }
     }
 
     private void StartPublish(TableInfo table)

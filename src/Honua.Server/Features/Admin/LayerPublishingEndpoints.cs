@@ -10,6 +10,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -49,10 +50,10 @@ internal static class LayerPublishingEndpoints
         HandleListLayers(
             string id,
             string? serviceName,
-            ISecureConnectionResolver resolver,
-            ILayerPublishingService publishingService,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ILayerPublishingService publishingService,
             HttpContext context,
-            ILogger<LayerPublishingEndpointsLog> logger)
+            [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
     {
         try
         {
@@ -90,11 +91,11 @@ internal static class LayerPublishingEndpoints
         HandlePublishLayer(
             string id,
             PublishLayerRequest request,
-            ISecureConnectionResolver resolver,
-            ILayerPublishingService publishingService,
-            IDatabaseMigrationRunner migrationRunner,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ILayerPublishingService publishingService,
+            [FromServices] IDatabaseMigrationRunner migrationRunner,
             HttpContext context,
-            ILogger<LayerPublishingEndpointsLog> logger)
+            [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
     {
         var validationResults = new List<ValidationResult>();
         if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
@@ -179,11 +180,11 @@ internal static class LayerPublishingEndpoints
             int layerId,
             LayerEnabledRequest request,
             string? serviceName,
-            ISecureConnectionResolver resolver,
-            ILayerPublishingService publishingService,
-            IDatabaseMigrationRunner migrationRunner,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ILayerPublishingService publishingService,
+            [FromServices] IDatabaseMigrationRunner migrationRunner,
             HttpContext context,
-            ILogger<LayerPublishingEndpointsLog> logger)
+            [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
     {
         try
         {
@@ -239,11 +240,11 @@ internal static class LayerPublishingEndpoints
             string id,
             LayerEnabledRequest request,
             string? serviceName,
-            ISecureConnectionResolver resolver,
-            ILayerPublishingService publishingService,
-            IDatabaseMigrationRunner migrationRunner,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ILayerPublishingService publishingService,
+            [FromServices] IDatabaseMigrationRunner migrationRunner,
             HttpContext context,
-            ILogger<LayerPublishingEndpointsLog> logger)
+            [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
     {
         try
         {

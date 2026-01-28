@@ -8,6 +8,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcTiles.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -83,7 +84,7 @@ internal static class TileMatrixSetEndpoints
         string tileMatrixSetId,
         HttpContext context,
         string? f,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
         if (validationError is not null)

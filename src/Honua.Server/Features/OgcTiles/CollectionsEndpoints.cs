@@ -46,10 +46,10 @@ internal static class CollectionsEndpoints
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcTilesCollectionsLog> logger)
+        [FromServices] ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -114,10 +114,10 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcTilesCollectionsLog> logger)
+        [FromServices] ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
