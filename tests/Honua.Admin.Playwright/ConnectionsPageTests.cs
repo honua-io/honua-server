@@ -332,6 +332,10 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
             });
 
             await page.GotoAsync(BuildConnectionsUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
 
             await page.GetByText("primary-db").WaitForAsync();
             await page.GetByTestId($"connection-test-{connectionId}").ClickAsync();

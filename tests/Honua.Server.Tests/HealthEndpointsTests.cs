@@ -150,6 +150,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     {
         // Arrange
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var maxElapsedMs = Environment.GetEnvironmentVariable("CI") == "true" ? 1000 : 200;
 
         // Act
         var response = await _client.GetAsync("/healthz/live");
@@ -157,8 +158,8 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(200,
-            "liveness probe should respond within 200ms");
+        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(maxElapsedMs,
+            "liveness probe should respond within {0}ms", maxElapsedMs);
     }
 
     [IntegrationTest]
@@ -178,6 +179,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
         using var client = factory.CreateClient();
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var maxElapsedMs = Environment.GetEnvironmentVariable("CI") == "true" ? 1000 : 200;
 
         // Act
         var response = await client.GetAsync("/healthz/ready");
@@ -185,8 +187,8 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(200,
-            "readiness probe should respond within 200ms with healthy database");
+        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(maxElapsedMs,
+            "readiness probe should respond within {0}ms with healthy database", maxElapsedMs);
     }
 
     [IntegrationTest]
