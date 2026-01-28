@@ -35,6 +35,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Serilog;
@@ -291,6 +292,10 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
+var adminDotnetJsFile = serveAdminUi
+    ? ResolveAdminDotnetJsFile(app.Environment.WebRootFileProvider)
+    : null;
+
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
 if (activeDbConnectionTracker != null)
 {
@@ -366,6 +371,17 @@ if (serveAdminUi)
         adminApp.UseRouting();
         adminApp.UseEndpoints(endpoints =>
         {
+            if (adminDotnetJsFile is not null)
+            {
+                endpoints.MapGet("/_framework/dotnet.js", async context =>
+                {
+                    context.Response.ContentType = "text/javascript";
+                    context.Response.Headers.CacheControl = "no-cache";
+                    await using var stream = adminDotnetJsFile.CreateReadStream();
+                    await stream.CopyToAsync(context.Response.Body);
+                });
+            }
+
             if (File.Exists(adminStaticAssetsManifestPath))
             {
                 endpoints.MapStaticAssets(adminStaticAssetsManifestPath);
@@ -797,4 +813,22 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
     services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
+}
+
+static IFileInfo? ResolveAdminDotnetJsFile(IFileProvider fileProvider)
+{
+    var frameworkFiles = fileProvider.GetDirectoryContents("_framework");
+    if (!frameworkFiles.Exists)
+    {
+        return null;
+    }
+
+    return frameworkFiles
+        .Where(file => file.Name.StartsWith("dotnet.", StringComparison.OrdinalIgnoreCase) &&
+                       file.Name.EndsWith(".js", StringComparison.OrdinalIgnoreCase) &&
+                       !file.Name.Contains(".map", StringComparison.OrdinalIgnoreCase) &&
+                       !file.Name.StartsWith("dotnet.native", StringComparison.OrdinalIgnoreCase) &&
+                       !file.Name.StartsWith("dotnet.runtime", StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(file => file.LastModified)
+        .FirstOrDefault();
 }
