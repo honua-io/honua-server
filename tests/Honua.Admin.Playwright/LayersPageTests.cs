@@ -33,7 +33,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
             var now = DateTimeOffset.UtcNow;
             var publishedLayers = new List<object>();
 
-            await page.RouteAsync("**/connections", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -64,7 +64,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*/tables", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*/tables", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -102,7 +102,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*/layers", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*/layers", async route =>
             {
                 if (route.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
                 {
@@ -198,7 +198,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
             const int layerId = 42;
             var now = DateTimeOffset.UtcNow;
 
-            await page.RouteAsync("**/connections", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -229,7 +229,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*/tables", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*/tables", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -259,7 +259,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*/layers", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*/layers", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -286,7 +286,7 @@ public sealed class LayersPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*/layers/*/enabled", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*/layers/*/enabled", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {

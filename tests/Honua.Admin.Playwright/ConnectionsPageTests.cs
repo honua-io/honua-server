@@ -30,7 +30,7 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
 
             var now = DateTimeOffset.UtcNow;
 
-            await page.RouteAsync("**/connections", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -84,7 +84,7 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
             var created = false;
             var deleted = false;
 
-            await page.RouteAsync("**/connections", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
             {
                 if (!route.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
                     !route.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
@@ -149,7 +149,7 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*", async route =>
             {
                 var connectionId = ExtractConnectionId(route.Request.Url);
                 if (connectionId == Guid.Empty)
@@ -282,7 +282,7 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
             var connectionId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
 
-            await page.RouteAsync("**/connections", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -313,7 +313,7 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/connections/*/test", async route =>
+            await page.RouteAsync("**/api/v1/admin/connections/*/test", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {

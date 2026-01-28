@@ -169,7 +169,7 @@ public sealed class MapPreviewTests : IClassFixture<PlaywrightFixture>
             layers = Array.Empty<object>()
         };
 
-        await page.RouteAsync("**/connections", async route =>
+        await page.RouteAsync("**/api/v1/admin/connections", async route =>
         {
             await FulfillJsonAsync(route, new
             {
@@ -200,7 +200,7 @@ public sealed class MapPreviewTests : IClassFixture<PlaywrightFixture>
             });
         });
 
-        await page.RouteAsync("**/connections/*/layers", async route =>
+        await page.RouteAsync("**/api/v1/admin/connections/*/layers", async route =>
         {
             await FulfillJsonAsync(route, new
             {
