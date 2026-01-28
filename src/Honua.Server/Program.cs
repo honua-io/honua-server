@@ -57,6 +57,10 @@ var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
+if (serveAdminUi && !builder.Environment.IsDevelopment())
+{
+    builder.WebHost.UseStaticWebAssets();
+}
 
 // Load optional security configuration without overriding environment-specific settings.
 AddSecurityConfiguration(builder.Configuration, builder.Environment);
