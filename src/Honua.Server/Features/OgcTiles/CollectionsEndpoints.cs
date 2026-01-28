@@ -46,8 +46,8 @@ internal static class CollectionsEndpoints
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
         ILogger<OgcTilesCollectionsLog> logger)
     {
@@ -114,8 +114,8 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
         ILogger<OgcTilesCollectionsLog> logger)
     {

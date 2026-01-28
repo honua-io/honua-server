@@ -16,6 +16,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcTiles.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -85,8 +86,8 @@ internal static class TilesEndpoints
 
     private static async Task<IResult> HandleGetDatasetTilesets(
         HttpContext context,
-        ILayerCatalog layerCatalog,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -140,8 +141,8 @@ internal static class TilesEndpoints
     private static async Task<IResult> HandleGetDatasetTileset(
         string tileMatrixSetId,
         HttpContext context,
-        ILayerCatalog layerCatalog,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -202,10 +203,10 @@ internal static class TilesEndpoints
         int tileRow,
         int tileCol,
         HttpContext context,
-        ILayerCatalog layerCatalog,
-        ITileProvider tileProvider,
-        IOptions<TileOptions> tileOptions,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] ITileProvider tileProvider,
+        [FromServices] IOptions<TileOptions> tileOptions,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -237,8 +238,8 @@ internal static class TilesEndpoints
     private static async Task<IResult> HandleGetCollectionTilesets(
         string collectionId,
         HttpContext context,
-        ILayerCatalog layerCatalog,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -288,8 +289,8 @@ internal static class TilesEndpoints
         string collectionId,
         string tileMatrixSetId,
         HttpContext context,
-        ILayerCatalog layerCatalog,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
@@ -355,10 +356,10 @@ internal static class TilesEndpoints
         int tileRow,
         int tileCol,
         HttpContext context,
-        ILayerCatalog layerCatalog,
-        ITileProvider tileProvider,
-        IOptions<TileOptions> tileOptions,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] ITileProvider tileProvider,
+        [FromServices] IOptions<TileOptions> tileOptions,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
