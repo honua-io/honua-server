@@ -155,6 +155,7 @@ jobs:
             ASPNETCORE_URLS=http://localhost:8080 \
             dotnet run --project src/Honua.Server/Honua.Server.csproj \
               --configuration Release \
+              --no-launch-profile \
               --no-build \
               > ./tests/TestResults/admin-ui-server.log 2>&1 &
           echo $! > /tmp/honua-admin-ui.pid
