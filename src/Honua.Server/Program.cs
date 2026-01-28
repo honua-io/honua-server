@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
@@ -35,7 +36,6 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Serilog;
@@ -292,8 +292,8 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
-var adminDotnetJsFile = serveAdminUi
-    ? ResolveAdminDotnetJsFile(app.Environment.WebRootFileProvider)
+var adminDotnetJsAlias = serveAdminUi
+    ? ResolveAdminDotnetJsAlias(adminStaticAssetsManifestPath)
     : null;
 
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
@@ -366,22 +366,24 @@ if (serveAdminUi)
 {
     app.Map("/admin", adminApp =>
     {
+        if (!string.IsNullOrWhiteSpace(adminDotnetJsAlias))
+        {
+            adminApp.Use(async (context, next) =>
+            {
+                if (context.Request.Path.Equals("/_framework/dotnet.js", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Request.Path = new PathString($"/_framework/{adminDotnetJsAlias}");
+                }
+
+                await next().ConfigureAwait(false);
+            });
+        }
+
         adminApp.UseBlazorFrameworkFiles();
         adminApp.UseStaticFiles();
         adminApp.UseRouting();
         adminApp.UseEndpoints(endpoints =>
         {
-            if (adminDotnetJsFile is not null)
-            {
-                endpoints.MapGet("/_framework/dotnet.js", async context =>
-                {
-                    context.Response.ContentType = "text/javascript";
-                    context.Response.Headers.CacheControl = "no-cache";
-                    await using var stream = adminDotnetJsFile.CreateReadStream();
-                    await stream.CopyToAsync(context.Response.Body);
-                });
-            }
-
             if (File.Exists(adminStaticAssetsManifestPath))
             {
                 endpoints.MapStaticAssets(adminStaticAssetsManifestPath);
@@ -815,20 +817,30 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
 }
 
-static IFileInfo? ResolveAdminDotnetJsFile(IFileProvider fileProvider)
+static string? ResolveAdminDotnetJsAlias(string endpointsManifestPath)
 {
-    var frameworkFiles = fileProvider.GetDirectoryContents("_framework");
-    if (!frameworkFiles.Exists)
+    if (!File.Exists(endpointsManifestPath))
     {
         return null;
     }
 
-    return frameworkFiles
-        .Where(file => file.Name.StartsWith("dotnet.", StringComparison.OrdinalIgnoreCase) &&
-                       file.Name.EndsWith(".js", StringComparison.OrdinalIgnoreCase) &&
-                       !file.Name.Contains(".map", StringComparison.OrdinalIgnoreCase) &&
-                       !file.Name.StartsWith("dotnet.native", StringComparison.OrdinalIgnoreCase) &&
-                       !file.Name.StartsWith("dotnet.runtime", StringComparison.OrdinalIgnoreCase))
-        .OrderByDescending(file => file.LastModified)
-        .FirstOrDefault();
+    using var stream = File.OpenRead(endpointsManifestPath);
+    using var document = JsonDocument.Parse(stream);
+    if (!document.RootElement.TryGetProperty("Endpoints", out var endpoints))
+    {
+        return null;
+    }
+
+    foreach (var endpoint in endpoints.EnumerateArray())
+    {
+        if (endpoint.TryGetProperty("Route", out var route) &&
+            string.Equals(route.GetString(), "_framework/dotnet.js", StringComparison.OrdinalIgnoreCase) &&
+            endpoint.TryGetProperty("AssetFile", out var assetFile))
+        {
+            var assetFilePath = assetFile.GetString();
+            return string.IsNullOrWhiteSpace(assetFilePath) ? null : Path.GetFileName(assetFilePath);
+        }
+    }
+
+    return null;
 }
