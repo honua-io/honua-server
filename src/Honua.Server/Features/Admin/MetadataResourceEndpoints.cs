@@ -9,6 +9,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
@@ -61,7 +62,7 @@ internal static class MetadataResourceEndpoints
 
     private static async Task HandleListResources(
         HttpContext context,
-        IMetadataResourceStore store)
+        [FromServices] IMetadataResourceStore store)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -86,8 +87,8 @@ internal static class MetadataResourceEndpoints
         string kind,
         string @namespace,
         string name,
-        IMetadataResourceStore store,
-        IETagService etagService)
+        [FromServices] IMetadataResourceStore store,
+        [FromServices] IETagService etagService)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -116,9 +117,9 @@ internal static class MetadataResourceEndpoints
     private static async Task HandleCreateResource(
         HttpContext context,
         MetadataResource resource,
-        IMetadataResourceStore store,
-        IMetadataSchemaRegistry schemaRegistry,
-        IMetadataCompiler compiler)
+        [FromServices] IMetadataResourceStore store,
+        [FromServices] IMetadataSchemaRegistry schemaRegistry,
+        [FromServices] IMetadataCompiler compiler)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -187,10 +188,10 @@ internal static class MetadataResourceEndpoints
         string @namespace,
         string name,
         MetadataResource resource,
-        IMetadataResourceStore store,
-        IMetadataSchemaRegistry schemaRegistry,
-        IMetadataCompiler compiler,
-        IETagService etagService)
+        [FromServices] IMetadataResourceStore store,
+        [FromServices] IMetadataSchemaRegistry schemaRegistry,
+        [FromServices] IMetadataCompiler compiler,
+        [FromServices] IETagService etagService)
     {
         if (!HttpMethods.IsPut(context.Request.Method))
         {
@@ -274,8 +275,8 @@ internal static class MetadataResourceEndpoints
         string kind,
         string @namespace,
         string name,
-        IMetadataResourceStore store,
-        IETagService etagService)
+        [FromServices] IMetadataResourceStore store,
+        [FromServices] IETagService etagService)
     {
         if (!HttpMethods.IsDelete(context.Request.Method))
         {

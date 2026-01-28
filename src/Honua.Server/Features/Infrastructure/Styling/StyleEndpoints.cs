@@ -6,6 +6,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
@@ -32,7 +33,7 @@ internal static class StyleEndpoints
     private static async Task<IResult> HandleGetStyle(
         int layerId,
         HttpContext context,
-        ILayerStyleService styleService,
+        [FromServices] ILayerStyleService styleService,
         CancellationToken cancellationToken)
     {
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(

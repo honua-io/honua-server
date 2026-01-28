@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -62,7 +63,7 @@ internal static class CoreEndpoints
     private static IResult HandleGetLandingPage(
         HttpContext context,
         string? f,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         OgcFeaturesLog.LandingPageRequested(logger);
 
@@ -131,7 +132,7 @@ internal static class CoreEndpoints
     private static IResult HandleGetConformance(
         HttpContext context,
         string? f,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         OgcFeaturesLog.ConformanceRequested(logger);
 
@@ -192,7 +193,7 @@ internal static class CoreEndpoints
     private static async Task<IResult> HandleGetOpenApiSpec(
         HttpContext context,
         string? f,
-        IWebHostEnvironment environment)
+        [FromServices] IWebHostEnvironment environment)
     {
         // Fallback: serve minimal spec if file not found
         const string fallbackSpec = """

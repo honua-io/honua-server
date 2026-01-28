@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -84,7 +85,9 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets comprehensive performance metrics.
     /// </summary>
-    private static IResult GetPerformanceMetrics(HttpContext context, IHttpRequestMetricsSnapshotProvider httpMetricsProvider)
+    private static IResult GetPerformanceMetrics(
+        HttpContext context,
+        [FromServices] IHttpRequestMetricsSnapshotProvider httpMetricsProvider)
     {
         try
         {
@@ -133,7 +136,9 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets database-specific performance metrics.
     /// </summary>
-    private static IResult GetDatabaseMetrics(HttpContext context, IDatabasePerformanceMetricsProvider databaseMetricsProvider)
+    private static IResult GetDatabaseMetrics(
+        HttpContext context,
+        [FromServices] IDatabasePerformanceMetricsProvider databaseMetricsProvider)
     {
         try
         {
@@ -169,7 +174,9 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets cache-specific performance metrics.
     /// </summary>
-    private static IResult GetCacheMetrics(HttpContext context, ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider)
+    private static IResult GetCacheMetrics(
+        HttpContext context,
+        [FromServices] ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider)
     {
         try
         {

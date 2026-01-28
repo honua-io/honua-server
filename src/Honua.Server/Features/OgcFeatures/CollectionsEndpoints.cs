@@ -74,7 +74,7 @@ internal static class CollectionsEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -159,7 +159,7 @@ internal static class CollectionsEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -255,7 +255,7 @@ internal static class CollectionsEndpoints
         HttpContext context,
         string? f,
         [FromServices] ILayerCatalog layerCatalog,
-        ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
+        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         try
         {

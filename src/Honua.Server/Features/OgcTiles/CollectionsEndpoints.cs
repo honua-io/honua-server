@@ -49,7 +49,7 @@ internal static class CollectionsEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcTilesCollectionsLog> logger)
+        [FromServices] ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -117,7 +117,7 @@ internal static class CollectionsEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
-        ILogger<OgcTilesCollectionsLog> logger)
+        [FromServices] ILogger<OgcTilesCollectionsLog> logger)
     {
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);

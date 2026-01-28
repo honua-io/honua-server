@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcTiles;
 
@@ -138,7 +139,7 @@ internal static class CoreEndpoints
     private static async Task<IResult> HandleGetOpenApiSpec(
         HttpContext context,
         string? f,
-        IWebHostEnvironment environment)
+        [FromServices] IWebHostEnvironment environment)
     {
         const string fallbackSpec = """
         {
