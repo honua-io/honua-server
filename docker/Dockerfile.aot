@@ -55,10 +55,10 @@ FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
 # Security: Update packages and remove package manager
 RUN apk upgrade --no-cache && \
     apk add --no-cache \
-    icu-libs=76.1-r1 \
-    tzdata=2025c-r0 \
-    curl=8.17.0-r1 \
-    ca-certificates=20251003-r0 && \
+    icu-libs \
+    tzdata \
+    curl \
+    ca-certificates && \
     rm -rf /var/cache/apk/* && \
     rm -rf /tmp/*
 

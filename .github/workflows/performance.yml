@@ -72,7 +72,7 @@ jobs:
       - name: Run performance benchmarks
         run: |
           mkdir -p benchmark-results performance-reports
-          ./scripts/run-performance-tests.sh --quick
+          ./scripts/run-performance-tests.sh
         continue-on-error: true  # Don't fail on benchmark errors, report them instead
 
       - name: Parse benchmark results

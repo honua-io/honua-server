@@ -63,6 +63,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pyyaml psycopg[binary] shapely
+          python - <<'PY'
+          import shapely  # noqa: F401
+          import psycopg  # noqa: F401
+          import yaml  # noqa: F401
+          print("Seed dependencies ready.")
+          PY
 
       - name: Seed database
         env:
@@ -72,7 +78,7 @@ jobs:
           DB_USER: ${{ env.DB_USER }}
           DB_PASSWORD: ${{ env.DB_PASSWORD }}
         run: |
-          python3 - <<'PY'
+          python - <<'PY'
           import os
           import sys
           import time
