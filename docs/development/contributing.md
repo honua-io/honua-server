@@ -42,7 +42,7 @@ cd honua-server
 git remote add upstream https://github.com/your-org/honua-server.git
 
 # Set up development environment
-docker-compose up -d
+docker compose up -d
 dotnet restore
 dotnet test
 ```

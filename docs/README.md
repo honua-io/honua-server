@@ -34,10 +34,12 @@ New to Honua Server? Start here:
 ### 🎯 Operational Excellence
 - **[Performance Monitoring](performance-monitoring.md)** - Monitoring setup and metrics
 - **[Caching Strategy](CACHING_STRATEGY.md)** - Redis and in-memory caching
+- **[Container Images](CONTAINER_IMAGES.md)** - Publishing, tags, and registry usage
 - **[Backup and Restore](backup-restore.md)** - Recovery procedures and RTO/RPO targets
 - **[Zero-Downtime Migrations](zero-downtime-migrations.md)** - Safe schema evolution strategy
 - **[Credential Rotation](credential-rotation.md)** - Rotation procedures for secrets and keys
 - **[Operational Excellence](OPERATIONAL_EXCELLENCE.md)** - Production best practices
+- **[Infrastructure Samples](../infrastructure/samples/README.md)** - Docker Compose and other IaC examples
 
 ### 🧪 Testing and Quality
 - **[Test Kit Documentation](../tests/Honua.TestKit/README.md)** - Shared testing infrastructure
@@ -99,7 +101,9 @@ New to Honua Server? Start here:
 ### Common Commands
 ```bash
 # Development
-docker-compose up -d              # Start development environment
+docker compose up -d              # Start development environment
+docker compose --profile redis up -d  # Optional Redis
+docker compose --profile minio up -d  # Optional MinIO
 dotnet test                       # Run all tests
 dotnet format Honua.sln          # Format code
 curl http://localhost:8080/health # Health check
@@ -137,6 +141,20 @@ Feature Server:   http://localhost:8080/rest/services/1/FeatureServer
 OGC Features:     http://localhost:8080/collections
 OData Endpoint:   http://localhost:8080/odata
 ```
+
+### Container Images
+```bash
+# Docker Hub (default)
+docker pull honuaio/honua-server:latest
+
+# GHCR
+docker pull ghcr.io/honua-io/honua-server:latest
+```
+
+Tags:
+- `latest` (trunk)
+- `vX.Y.Z`, `vX.Y`, `vX` (release tags)
+- `nightly-aot` (nightly AOT)
 
 Note: When OIDC is enabled, the `/odata` endpoints require bearer token auth (Power BI/Excel can use Organizational Account or Web API).
 

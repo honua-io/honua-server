@@ -14,10 +14,10 @@ services:
       # Enable PostGIS extensions
       POSTGRES_MULTIPLE_EXTENSIONS: postgis,postgis_topology,fuzzystrmatch,postgis_tiger_geocoder
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ../../../docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U honua -d honua_dev"]
       interval: 5s
@@ -30,8 +30,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: honua-redis
+    profiles:
+      - redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -43,11 +45,9 @@ services:
     networks:
       - honua-network
 
-  # Honua Server (when building locally)
+  # Honua Server image
   honua:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ${HONUA_IMAGE:-honuaio/honua-server:latest}
     container_name: honua-server
     environment:
       ASPNETCORE_ENVIRONMENT: Development
@@ -55,18 +55,24 @@ services:
       # Database connection
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua;Password=honua_dev_password"
       # Redis connection (optional)
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-}"
+      # S3-compatible storage (optional, use with MinIO profile)
+      FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
+      FileStorage__AwsS3__BucketName: "${HONUA_S3_BUCKET:-honua-dev}"
+      FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
+      FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-http://minio:9000}"
+      FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
+      FileStorage__AwsS3__AccessKeyId: "${HONUA_S3_ACCESS_KEY_ID:-minioadmin}"
+      FileStorage__AwsS3__SecretAccessKey: "${HONUA_S3_SECRET_ACCESS_KEY:-minioadmin}"
       # Disable authentication for dev
       HONUA_DEV_AUTH: "true"
     ports:
-      - "8080:8080"
+      - "${HONUA_HTTP_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -87,6 +93,29 @@ services:
       - honua_cache:/tmp/honua-cache
       - dotnet_diagnostics:/tmp/dotnet-diagnostics
 
+  # MinIO (optional S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: honua-minio
+    profiles:
+      - minio
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - honua-network
+
   # pgAdmin for database management (optional)
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -96,7 +125,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: admin
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
@@ -113,6 +142,7 @@ volumes:
   honua_logs:
   honua_cache:
   dotnet_diagnostics:
+  minio_data:
 
 networks:
   honua-network:
