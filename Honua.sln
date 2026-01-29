@@ -37,6 +37,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Admin.Tests", "tests\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Admin.Playwright", "tests\Honua.Admin.Playwright\Honua.Admin.Playwright.csproj", "{25E8E8D2-3784-4EB1-8482-E103AAA32D28}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LoadTests", "tests\Honua.LoadTests\Honua.LoadTests.csproj", "{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -215,6 +217,18 @@ Global
 		{25E8E8D2-3784-4EB1-8482-E103AAA32D28}.Release|x64.Build.0 = Release|Any CPU
 		{25E8E8D2-3784-4EB1-8482-E103AAA32D28}.Release|x86.ActiveCfg = Release|Any CPU
 		{25E8E8D2-3784-4EB1-8482-E103AAA32D28}.Release|x86.Build.0 = Release|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Debug|x64.Build.0 = Debug|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Debug|x86.Build.0 = Debug|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Release|x64.ActiveCfg = Release|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Release|x64.Build.0 = Release|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Release|x86.ActiveCfg = Release|Any CPU
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -227,5 +241,6 @@ Global
 		{B66A6785-BB1F-41C7-840B-422EF43A3460} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{562B0448-A2BC-4816-B798-AFD0CF4F8B1D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{25E8E8D2-3784-4EB1-8482-E103AAA32D28} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
