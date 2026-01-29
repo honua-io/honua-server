@@ -14,7 +14,7 @@ Honua publishes container images to Docker Hub and GHCR for local and non-K8s de
 
 ## Publishing Workflow
 - **Release + trunk builds:** `.github/workflows/deploy.yml` builds and pushes multi-arch images to GHCR and Docker Hub.
-- **Nightly AOT builds:** `.github/workflows/nightly-container-build.yml` publishes `nightly-aot` tags.
+- **Nightly builds:** `.github/workflows/nightly-container-build.yml` publishes `nightly` (JIT) and `nightly-aot` (AOT) tags.
 
 ## Required Secrets (GitHub)
 Configure these repository secrets for Docker Hub publishing:
