@@ -96,26 +96,21 @@ jobs:
               command: "whoami"
               expectedOutput: ["honua"]
 
-            - name: "Check required directories exist"
-              command: "ls"
-              args: ["-la", "/tmp"]
-              expectedOutput: [".*honua-logs.*", ".*honua-cache.*"]
+            - name: "Check log directory"
+              command: "test"
+              args: ["-d", "/tmp/honua-logs"]
+              expectedExitCode: 0
+
+            - name: "Check cache directory"
+              command: "test"
+              args: ["-d", "/tmp/honua-cache"]
+              expectedExitCode: 0
 
           fileExistenceTests:
             - name: 'Application binary'
               path: '/app/Honua.Server'
               shouldExist: true
               permissions: '-rwxr-xr-x'
-
-            - name: 'Log directory'
-              path: '/tmp/honua-logs'
-              shouldExist: true
-              isDirectory: true
-
-            - name: 'Cache directory'
-              path: '/tmp/honua-cache'
-              shouldExist: true
-              isDirectory: true
 
           metadataTest:
             exposedPorts: ["8080"]
