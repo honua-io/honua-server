@@ -96,7 +96,7 @@ internal static class Program
         }
 
         var stats = context.Run();
-        return EvaluateResults(stats);
+        return EvaluateResults(stats, options.MaxFailureRate);
     }
 
     private static string NormalizeBaseUrl(string baseUrl)
@@ -118,7 +118,7 @@ internal static class Program
         return normalized;
     }
 
-    private static int EvaluateResults(object stats)
+    private static int EvaluateResults(object stats, double? maxFailureRate)
     {
         if (stats is null)
         {
@@ -129,14 +129,38 @@ internal static class Program
         var totalRequests = ReadInt(stats, "AllRequestCount");
         var failedRequests = ReadInt(stats, "AllFailCount");
         var failedThresholds = CountThresholdFailures(stats);
+        var failureRate = totalRequests > 0
+            ? (double)failedRequests / totalRequests
+            : 0d;
 
         Console.WriteLine($"Completed load test. Total requests: {totalRequests}, failed: {failedRequests}.");
+        Console.WriteLine($"Failure rate: {failureRate:P4}.");
 
-        if (failedRequests > 0 || failedThresholds > 0)
+        if (failedThresholds > 0)
         {
             Console.Error.WriteLine(
                 $"Load test failures detected. Failed requests: {failedRequests}. Failed thresholds: {failedThresholds}.");
             return 1;
+        }
+
+        if (failedRequests > 0)
+        {
+            if (!maxFailureRate.HasValue || maxFailureRate <= 0d)
+            {
+                Console.Error.WriteLine(
+                    $"Load test failures detected. Failed requests: {failedRequests}. Failed thresholds: {failedThresholds}.");
+                return 1;
+            }
+
+            if (failureRate > maxFailureRate.Value)
+            {
+                Console.Error.WriteLine(
+                    $"Load test failures detected. Failure rate {failureRate:P4} exceeds allowed {maxFailureRate.Value:P4}.");
+                return 1;
+            }
+
+            Console.WriteLine(
+                $"Failed requests within allowed failure rate ({maxFailureRate.Value:P4}).");
         }
 
         return 0;
@@ -248,6 +272,7 @@ internal static class Program
         writer.WriteLine("  --tile-matrix-set <id>   Tile matrix set id (default: WebMercatorQuad)");
         writer.WriteLine("  --target-scenarios <csv> Comma-separated scenario names to run");
         writer.WriteLine("  --report-folder <path>   Output directory for NBomber reports");
+        writer.WriteLine("  --max-failure-rate <n>   Max failed request ratio (0-1, e.g. 0.0001 = 0.01%)");
         writer.WriteLine("  --help                   Show this help");
         writer.WriteLine("");
         WriteKnownScenarios(writer);
@@ -275,6 +300,7 @@ internal sealed class LoadTestOptions
     public string TileMatrixSet { get; private set; } = "WebMercatorQuad";
     public string[] TargetScenarios { get; private set; } = Array.Empty<string>();
     public string ReportFolder { get; private set; } = "load-test-reports";
+    public double? MaxFailureRate { get; private set; }
     public bool ShowHelp { get; private set; }
 
     public static bool TryParse(string[] args, out LoadTestOptions options, out string error)
@@ -373,6 +399,20 @@ internal sealed class LoadTestOptions
 
                     options.ReportFolder = reportFolder;
                     break;
+                case "--max-failure-rate":
+                    if (!TryReadDouble(args, ref index, out var maxFailureRate, out error))
+                    {
+                        return false;
+                    }
+
+                    if (maxFailureRate < 0d || maxFailureRate > 1d)
+                    {
+                        error = "Max failure rate must be between 0 and 1.";
+                        return false;
+                    }
+
+                    options.MaxFailureRate = maxFailureRate;
+                    break;
                 case "--help":
                 case "-h":
                     options.ShowHelp = true;
@@ -421,6 +461,23 @@ internal sealed class LoadTestOptions
         if (!TryParseDuration(rawValue, out value))
         {
             error = $"Invalid duration: {rawValue}";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadDouble(string[] args, ref int index, out double value, out string error)
+    {
+        if (!TryReadValue(args, ref index, out var rawValue, out error))
+        {
+            value = 0d;
+            return false;
+        }
+
+        if (!double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+        {
+            error = $"Invalid number: {rawValue}";
             return false;
         }
 

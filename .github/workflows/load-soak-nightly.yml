@@ -26,6 +26,7 @@ env:
   DB_NAME: honua_load
   DB_USER: honua
   DB_PASSWORD: honua_password
+  HONUA_LOAD_MAX_FAILURE_RATE: '0.0001'
 
 jobs:
   load-soak:

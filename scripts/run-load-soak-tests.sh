@@ -15,6 +15,7 @@ LAYER_ID="${LAYER_ID:-${HONUA_LOAD_LAYER_ID:-0}}"
 COLLECTION_ID="${COLLECTION_ID:-${HONUA_LOAD_COLLECTION_ID:-0}}"
 TILE_MATRIX_SET_ID="${TILE_MATRIX_SET_ID:-${HONUA_LOAD_TILE_MATRIX_SET_ID:-WebMercatorQuad}}"
 TARGET_SCENARIOS="${TARGET_SCENARIOS:-${HONUA_LOAD_TARGET_SCENARIOS:-}}"
+MAX_FAILURE_RATE="${MAX_FAILURE_RATE:-${HONUA_LOAD_MAX_FAILURE_RATE:-}}"
 REPORT_ROOT="${REPORT_DIR:-${HONUA_LOAD_REPORT_FOLDER:-load-test-reports}}"
 SAMPLE_INTERVAL="${SAMPLE_INTERVAL:-30}"
 HONUA_DOCKER_CONTAINER="${HONUA_DOCKER_CONTAINER:-}"
@@ -35,6 +36,7 @@ usage() {
     echo "  --tile-matrix-set <id>   Tile matrix set id (default: WebMercatorQuad)"
     echo "  --target-scenarios <csv> Comma-separated scenario names to run"
     echo "  --report-dir <path>      Root output directory (default: load-test-reports)"
+    echo "  --max-failure-rate <n>   Max failed request ratio (0-1, e.g. 0.0001 = 0.01%)"
     echo "  --sample-interval <sec>  Metrics sampling interval (default: 30)"
     echo "  --container <name>       Docker container name for CPU/memory sampling"
     echo "  --pid <pid>              Process ID for CPU/memory sampling"
@@ -78,6 +80,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --target-scenarios)
             TARGET_SCENARIOS="$2"
+            shift 2
+            ;;
+        --max-failure-rate)
+            MAX_FAILURE_RATE="$2"
             shift 2
             ;;
         --report-dir)
@@ -218,6 +224,10 @@ fi
 
 if [[ -n "$TARGET_SCENARIOS" ]]; then
     LOAD_ARGS+=(--target-scenarios "$TARGET_SCENARIOS")
+fi
+
+if [[ -n "$MAX_FAILURE_RATE" ]]; then
+    LOAD_ARGS+=(--max-failure-rate "$MAX_FAILURE_RATE")
 fi
 
 echo "Running load tests against $BASE_URL (profile: $PROFILE)"
