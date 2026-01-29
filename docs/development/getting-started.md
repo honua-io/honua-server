@@ -40,11 +40,23 @@ nano .env
 ### 2. Start Development Environment
 
 ```bash
-# Start all services (PostgreSQL, Redis, Honua Server)
-docker-compose up -d
+# Start PostGIS + Honua Server
+docker compose up -d
+
+# Enable Redis (optional)
+HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
+
+# Enable MinIO (optional S3-compatible storage)
+HONUA_STORAGE_PROVIDER=AwsS3 \
+HONUA_S3_BUCKET=honua-dev \
+HONUA_S3_REGION=us-east-1 \
+HONUA_S3_SERVICE_URL=http://minio:9000 \
+HONUA_S3_ACCESS_KEY_ID=minioadmin \
+HONUA_S3_SECRET_ACCESS_KEY=minioadmin \
+docker compose --profile minio up -d
 
 # Check service health
-docker-compose ps
+docker compose ps
 curl http://localhost:8080/health
 ```
 
@@ -590,7 +602,7 @@ After completing the setup:
 **Quick Reference Commands:**
 ```bash
 # Development workflow
-docker-compose up -d      # Start dev environment
+docker compose up -d      # Start dev environment
 dotnet test              # Run tests
 dotnet format Honua.sln  # Format code
 git commit -m "feat: ..." # Commit changes

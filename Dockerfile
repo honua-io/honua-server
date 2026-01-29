@@ -29,7 +29,6 @@ ARG CONFIGURATION=Release
 RUN dotnet publish src/Honua.Server/Honua.Server.csproj \
     --configuration "$CONFIGURATION" \
     --output /app \
-    --no-restore \
     -p:PublishAot=false
 
 # Runtime stage

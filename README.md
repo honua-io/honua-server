@@ -52,8 +52,13 @@ dotnet run
 docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres" \
   -e HONUA_ADMIN_PASSWORD="change-me" \
-  ghcr.io/honua-io/honua-server:latest
+  honuaio/honua-server:latest
 ```
+
+**Image tags:**
+- `latest` on trunk builds
+- `vX.Y.Z`, `vX.Y`, `vX` on release tags
+- `nightly-aot` for nightly AOT images
 
 ## MVP Scope (current tree)
 Implemented (server + admin API):
