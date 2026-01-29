@@ -1,4 +1,4 @@
-name: Nightly AOT Container Build
+name: Nightly Container Build
 
 on:
   schedule:
@@ -13,8 +13,17 @@ env:
 
 jobs:
   build-and-push:
-    name: Build & Push AOT Images (Nightly)
+    name: Build & Push ${{ matrix.variant }} Images (Nightly)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: AOT
+            dockerfile: docker/Dockerfile.aot
+            tag_prefix: nightly-aot
+          - variant: JIT
+            dockerfile: Dockerfile
+            tag_prefix: nightly
     permissions:
       contents: read
       packages: write
@@ -49,15 +58,15 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-aot
-            type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-aot-
+            type=raw,value=${{ matrix.tag_prefix }}
+            type=raw,value=${{ matrix.tag_prefix }}-{{date 'YYYYMMDD'}}
+            type=sha,prefix=${{ matrix.tag_prefix }}-
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.aot
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

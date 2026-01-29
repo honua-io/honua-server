@@ -58,6 +58,7 @@ docker run -p 8080:8080 \
 **Image tags:**
 - `latest` on trunk builds
 - `vX.Y.Z`, `vX.Y`, `vX` on release tags
+- `nightly` for nightly JIT images
 - `nightly-aot` for nightly AOT images
 
 ## MVP Scope (current tree)

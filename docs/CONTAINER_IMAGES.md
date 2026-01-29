@@ -9,6 +9,7 @@ Honua publishes container images to Docker Hub and GHCR for local and non-K8s de
 ## Tags
 - `latest` for trunk builds
 - `vX.Y.Z`, `vX.Y`, `vX` for release tags
+- `nightly` for nightly JIT builds
 - `nightly-aot` for nightly AOT builds
 
 ## Publishing Workflow
