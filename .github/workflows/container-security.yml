@@ -99,12 +99,10 @@ jobs:
             - name: "Check log directory"
               command: "test"
               args: ["-d", "/tmp/honua-logs"]
-              expectedExitCode: 0
 
             - name: "Check cache directory"
               command: "test"
               args: ["-d", "/tmp/honua-cache"]
-              expectedExitCode: 0
 
           fileExistenceTests:
             - name: 'Application binary'
