@@ -45,7 +45,7 @@ services:
 
   # Honua Server image
   honua:
-    image: ${HONUA_IMAGE:-ghcr.io/honua-io/honua-server:nightly}
+    image: ${HONUA_IMAGE:-ghcr.io/honua-io/honua-server:latest}
     container_name: honua-server
     environment:
       ASPNETCORE_ENVIRONMENT: Development

@@ -11,9 +11,9 @@ This sample runs Honua Server with PostGIS, Redis, and optional pgAdmin using Do
 docker compose -f infrastructure/samples/docker-compose/docker-compose.yml up -d
 ```
 
-By default this pulls `ghcr.io/honua-io/honua-server:nightly`. Override with:
+By default this pulls `ghcr.io/honua-io/honua-server:latest`. Override with:
 ```bash
-HONUA_IMAGE=honuaio/honua-server:nightly \
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-aot \
   docker compose -f infrastructure/samples/docker-compose/docker-compose.yml up -d
 ```
 
@@ -36,7 +36,7 @@ docker compose -f infrastructure/samples/docker-compose/docker-compose.yml down 
 
 ## Notes
 - Auth is disabled for dev with `HONUA_DEV_AUTH=true`. Set `HONUA_ADMIN_PASSWORD` and remove `HONUA_DEV_AUTH` if you want admin auth in dev.
-- The image can be overridden via `HONUA_IMAGE` if you want `latest`, a SHA tag, or Docker Hub.
+- The image can be overridden via `HONUA_IMAGE` if you want `nightly-aot`, a SHA tag, or Docker Hub.
 - Redis is enabled by default and wired to `ConnectionStrings__Redis`.
 - Optional port overrides: `POSTGRES_PORT`, `REDIS_PORT`, `HONUA_HTTP_PORT`, `PGADMIN_PORT`.
 
