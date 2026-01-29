@@ -11,8 +11,11 @@ This sample runs Honua Server with PostGIS and optional Redis/MinIO using Docker
 docker compose -f infrastructure/samples/docker-compose/docker-compose.yml up -d
 ```
 
-By default this pulls `honuaio/honua-server:latest`. Override with:
+By default this pulls `honuaio/honua-server:latest`. Override with nightly tags if needed:
 ```bash
+HONUA_IMAGE=honuaio/honua-server:nightly \
+  docker compose -f infrastructure/samples/docker-compose/docker-compose.yml up -d
+
 HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-aot \
   docker compose -f infrastructure/samples/docker-compose/docker-compose.yml up -d
 ```

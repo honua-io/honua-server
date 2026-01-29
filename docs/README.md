@@ -154,6 +154,7 @@ docker pull ghcr.io/honua-io/honua-server:latest
 Tags:
 - `latest` (trunk)
 - `vX.Y.Z`, `vX.Y`, `vX` (release tags)
+- `nightly` (nightly JIT)
 - `nightly-aot` (nightly AOT)
 
 Note: When OIDC is enabled, the `/odata` endpoints require bearer token auth (Power BI/Excel can use Organizational Account or Web API).
