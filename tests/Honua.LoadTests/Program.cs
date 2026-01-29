@@ -4,8 +4,8 @@
 using System.Collections;
 using System.Globalization;
 using Honua.TestKit.Performance;
-using NBomber.CSharp;
 using NBomber.Contracts.Stats;
+using NBomber.CSharp;
 
 namespace Honua.LoadTests;
 
