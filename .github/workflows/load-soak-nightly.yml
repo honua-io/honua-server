@@ -62,11 +62,12 @@ jobs:
       - name: Install seed dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyyaml psycopg[binary] shapely
+          python -m pip install pyyaml psycopg[binary] shapely testcontainers
           python - <<'PY'
           import shapely  # noqa: F401
           import psycopg  # noqa: F401
           import yaml  # noqa: F401
+          import testcontainers  # noqa: F401
           print("Seed dependencies ready.")
           PY
 
