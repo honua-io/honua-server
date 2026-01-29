@@ -124,6 +124,7 @@ jobs:
           ASPNETCORE_URLS: ${{ env.BASE_URL }}
           ASPNETCORE_ENVIRONMENT: Production
           HONUA_DEV_AUTH: "true"
+          Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
           ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }}
         run: |
           dotnet run --project src/Honua.Server -c Release --no-build > server.log 2>&1 &
