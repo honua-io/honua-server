@@ -11,7 +11,7 @@ namespace Honua.LoadTests;
 
 internal static class Program
 {
-    private static readonly string[] KnownScenarios =
+    private static readonly string[] _knownScenarios =
     {
         "feature_query_load",
         "spatial_query_load",
@@ -23,7 +23,7 @@ internal static class Program
         "tiles_load"
     };
 
-    private static readonly HashSet<string> KnownScenarioSet = new(KnownScenarios, StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> _knownScenarioSet = new(_knownScenarios, StringComparer.OrdinalIgnoreCase);
 
     public static int Main(string[] args)
     {
@@ -43,7 +43,7 @@ internal static class Program
         var targets = NormalizeTargets(options.TargetScenarios);
         if (targets.Count > 0)
         {
-            var unknownTargets = targets.Where(target => !KnownScenarioSet.Contains(target)).ToArray();
+            var unknownTargets = targets.Where(target => !_knownScenarioSet.Contains(target)).ToArray();
             if (unknownTargets.Length > 0)
             {
                 Console.Error.WriteLine($"Unknown scenario(s): {string.Join(", ", unknownTargets)}");
@@ -256,7 +256,7 @@ internal static class Program
     private static void WriteKnownScenarios(TextWriter writer)
     {
         writer.WriteLine("Known scenarios:");
-        foreach (var scenario in KnownScenarios)
+        foreach (var scenario in _knownScenarios)
         {
             writer.WriteLine($"  - {scenario}");
         }
