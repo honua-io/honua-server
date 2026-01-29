@@ -129,6 +129,7 @@ jobs:
           docker run -d \
             --name honua-runtime-test \
             --read-only \
+            --tmpfs /tmp \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             -e HONUA_SKIP_MIGRATIONS=true \
@@ -142,6 +143,12 @@ jobs:
       - name: Test runtime security constraints
         run: |
           echo "🔒 Testing runtime security constraints..."
+
+          if ! docker ps --filter "name=^/honua-runtime-test$" --format '{{.Names}}' | grep -q '^honua-runtime-test$'; then
+            echo "❌ Container exited before runtime checks."
+            docker logs honua-runtime-test || true
+            exit 1
+          fi
 
           # Test read-only filesystem
           if docker exec honua-runtime-test touch /test-write 2>/dev/null; then
