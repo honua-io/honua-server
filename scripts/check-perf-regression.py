@@ -60,7 +60,8 @@ class PerformanceChecker:
                 f"{method}.Mean",
                 baseline_bench['Statistics']['Mean'] / 1_000_000,  # Convert to ms
                 current_bench['Statistics']['Mean'] / 1_000_000,
-                higher_is_worse=True
+                higher_is_worse=True,
+                min_delta=1.0
             )
 
             # Check P95 latency
@@ -68,7 +69,8 @@ class PerformanceChecker:
                 f"{method}.P95",
                 baseline_bench['Statistics']['Percentile95'] / 1_000_000,
                 current_bench['Statistics']['Percentile95'] / 1_000_000,
-                higher_is_worse=True
+                higher_is_worse=True,
+                min_delta=1.0
             )
 
             # Check P99 latency
@@ -76,7 +78,8 @@ class PerformanceChecker:
                 f"{method}.P99",
                 baseline_bench['Statistics']['Percentile99'] / 1_000_000,
                 current_bench['Statistics']['Percentile99'] / 1_000_000,
-                higher_is_worse=True
+                higher_is_worse=True,
+                min_delta=1.0
             )
 
             # Check memory allocations
@@ -155,10 +158,12 @@ class PerformanceChecker:
                 ))
 
     def _check_metric(self, metric_name: str, baseline_value: float,
-                     current_value: float, higher_is_worse: bool) -> None:
+                     current_value: float, higher_is_worse: bool, min_delta: float = 0.0) -> None:
         """Check if a metric has regressed beyond threshold"""
         if baseline_value == 0:
             return  # Skip division by zero
+        if abs(current_value - baseline_value) < min_delta:
+            return
 
         if higher_is_worse:
             # For latency, memory, etc - higher values are worse

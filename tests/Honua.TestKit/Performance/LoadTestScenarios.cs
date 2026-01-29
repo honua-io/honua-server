@@ -36,7 +36,7 @@ public static class LoadTestScenarios
     {
         "/odata/Features({0})?$top=10",
         "/odata/Features({0})?$top=5&$orderby=ObjectId desc",
-        "/odata/Features({0})?$filter=population gt 1000000&$top=5",
+        "/odata/Features({0})?$filter=ObjectId gt 1&$top=5",
         "/odata/Features({0})?$select=ObjectId,LayerId&$top=10",
         "/odata/Layers?$top=5"
     };

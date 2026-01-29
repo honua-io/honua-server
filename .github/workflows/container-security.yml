@@ -96,10 +96,13 @@ jobs:
               command: "whoami"
               expectedOutput: ["honua"]
 
-            - name: "Check required directories exist"
-              command: "ls"
-              args: ["-la", "/tmp"]
-              expectedOutput: [".*honua-logs.*", ".*honua-cache.*"]
+            - name: "Check log directory"
+              command: "test"
+              args: ["-d", "/tmp/honua-logs"]
+
+            - name: "Check cache directory"
+              command: "test"
+              args: ["-d", "/tmp/honua-cache"]
 
           fileExistenceTests:
             - name: 'Application binary'
@@ -107,19 +110,9 @@ jobs:
               shouldExist: true
               permissions: '-rwxr-xr-x'
 
-            - name: 'Log directory'
-              path: '/tmp/honua-logs'
-              shouldExist: true
-              isDirectory: true
-
-            - name: 'Cache directory'
-              path: '/tmp/honua-cache'
-              shouldExist: true
-              isDirectory: true
-
           metadataTest:
             exposedPorts: ["8080"]
-            user: "honua"
+            user: "1001:1001"
             workdir: "/app"
           EOF
 
@@ -136,8 +129,12 @@ jobs:
           docker run -d \
             --name honua-runtime-test \
             --read-only \
+            --tmpfs /tmp \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
+            -e HONUA_SKIP_MIGRATIONS=true \
+            -e HONUA_ADMIN_PASSWORD="container-security-test" \
+            -e ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:security-test
 
@@ -147,6 +144,12 @@ jobs:
       - name: Test runtime security constraints
         run: |
           echo "🔒 Testing runtime security constraints..."
+
+          if ! docker ps --filter "name=^/honua-runtime-test$" --format '{{.Names}}' | grep -q '^honua-runtime-test$'; then
+            echo "❌ Container exited before runtime checks."
+            docker logs honua-runtime-test || true
+            exit 1
+          fi
 
           # Test read-only filesystem
           if docker exec honua-runtime-test touch /test-write 2>/dev/null; then
