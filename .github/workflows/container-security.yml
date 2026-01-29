@@ -112,7 +112,7 @@ jobs:
 
           metadataTest:
             exposedPorts: ["8080"]
-            user: "honua"
+            user: "1001:1001"
             workdir: "/app"
           EOF
 
