@@ -133,6 +133,7 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             -e HONUA_SKIP_MIGRATIONS=true \
+            -e HONUA_ADMIN_PASSWORD="container-security-test" \
             -e ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:security-test
