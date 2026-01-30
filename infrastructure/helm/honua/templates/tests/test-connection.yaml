@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "honua.fullname" . }}-test-connection"
+  labels:
+    {{- include "honua.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.5.0
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          curl -fsS "http://{{ include "honua.fullname" . }}:{{ .Values.service.port }}/healthz/ready"
