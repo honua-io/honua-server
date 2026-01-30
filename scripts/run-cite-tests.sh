@@ -325,6 +325,168 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
         FAILED_TESTS=$(sed -n 's/.*failed="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         SKIPPED_TESTS=$(sed -n 's/.*skipped="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         CANTTELL_TESTS=0
+
+        # Generate CITE outcomes TSV for CI conformance validation
+        OUTCOMES_FILE="$CITE_RESULTS_DIR/test-outcomes.tsv"
+        PYTHON_BIN="python3"
+        if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+            PYTHON_BIN="python"
+        fi
+
+        if command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+            echo -e "${YELLOW}Generating CITE outcomes TSV...${NC}"
+            "$PYTHON_BIN" - "$RESULTS_XML" "$CITE_RESULTS_DIR/conformance.json" "$OUTCOMES_FILE" << 'PY'
+import json
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+results_xml = sys.argv[1]
+conformance_path = sys.argv[2]
+out_path = sys.argv[3]
+
+try:
+    with open(conformance_path, "r", encoding="utf-8") as f:
+        conformance_data = json.load(f)
+except FileNotFoundError:
+    conformance_data = {}
+
+conformance_uris = [uri for uri in conformance_data.get("conformsTo", []) if isinstance(uri, str)]
+
+suffix_map = {}
+for uri in conformance_uris:
+    suffix = uri.rsplit("/", 1)[-1].lower()
+    suffix_map.setdefault(suffix, []).append(uri)
+
+uri_re = re.compile(r"https?://www\.opengis\.net/spec/[^\s\"<>]+/conf/[^\s\"<>]+", re.IGNORECASE)
+conf_re = re.compile(r"(?:conf|conformance)/([a-z0-9\-]+)", re.IGNORECASE)
+req_re = re.compile(r"/req/([a-z0-9\-]+)", re.IGNORECASE)
+
+status_map = {
+    "PASS": "passed",
+    "PASSED": "passed",
+    "FAIL": "failed",
+    "FAILED": "failed",
+    "FAILURE": "failed",
+    "ERROR": "failed",
+    "SKIP": "skipped",
+    "SKIPPED": "skipped",
+}
+
+statuses = {uri: set() for uri in conformance_uris}
+any_failed = False
+any_passed = False
+any_tests = False
+
+def normalize_token(token: str) -> str:
+    return token.strip().lower().replace("_", "-")
+
+def add_status(uri: str, status: str) -> None:
+    if uri not in statuses:
+        statuses[uri] = set()
+    statuses[uri].add(status)
+
+def collect_text(element):
+    parts = []
+    for key, value in element.attrib.items():
+        parts.append(str(value))
+    if element.text:
+        parts.append(element.text)
+    for child in element:
+        parts.extend(collect_text(child))
+        if child.tail:
+            parts.append(child.tail)
+    return parts
+
+try:
+    root = ET.parse(results_xml).getroot()
+except ET.ParseError as exc:
+    print(f"Failed to parse {results_xml}: {exc}", file=sys.stderr)
+    root = None
+
+if root is not None:
+    for tm in root.iter("test-method"):
+        raw_status = tm.attrib.get("status", "").upper()
+        status = status_map.get(raw_status, "canttell")
+        any_tests = True
+        if status == "failed":
+            any_failed = True
+        if status == "passed":
+            any_passed = True
+
+        parts = collect_text(tm)
+        groups = set()
+        groups_attr = tm.attrib.get("groups") or tm.attrib.get("group")
+        if groups_attr:
+            for entry in re.split(r"[,\s]+", groups_attr):
+                if entry:
+                    groups.add(entry)
+        for group in tm.findall(".//group"):
+            name = group.attrib.get("name")
+            if name:
+                groups.add(name)
+
+        for group in groups:
+            parts.append(group)
+
+        text = " ".join(p for p in parts if p).lower().replace("_", "-")
+
+        matched_uris = set(uri_re.findall(text))
+        suffixes = set()
+
+        for name in conf_re.findall(text):
+            suffixes.add(normalize_token(name))
+        for name in req_re.findall(text):
+            suffixes.add(normalize_token(name))
+
+        for group in groups:
+            group_norm = normalize_token(group)
+            suffixes.add(group_norm)
+            for piece in re.split(r"[:/]+", group_norm):
+                if piece:
+                    suffixes.add(piece)
+            for suffix in suffix_map.keys():
+                if suffix in group_norm:
+                    suffixes.add(suffix)
+
+        for suffix in list(suffixes):
+            if suffix in suffix_map:
+                for uri in suffix_map[suffix]:
+                    matched_uris.add(uri)
+
+        for uri in matched_uris:
+            add_status(uri, status)
+
+overall_status = "canttell"
+if any_failed:
+    overall_status = "failed"
+elif any_passed:
+    overall_status = "passed"
+
+with open(out_path, "w", encoding="utf-8") as f:
+    for uri in conformance_uris:
+        uri_statuses = statuses.get(uri, set())
+        if "failed" in uri_statuses:
+            final_status = "failed"
+        elif "passed" in uri_statuses:
+            final_status = "passed"
+        elif "skipped" in uri_statuses or "canttell" in uri_statuses:
+            final_status = "skipped" if "skipped" in uri_statuses else "canttell"
+        else:
+            final_status = overall_status if any_tests else "canttell"
+            if any_tests:
+                print(f"No explicit outcomes for {uri}; using suite status {final_status}.", file=sys.stderr)
+        f.write(f"{final_status}\t{uri}\n")
+PY
+
+            if [[ -s "$OUTCOMES_FILE" ]]; then
+                echo -e "${GREEN}✅ CITE outcomes saved to: $OUTCOMES_FILE${NC}"
+            else
+                echo -e "${YELLOW}⚠️ CITE outcomes file is empty${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️ Python not found; skipping CITE outcomes generation${NC}"
+        fi
     elif find "$CITE_RESULTS_DIR" -type f \( -name "*.xml" -o -name "*.html" \) -print -quit | grep -q .; then
         echo -e "${GREEN}✅ Test result files found${NC}"
         # Fallback if summary files are present
