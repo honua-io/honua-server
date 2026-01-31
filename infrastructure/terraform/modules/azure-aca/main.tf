@@ -1,0 +1,292 @@
+data "azurerm_client_config" "current" {}
+
+locals {
+  name = "${var.name_prefix}-${var.environment}"
+  tags = merge({
+    Project     = "honua-server"
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }, var.tags)
+}
+
+resource "azurerm_resource_group" "this" {
+  name     = "${local.name}-rg"
+  location = var.location
+  tags     = local.tags
+}
+
+resource "azurerm_user_assigned_identity" "this" {
+  name                = "${local.name}-identity"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  tags                = local.tags
+}
+
+#checkov:skip=CKV_AZURE_189: Private endpoints are configured outside this module.
+#checkov:skip=CKV2_AZURE_32: Private endpoints are configured outside this module.
+resource "azurerm_key_vault" "this" {
+  #checkov:skip=CKV_AZURE_189: Private endpoints are configured outside this module.
+  #checkov:skip=CKV2_AZURE_32: Private endpoints are configured outside this module.
+  name                          = "${local.name}-kv"
+  location                      = azurerm_resource_group.this.location
+  resource_group_name           = azurerm_resource_group.this.name
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
+  purge_protection_enabled      = var.key_vault_purge_protection_enabled
+  soft_delete_retention_days    = 7
+  public_network_access_enabled = var.key_vault_public_network_access_enabled
+
+  network_acls {
+    default_action = var.key_vault_default_action
+    bypass         = var.key_vault_bypass
+    ip_rules       = var.key_vault_ip_rules
+  }
+
+  tags = local.tags
+}
+
+resource "azurerm_key_vault_access_policy" "current" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id
+
+  secret_permissions = [
+    "Get",
+    "List",
+    "Set",
+    "Delete",
+    "Purge",
+    "Recover"
+  ]
+}
+
+resource "azurerm_key_vault_access_policy" "identity" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = azurerm_user_assigned_identity.this.principal_id
+
+  secret_permissions = [
+    "Get",
+    "List"
+  ]
+}
+
+resource "random_password" "db" {
+  count            = var.db_admin_password == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+}
+
+locals {
+  db_password            = var.db_admin_password != null ? var.db_admin_password : random_password.db[0].result
+  db_connection_string   = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=true"
+  secret_expiration_date = timeadd(timestamp(), format("%dh", var.secret_expiration_days * 24))
+}
+
+#checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
+resource "azurerm_postgresql_flexible_server" "this" {
+  #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
+  name                   = "${local.name}-pg"
+  resource_group_name    = azurerm_resource_group.this.name
+  location               = azurerm_resource_group.this.location
+  version                = var.db_version
+  administrator_login    = var.db_admin_username
+  administrator_password = local.db_password
+  storage_mb             = var.db_storage_mb
+  sku_name               = var.db_sku_name
+
+  public_network_access_enabled = var.db_public_network_access
+  geo_redundant_backup_enabled  = var.db_geo_redundant_backup_enabled
+
+  tags = local.tags
+}
+
+resource "azurerm_postgresql_flexible_server_database" "this" {
+  name      = var.db_name
+  server_id = azurerm_postgresql_flexible_server.this.id
+  charset   = "UTF8"
+  collation = "en_US.utf8"
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
+  count     = var.enable_postgis ? 1 : 0
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.this.id
+  value     = "POSTGIS"
+}
+
+resource "azurerm_key_vault_secret" "db_connection" {
+  name            = "honua-db-connection"
+  value           = local.db_connection_string
+  content_type    = "connection-string"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
+}
+
+resource "azurerm_key_vault_secret" "admin_password" {
+  name            = "honua-admin-password"
+  value           = var.admin_password
+  content_type    = "password"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
+}
+
+resource "azurerm_key_vault_secret" "redis_connection" {
+  count           = var.redis_connection_string != "" ? 1 : 0
+  name            = "honua-redis-connection"
+  value           = var.redis_connection_string
+  content_type    = "connection-string"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
+}
+
+resource "azurerm_log_analytics_workspace" "this" {
+  count               = var.log_analytics_enabled ? 1 : 0
+  name                = "${local.name}-logs"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.tags
+}
+
+resource "azurerm_container_app_environment" "this" {
+  name                = "${local.name}-env"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+
+  log_analytics_workspace_id = var.log_analytics_enabled ? azurerm_log_analytics_workspace.this[0].id : null
+
+  tags = local.tags
+}
+
+resource "azurerm_container_app" "this" {
+  name                         = "${local.name}-app"
+  resource_group_name          = azurerm_resource_group.this.name
+  container_app_environment_id = azurerm_container_app_environment.this.id
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.this.id]
+  }
+
+  dynamic "registry" {
+    for_each = toset(var.registry_server != "" ? ["registry"] : [])
+    content {
+      server               = var.registry_server
+      username             = var.registry_username
+      password_secret_name = "registry-password"
+    }
+  }
+
+  secret {
+    name                = "db-connection"
+    key_vault_secret_id = azurerm_key_vault_secret.db_connection.id
+    identity            = azurerm_user_assigned_identity.this.id
+  }
+
+  secret {
+    name                = "admin-password"
+    key_vault_secret_id = azurerm_key_vault_secret.admin_password.id
+    identity            = azurerm_user_assigned_identity.this.id
+  }
+
+  dynamic "secret" {
+    for_each = toset(var.redis_connection_string != "" ? ["redis"] : [])
+    content {
+      name                = "redis-connection"
+      key_vault_secret_id = azurerm_key_vault_secret.redis_connection[0].id
+      identity            = azurerm_user_assigned_identity.this.id
+    }
+  }
+
+  dynamic "secret" {
+    for_each = toset(var.registry_server != "" ? ["registry"] : [])
+    content {
+      name  = "registry-password"
+      value = var.registry_password
+    }
+  }
+
+  template {
+    min_replicas = var.min_replicas
+    max_replicas = var.max_replicas
+
+    container {
+      name   = "honua"
+      image  = var.image
+      cpu    = var.container_cpu
+      memory = var.container_memory
+
+      env {
+        name        = "ConnectionStrings__DefaultConnection"
+        secret_name = "db-connection"
+      }
+
+      env {
+        name        = "HONUA_ADMIN_PASSWORD"
+        secret_name = "admin-password"
+      }
+
+      dynamic "env" {
+        for_each = toset(var.redis_connection_string != "" ? ["redis"] : [])
+        content {
+          name        = "ConnectionStrings__redis"
+          secret_name = "redis-connection"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.additional_env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = var.enable_ingress
+    target_port      = var.container_port
+    transport        = "auto"
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  tags = local.tags
+
+  depends_on = [
+    azurerm_key_vault_access_policy.identity
+  ]
+}
+
+resource "null_resource" "enable_postgis" {
+  count = var.enable_postgis ? 1 : 0
+
+  triggers = {
+    db_endpoint = azurerm_postgresql_flexible_server.this.fqdn
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      echo "Enabling PostGIS on ${azurerm_postgresql_flexible_server.this.fqdn}" \
+        && PGPASSWORD='${local.db_password}' psql \
+          --host=${azurerm_postgresql_flexible_server.this.fqdn} \
+          --username=${var.db_admin_username} \
+          --dbname=${var.db_name} \
+          --command="CREATE EXTENSION IF NOT EXISTS postgis;"
+    EOT
+  }
+
+  depends_on = [azurerm_postgresql_flexible_server_database.this]
+}

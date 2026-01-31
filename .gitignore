@@ -124,6 +124,10 @@ __pycache__/
 # Node.js
 node_modules/
 
+# Terraform
+**/.terraform/
+infrastructure/terraform/.external_modules/
+
 # Cake
 tools/**
 !tools/packages.config

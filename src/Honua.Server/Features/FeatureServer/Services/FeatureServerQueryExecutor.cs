@@ -159,6 +159,10 @@ internal sealed class FeatureServerQueryExecutor
 
     private static void EnableChunkedEncodingIfHttp1(HttpContext context)
     {
-        // Kestrel will apply chunked transfer encoding automatically when Content-Length is not set.
+        if (context.Request.Protocol.StartsWith("HTTP/1.", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.ContentLength = null;
+            context.Response.Headers.TransferEncoding = "chunked";
+        }
     }
 }

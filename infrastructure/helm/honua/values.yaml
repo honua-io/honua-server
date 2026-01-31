@@ -1,0 +1,130 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/honua-io/honua-server
+  tag: "latest"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automount: true
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: honua.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthz/live
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz/ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /healthz/live
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+config:
+  create: true
+  name: ""
+  env:
+    HONUA_ADMIN_UI: "false"
+    HONUA_SERVE_ADMIN_UI: "true"
+    HONUA_OBSERVABILITY: "false"
+    HONUA_OPENTELEMETRY: "false"
+    HONUA_SKIP_MIGRATIONS: "false"
+    Deployment__Mode: "SingleInstance"
+    Public__BaseUrl: ""
+    ASPNETCORE_ENVIRONMENT: "Production"
+    ASPNETCORE_URLS: "http://+:8080"
+
+secret:
+  create: true
+  name: ""
+  env:
+    ConnectionStrings__DefaultConnection: ""
+    HONUA_ADMIN_PASSWORD: ""
+    ConnectionStrings__redis: ""
+
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+
+postgresql:
+  enabled: false
+  auth:
+    username: honua
+    password: honua
+    database: honua
+
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: false
