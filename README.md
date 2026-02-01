@@ -8,13 +8,20 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-Honua MVP serves and edits PostGIS data over multiple protocols with a small, fast footprint:
+Honua Server is a lightweight, PostGIS-native API layer that publishes one database through multiple GIS and data protocols — without ETL or proprietary stacks.
+
+Why it matters:
+- **One PostGIS source, many clients** — ArcGIS (GeoServices REST), OGC API Features, OData/BI tools, and vector tiles.
+- **Full editing support** — applyEdits, attachments, related records, and transactions (not just read-only tiles).
+- **Container-first** — quick local/dev setup and straightforward cloud deployment.
+
+Protocols:
 - **GeoServices REST FeatureServer** — GeoServices REST compatible queries + full editing (applyEdits, attachments, related records).
 - **OGC API Features** — Modern REST/JSON for GIS apps with transaction support.
 - **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
 - **Vector Tiles (MVT)** — PostGIS-native tile generation.
 
-Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Admin UI and deployment templates are pending; see `docs/ROADMAP.md` for what comes next.
+Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`. Admin UI is in progress; see `docs/ROADMAP.md` for what comes next.
 
 ## Status
 
@@ -61,7 +68,7 @@ docker run -p 8080:8080 \
 - `nightly` for nightly JIT images
 - `nightly-aot` for nightly AOT images
 
-## MVP Scope (current tree)
+## Current capabilities
 Implemented (server + admin API):
 - PostGIS-only data source.
 - FeatureServer: query, applyEdits, attachments, related records.
@@ -83,7 +90,7 @@ Pending MVP items (open issues):
 - Embedded Maputnik style editor (#30).
 - Canonical cross-protocol style pipeline (#244).
 - Esri Service Import Wizard UI (#187).
-- Deployment templates (Helm + AWS/Azure/GCP Terraform) (#31, #32, #33, #34).
+- GCP Terraform module (#34).
 - Docs and security hardening (#38, #39).
 
 ## Deferred (post-MVP)
