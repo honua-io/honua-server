@@ -34,6 +34,9 @@ helm upgrade --install honua infrastructure/helm/honua \
 
 When `postgresql.enabled=true`, the chart auto-populates `ConnectionStrings__DefaultConnection` if you do not supply it.
 
+Note: Honua requires PostGIS for migrations. The Bitnami PostgreSQL subchart does not include PostGIS.
+For full functionality, point `ConnectionStrings__DefaultConnection` at a PostGIS-enabled database.
+
 ## Redis subchart (optional)
 
 ```bash
@@ -65,6 +68,8 @@ helm dependency update infrastructure/helm/honua
 helm lint infrastructure/helm/honua
 helm template honua infrastructure/helm/honua
 ```
+
+For ingress testing on a local Kubernetes cluster, see `docs/development/k3d-helm.md`.
 
 Run the Helm test hook:
 

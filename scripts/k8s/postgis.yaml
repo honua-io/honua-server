@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: honua-postgis
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: honua-postgis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: honua-postgis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: honua-postgis
+  template:
+    metadata:
+      labels:
+        app: honua-postgis
+    spec:
+      containers:
+        - name: postgis
+          image: postgis/postgis:17-3.5-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              value: honua
+            - name: POSTGRES_USER
+              value: honua
+            - name: POSTGRES_PASSWORD
+              value: honua
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
