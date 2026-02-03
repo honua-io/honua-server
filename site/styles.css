@@ -50,7 +50,7 @@ a:hover {
 
 .logo {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 1.5rem;
+  font-size: 1.9rem;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -59,8 +59,8 @@ a:hover {
 }
 
 .logo img {
-  width: 84px;
-  height: 84px;
+  width: 112px;
+  height: 112px;
   object-fit: contain;
 }
 
