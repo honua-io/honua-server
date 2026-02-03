@@ -165,6 +165,29 @@ h1 {
   color: var(--muted);
 }
 
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.badge {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #eef3f1;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge.required {
+  background: #f7efe2;
+  border-color: #e3d2b4;
+  color: #4a3821;
+}
+
 .section {
   margin-top: 64px;
 }
@@ -203,11 +226,28 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.grid.two-col {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
 .card {
   background: var(--card);
   padding: 20px;
   border-radius: 18px;
   border: 1px solid var(--border);
+  height: 100%;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.card-header h3 {
+  margin: 0;
 }
 
 .card h3 {
@@ -249,9 +289,11 @@ h1 {
 
 .diagram-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   align-items: center;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 .diagram-node {
@@ -262,6 +304,7 @@ h1 {
   border: 1px solid var(--border);
   font-size: 0.85rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .diagram-arrow {
@@ -324,12 +367,6 @@ h1 {
   font-weight: 700;
 }
 
-.status-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
 .feedback {
   background: #f0f7f5;
   padding: 32px;
@@ -359,5 +396,11 @@ h1 {
   .nav {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (min-width: 860px) {
+  .grid.two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
