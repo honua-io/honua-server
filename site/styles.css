@@ -78,6 +78,7 @@ a:hover {
   height: 260px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(15, 118, 110, 0.22), transparent 70%);
+  pointer-events: none;
 }
 
 .hero-content {
