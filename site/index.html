@@ -106,8 +106,8 @@
             <div class="card">
               <h3>Ops & platform</h3>
               <p>
-                Modern DevOps and observability with container-first deployment options, AOT/JIT
-                images, and blazing performance.
+                Modern DevOps and observability with container-first deployment options and
+                blazing performance.
               </p>
             </div>
           </div>
@@ -116,7 +116,7 @@
         <section class="section">
           <div class="section-header">
             <h2>Deployment architecture</h2>
-            <p>Single-node without Redis, or multi-node with Redis + PostGIS. AOT builds enable serverless runtimes.</p>
+            <p>Single-node without Redis, or multi-node with Redis + PostGIS. Serverless runtimes are supported for event-driven workloads.</p>
             <p class="note">Supported runtimes: Azure Container Apps, AWS ECS/Fargate, Kubernetes, Lambda, Azure Functions.</p>
           </div>
           <div class="grid three">
@@ -154,13 +154,13 @@
               <p class="note">Add S3/Azure Blob for imports and attachments.</p>
             </div>
             <div class="card">
-              <h3>AOT builds (serverless + containers)</h3>
-              <p>AOT builds improve cold starts and memory footprint for serverless and container platforms.</p>
+              <h3>Serverless runtimes</h3>
+              <p>Run Honua on Lambda or Azure Functions for event-driven workloads and spiky traffic.</p>
               <div class="diagram">
                 <div class="diagram-row">
                   <span class="diagram-node">API Gateway</span>
                   <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">Honua (AOT)</span>
+                  <span class="diagram-node">Honua (serverless)</span>
                   <span class="diagram-arrow">-></span>
                   <span class="diagram-node">PostGIS</span>
                 </div>
