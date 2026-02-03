@@ -178,7 +178,6 @@
             <div class="card">
               <div class="card-header">
                 <h3>Single-node</h3>
-                <span class="badge">Redis off</span>
               </div>
               <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS.</p>
               <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span></pre>
@@ -187,7 +186,6 @@
             <div class="card">
               <div class="card-header">
                 <h3>Multi-node (production)</h3>
-                <span class="badge required">Redis required</span>
               </div>
               <p>Primary production mode: scale-out Honua nodes with shared Redis + PostGIS.</p>
               <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">LB / Ingress</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (n)</span><br /><span class="diagram-node">PostGIS</span> <span class="diagram-arrow">+</span> <span class="diagram-node">Redis</span></pre>
@@ -196,7 +194,6 @@
             <div class="card">
               <div class="card-header">
                 <h3>Serverless runtimes</h3>
-                <span class="badge required">Redis required</span>
               </div>
               <p>Run Honua on Lambda or Azure Functions for event-driven workloads and spiky traffic.</p>
               <pre class="diagram"><span class="diagram-node">API Gateway</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (serverless)</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span><br /><span class="diagram-node">Redis</span> <span class="diagram-arrow">+</span> <span class="diagram-node">S3/Blob</span></pre>
