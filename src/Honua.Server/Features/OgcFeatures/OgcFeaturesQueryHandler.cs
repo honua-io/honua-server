@@ -149,7 +149,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 IncludeNullGeometry = filterResult.IncludeNullGeometry
             };
 
-            var useStreaming = effectiveLimit > StreamingThreshold &&
+            var allowStreaming = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase);
+            var useStreaming = allowStreaming &&
+                               effectiveLimit > StreamingThreshold &&
                                !string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase);
 
             var cacheableFormat = string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase) ||
@@ -181,36 +184,41 @@ internal sealed partial class OgcFeaturesQueryHandler(
             if (useStreaming)
             {
                 var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
-                var hasMoreResults = totalCount > (effectiveOffset + effectiveLimit);
-                stopwatch.Stop();
-                var estimatedReturned = (int)Math.Min(effectiveLimit, Math.Max(0, totalCount - effectiveOffset));
-                OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, estimatedReturned, totalCount, stopwatch.Elapsed.TotalMilliseconds);
-                HonuaTelemetry.SetSuccess(featureActivity, estimatedReturned);
 
-                var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
-                var streamLinks = BuildItemsLinks(request, streamBasePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
-
-                if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
+                // Avoid streaming for small result sets even when the requested limit is large.
+                if (totalCount > StreamingThreshold)
                 {
-                    return new StreamingGmlItemsResult(
+                    var hasMoreResults = totalCount > (effectiveOffset + effectiveLimit);
+                    stopwatch.Stop();
+                    var estimatedReturned = (int)Math.Min(effectiveLimit, Math.Max(0, totalCount - effectiveOffset));
+                    OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, estimatedReturned, totalCount, stopwatch.Elapsed.TotalMilliseconds);
+                    HonuaTelemetry.SetSuccess(featureActivity, estimatedReturned);
+
+                    var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+                    var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
+                    var streamLinks = BuildItemsLinks(request, streamBasePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
+
+                    if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new StreamingGmlItemsResult(
+                            _streamingFeatureStore,
+                            layer,
+                            query,
+                            filterResult.CrsDefinition.Uri);
+                    }
+
+                    return new StreamingItemsResult(
                         _streamingFeatureStore,
                         layer,
                         query,
+                        collectionId,
+                        filterResult.CrsDefinition.AxisOrder,
+                        _geometryServices,
+                        outputFormat,
+                        streamLinks,
+                        totalCount,
                         filterResult.CrsDefinition.Uri);
                 }
-
-                return new StreamingItemsResult(
-                    _streamingFeatureStore,
-                    layer,
-                    query,
-                    collectionId,
-                    filterResult.CrsDefinition.AxisOrder,
-                    _geometryServices,
-                    outputFormat,
-                    streamLinks,
-                    totalCount,
-                    filterResult.CrsDefinition.Uri);
             }
 
             var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);

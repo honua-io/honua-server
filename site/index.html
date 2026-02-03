@@ -154,6 +154,65 @@
 
         <section class="section">
           <div class="section-header">
+            <h2>Architecture Comparison</h2>
+            <p>Legacy GIS servers were built for VMs. Honua is engineered for Serverless and Kubernetes.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Honua (Cloud-Native)</th>
+                  <th>GeoServer (Legacy OSS)</th>
+                  <th>ArcGIS Server (Legacy Ent)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Disk / Image Size</strong></td>
+                  <td><strong>~80 MB</strong> (Docker Image)</td>
+                  <td>~500 MB (Docker/WAR)</td>
+                  <td><strong>10 GB+</strong> (Install on Disk)</td>
+                </tr>
+                <tr>
+                  <td><strong>Min. Memory</strong></td>
+                  <td><strong>&lt; 100 MB</strong> RAM</td>
+                  <td>2 GB+ RAM</td>
+                  <td>8 GB+ System Req.</td>
+                </tr>
+                <tr>
+                  <td><strong>Startup Time</strong></td>
+                  <td><strong>&lt; 0.5s</strong> (Instant)</td>
+                  <td>10–40s</td>
+                  <td>5–10 Minutes</td>
+                </tr>
+                <tr>
+                  <td><strong>Architecture</strong></td>
+                  <td><strong>AOT Compiled</strong></td>
+                  <td>JVM Monolith</td>
+                  <td>Enterprise Monolith</td>
+                </tr>
+                <tr>
+                  <td><strong>Scaling</strong></td>
+                  <td><strong>Scale-to-Zero</strong></td>
+                  <td>Clustering</td>
+                  <td>Federated Sites</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="section-header">
+            <h3>Why it matters</h3>
+          </div>
+          <ul class="callouts">
+            <li><strong>Faster Pipelines:</strong> CI/CD pipelines pull Honua’s ~80MB image in seconds, whereas pulling gigabytes of legacy layers slows down every deployment.</li>
+            <li><strong>True Serverless:</strong> AOT compilation eliminates "cold starts," allowing you to run on Lambda/Fargate and <strong>pay only for what you use</strong>.</li>
+            <li><strong>High Density:</strong> Run 10x more instances on the same hardware compared to heavy Java or Enterprise stacks.</li>
+          </ul>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
             <h2>Deploy</h2>
             <p class="note">Supported runtimes:</p>
             <div class="tag-list">
