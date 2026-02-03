@@ -23,13 +23,17 @@
 
         <div class="hero-content">
           <p class="eyebrow">Cloud-native geospatial APIs</p>
-          <h1>One geospatial API for Esri + open standards.</h1>
+          <h1>Cloud-native geospatial APIs.</h1>
           <p class="subhead">
             Honua replaces parallel GIS stacks with a single, cloud-native service — deploy on AWS,
             Azure, or serverless while keeping Esri clients and open standards in sync.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
+            <a
+              class="btn primary"
+              href="#getting-started"
+              >Get started</a
+            >
           </div>
           <div class="cta-links">
             <a href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
@@ -104,6 +108,128 @@
 
         <section class="section">
           <div class="section-header">
+            <h2>Deployment architecture</h2>
+            <p>Single-node without Redis, or multi-node with Redis + PostGIS. AOT builds enable serverless runtimes.</p>
+          </div>
+          <div class="grid three">
+            <div class="card">
+              <h3>Single-node (no Redis)</h3>
+              <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS; no Redis.</p>
+              <div class="diagram">
+                <div class="diagram-row">
+                  <span class="diagram-node">Clients</span>
+                  <span class="diagram-arrow">-></span>
+                  <span class="diagram-node">Honua</span>
+                  <span class="diagram-arrow">-></span>
+                  <span class="diagram-node">PostGIS</span>
+                </div>
+              </div>
+              <p class="note">File storage: local disk or S3/Blob-compatible.</p>
+            </div>
+            <div class="card">
+              <h3>Multi-node (production)</h3>
+              <p>Primary production mode: scale-out Honua nodes with shared Redis + PostGIS.</p>
+              <div class="diagram">
+                <div class="diagram-row">
+                  <span class="diagram-node">Clients</span>
+                  <span class="diagram-arrow">-></span>
+                  <span class="diagram-node">LB / Ingress</span>
+                  <span class="diagram-arrow">-></span>
+                  <span class="diagram-node">Honua (n)</span>
+                </div>
+                <div class="diagram-row">
+                  <span class="diagram-node">PostGIS</span>
+                  <span class="diagram-arrow">+</span>
+                  <span class="diagram-node">Redis</span>
+                </div>
+              </div>
+              <p class="note">Add S3/Azure Blob for imports and attachments.</p>
+            </div>
+            <div class="card">
+              <h3>AOT builds (serverless + containers)</h3>
+              <p>AOT builds improve cold starts and memory footprint for serverless and container platforms.</p>
+              <div class="diagram">
+                <div class="diagram-row">
+                  <span class="diagram-node">API Gateway</span>
+                  <span class="diagram-arrow">-></span>
+                  <span class="diagram-node">Honua (AOT)</span>
+                  <span class="diagram-arrow">-></span>
+                  <span class="diagram-node">PostGIS</span>
+                </div>
+                <div class="diagram-row">
+                  <span class="diagram-node">Redis</span>
+                  <span class="diagram-arrow">+</span>
+                  <span class="diagram-node">S3/Blob</span>
+                </div>
+              </div>
+              <p class="note">Use the same env vars as multi-node deployments.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="getting-started">
+          <div class="section-header">
+            <h2>Getting started</h2>
+            <p>Pick a deployment path and follow the README for a fast, production-ready setup.</p>
+            <p class="callout">
+              Production deployments are multi-node and require PostGIS + Redis. Single-node runs are
+              supported only without Redis.
+            </p>
+          </div>
+          <div class="grid three">
+            <div class="card">
+              <h3>Kubernetes + Helm</h3>
+              <p>Install via the official chart with PostGIS and Redis for multi-node production.</p>
+              <a
+                class="inline-link"
+                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/helm/honua/README.md"
+                >Helm chart README</a
+              >
+            </div>
+            <div class="card">
+              <h3>Terraform (AWS or Azure)</h3>
+              <p>Modules for ECS/Fargate + RDS or Azure Container Apps + PostgreSQL, with Redis for multi-node.</p>
+              <a
+                class="inline-link"
+                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/terraform/README.md"
+                >Terraform modules README</a
+              >
+            </div>
+            <div class="card">
+              <h3>Local K8s validation</h3>
+              <p>k3d helpers for ingress testing and validation before production rollout.</p>
+              <a
+                class="inline-link"
+                href="https://github.com/honua-io/honua-server/blob/trunk/scripts/k8s/README.md"
+                >K8s scripts README</a
+              >
+            </div>
+            <div class="card">
+              <h3>Docker Compose (single node)</h3>
+              <p>Run PostGIS locally with optional Redis. Best for evaluation and single-node setups.</p>
+              <a
+                class="inline-link"
+                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/samples/docker-compose/README.md"
+                >Docker Compose README</a
+              >
+            </div>
+          </div>
+          <div class="config-links">
+            <span>Config essentials:</span>
+            <a href="https://github.com/honua-io/honua-server/blob/trunk/README.md#configuration"
+              >Env var defaults</a
+            >
+            <a href="https://github.com/honua-io/honua-server/blob/trunk/docs/adr/0008-env-var-configuration.md"
+              >Full env var reference</a
+            >
+            <a href="https://github.com/honua-io/honua-server/blob/trunk/docs/SECURITY_CONFIGURATION.md"
+              >Proxy + forwarded headers</a
+            >
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
             <h2>How it works</h2>
             <p>Two steps to production-ready geospatial services.</p>
           </div>
@@ -144,8 +270,8 @@
           </div>
           <div class="cta-row">
             <a class="btn primary" href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
-            <a class="btn secondary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
             <a class="btn ghost" href="https://github.com/honua-io/honua-server/discussions/296">Join the roadmap discussion</a>
+            <a class="btn secondary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
           </div>
         </section>
 

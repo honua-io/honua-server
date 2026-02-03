@@ -179,6 +179,16 @@ h1 {
   margin: 0 0 24px;
 }
 
+.callout {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 16px;
+  color: var(--ink);
+  font-weight: 600;
+  margin-top: 16px;
+}
+
 .grid {
   display: grid;
   gap: 20px;
@@ -203,11 +213,60 @@ h1 {
   margin-top: 0;
 }
 
+.inline-link {
+  display: inline-flex;
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.config-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+  font-weight: 600;
+}
+
+.config-links span {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.diagram {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.diagram-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.diagram-node {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #eef3f1;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.diagram-arrow {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .protocols {
