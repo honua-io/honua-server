@@ -6,7 +6,7 @@
     <title>Honua — Cloud-native geospatial APIs</title>
     <meta
       name="description"
-      content="Honua is a cloud-native geospatial API that keeps Esri compatibility and open standards in one service, with serverless-ready performance."
+      content="Honua is a modern GIS server with Esri compatibility and open standards built for cloud-native deployments."
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -23,10 +23,10 @@
 
         <div class="hero-content">
           <p class="eyebrow">Fast, modern, interoperable GIS server</p>
-          <h1>Cloud-native geospatial APIs.</h1>
+          <h1>Modern GIS Server. Esri Compatible. Cloud-native.</h1>
           <p class="subhead">
-            Compatibility with Esri and other clients via open standards — cloud container deployment
-            options with modern observability.
+            The high-performance, open-source alternative to ArcGIS Server. Use existing Esri clients
+            (ArcGIS Pro, SDKs) and modern open standards (OGC, MVT) on a cloud-native stack.
           </p>
           <div class="cta-row">
             <a
@@ -39,6 +39,9 @@
             <a href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
             <a href="https://github.com/honua-io/honua-server/discussions/296">Join the roadmap discussion</a>
           </div>
+          <div class="hero-badges">
+            <span class="badge">ELv2 licensed</span>
+          </div>
           <div class="hero-meta">
             <span>IaC templates + runbooks</span>
             <span>Terraform + Helm + Docker Compose</span>
@@ -50,52 +53,16 @@
       <main>
         <section class="section">
           <div class="section-header">
-            <h2>The problem</h2>
-            <p>
-              GIS stacks are expensive, complex, and hard to operate at scale. Most existing options
-              lack modern, cloud-native deployment topologies and are painful to implement and run.
-            </p>
-          </div>
-          <div class="grid three">
-            <div class="card">
-              <h3>Cost</h3>
-              <p>Enterprise licensing and professional services drive high total cost of ownership.</p>
-            </div>
-            <div class="card">
-              <h3>Complexity</h3>
-              <p>Deployments are heavyweight, upgrades are slow, and ops runbooks are brittle.</p>
-            </div>
-            <div class="card">
-              <h3>Interoperability</h3>
-              <p>
-                Works with ArcGIS Pro, QGIS, Esri SDKs, and open-source SDKs via GeoServices REST
-                FeatureServer, OGC API Features, OData, and MVT.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-header">
             <h2>Value by audience</h2>
             <p>One cloud-native server that satisfies business, GIS, and ops teams.</p>
           </div>
           <div class="grid three">
             <div class="card">
-              <h3>Business & analytics</h3>
-              <p>
-                Use the same data in Power BI, Tableau, and Excel — with editing support through
-                OData and FeatureServer workflows.
-              </p>
-              <div class="tag-list">
-                <span class="tag">Power BI</span>
-                <span class="tag">Tableau</span>
-                <span class="tag">Excel</span>
-              </div>
-            </div>
-            <div class="card">
               <h3>GIS teams</h3>
-              <p>Esri compatibility plus open standards, without the cost and complexity of dual stacks.</p>
+              <p>
+                Works with ArcGIS Pro, QGIS, Esri SDKs, and open-source SDKs via FeatureServer, OGC,
+                OData, and MVT — without the cost and complexity of legacy stacks.
+              </p>
               <div class="tag-list">
                 <span class="tag">GeoServices REST FeatureServer</span>
                 <span class="tag">OGC API Features</span>
@@ -104,11 +71,46 @@
               </div>
             </div>
             <div class="card">
+              <h3>Business & analytics</h3>
+              <p>
+                Use the same data in Power BI, Tableau, and Excel — with editing support and fewer
+                custom export pipelines.
+              </p>
+              <div class="tag-list">
+                <span class="tag">Power BI</span>
+                <span class="tag">Tableau</span>
+                <span class="tag">Excel</span>
+              </div>
+            </div>
+            <div class="card">
               <h3>Ops & platform</h3>
               <p>
-                Modern DevOps and observability with container-first deployment options and
-                blazing performance.
+                Modern DevOps and observability with container-first deployment options, IaC
+                templates, and predictable upgrades.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2>How it works</h2>
+            <p>Two steps to production-ready geospatial services.</p>
+          </div>
+          <div class="steps">
+            <div class="step">
+              <span class="step-number">1</span>
+              <div>
+                <h3>Connect + model your data</h3>
+                <p>Point Honua at PostGIS, map layers, and set metadata and auth.</p>
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">2</span>
+              <div>
+                <h3>Publish + deploy</h3>
+                <p>Expose FeatureServer, OGC, OData, and tiles, then ship to cloud containers or serverless.</p>
+              </div>
             </div>
           </div>
         </section>
@@ -119,10 +121,13 @@
             <p>Single-node without Redis, or multi-node with Redis + PostGIS. Serverless runtimes are supported for event-driven workloads.</p>
             <p class="note">Supported runtimes: Azure Container Apps, AWS ECS/Fargate, Kubernetes, Lambda, Azure Functions.</p>
           </div>
-          <div class="grid three">
+          <div class="grid two-col">
             <div class="card">
-              <h3>Single-node (no Redis)</h3>
-              <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS; no Redis.</p>
+              <div class="card-header">
+                <h3>Single-node</h3>
+                <span class="badge">Redis off</span>
+              </div>
+              <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS.</p>
               <div class="diagram">
                 <div class="diagram-row">
                   <span class="diagram-node">Clients</span>
@@ -135,7 +140,10 @@
               <p class="note">File storage: local disk or S3/Blob-compatible.</p>
             </div>
             <div class="card">
-              <h3>Multi-node (production)</h3>
+              <div class="card-header">
+                <h3>Multi-node (production)</h3>
+                <span class="badge required">Redis required</span>
+              </div>
               <p>Primary production mode: scale-out Honua nodes with shared Redis + PostGIS.</p>
               <div class="diagram">
                 <div class="diagram-row">
@@ -154,7 +162,10 @@
               <p class="note">Add S3/Azure Blob for imports and attachments.</p>
             </div>
             <div class="card">
-              <h3>Serverless runtimes</h3>
+              <div class="card-header">
+                <h3>Serverless runtimes</h3>
+                <span class="badge required">Redis required</span>
+              </div>
               <p>Run Honua on Lambda or Azure Functions for event-driven workloads and spiky traffic.</p>
               <div class="diagram">
                 <div class="diagram-row">
@@ -214,7 +225,7 @@
             </div>
             <div class="card">
               <h3>Docker Compose (single node)</h3>
-              <p>Run PostGIS locally with optional Redis. Best for evaluation and single-node setups.</p>
+              <p>Run PostGIS locally without Redis. Best for evaluation and single-node setups.</p>
               <a
                 class="inline-link"
                 href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/samples/docker-compose/README.md"
@@ -238,55 +249,18 @@
 
         <section class="section">
           <div class="section-header">
-            <h2>How it works</h2>
-            <p>Two steps to production-ready geospatial services.</p>
-          </div>
-          <div class="steps">
-            <div class="step">
-              <span class="step-number">1</span>
-              <div>
-                <h3>Connect + model your data</h3>
-                <p>Point Honua at PostGIS, map layers, and set metadata and auth.</p>
-              </div>
-            </div>
-            <div class="step">
-              <span class="step-number">2</span>
-              <div>
-                <h3>Publish + deploy</h3>
-                <p>Expose FeatureServer, OGC, OData, and tiles, then ship to AWS, Azure, or serverless.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-header">
             <h2>Status</h2>
             <p>MVP supports PostGIS today; additional databases and MapServer export are next.</p>
-          </div>
-          <div class="status-links">
-            <a href="https://github.com/honua-io/honua-server">README & API docs</a>
-            <a href="https://github.com/orgs/honua-io/projects/2">Roadmap board</a>
-            <a href="https://github.com/honua-io/honua-server/discussions/296">Roadmap discussion</a>
           </div>
         </section>
 
         <section class="section feedback">
           <div class="section-header">
-            <h2>Feedback first</h2>
-            <p>Tell us what you need most — we prioritize based on real workflows.</p>
+            <h2>Ready to deploy?</h2>
+            <p>Start with Helm, Terraform, or Docker Compose. Feedback shapes the roadmap.</p>
           </div>
           <div class="cta-row">
-            <a class="btn primary" href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
-            <a class="btn ghost" href="https://github.com/honua-io/honua-server/discussions/296">Join the roadmap discussion</a>
-            <a class="btn secondary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-header">
-            <h2>Licensing & trust</h2>
-            <p>ELv2 open-core. You own your data and infrastructure.</p>
+            <a class="btn primary" href="#getting-started">Get started</a>
           </div>
         </section>
       </main>
