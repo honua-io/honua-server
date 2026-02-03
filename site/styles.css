@@ -250,16 +250,6 @@ h1 {
   margin: 0;
 }
 
-.card-list {
-  margin: 12px 0 0;
-  padding-left: 18px;
-  color: var(--muted);
-}
-
-.card-list li {
-  margin-bottom: 6px;
-}
-
 .card h3 {
   margin-top: 0;
 }
