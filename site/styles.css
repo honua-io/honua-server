@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap");
 
 :root {
   --bg: #f7f5ef;
@@ -215,7 +215,8 @@ h1 {
 
 .grid {
   display: grid;
-  gap: 20px;
+  gap: 2rem;
+  align-items: stretch;
 }
 
 .grid.two {
@@ -281,36 +282,37 @@ h1 {
   margin-top: 12px;
 }
 
-.diagram {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
+.tag-list.compact .tag {
+  padding: 4px 10px;
+  font-size: 0.8rem;
 }
 
-.diagram-row {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  align-items: center;
+.diagram {
+  margin: 12px 0 0;
+  padding: 1rem;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #38bdf8;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+  white-space: pre;
   overflow-x: auto;
-  padding-bottom: 4px;
 }
 
 .diagram-node {
   display: inline-flex;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #eef3f1;
-  border: 1px solid var(--border);
-  font-size: 0.85rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .diagram-arrow {
-  font-size: 0.85rem;
-  color: var(--muted);
-  font-weight: 600;
+  color: #94a3b8;
+  margin: 0 4px;
 }
 
 .protocols {

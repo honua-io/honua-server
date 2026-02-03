@@ -26,11 +26,11 @@
         </nav>
 
         <div class="hero-content">
-          <p class="eyebrow">Fast, interoperable geoplatform</p>
+          <p class="eyebrow">High-performance GIS infrastructure</p>
           <h1>Modern GIS Server. Esri Compatible. Cloud-native.</h1>
           <p class="subhead">
             The high-performance, open-source alternative to ArcGIS Server and GeoServer. Use existing
-            Esri clients (ArcGIS Pro, SDKs) and modern open standards (OGC, MVT) on a cloud-native stack.
+            Esri clients (ArcGIS Pro, SDKs) and open standards (OGC, MVT) on a cloud-ready stack.
           </p>
           <div class="cta-row">
             <a
@@ -139,6 +139,13 @@
                   Import from files (GeoJSON, Shapefile, GeoPackage, CSV, KML), existing PostGIS
                   tables, or existing Esri services.
                 </p>
+                <div class="tag-list compact">
+                  <span class="tag">GeoJSON</span>
+                  <span class="tag">Shapefile</span>
+                  <span class="tag">GeoPackage</span>
+                  <span class="tag">CSV</span>
+                  <span class="tag">KML</span>
+                </div>
               </div>
             </div>
             <div class="step">
@@ -167,22 +174,14 @@
             <p>Single-node without Redis, or multi-node with Redis + PostGIS. Serverless runtimes are supported for event-driven workloads.</p>
             <p class="note">Supported runtimes: Azure Container Apps, AWS ECS/Fargate, Kubernetes, Lambda, Azure Functions.</p>
           </div>
-          <div class="grid two-col">
+          <div class="grid three">
             <div class="card">
               <div class="card-header">
                 <h3>Single-node</h3>
                 <span class="badge">Redis off</span>
               </div>
               <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS.</p>
-              <div class="diagram">
-                <div class="diagram-row">
-                  <span class="diagram-node">Clients</span>
-                  <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">Honua</span>
-                  <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">PostGIS</span>
-                </div>
-              </div>
+              <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span></pre>
               <p class="note">File storage: local disk or S3/Blob-compatible.</p>
             </div>
             <div class="card">
@@ -191,20 +190,7 @@
                 <span class="badge required">Redis required</span>
               </div>
               <p>Primary production mode: scale-out Honua nodes with shared Redis + PostGIS.</p>
-              <div class="diagram">
-                <div class="diagram-row">
-                  <span class="diagram-node">Clients</span>
-                  <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">LB / Ingress</span>
-                  <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">Honua (n)</span>
-                </div>
-                <div class="diagram-row">
-                  <span class="diagram-node">PostGIS</span>
-                  <span class="diagram-arrow">+</span>
-                  <span class="diagram-node">Redis</span>
-                </div>
-              </div>
+              <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">LB / Ingress</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (n)</span><br /><span class="diagram-node">PostGIS</span> <span class="diagram-arrow">+</span> <span class="diagram-node">Redis</span></pre>
               <p class="note">Add S3/Azure Blob for imports and attachments.</p>
             </div>
             <div class="card">
@@ -213,20 +199,7 @@
                 <span class="badge required">Redis required</span>
               </div>
               <p>Run Honua on Lambda or Azure Functions for event-driven workloads and spiky traffic.</p>
-              <div class="diagram">
-                <div class="diagram-row">
-                  <span class="diagram-node">API Gateway</span>
-                  <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">Honua (serverless)</span>
-                  <span class="diagram-arrow">-></span>
-                  <span class="diagram-node">PostGIS</span>
-                </div>
-                <div class="diagram-row">
-                  <span class="diagram-node">Redis</span>
-                  <span class="diagram-arrow">+</span>
-                  <span class="diagram-node">S3/Blob</span>
-                </div>
-              </div>
+              <pre class="diagram"><span class="diagram-node">API Gateway</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (serverless)</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span><br /><span class="diagram-node">Redis</span> <span class="diagram-arrow">+</span> <span class="diagram-node">S3/Blob</span></pre>
               <p class="note">Use the same env vars as multi-node deployments.</p>
             </div>
           </div>
@@ -237,8 +210,8 @@
             <h2>Getting started</h2>
             <p>Pick a deployment path and follow the README for a fast, production-ready setup.</p>
             <p class="callout">
-              Production deployments are multi-node and require PostGIS + Redis. Single-node runs are
-              supported only without Redis.
+              Production environments (multi-node/serverless) require Redis for state management.
+              Single-node evaluation works with just PostGIS.
             </p>
           </div>
           <div class="grid three">
@@ -299,17 +272,13 @@
           </div>
         </section>
 
-        <section class="section">
-          <div class="section-header">
-            <h2>Status</h2>
-            <p>MVP supports PostGIS today; additional databases and MapServer export are next.</p>
-          </div>
-        </section>
-
         <section class="section feedback">
           <div class="section-header">
-            <h2>Ready to deploy?</h2>
-            <p>Start with Helm, Terraform, or Docker Compose. Feedback shapes the roadmap.</p>
+            <h2>Roadmap & feedback</h2>
+            <p>
+              MVP supports PostGIS today; additional databases and MapServer export are next. Start
+              with Helm, Terraform, or Docker Compose — feedback shapes the roadmap.
+            </p>
           </div>
           <div class="cta-row">
             <a class="btn primary" href="#getting-started">Get started</a>
