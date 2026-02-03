@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
 
 :root {
   --bg: #f7f5ef;
@@ -182,12 +182,6 @@ h1 {
   font-weight: 600;
 }
 
-.badge.required {
-  background: #f7efe2;
-  border-color: #e3d2b4;
-  color: #4a3821;
-}
-
 .section {
   margin-top: 64px;
 }
@@ -227,28 +221,12 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.grid.two-col {
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-}
-
 .card {
   background: var(--card);
   padding: 20px;
   border-radius: 18px;
   border: 1px solid var(--border);
   height: 100%;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.card-header h3 {
-  margin: 0;
 }
 
 .card h3 {
@@ -287,34 +265,6 @@ h1 {
   font-size: 0.8rem;
 }
 
-.diagram {
-  margin: 12px 0 0;
-  padding: 1rem;
-  border-radius: 6px;
-  background: #f3f6f4;
-  border: 1px solid var(--border);
-  color: var(--ink);
-  font-family: "IBM Plex Mono", "Courier New", monospace;
-  font-size: 0.85rem;
-  white-space: pre-wrap;
-  overflow-x: hidden;
-}
-
-.diagram-node {
-  display: inline-flex;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  color: var(--ink);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.diagram-arrow {
-  color: var(--muted);
-  margin: 0 4px;
-}
 
 .protocols {
   display: grid;
@@ -399,11 +349,5 @@ h1 {
   .nav {
     flex-direction: column;
     align-items: flex-start;
-  }
-}
-
-@media (min-width: 860px) {
-  .grid.two-col {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
