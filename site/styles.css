@@ -260,6 +260,10 @@ h1 {
   margin-top: 12px;
 }
 
+.section-header .tag-list {
+  margin-bottom: 24px;
+}
+
 .tag-list.compact .tag {
   padding: 4px 10px;
   font-size: 0.8rem;
