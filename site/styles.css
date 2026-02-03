@@ -124,6 +124,16 @@ h1 {
   margin-bottom: 20px;
 }
 
+.hero-note {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.hero-note a {
+  font-weight: 600;
+}
+
 .btn {
   padding: 12px 18px;
   border-radius: 999px;
@@ -274,6 +284,10 @@ h1 {
 
 .section-header .tag-list {
   margin-bottom: 24px;
+}
+
+.deploy-label {
+  margin-top: 24px;
 }
 
 .tag-list.compact .tag {
