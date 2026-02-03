@@ -26,11 +26,11 @@
         </nav>
 
         <div class="hero-content">
-          <p class="eyebrow">Modern high-performance GIS infrastructure</p>
-          <h1>Cloud-native, Esri-compatible GIS server.</h1>
+          <p class="eyebrow">High-performance GIS infrastructure</p>
+          <h1>Modern GIS Server. Esri Compatible. Cloud-native.</h1>
           <p class="subhead">
-            The open-source alternative to ArcGIS Server and GeoServer. Use existing Esri clients
-            (ArcGIS Pro, SDKs) and open standards (OGC API, MVT) on a cloud-ready stack.
+            The high-performance, open-source alternative to ArcGIS Server and GeoServer. Use existing
+            Esri clients (ArcGIS Pro, SDKs) and modern open standards (OGC, MVT) on a cloud-native stack.
           </p>
           <div class="cta-row">
             <a
@@ -172,7 +172,7 @@
 
         <section class="section">
           <div class="section-header">
-            <h2>Deployment options</h2>
+            <h2>Deployment architecture</h2>
             <p>Single-node evaluation or production scale with Redis.</p>
             <p class="note">Supported runtimes:</p>
             <div class="tag-list">
@@ -185,7 +185,10 @@
           </div>
           <div class="grid two">
             <div class="card">
-              <h3>Single-node (evaluation)</h3>
+              <div class="card-header">
+                <h3>Single-node (evaluation)</h3>
+                <span class="badge">In-memory State</span>
+              </div>
               <p>Runs Honua + PostGIS. Ideal for demos, pilots, and internal tools.</p>
               <div class="tag-list">
                 <span class="tag">Docker Compose</span>
@@ -193,7 +196,10 @@
               </div>
             </div>
             <div class="card">
-              <h3>Production (multi-node/serverless)</h3>
+              <div class="card-header">
+                <h3>Production (multi-node/serverless)</h3>
+                <span class="badge">Redis (Distributed State)</span>
+              </div>
               <p>Scale out with shared Redis for coordination and caching.</p>
               <div class="tag-list">
                 <span class="tag">PostGIS + Redis</span>
@@ -274,19 +280,26 @@
 
         <section class="section feedback">
           <div class="section-header">
-            <h2>Roadmap & feedback</h2>
+            <h2>Project Status & Roadmap</h2>
             <p>
-              MVP supports PostGIS today; additional databases and MapServer export are next. Start
-              with Helm, Terraform, or Docker Compose — feedback shapes the roadmap.
+              Honua is currently in MVP with production-ready support for PostGIS and vector features.
+              We are community-driven — our roadmap is shaped by the workflows you need most.
             </p>
           </div>
           <div class="cta-row">
             <a
               class="btn primary"
-              href="https://github.com/honua-io/honua-server/tree/trunk/infrastructure"
+              href="https://github.com/honua-io/honua-server/discussions/296"
               target="_blank"
               rel="noopener noreferrer"
-              >Get started</a
+              >View & Influence Roadmap</a
+            >
+            <a
+              class="btn secondary"
+              href="https://github.com/honua-io/honua-server"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Star on GitHub</a
             >
           </div>
         </section>
