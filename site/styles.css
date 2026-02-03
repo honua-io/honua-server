@@ -1,16 +1,16 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
 
 :root {
-  --bg: #f7f5ef;
-  --bg-accent: #eaf2f1;
-  --ink: #13221c;
-  --muted: #3f4b46;
+  --bg: #f3f7f8;
+  --bg-accent: #e6eff1;
+  --ink: #102536;
+  --muted: #425a6a;
   --card: #ffffff;
-  --accent: #0f766e;
-  --accent-dark: #0b5a54;
-  --sand: #f3e7d7;
-  --border: #e2dfd5;
-  --shadow: 0 24px 60px rgba(14, 27, 21, 0.12);
+  --accent: #1b4163;
+  --accent-dark: #122f47;
+  --sand: #dbe9e2;
+  --border: #d7e2e6;
+  --shadow: 0 24px 60px rgba(16, 37, 54, 0.12);
 }
 
 * {
@@ -21,7 +21,7 @@ body {
   margin: 0;
   font-family: "IBM Plex Sans", sans-serif;
   color: var(--ink);
-  background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 40%, #f2f4f3 100%);
+  background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 45%, #eef3f4 100%);
   min-height: 100vh;
 }
 
@@ -52,6 +52,16 @@ a:hover {
   font-family: "Space Grotesk", sans-serif;
   font-size: 1.5rem;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+}
+
+.logo img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
 }
 
 .nav-links {
@@ -63,7 +73,7 @@ a:hover {
 .hero {
   padding: 40px 32px 64px;
   border-radius: 28px;
-  background: linear-gradient(135deg, #ffffff 0%, var(--bg-accent) 55%, #eef6f4 100%);
+  background: linear-gradient(135deg, #ffffff 0%, var(--bg-accent) 55%, #edf4f6 100%);
   box-shadow: var(--shadow);
   position: relative;
   overflow: hidden;
@@ -77,7 +87,7 @@ a:hover {
   width: 260px;
   height: 260px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(15, 118, 110, 0.22), transparent 70%);
+  background: radial-gradient(circle, rgba(27, 65, 99, 0.22), transparent 70%);
   pointer-events: none;
 }
 
@@ -158,7 +168,7 @@ h1 {
 .btn.secondary {
   background: var(--sand);
   color: var(--ink);
-  border-color: #d9c9af;
+  border-color: #c7d9cf;
 }
 
 .btn.ghost {
@@ -186,7 +196,7 @@ h1 {
   display: inline-flex;
   padding: 6px 12px;
   border-radius: 999px;
-  background: #eef3f1;
+  background: #e7f0ed;
   border: 1px solid var(--border);
   font-size: 0.85rem;
   font-weight: 600;
@@ -312,7 +322,7 @@ h1 {
   display: inline-flex;
   padding: 6px 12px;
   border-radius: 999px;
-  background: #eef3f1;
+  background: #e7f0ed;
   border: 1px solid var(--border);
   font-size: 0.9rem;
   font-weight: 600;
@@ -349,11 +359,11 @@ h1 {
 .comparison-table thead th {
   font-family: "Space Grotesk", sans-serif;
   font-size: 0.95rem;
-  background: #f6f4ee;
+  background: #eef4f6;
 }
 
 .comparison-table tbody tr:nth-child(even) td {
-  background: #fbfaf6;
+  background: #f6f9fa;
 }
 
 .comparison-table tbody tr:last-child td {
@@ -403,7 +413,7 @@ h1 {
 }
 
 .feedback {
-  background: #f0f7f5;
+  background: #edf4f6;
   padding: 32px;
   border-radius: 24px;
 }
