@@ -6,7 +6,7 @@
     <title>Honua — Cloud-native geospatial APIs</title>
     <meta
       name="description"
-      content="Honua delivers cloud-native geospatial APIs across GeoServices REST, OGC API Features, OData, and vector tiles with serverless-ready AOT performance."
+      content="Honua is a cloud-native geospatial API that keeps Esri compatibility and open standards in one service, with serverless-ready performance."
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -23,19 +23,21 @@
 
         <div class="hero-content">
           <p class="eyebrow">Cloud-native geospatial APIs</p>
-          <h1>Cloud-native geospatial APIs.</h1>
+          <h1>One geospatial API for Esri + open standards.</h1>
           <p class="subhead">
-            Deploy on AWS, Azure, or serverless while serving GeoServices REST,
-            OGC API Features, OData, and vector tiles — fast, interoperable, and low-ops.
+            Honua replaces parallel GIS stacks with a single, cloud-native service — deploy on AWS,
+            Azure, or serverless while keeping Esri clients and open standards in sync.
           </p>
           <div class="cta-row">
             <a class="btn primary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
-            <a class="btn secondary" href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
-            <a class="btn ghost" href="https://github.com/honua-io/honua-server/discussions/296">Join the roadmap discussion</a>
+          </div>
+          <div class="cta-links">
+            <a href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
+            <a href="https://github.com/honua-io/honua-server/discussions/296">Join the roadmap discussion</a>
           </div>
           <div class="hero-meta">
-            <span>AOT-optimized builds</span>
-            <span>Serverless day one</span>
+            <span>AOT builds for fast cold starts</span>
+            <span>Serverless-ready day one</span>
             <span>Docker + Helm + Terraform</span>
           </div>
         </div>
@@ -45,139 +47,80 @@
         <section class="section">
           <div class="section-header">
             <h2>The problem</h2>
-            <p>GIS stacks are expensive, complex, and hard to operate at scale.</p>
+            <p>
+              GIS stacks are expensive, complex, and hard to operate at scale. Example: teams that must
+              support both ArcGIS clients and OGC apps often run two stacks and keep services, auth,
+              and monitoring in sync.
+            </p>
           </div>
           <div class="grid three">
             <div class="card">
               <h3>Cost</h3>
-              <p>Licensing and implementation fees lock out most organizations.</p>
+              <p>Duplicated stacks mean duplicated licenses, infrastructure, and deployment pipelines.</p>
             </div>
             <div class="card">
               <h3>Complexity</h3>
-              <p>Specialized teams, bespoke infrastructure, and slow upgrades.</p>
+              <p>Upgrades require coordinated downtime, retesting, and republishing services.</p>
             </div>
             <div class="card">
               <h3>Interoperability</h3>
-              <p>Esri vs open standards forces an either/or decision.</p>
+              <p>Esri vs open standards forces duplication instead of reuse.</p>
             </div>
           </div>
         </section>
 
         <section class="section">
           <div class="section-header">
-            <h2>The Honua antidote</h2>
-            <p>One service, multiple standards, cloud-native delivery.</p>
-          </div>
-          <div class="grid two">
-            <div class="card">
-              <h3>Broad compatibility</h3>
-              <p>GeoServices REST, OGC API Features, OData, and vector tiles.</p>
-            </div>
-            <div class="card">
-              <h3>Minimal switching cost</h3>
-              <p>Esri import paths and drop-in interoperability.</p>
-            </div>
-            <div class="card">
-              <h3>Cloud-native by design</h3>
-              <p>AWS/Azure deployments plus serverless day one with AOT builds.</p>
-            </div>
-            <div class="card">
-              <h3>Ops-friendly</h3>
-              <p>Predictable deployments, observability, and reliable rollouts.</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-header">
-            <h2>What you get</h2>
-            <p>Multi-protocol APIs with full editing support.</p>
+            <h2>Why teams switch to Honua</h2>
+            <p>One cloud-native service that keeps Esri compatibility and open standards in sync.</p>
           </div>
           <div class="grid three">
             <div class="card">
-              <h3>Multi-protocol GIS APIs</h3>
-              <p>Serve multiple client ecosystems from one stack.</p>
+              <h3>One API, many standards</h3>
+              <p>Serve Esri and open-standard clients without duplicating services.</p>
+              <div class="tag-list">
+                <span class="tag">GeoServices REST FeatureServer</span>
+                <span class="tag">OGC API Features</span>
+                <span class="tag">OData v4</span>
+                <span class="tag">Vector tiles (MVT)</span>
+              </div>
             </div>
             <div class="card">
-              <h3>Full editing</h3>
-              <p>applyEdits, attachments, related records, and transactions.</p>
+              <h3>Editing workflows, not just read-only</h3>
+              <p>
+                applyEdits, attachments, related records, and transactions — so existing ArcGIS-style
+                editors work without custom middleware.
+              </p>
             </div>
             <div class="card">
-              <h3>Container + serverless</h3>
-              <p>Deploy with Docker/Helm/Terraform or serverless AOT builds.</p>
+              <h3>Cloud-native ops by default</h3>
+              <p>
+                AOT builds compile to native for fast cold starts. Deploy with Docker, Helm, Terraform,
+                Lambda, or Azure Functions.
+              </p>
             </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-header">
-            <h2>Protocols</h2>
-            <p>Standards-first, Esri-compatible where it matters.</p>
-          </div>
-          <div class="protocols">
-            <div class="protocol">
-              <span class="tag">GeoServices REST FeatureServer (Esri compatible)</span>
-              <a href="https://geoservices.github.io/">Docs</a>
-            </div>
-            <div class="protocol">
-              <span class="tag">OGC API Features</span>
-            </div>
-            <div class="protocol">
-              <span class="tag">OData v4</span>
-            </div>
-            <div class="protocol">
-              <span class="tag">Vector Tiles (MVT)</span>
-            </div>
-            <p class="note">MapServer export is planned for Beta — see the roadmap.</p>
           </div>
         </section>
 
         <section class="section">
           <div class="section-header">
             <h2>How it works</h2>
-            <p>Three steps to production-ready geospatial services.</p>
+            <p>Two steps to production-ready geospatial services.</p>
           </div>
           <div class="steps">
             <div class="step">
               <span class="step-number">1</span>
               <div>
-                <h3>Connect your database</h3>
-                <p>MVP supports PostGIS today; more databases are next.</p>
+                <h3>Connect + model your data</h3>
+                <p>Point Honua at PostGIS, map layers, and set metadata and auth.</p>
               </div>
             </div>
             <div class="step">
               <span class="step-number">2</span>
               <div>
-                <h3>Publish services</h3>
-                <p>Expose layers via GeoServices, OGC, OData, and tiles.</p>
+                <h3>Publish + deploy</h3>
+                <p>Expose FeatureServer, OGC, OData, and tiles, then ship to AWS, Azure, or serverless.</p>
               </div>
-            </div>
-            <div class="step">
-              <span class="step-number">3</span>
-              <div>
-                <h3>Deploy anywhere</h3>
-                <p>AWS, Azure, or serverless with AOT-optimized builds.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-header">
-            <h2>Performance & cloud-native commitments</h2>
-          </div>
-          <div class="grid three">
-            <div class="card">
-              <h3>AOT performance</h3>
-              <p>Optimized cold starts and throughput for serverless runtimes.</p>
-            </div>
-            <div class="card">
-              <h3>Serverless day one</h3>
-              <p>AWS Lambda + Azure Functions templates with AOT builds.</p>
-            </div>
-            <div class="card">
-              <h3>Infrastructure templates</h3>
-              <p>Docker, Helm, and Terraform-ready deployment options.</p>
             </div>
           </div>
         </section>
@@ -185,7 +128,7 @@
         <section class="section">
           <div class="section-header">
             <h2>Status</h2>
-            <p>MVP supports PostGIS today; additional databases are next.</p>
+            <p>MVP supports PostGIS today; additional databases and MapServer export are next.</p>
           </div>
           <div class="status-links">
             <a href="https://github.com/honua-io/honua-server">README & API docs</a>
@@ -200,8 +143,8 @@
             <p>Tell us what you need most — we prioritize based on real workflows.</p>
           </div>
           <div class="cta-row">
-            <a class="btn primary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
-            <a class="btn secondary" href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
+            <a class="btn primary" href="https://github.com/honua-io/honua-server/issues/new/choose">Open a feedback issue</a>
+            <a class="btn secondary" href="https://github.com/honua-io/honua-server">Star on GitHub</a>
             <a class="btn ghost" href="https://github.com/honua-io/honua-server/discussions/296">Join the roadmap discussion</a>
           </div>
         </section>

@@ -115,6 +115,14 @@ h1 {
   margin-bottom: 20px;
 }
 
+.cta-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
 .btn {
   padding: 12px 18px;
   border-radius: 999px;
@@ -193,6 +201,13 @@ h1 {
 
 .card h3 {
   margin-top: 0;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .protocols {
