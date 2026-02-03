@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMPOSE_FILE="infrastructure/samples/docker-compose/docker-compose.yml"
+COMPOSE_FILE="infrastructure/docker-compose/docker-compose.yml"
 PROJECT_NAME="honua-iac-sample"
 POSTGRES_HEALTHCHECK_TIMEOUT=120
 REDIS_HEALTHCHECK_TIMEOUT=120

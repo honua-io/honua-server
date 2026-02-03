@@ -4756,7 +4756,7 @@ builder.Logging.AddOpenTelemetry(options =>
 For local development and lightweight production monitoring, we use the **Aspire Dashboard standalone container**. No full Aspire orchestration needed — just a container that receives OTLP telemetry.
 
 ```yaml
-# infrastructure/samples/docker-compose/docker-compose.yml
+# infrastructure/docker-compose/docker-compose.yml
 services:
   honua:
     build: .
@@ -5937,7 +5937,7 @@ public async Task<IResult> UpdateLayerAsync(
 #### Docker Compose (Redis Optional)
 
 ```yaml
-# infrastructure/samples/docker-compose/docker-compose.yml
+# infrastructure/docker-compose/docker-compose.yml
 services:
   honua:
     environment:
@@ -6105,7 +6105,7 @@ Basemap__ApiKey               → Basemap:ApiKey
 #### Docker Compose
 
 ```yaml
-# infrastructure/samples/docker-compose/docker-compose.yml
+# infrastructure/docker-compose/docker-compose.yml
 services:
   honua:
     image: honua-server:latest
