@@ -172,32 +172,35 @@
 
         <section class="section">
           <div class="section-header">
-            <h2>Deployment architecture</h2>
-            <p>Single-node without Redis, or multi-node with Redis + PostGIS. Serverless runtimes are supported for event-driven workloads.</p>
-            <p class="note">Supported runtimes: Azure Container Apps, AWS ECS/Fargate, Kubernetes, Lambda, Azure Functions.</p>
+            <h2>Deployment options</h2>
+            <p>Single-node evaluation or production scale with Redis.</p>
+            <p class="note">Supported runtimes:</p>
+            <div class="tag-list">
+              <span class="tag">AWS ECS/Fargate</span>
+              <span class="tag">Azure Container Apps</span>
+              <span class="tag">Kubernetes</span>
+              <span class="tag">Lambda</span>
+              <span class="tag">Azure Functions</span>
+            </div>
           </div>
-          <div class="grid three">
+          <div class="grid two">
             <div class="card">
-              <div class="card-header">
-                <h3>Single-node</h3>
+              <h3>Single-node (evaluation)</h3>
+              <p>Runs Honua + PostGIS. Ideal for demos, pilots, and internal tools.</p>
+              <div class="tag-list">
+                <span class="tag">Docker Compose</span>
+                <span class="tag">PostGIS only</span>
               </div>
-              <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS.</p>
-              <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span></pre>
             </div>
             <div class="card">
-              <div class="card-header">
-                <h3>Multi-node (production)</h3>
+              <h3>Production (multi-node/serverless)</h3>
+              <p>Scale out with shared Redis for coordination and caching.</p>
+              <div class="tag-list">
+                <span class="tag">PostGIS + Redis</span>
+                <span class="tag">Helm</span>
+                <span class="tag">Terraform</span>
+                <span class="tag">Serverless</span>
               </div>
-              <p>Primary production mode: scale-out Honua nodes with shared Redis + PostGIS.</p>
-              <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">LB / Ingress</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (n)</span><br /><span class="diagram-node">PostGIS</span> <span class="diagram-arrow">+</span> <span class="diagram-node">Redis</span></pre>
-            </div>
-            <div class="card">
-              <div class="card-header">
-                <h3>Serverless runtimes</h3>
-              </div>
-              <p>Run Honua on Lambda or Azure Functions for event-driven workloads and spiky traffic.</p>
-              <pre class="diagram"><span class="diagram-node">API Gateway</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (serverless)</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span><br /><span class="diagram-node">Redis</span></pre>
-              <p class="note">Use the same env vars as multi-node deployments.</p>
             </div>
           </div>
         </section>
