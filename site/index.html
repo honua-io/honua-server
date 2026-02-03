@@ -35,7 +35,9 @@
           <div class="cta-row">
             <a
               class="btn primary"
-              href="#getting-started"
+              href="https://github.com/honua-io/honua-server/tree/trunk/infrastructure"
+              target="_blank"
+              rel="noopener noreferrer"
               >Get started</a
             >
           </div>
@@ -181,7 +183,6 @@
               </div>
               <p>Best for evaluation, dev, or small internal apps. Runs Honua + PostGIS.</p>
               <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span></pre>
-              <p class="note">File storage: local disk or S3/Blob-compatible.</p>
             </div>
             <div class="card">
               <div class="card-header">
@@ -189,14 +190,13 @@
               </div>
               <p>Primary production mode: scale-out Honua nodes with shared Redis + PostGIS.</p>
               <pre class="diagram"><span class="diagram-node">Clients</span> <span class="diagram-arrow">-></span> <span class="diagram-node">LB / Ingress</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (n)</span><br /><span class="diagram-node">PostGIS</span> <span class="diagram-arrow">+</span> <span class="diagram-node">Redis</span></pre>
-              <p class="note">Add S3/Azure Blob for imports and attachments.</p>
             </div>
             <div class="card">
               <div class="card-header">
                 <h3>Serverless runtimes</h3>
               </div>
               <p>Run Honua on Lambda or Azure Functions for event-driven workloads and spiky traffic.</p>
-              <pre class="diagram"><span class="diagram-node">API Gateway</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (serverless)</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span><br /><span class="diagram-node">Redis</span> <span class="diagram-arrow">+</span> <span class="diagram-node">S3/Blob</span></pre>
+              <pre class="diagram"><span class="diagram-node">API Gateway</span> <span class="diagram-arrow">-></span> <span class="diagram-node">Honua (serverless)</span> <span class="diagram-arrow">-></span> <span class="diagram-node">PostGIS</span><br /><span class="diagram-node">Redis</span></pre>
               <p class="note">Use the same env vars as multi-node deployments.</p>
             </div>
           </div>
@@ -213,14 +213,14 @@
           </div>
           <div class="grid three">
             <div class="card">
-              <h3>Kubernetes + Helm</h3>
-              <p>Install via the official chart with PostGIS and Redis for multi-node production.</p>
+              <h3>Docker Compose (single node)</h3>
+              <p>Run PostGIS locally without Redis. Best for evaluation and single-node setups.</p>
               <a
                 class="inline-link"
-                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/helm/honua/README.md"
+                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/samples/docker-compose/README.md"
                 target="_blank"
                 rel="noopener noreferrer"
-                >Helm chart README</a
+                >Docker Compose README</a
               >
             </div>
             <div class="card">
@@ -235,14 +235,14 @@
               >
             </div>
             <div class="card">
-              <h3>Docker Compose (single node)</h3>
-              <p>Run PostGIS locally without Redis. Best for evaluation and single-node setups.</p>
+              <h3>Kubernetes + Helm</h3>
+              <p>Install via the official chart with PostGIS and Redis for multi-node production.</p>
               <a
                 class="inline-link"
-                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/samples/docker-compose/README.md"
+                href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/helm/honua/README.md"
                 target="_blank"
                 rel="noopener noreferrer"
-                >Docker Compose README</a
+                >Helm chart README</a
               >
             </div>
           </div>
@@ -278,7 +278,13 @@
             </p>
           </div>
           <div class="cta-row">
-            <a class="btn primary" href="#getting-started">Get started</a>
+            <a
+              class="btn primary"
+              href="https://github.com/honua-io/honua-server/tree/trunk/infrastructure"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Get started</a
+            >
           </div>
         </section>
       </main>
