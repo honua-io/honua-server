@@ -16,6 +16,8 @@ This directory contains infrastructure modules and examples for Honua Server.
 - `bootstrap/azure-aca` – Azure AD service principal + custom role for Container Apps
 - `bootstrap/azure-functions` – Azure AD service principal + custom role for Functions
 
+These templates include permissions for Postgres (RDS / Flexible Server) and Redis provisioning.
+
 ## Quick validation
 
 ```bash

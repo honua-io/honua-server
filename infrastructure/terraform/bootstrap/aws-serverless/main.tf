@@ -32,6 +32,11 @@ data "aws_iam_policy_document" "terraform" {
     actions   = [
       "lambda:*",
       "apigateway:*",
+      "ec2:*",
+      "rds:*",
+      "elasticache:*",
+      "secretsmanager:*",
+      "kms:*",
       "logs:*",
       "cloudwatch:*",
       "s3:*",

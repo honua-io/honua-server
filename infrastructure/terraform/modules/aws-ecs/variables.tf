@@ -228,10 +228,46 @@ variable "additional_env" {
 }
 
 variable "redis_connection_string" {
-  description = "Redis connection string for multi-node mode."
+  description = "Redis connection string for multi-node mode. Leave empty to create Redis."
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "redis_enabled" {
+  description = "Provision Redis (ElastiCache) for multi-node mode."
+  type        = bool
+  default     = true
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache node type."
+  type        = string
+  default     = "cache.t3.micro"
+}
+
+variable "redis_engine_version" {
+  description = "Redis engine version."
+  type        = string
+  default     = "7.0"
+}
+
+variable "redis_parameter_group_name" {
+  description = "Redis parameter group name."
+  type        = string
+  default     = "default.redis7"
+}
+
+variable "redis_num_cache_clusters" {
+  description = "Number of cache clusters in the replication group."
+  type        = number
+  default     = 1
+}
+
+variable "redis_port" {
+  description = "Redis port."
+  type        = number
+  default     = 6379
 }
 
 variable "health_check_path" {

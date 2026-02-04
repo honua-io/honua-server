@@ -18,6 +18,9 @@ locals {
   https_ingress_cidrs = length(var.allow_public_ingress_cidrs) > 0 ? var.allow_public_ingress_cidrs : var.allow_https_ingress_cidrs
   http_ingress_base   = length(var.allow_http_ingress_cidrs) > 0 ? var.allow_http_ingress_cidrs : local.https_ingress_cidrs
   http_ingress_cidrs  = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
+  redis_enabled       = var.redis_enabled || var.redis_connection_string != ""
+  redis_create        = var.redis_enabled && var.redis_connection_string == ""
+  redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port}" : "")
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -116,6 +119,17 @@ resource "aws_security_group" "ecs" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  dynamic "egress" {
+    for_each = local.redis_enabled ? [1] : []
+    content {
+      description = "Redis access"
+      from_port   = var.redis_port
+      to_port     = var.redis_port
+      protocol    = "tcp"
+      cidr_blocks = [module.vpc.vpc_cidr_block]
+    }
+  }
+
   tags = local.tags
 }
 
@@ -143,6 +157,59 @@ resource "aws_security_group" "rds" {
   }
 
   tags = local.tags
+}
+
+resource "aws_security_group" "redis" {
+  count       = local.redis_create ? 1 : 0
+  name_prefix = "${local.name}-redis-"
+  description = "Redis security group"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description     = "Redis from ECS"
+    from_port       = var.redis_port
+    to_port         = var.redis_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs.id]
+  }
+
+  egress {
+    description = "Redis outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [module.vpc.vpc_cidr_block]
+  }
+
+  tags = local.tags
+}
+
+resource "aws_elasticache_subnet_group" "redis" {
+  count       = local.redis_create ? 1 : 0
+  name        = "${local.name}-redis"
+  subnet_ids  = module.vpc.private_subnets
+  description = "Redis subnet group"
+  tags        = local.tags
+}
+
+resource "aws_elasticache_replication_group" "redis" {
+  count                        = local.redis_create ? 1 : 0
+  replication_group_id         = "${local.name}-redis"
+  description                  = "Honua Redis"
+  node_type                    = var.redis_node_type
+  engine                       = "redis"
+  engine_version               = var.redis_engine_version
+  port                         = var.redis_port
+  parameter_group_name         = var.redis_parameter_group_name
+  automatic_failover_enabled   = var.redis_num_cache_clusters > 1
+  multi_az_enabled             = var.redis_num_cache_clusters > 1
+  num_cache_clusters           = var.redis_num_cache_clusters
+  subnet_group_name            = aws_elasticache_subnet_group.redis[0].name
+  security_group_ids           = [aws_security_group.redis[0].id]
+  at_rest_encryption_enabled   = false
+  transit_encryption_enabled   = false
+  apply_immediately            = true
+  tags                         = local.tags
 }
 
 #checkov:skip=CKV2_AWS_28: WAF association is optional via waf_web_acl_arn.
@@ -400,7 +467,7 @@ resource "aws_iam_policy" "secrets" {
         Resource = compact([
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
-          var.redis_connection_string != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+          local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       }
     ]
@@ -531,7 +598,7 @@ resource "aws_secretsmanager_secret_version" "admin_password" {
 #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
 resource "aws_secretsmanager_secret" "redis_connection" {
   #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
-  count       = var.redis_connection_string != "" ? 1 : 0
+  count       = local.redis_connection != "" ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Honua Redis connection string"
   kms_key_id  = local.kms_key_arn
@@ -539,9 +606,9 @@ resource "aws_secretsmanager_secret" "redis_connection" {
 }
 
 resource "aws_secretsmanager_secret_version" "redis_connection" {
-  count         = var.redis_connection_string != "" ? 1 : 0
+  count         = local.redis_connection != "" ? 1 : 0
   secret_id     = aws_secretsmanager_secret.redis_connection[0].id
-  secret_string = var.redis_connection_string
+  secret_string = local.redis_connection
 }
 
 resource "aws_ecs_task_definition" "this" {
@@ -580,7 +647,7 @@ resource "aws_ecs_task_definition" "this" {
           name      = "HONUA_ADMIN_PASSWORD"
           valueFrom = aws_secretsmanager_secret.admin_password.arn
         }
-        ], var.redis_connection_string != "" ? [
+        ], local.redis_connection != "" ? [
         {
           name      = "ConnectionStrings__redis"
           valueFrom = aws_secretsmanager_secret.redis_connection[0].arn

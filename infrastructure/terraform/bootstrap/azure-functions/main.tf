@@ -50,6 +50,10 @@ resource "azurerm_role_definition" "terraform" {
       "Microsoft.Storage/storageAccounts/*",
       "Microsoft.Web/serverfarms/*",
       "Microsoft.Web/sites/*",
+      "Microsoft.DBforPostgreSQL/flexibleServers/*",
+      "Microsoft.DBforPostgreSQL/flexibleServers/databases/*",
+      "Microsoft.DBforPostgreSQL/flexibleServers/configurations/*",
+      "Microsoft.Cache/Redis/*",
       "Microsoft.Insights/components/*",
       "Microsoft.OperationalInsights/workspaces/*"
     ]

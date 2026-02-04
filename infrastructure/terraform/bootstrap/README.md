@@ -10,9 +10,10 @@ for AWS vs Azure.
 - `azure-aca` — Azure AD service principal + custom role for Azure Container Apps.
 - `azure-functions` — Azure AD service principal + custom role for Azure Functions.
 
-> These are least-privilege *starting points* scoped to the services used by each template.
-> If you disable optional features (WAF, Route53, ACM, etc.) you can remove the related
-> permissions. If you add new components, expand the policy accordingly.
+> These are least-privilege *starting points* scoped to the services used by each template,
+> including database (RDS/Postgres) and Redis where applicable. If you disable optional
+> features (WAF, Route53, ACM, etc.) you can remove the related permissions. If you add new
+> components, expand the policy accordingly.
 
 ## Usage
 Each template is a standalone Terraform project. Example:

@@ -34,6 +34,7 @@ data "aws_iam_policy_document" "terraform" {
       "ecs:*",
       "elasticloadbalancing:*",
       "rds:*",
+      "elasticache:*",
       "logs:*",
       "s3:*",
       "secretsmanager:*",

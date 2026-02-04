@@ -53,6 +53,7 @@ resource "azurerm_role_definition" "terraform" {
       "Microsoft.DBforPostgreSQL/flexibleServers/*",
       "Microsoft.DBforPostgreSQL/flexibleServers/databases/*",
       "Microsoft.DBforPostgreSQL/flexibleServers/configurations/*",
+      "Microsoft.Cache/Redis/*",
       "Microsoft.OperationalInsights/workspaces/*",
       "Microsoft.App/managedEnvironments/*",
       "Microsoft.App/containerApps/*"

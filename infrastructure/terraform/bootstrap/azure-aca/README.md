@@ -13,4 +13,4 @@ terraform apply
 - Default scope is the current subscription. You can scope to a resource group by
   setting `scope`.
 - The custom role is scoped to the ACA module's resource types (Container Apps,
-  Log Analytics, Postgres Flexible Server, Key Vault, Managed Identity, Resource Groups).
+  Log Analytics, Postgres Flexible Server, Redis, Key Vault, Managed Identity, Resource Groups).

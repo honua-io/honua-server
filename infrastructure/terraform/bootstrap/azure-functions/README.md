@@ -12,4 +12,5 @@ terraform apply
 ## Notes
 - Default scope is the current subscription. You can scope to a resource group by
   setting `scope`.
-- The custom role is scoped to Function App resources (App Service, Storage, App Insights).
+- The custom role is scoped to Function App resources (App Service, Storage, App Insights),
+  plus Postgres and Redis for Honua dependencies.

@@ -81,6 +81,9 @@ resource "random_password" "db" {
 locals {
   db_password            = var.db_admin_password != null ? var.db_admin_password : random_password.db[0].result
   db_connection_string   = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=true"
+  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
+  redis_create           = var.redis_enabled && var.redis_connection_string == ""
+  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
   secret_expiration_date = timeadd(timestamp(), format("%dh", var.secret_expiration_days * 24))
 }
 
@@ -116,6 +119,19 @@ resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
   value     = "POSTGIS"
 }
 
+resource "azurerm_redis_cache" "this" {
+  count               = local.redis_create ? 1 : 0
+  name                = "${local.name}-redis"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  capacity            = var.redis_capacity
+  family              = var.redis_family
+  sku_name            = var.redis_sku_name
+  enable_non_ssl_port = var.redis_enable_non_ssl_port
+  minimum_tls_version = "1.2"
+  tags                = local.tags
+}
+
 resource "azurerm_key_vault_secret" "db_connection" {
   name            = "honua-db-connection"
   value           = local.db_connection_string
@@ -135,9 +151,9 @@ resource "azurerm_key_vault_secret" "admin_password" {
 }
 
 resource "azurerm_key_vault_secret" "redis_connection" {
-  count           = var.redis_connection_string != "" ? 1 : 0
+  count           = local.redis_connection != "" ? 1 : 0
   name            = "honua-redis-connection"
-  value           = var.redis_connection_string
+  value           = local.redis_connection
   content_type    = "connection-string"
   expiration_date = local.secret_expiration_date
   key_vault_id    = azurerm_key_vault.this.id
@@ -197,7 +213,7 @@ resource "azurerm_container_app" "this" {
   }
 
   dynamic "secret" {
-    for_each = toset(var.redis_connection_string != "" ? ["redis"] : [])
+    for_each = toset(local.redis_connection != "" ? ["redis"] : [])
     content {
       name                = "redis-connection"
       key_vault_secret_id = azurerm_key_vault_secret.redis_connection[0].id
@@ -234,7 +250,7 @@ resource "azurerm_container_app" "this" {
       }
 
       dynamic "env" {
-        for_each = toset(var.redis_connection_string != "" ? ["redis"] : [])
+        for_each = toset(local.redis_connection != "" ? ["redis"] : [])
         content {
           name        = "ConnectionStrings__redis"
           secret_name = "redis-connection"

@@ -28,3 +28,8 @@ output "admin_password_secret_id" {
   description = "Key Vault secret ID for the admin password."
   value       = azurerm_key_vault_secret.admin_password.id
 }
+
+output "redis_connection_secret_id" {
+  description = "Key Vault secret ID for the Redis connection string (if set)."
+  value       = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
+}

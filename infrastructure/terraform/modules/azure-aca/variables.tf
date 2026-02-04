@@ -126,10 +126,40 @@ variable "additional_env" {
 }
 
 variable "redis_connection_string" {
-  description = "Redis connection string for multi-node mode."
+  description = "Redis connection string for multi-node mode. Leave empty to create Redis."
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "redis_enabled" {
+  description = "Provision Azure Cache for Redis."
+  type        = bool
+  default     = true
+}
+
+variable "redis_sku_name" {
+  description = "Azure Cache for Redis SKU name."
+  type        = string
+  default     = "Basic"
+}
+
+variable "redis_family" {
+  description = "Azure Cache for Redis family."
+  type        = string
+  default     = "C"
+}
+
+variable "redis_capacity" {
+  description = "Azure Cache for Redis capacity."
+  type        = number
+  default     = 1
+}
+
+variable "redis_enable_non_ssl_port" {
+  description = "Enable non-SSL port for Azure Cache for Redis."
+  type        = bool
+  default     = false
 }
 
 variable "registry_server" {
