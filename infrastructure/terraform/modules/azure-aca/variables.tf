@@ -141,7 +141,7 @@ variable "redis_enabled" {
 variable "redis_sku_name" {
   description = "Azure Cache for Redis SKU name."
   type        = string
-  default     = "Basic"
+  default     = "Standard"
 }
 
 variable "redis_family" {
@@ -160,6 +160,18 @@ variable "redis_enable_non_ssl_port" {
   description = "Enable non-SSL port for Azure Cache for Redis."
   type        = bool
   default     = false
+}
+
+variable "redis_public_network_access_enabled" {
+  description = "Enable public network access for Azure Cache for Redis."
+  type        = bool
+  default     = true
+}
+
+variable "redis_subnet_id" {
+  description = "Subnet ID for Azure Cache for Redis (required for private access)."
+  type        = string
+  default     = ""
 }
 
 variable "registry_server" {

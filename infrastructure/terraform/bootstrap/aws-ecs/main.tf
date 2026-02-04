@@ -17,6 +17,7 @@ locals {
 }
 
 resource "aws_iam_user" "terraform" {
+  #checkov:skip=CKV_AWS_273: Bootstrap uses an IAM user for non-SSO automation contexts.
   name = local.user_name
   tags = var.tags
 }
@@ -27,9 +28,15 @@ resource "aws_iam_access_key" "terraform" {
 }
 
 data "aws_iam_policy_document" "terraform" {
+  #checkov:skip=CKV_AWS_110: Bootstrap policy requires broad permissions to provision infrastructure.
+  #checkov:skip=CKV_AWS_111: Bootstrap policy requires write permissions across provisioned services.
+  #checkov:skip=CKV_AWS_356: Resource scoping is handled by environment isolation.
+  #checkov:skip=CKV_AWS_107: Bootstrap policy includes Secrets/KMS access for infrastructure setup.
+  #checkov:skip=CKV_AWS_108: Bootstrap policy includes networking and logging actions.
+  #checkov:skip=CKV_AWS_109: Bootstrap policy includes IAM management for task roles.
   statement {
-    sid       = "EcsCoreInfra"
-    actions   = [
+    sid = "EcsCoreInfra"
+    actions = [
       "ec2:*",
       "ecs:*",
       "elasticloadbalancing:*",
@@ -83,6 +90,7 @@ resource "aws_iam_policy" "terraform" {
 }
 
 resource "aws_iam_user_policy_attachment" "terraform" {
+  #checkov:skip=CKV_AWS_40: Bootstrap policy attached directly to the automation user.
   user       = aws_iam_user.terraform.name
   policy_arn = aws_iam_policy.terraform.arn
 }

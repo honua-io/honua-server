@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Honua — Cloud-native geospatial APIs</title>
+    <title>cloud native gis server</title>
     <meta
       name="description"
-      content="Honua is a modern GIS server with Esri compatibility and open standards built for cloud-native deployments."
+      content="Honua is a modern GIS server and ArcGIS Server alternative with Esri compatibility and open standards built for cloud-native deployments."
     />
-    <meta property="og:title" content="Honua — High-Performance, Cloud-Native GIS Server" />
+    <meta property="og:title" content="cloud native gis server" />
     <meta
       property="og:description"
       content="Source-available GIS server compatible with Esri clients and modern open standards."
@@ -23,7 +23,7 @@
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Honua — High-Performance, Cloud-Native GIS Server" />
+    <meta name="twitter:title" content="cloud native gis server" />
     <meta
       name="twitter:description"
       content="Source-available GIS server compatible with Esri clients and modern open standards."
@@ -54,7 +54,7 @@
 
         <div class="hero-content">
             <p class="eyebrow">Modern GIS infrastructure</p>
-            <h1>The High-Performance, Cloud-Native GIS Server</h1>
+            <h1>High-Performance Cloud-Native GIS Server</h1>
           <p class="subhead">
             Source-available alternative to ArcGIS Server and GeoServer. Use existing Esri clients
             (ArcGIS Pro, SDKs) and modern open standards (OGC API, GeoServices REST, MVT) on a
@@ -101,7 +101,7 @@
               </div>
             </div>
             <div class="card">
-              <h3>Business & analytics</h3>
+              <h3>Business &amp; analytics</h3>
               <p>
                 Edit in Excel and use the same data in BI tools like Power BI and Tableau.
               </p>
@@ -113,7 +113,7 @@
               </div>
             </div>
             <div class="card">
-              <h3>Ops & platform</h3>
+              <h3>Ops &amp; platform</h3>
               <p>
                 Modern DevOps and observability with container-first deployment options, IaC
                 templates, and predictable upgrades.
@@ -182,47 +182,48 @@
           </div>
           <div class="table-wrap">
             <table class="comparison-table">
+              <caption>Architecture comparison across Honua, GeoServer, and ArcGIS Server.</caption>
               <thead>
                 <tr>
-                  <th></th>
-                  <th>Honua (Cloud-Native)</th>
-                  <th>GeoServer (Legacy OSS)</th>
-                  <th>ArcGIS Server (Legacy Ent)</th>
+                  <th scope="col">Metric</th>
+                  <th scope="col">Honua (Cloud-Native)</th>
+                  <th scope="col">GeoServer (Legacy OSS)</th>
+                  <th scope="col">ArcGIS Server (Legacy Ent)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>Disk / Image Size</strong></td>
+                  <th scope="row"><strong>Disk / Image Size</strong></th>
                   <td><strong>~80 MB</strong> (Docker Image)</td>
                   <td>~500 MB (Docker/WAR)</td>
                   <td><strong>10 GB+</strong> (Install on Disk)</td>
                 </tr>
                 <tr>
-                  <td><strong>Min. Memory</strong></td>
+                  <th scope="row"><strong>Min. Memory</strong></th>
                   <td><strong>&lt; 100 MB</strong> RAM</td>
                   <td>2 GB+ RAM</td>
                   <td>8 GB+ System Req.</td>
                 </tr>
                 <tr>
-                  <td><strong>Startup Time</strong></td>
+                  <th scope="row"><strong>Startup Time</strong></th>
                   <td><strong>&lt; 0.5s</strong> (Instant)</td>
                   <td>10–40s</td>
                   <td>5–10 Minutes</td>
                 </tr>
                 <tr>
-                  <td><strong>Architecture</strong></td>
+                  <th scope="row"><strong>Architecture</strong></th>
                   <td><strong>AOT Compiled</strong></td>
                   <td>JVM Monolith</td>
                   <td>Enterprise Monolith</td>
                 </tr>
                 <tr>
-                  <td><strong>Scaling</strong></td>
+                  <th scope="row"><strong>Scaling</strong></th>
                   <td><strong>Scale-to-Zero</strong></td>
                   <td>Clustering</td>
                   <td>Federated Sites</td>
                 </tr>
                 <tr>
-                  <td><strong>Licensing</strong></td>
+                  <th scope="row"><strong>Licensing</strong></th>
                   <td>
                     <a
                       class="inline-link"
@@ -347,7 +348,7 @@
 
         <section class="section feedback">
           <div class="section-header">
-            <h2>Project Status & Roadmap</h2>
+            <h2>Project Status &amp; Roadmap</h2>
             <p>Honua is currently in MVP with support for PostGIS and vector features.</p>
             <p>We are community-driven — tell us the workflows you need most.</p>
           </div>
@@ -357,7 +358,7 @@
               href="https://github.com/honua-io/honua-server/discussions/296"
               target="_blank"
               rel="noopener noreferrer"
-              >View & Influence Roadmap</a
+              >View &amp; Influence Roadmap</a
             >
             <a
               class="btn secondary"
@@ -377,19 +378,8 @@
           <p>Cloud-native geospatial APIs with open standards and low lock-in.</p>
         </div>
         <div>
-          <p>Contact & feedback</p>
-          <a
-            href="https://github.com/honua-io/honua-server/issues/new/choose"
-            target="_blank"
-            rel="noopener noreferrer"
-            >Open an issue</a
-          >
-          <a
-            href="https://github.com/honua-io/honua-server/discussions/296"
-            target="_blank"
-            rel="noopener noreferrer"
-            >Join discussions</a
-          >
+          <p>Contact &amp; feedback</p>
+          <a href="mailto:mike@honua.io">mike@honua.io</a>
         </div>
       </footer>
     </div>

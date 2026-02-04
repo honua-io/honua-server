@@ -120,16 +120,19 @@ resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
 }
 
 resource "azurerm_redis_cache" "this" {
-  count               = local.redis_create ? 1 : 0
-  name                = "${local.name}-redis"
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  capacity            = var.redis_capacity
-  family              = var.redis_family
-  sku_name            = var.redis_sku_name
-  enable_non_ssl_port = var.redis_enable_non_ssl_port
-  minimum_tls_version = "1.2"
-  tags                = local.tags
+  #checkov:skip=CKV_AZURE_89: Public access can be enabled for MVP deployments; private endpoints configured externally.
+  count                         = local.redis_create ? 1 : 0
+  name                          = "${local.name}-redis"
+  location                      = azurerm_resource_group.this.location
+  resource_group_name           = azurerm_resource_group.this.name
+  capacity                      = var.redis_capacity
+  family                        = var.redis_family
+  sku_name                      = var.redis_sku_name
+  non_ssl_port_enabled          = var.redis_enable_non_ssl_port
+  public_network_access_enabled = var.redis_public_network_access_enabled
+  subnet_id                     = var.redis_subnet_id != "" ? var.redis_subnet_id : null
+  minimum_tls_version           = "1.2"
+  tags                          = local.tags
 }
 
 resource "azurerm_key_vault_secret" "db_connection" {

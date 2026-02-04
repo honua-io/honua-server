@@ -20,7 +20,8 @@ locals {
   http_ingress_cidrs  = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
   redis_enabled       = var.redis_enabled || var.redis_connection_string != ""
   redis_create        = var.redis_enabled && var.redis_connection_string == ""
-  redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port}" : "")
+  redis_auth_token    = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
+  redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -193,23 +194,32 @@ resource "aws_elasticache_subnet_group" "redis" {
 }
 
 resource "aws_elasticache_replication_group" "redis" {
-  count                        = local.redis_create ? 1 : 0
-  replication_group_id         = "${local.name}-redis"
-  description                  = "Honua Redis"
-  node_type                    = var.redis_node_type
-  engine                       = "redis"
-  engine_version               = var.redis_engine_version
-  port                         = var.redis_port
-  parameter_group_name         = var.redis_parameter_group_name
-  automatic_failover_enabled   = var.redis_num_cache_clusters > 1
-  multi_az_enabled             = var.redis_num_cache_clusters > 1
-  num_cache_clusters           = var.redis_num_cache_clusters
-  subnet_group_name            = aws_elasticache_subnet_group.redis[0].name
-  security_group_ids           = [aws_security_group.redis[0].id]
-  at_rest_encryption_enabled   = false
-  transit_encryption_enabled   = false
-  apply_immediately            = true
-  tags                         = local.tags
+  count                      = local.redis_create ? 1 : 0
+  replication_group_id       = "${local.name}-redis"
+  description                = "Honua Redis"
+  node_type                  = var.redis_node_type
+  engine                     = "redis"
+  engine_version             = var.redis_engine_version
+  port                       = var.redis_port
+  parameter_group_name       = var.redis_parameter_group_name
+  automatic_failover_enabled = true
+  multi_az_enabled           = true
+  num_cache_clusters         = var.redis_num_cache_clusters
+  subnet_group_name          = aws_elasticache_subnet_group.redis[0].name
+  security_group_ids         = [aws_security_group.redis[0].id]
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+  auth_token                 = local.redis_auth_token
+  kms_key_id                 = local.kms_key_arn
+  apply_immediately          = true
+  tags                       = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = var.redis_num_cache_clusters >= 2
+      error_message = "redis_num_cache_clusters must be >= 2 when provisioning Redis with multi-AZ failover."
+    }
+  }
 }
 
 #checkov:skip=CKV2_AWS_28: WAF association is optional via waf_web_acl_arn.
@@ -484,6 +494,12 @@ resource "random_password" "db" {
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?."
+}
+
+resource "random_password" "redis_auth" {
+  count   = local.redis_create && var.redis_auth_token == "" ? 1 : 0
+  length  = 32
+  special = false
 }
 
 resource "random_id" "alb_logs_suffix" {

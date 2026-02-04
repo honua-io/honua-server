@@ -234,6 +234,13 @@ variable "redis_connection_string" {
   sensitive   = true
 }
 
+variable "redis_auth_token" {
+  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "redis_enabled" {
   description = "Provision Redis (ElastiCache) for multi-node mode."
   type        = bool
@@ -261,7 +268,7 @@ variable "redis_parameter_group_name" {
 variable "redis_num_cache_clusters" {
   description = "Number of cache clusters in the replication group."
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "redis_port" {
