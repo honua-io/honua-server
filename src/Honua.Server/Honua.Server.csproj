@@ -27,7 +27,7 @@
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Admin\Honua.Admin.csproj"
-                      Condition="'$(RuntimeIdentifier)' == ''" />
+                      Condition="'$(RuntimeIdentifier)' == '' Or '$(HonuaIncludeAdminUi)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>

@@ -26,3 +26,7 @@ Configure these repository secrets for Docker Hub publishing:
 docker pull honuaio/honua-server:latest
 docker pull honuaio/honua-server:v1.2.3
 ```
+
+## Slim Build Notes
+- Default Docker builds now omit the Admin UI static assets for a smaller image.
+- To keep the Admin UI bundled, build with `--build-arg HONUA_INCLUDE_ADMIN_UI=true`.

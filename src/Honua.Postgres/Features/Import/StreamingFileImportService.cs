@@ -2071,7 +2071,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         string tableName,
         CancellationToken cancellationToken)
     {
-        var sql = $"ANALYZE {tableName}";
+        var sql = $"ANALYZE {QuoteIdentifier(tableName)}";
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

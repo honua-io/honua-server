@@ -45,9 +45,13 @@ RUN case "${TARGETARCH:-amd64}" in \
       --self-contained true \
       --output /app \
       -p:PublishAot=true \
+      -p:DebugType=None \
+      -p:DebugSymbols=false \
       -p:StripSymbols=true \
       -p:OptimizationPreference=Speed \
-      -p:IlcOptimizationPreference=Speed
+      -p:IlcOptimizationPreference=Speed && \
+    rm -rf /app/BlazorDebugProxy /app/wwwroot && \
+    find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage - distroless-style minimal image for maximum security
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
@@ -101,7 +105,8 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:8080 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    DOTNET_EnableDiagnostics=0
+    DOTNET_EnableDiagnostics=0 \
+    HONUA_SERVE_ADMIN_UI=false
 
 # Security: Enhanced health check with timeout and authentication bypass
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

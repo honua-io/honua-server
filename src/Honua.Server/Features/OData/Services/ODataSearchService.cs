@@ -90,11 +90,11 @@ internal sealed partial class ODataSearchService
 
         // Build a text search query using PostgreSQL full-text search
         var searchTerms = ParseSearchExpression(searchExpression);
-        var textSearchCondition = BuildTextSearchCondition(searchTerms, layer);
+        var textSearchFilter = BuildTextSearchCondition(searchTerms, layer);
 
         var query = new FeatureQuery
         {
-            SqlFilter = new SqlFragment(textSearchCondition, Array.Empty<object?>()),
+            SqlFilter = textSearchFilter,
             Limit = top ?? 1000,
             Offset = skip
         };
@@ -280,16 +280,16 @@ internal sealed partial class ODataSearchService
     }
 
     /// <summary>
-    /// Builds a PostgreSQL text search condition from parsed search terms.
-    /// Uses ILIKE for case-insensitive pattern matching across text fields.
+    /// Builds a parameterized PostgreSQL text search condition from parsed search terms.
+    /// Uses ILIKE with an explicit ESCAPE clause for safe pattern matching across text fields.
     /// </summary>
-    private static string BuildTextSearchCondition(
+    private static SqlFragment BuildTextSearchCondition(
         List<List<(string term, bool isNegated, bool isPhrase)>> terms,
         LayerDefinition layer)
     {
         if (terms.Count == 0)
         {
-            return "1=1"; // No search terms, match all
+            return new SqlFragment("1=1", Array.Empty<object?>()); // No search terms, match all
         }
 
         // Get text-searchable fields from the layer
@@ -300,10 +300,12 @@ internal sealed partial class ODataSearchService
 
         if (textFields.Count == 0)
         {
-            return "1=0"; // No text fields to search
+            return new SqlFragment("1=0", Array.Empty<object?>()); // No text fields to search
         }
 
         var groupConditions = new List<string>();
+        var parameters = new List<object?>();
+        var paramIndex = 0;
 
         foreach (var group in terms)
         {
@@ -316,17 +318,16 @@ internal sealed partial class ODataSearchService
 
             foreach (var (term, isNegated, isPhrase) in group)
             {
-                // Escape the term for SQL ILIKE
-                var escapedTerm = term
-                    .Replace("'", "''")
-                    .Replace("%", "\\%")
-                    .Replace("_", "\\_");
+                var escapedTerm = EscapeLikeTerm(term);
+                var likePattern = $"%{escapedTerm}%";
+                var termParameter = $"@p{paramIndex++}";
+                parameters.Add(likePattern);
 
                 var fieldConditions = textFields
                     .Select(f =>
                     {
                         var escapedField = f.Replace("'", "''", StringComparison.Ordinal);
-                        return $"COALESCE(attributes->>'{escapedField}', '') ILIKE '%{escapedTerm}%'";
+                        return $"COALESCE(attributes->>'{escapedField}', '') ILIKE {termParameter} ESCAPE '\\\\'";
                     })
                     .ToList();
 
@@ -354,10 +355,18 @@ internal sealed partial class ODataSearchService
 
         if (groupConditions.Count == 0)
         {
-            return "1=1";
+            return new SqlFragment("1=1", parameters);
         }
 
-        return string.Join(" OR ", groupConditions);
+        return new SqlFragment(string.Join(" OR ", groupConditions), parameters);
+    }
+
+    private static string EscapeLikeTerm(string term)
+    {
+        return term
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
     }
 
     /// <summary>

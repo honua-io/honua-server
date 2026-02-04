@@ -26,10 +26,28 @@ COPY . .
 
 # Build application (disable AOT for default image)
 ARG CONFIGURATION=Release
-RUN dotnet publish src/Honua.Server/Honua.Server.csproj \
-    --configuration "$CONFIGURATION" \
-    --output /app \
-    -p:PublishAot=false
+ARG TARGETARCH
+# Slim by default: set HONUA_INCLUDE_ADMIN_UI=true to keep Admin UI static assets.
+ARG HONUA_INCLUDE_ADMIN_UI=false
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) RUNTIME_ID="linux-musl-x64" ;; \
+        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    EXTRA_MSBUILD_ARGS="" && \
+    if [ "$HONUA_INCLUDE_ADMIN_UI" = "true" ]; then EXTRA_MSBUILD_ARGS="-p:HonuaIncludeAdminUi=true"; fi && \
+    dotnet publish src/Honua.Server/Honua.Server.csproj \
+      --configuration "$CONFIGURATION" \
+      --runtime "$RUNTIME_ID" \
+      --self-contained false \
+      --output /app \
+      -p:PublishAot=false \
+      -p:DebugType=None \
+      -p:DebugSymbols=false \
+      $EXTRA_MSBUILD_ARGS && \
+    rm -rf /app/BlazorDebugProxy && \
+    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot; fi && \
+    find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
@@ -75,11 +93,13 @@ LABEL security.non-root="true" \
       org.opencontainers.image.licenses="Elastic-2.0"
 
 # Runtime configuration
+ARG HONUA_INCLUDE_ADMIN_UI=false
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:8080 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    DOTNET_EnableDiagnostics=0
+    DOTNET_EnableDiagnostics=0 \
+    HONUA_SERVE_ADMIN_UI=${HONUA_INCLUDE_ADMIN_UI}
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
