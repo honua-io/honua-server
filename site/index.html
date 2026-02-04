@@ -140,7 +140,7 @@
               <div>
                 <h3>Deploy Honua</h3>
                 <p>
-                  Pull the ~80MB image. Run it anywhere Docker runs (Lambda, Kubernetes, Fargate).
+                  Pull the ~41MB AOT image. Run it anywhere Docker runs (Lambda, Kubernetes, Fargate).
                   No installation wizard required.
                 </p>
               </div>
@@ -194,21 +194,21 @@
               <tbody>
                 <tr>
                   <th scope="row"><strong>Disk / Image Size</strong></th>
-                  <td><strong>~80 MB</strong> (Docker Image)</td>
-                  <td>~500 MB (Docker/WAR)</td>
+                  <td><strong>~41 MB</strong> (AOT Docker Image)</td>
+                  <td>Official Docker image (OSGeo registry; size varies by tag)</td>
                   <td><strong>10 GB+</strong> (Install on Disk)</td>
                 </tr>
                 <tr>
                   <th scope="row"><strong>Min. Memory</strong></th>
-                  <td><strong>&lt; 100 MB</strong> RAM</td>
-                  <td>2 GB+ RAM</td>
+                  <td><strong>~90 MB</strong> RAM (Idle, AOT)</td>
+                  <td>Varies; JVM heap tuned (example configs use &lt; 1 GB)</td>
                   <td>8 GB+ System Req.</td>
                 </tr>
                 <tr>
                   <th scope="row"><strong>Startup Time</strong></th>
-                  <td><strong>&lt; 0.5s</strong> (Instant)</td>
-                  <td>10–40s</td>
-                  <td>5–10 Minutes</td>
+                  <td>Fast cold start (AOT)</td>
+                  <td>Varies by data/config</td>
+                  <td>Varies by deployment</td>
                 </tr>
                 <tr>
                   <th scope="row"><strong>Architecture</strong></th>
