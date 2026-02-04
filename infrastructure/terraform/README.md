@@ -10,6 +10,12 @@ This directory contains infrastructure modules and examples for Honua Server.
 - `examples/aws`
 - `examples/azure`
 
+## Bootstrap service accounts (least privilege)
+- `bootstrap/aws-ecs` – IAM user + policy for ECS/Fargate deployments
+- `bootstrap/aws-serverless` – IAM user + policy for Lambda/API Gateway deployments
+- `bootstrap/azure-aca` – Azure AD service principal + custom role for Container Apps
+- `bootstrap/azure-functions` – Azure AD service principal + custom role for Functions
+
 ## Quick validation
 
 ```bash
