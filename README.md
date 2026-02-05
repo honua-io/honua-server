@@ -21,7 +21,7 @@ Protocols:
 - **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
 - **Vector Tiles (MVT)** — PostGIS-native tile generation.
 
-Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`. Admin UI is in progress; see `docs/ROADMAP.md` for what comes next.
+Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`, including serverless options (Lambda + Functions). Admin UI is in progress; see `docs/ROADMAP.md` for what comes next.
 
 ## Status
 
@@ -147,6 +147,7 @@ See `docs/adr/0008-env-var-configuration.md` for complete environment variable r
 - **[API Examples](docs/API_EXAMPLES.md)** - Comprehensive examples for all supported protocols (GeoServices REST, OGC API Features, OData v4, MVT)
 - **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
 - **[Architecture Documentation](docs/ARCHITECTURE.md)** - System design and architectural decisions
+- **[Infrastructure Deployments](infrastructure/README.md)** - Getting started guide for Docker, Helm, and Terraform options
 - **[ADR Index](docs/adr/README.md)** - Architecture Decision Records with complete rationale
 - **[Performance Testing](docs/performance-testing.md)** - Performance benchmarks and optimization guidance
 

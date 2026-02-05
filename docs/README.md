@@ -19,6 +19,7 @@ New to Honua Server? Start here:
 ### 🛠️ Developer Resources
 - **[Getting Started](development/getting-started.md)** - Development environment setup
 - **[Admin UI Setup](ADMIN_UI.md)** - Hosting and configuration for the Blazor admin app
+- **[Serverless Deployments](serverless-deployments.md)** - AWS Lambda + Azure Functions templates
 - **[Contributing Guide](development/contributing.md)** - How to contribute to the project
 - **[Testing Excellence Guide](TESTING_EXCELLENCE_GUIDE.md)** - Testing strategy and best practices
 - **[Pre-PR Checklist](PRE_PR_CHECKLIST.md)** - Code review preparation

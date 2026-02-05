@@ -5,10 +5,14 @@ This directory contains infrastructure modules and examples for Honua Server.
 ## Modules
 - `modules/aws-ecs` – ECS/Fargate + RDS + ALB
 - `modules/azure-aca` – Azure Container Apps + PostgreSQL Flexible Server + Key Vault
+- `modules/aws-serverless` – Lambda + API Gateway + RDS
+- `modules/azure-functions` – Azure Functions + PostgreSQL Flexible Server
 
 ## Examples
 - `examples/aws`
 - `examples/azure`
+- `examples/aws-serverless`
+- `examples/azure-functions`
 
 ## Bootstrap service accounts (least privilege)
 - `bootstrap/aws-ecs` – IAM user + policy for ECS/Fargate deployments
@@ -28,6 +32,12 @@ terraform -chdir=infrastructure/terraform/examples/aws validate
 
 terraform -chdir=infrastructure/terraform/examples/azure init
 terraform -chdir=infrastructure/terraform/examples/azure validate
+
+terraform -chdir=infrastructure/terraform/examples/aws-serverless init
+terraform -chdir=infrastructure/terraform/examples/aws-serverless validate
+
+terraform -chdir=infrastructure/terraform/examples/azure-functions init
+terraform -chdir=infrastructure/terraform/examples/azure-functions validate
 
 checkov -d infrastructure/terraform/modules --download-external-modules true --compact
 ```
