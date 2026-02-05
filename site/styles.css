@@ -532,6 +532,20 @@ code {
     padding: 24px 18px 64px;
   }
 
+  .logo {
+    gap: 10px;
+  }
+
+  .logo img {
+    width: 72px;
+    height: 72px;
+  }
+
+  .logo-sub {
+    font-size: 2rem;
+    letter-spacing: 0.14em;
+  }
+
   .cta-row {
     flex-direction: column;
     align-items: stretch;
