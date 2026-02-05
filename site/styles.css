@@ -91,11 +91,12 @@ a:hover {
 }
 
 .logo-sub {
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
+  font-size: 1.6rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink);
   font-family: var(--font-body);
+  font-weight: 700;
 }
 
 .nav-links {
