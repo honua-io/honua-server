@@ -224,6 +224,14 @@ h1 {
   color: var(--muted);
 }
 
+.meta-label {
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.7rem;
+}
+
 .hero-panel {
   display: grid;
   gap: 16px;
