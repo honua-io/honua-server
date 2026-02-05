@@ -59,8 +59,8 @@ a:hover {
 }
 
 .logo img {
-  width: 112px;
-  height: 112px;
+  width: 140px;
+  height: 140px;
   object-fit: contain;
 }
 
@@ -441,5 +441,10 @@ h1 {
   .nav {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .logo img {
+    width: 100px;
+    height: 100px;
   }
 }
