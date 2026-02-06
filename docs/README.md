@@ -5,7 +5,6 @@ This directory contains comprehensive documentation for the Honua Server geospat
 ## 📋 Quick Start
 
 New to Honua Server? Start here:
-- **[API Examples](API_EXAMPLES.md)** - Sample API requests and responses
 - **[Architecture Overview](ARCHITECTURE.md)** - High-level system design
 
 ## 📚 Documentation Categories
