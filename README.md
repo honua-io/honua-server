@@ -7,9 +7,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-Cloud Native GIS Server. Modern GIS Infrastructure for the Cloud Era.
-
-Honua Server is a cloud-native, open GIS server designed for interoperability, performance, and long-term flexibility.
+Honua Server is a modern, cloud-native, open GIS server designed for interoperability, performance, and long-term flexibility.
 
 Modern GIS infrastructure for the cloud era:
 - **Modernize without rip-and-replace** — import existing services, keep legacy clients running, and move to open standards incrementally.
