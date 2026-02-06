@@ -144,12 +144,19 @@ See `docs/adr/0008-env-var-configuration.md` for complete environment variable r
 
 ## Documentation
 
+User documentation:
 - **[API Examples](docs/API_EXAMPLES.md)** - Comprehensive examples for all supported protocols (GeoServices REST, OGC API Features, OData v4, MVT)
-- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
+- **[Protocol Coverage Index](docs/specifications/protocol-coverage.md)** - Coverage status across supported standards
+
+Developer documentation:
+- **[Getting Started](docs/development/getting-started.md)** - Development environment setup
 - **[Architecture Documentation](docs/ARCHITECTURE.md)** - System design and architectural decisions
-- **[Infrastructure Deployments](infrastructure/README.md)** - Getting started guide for Docker, Helm, and Terraform options
 - **[ADR Index](docs/adr/README.md)** - Architecture Decision Records with complete rationale
-- **[Performance Testing](docs/performance-testing.md)** - Performance benchmarks and optimization guidance
+
+DevOps documentation:
+- **[Infrastructure Deployments](infrastructure/README.md)** - Docker, Helm, and Terraform options
+- **[Operational Excellence](docs/OPERATIONAL_EXCELLENCE.md)** - Production best practices
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
 
 ## Roadmap
 

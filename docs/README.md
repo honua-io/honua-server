@@ -11,91 +11,84 @@ New to Honua Server? Start here:
 
 ## 📚 Documentation Categories
 
-### 🏗️ Architecture Documentation
-- **[Architecture Decision Records (ADRs)](adr/)** - Key architectural decisions and rationale
-- **[Architecture Overview](ARCHITECTURE.md)** - System design and component interaction
-- **[MVP Plan](MVP_PLAN.md)** - Development phases and roadmap
-
-### 🛠️ Developer Resources
-- **[Getting Started](development/getting-started.md)** - Development environment setup
-- **[Admin UI Setup](ADMIN_UI.md)** - Hosting and configuration for the Blazor admin app
-- **[Serverless Deployments](serverless-deployments.md)** - AWS Lambda + Azure Functions templates
-- **[Contributing Guide](development/contributing.md)** - How to contribute to the project
-- **[Testing Excellence Guide](TESTING_EXCELLENCE_GUIDE.md)** - Testing strategy and best practices
-- **[Pre-PR Checklist](PRE_PR_CHECKLIST.md)** - Code review preparation
-
-### 🚨 Troubleshooting Guides
-- **[Database Connection Issues](troubleshooting/database-connection-issues.md)** - PostgreSQL and PostGIS problems
-- **[Performance Troubleshooting](troubleshooting/performance-troubleshooting.md)** - Query optimization and monitoring
-- **[Authentication Problems](troubleshooting/authentication-problems.md)** - API keys and OIDC configuration
-- **[Import Process Issues](troubleshooting/import-process-issues.md)** - File format and validation problems
-- **[Spatial Query Problems](troubleshooting/spatial-query-problems.md)** - CRS issues and geometry validation
-- **[General Troubleshooting](TROUBLESHOOTING.md)** - Common operational issues
-
-### 🎯 Operational Excellence
-- **[Performance Monitoring](performance-monitoring.md)** - Monitoring setup and metrics
-- **[Caching Strategy](CACHING_STRATEGY.md)** - Redis and in-memory caching
-- **[Container Images](CONTAINER_IMAGES.md)** - Publishing, tags, and registry usage
-- **[Backup and Restore](backup-restore.md)** - Recovery procedures and RTO/RPO targets
-- **[Zero-Downtime Migrations](zero-downtime-migrations.md)** - Safe schema evolution strategy
-- **[Credential Rotation](credential-rotation.md)** - Rotation procedures for secrets and keys
-- **[Operational Excellence](OPERATIONAL_EXCELLENCE.md)** - Production best practices
-- **[Docker Compose Sample](../infrastructure/docker-compose/README.md)** - Local Docker Compose stack (PostGIS + Redis + Honua Server)
-
-### 🧪 Testing and Quality
-- **[Test Kit Documentation](../tests/Honua.TestKit/README.md)** - Shared testing infrastructure
-- **[OData Test Parity](ODATA_TEST_PARITY.md)** - Protocol testing coverage
-- **[CITE Conformance Testing](cite-conformance-testing.md)** - Standards compliance testing
-
-### 📊 Performance and Optimization
-- **[Performance Testing](performance-testing.md)** - Load testing and benchmarking
-- **[Memory Optimizations](MEMORY_OPTIMIZATIONS_REPORT.md)** - Memory usage optimization
-- **[Query Optimization](query-optimization.md)** - Database performance tuning
-- **[Connection Pool Sizing](connection-pool-sizing.md)** - Database connection optimization
-
-### 🔒 Security
-- **[Container Security](CONTAINER_SECURITY.md)** - Docker security best practices
-- **[CSP Enhancement](CSP_ENHANCEMENT.md)** - Content Security Policy configuration
-- **[Authorization Matrix](AUTHORIZATION_MATRIX.md)** - Endpoint access requirements
-- **[Security Configuration](SECURITY_CONFIGURATION.md)** - Secrets, OIDC hardening, and proxy settings
-
-### 📖 API Documentation
+### 👥 User Documentation
 - **[API Examples](API_EXAMPLES.md)** - Sample requests for all protocols
 - **[Model Optimization Guide](MODEL_OPTIMIZATION_GUIDE.md)** - Data model best practices
-
-### Protocol Specification Coverage
 - **[Coverage Index](specifications/protocol-coverage.md)** - Entry point for protocol coverage docs
 - **[OGC API Features Coverage](specifications/ogc-api-features-coverage.md)** - Operations and query parameter support
 - **[OData v4 Coverage](specifications/odata-v4-coverage.md)** - Operations and OData query option support
 - **[GeoServices FeatureServer Coverage](feature-server-matrix.md)** - FeatureServer operations and parameter support
 
+### 🧑‍💻 Developer Documentation
+Architecture Documentation:
+- **[Architecture Decision Records (ADRs)](adr/)** - Key architectural decisions and rationale
+- **[Architecture Overview](ARCHITECTURE.md)** - System design and component interaction
+- **[MVP Plan](MVP_PLAN.md)** - Development phases and roadmap
+
+Developer Resources:
+- **[Getting Started](development/getting-started.md)** - Development environment setup
+- **[Contributing Guide](development/contributing.md)** - How to contribute to the project
+- **[Admin UI Setup](ADMIN_UI.md)** - Hosting and configuration for the Blazor admin app
+- **[Pre-PR Checklist](PRE_PR_CHECKLIST.md)** - Code review preparation
+
+Testing and Quality:
+- **[Testing Excellence Guide](TESTING_EXCELLENCE_GUIDE.md)** - Testing strategy and best practices
+- **[Test Kit Documentation](../tests/Honua.TestKit/README.md)** - Shared testing infrastructure
+- **[OData Test Parity](ODATA_TEST_PARITY.md)** - Protocol testing coverage
+- **[CITE Conformance Testing](cite-conformance-testing.md)** - Standards compliance testing
+
+### 🛠️ DevOps Documentation
+Deployments and Operations:
+- **[Infrastructure Deployments](../infrastructure/README.md)** - Docker, Helm, and Terraform options
+- **[Serverless Deployments](serverless-deployments.md)** - AWS Lambda + Azure Functions templates
+- **[Docker Compose Sample](../infrastructure/docker-compose/README.md)** - Local Docker Compose stack (PostGIS + Redis + Honua Server)
+- **[Container Images](CONTAINER_IMAGES.md)** - Publishing, tags, and registry usage
+- **[Operational Excellence](OPERATIONAL_EXCELLENCE.md)** - Production best practices
+- **[Runbooks](runbooks/README.md)** - Operational playbooks and response steps
+
+Performance and Reliability:
+- **[Performance Monitoring](performance-monitoring.md)** - Monitoring setup and metrics
+- **[Performance Testing](performance-testing.md)** - Load testing and benchmarking
+- **[Caching Strategy](CACHING_STRATEGY.md)** - Redis and in-memory caching
+- **[Memory Optimizations](MEMORY_OPTIMIZATIONS_REPORT.md)** - Memory usage optimization
+- **[Query Optimization](query-optimization.md)** - Database performance tuning
+- **[Connection Pool Sizing](connection-pool-sizing.md)** - Database connection optimization
+
+Security:
+- **[Security Configuration](SECURITY_CONFIGURATION.md)** - Secrets, OIDC hardening, and proxy settings
+- **[Container Security](CONTAINER_SECURITY.md)** - Docker security best practices
+- **[CSP Enhancement](CSP_ENHANCEMENT.md)** - Content Security Policy configuration
+- **[Authorization Matrix](AUTHORIZATION_MATRIX.md)** - Endpoint access requirements
+- **[Credential Rotation](credential-rotation.md)** - Rotation procedures for secrets and keys
+- **[Backup and Restore](backup-restore.md)** - Recovery procedures and RTO/RPO targets
+- **[Zero-Downtime Migrations](zero-downtime-migrations.md)** - Safe schema evolution strategy
+
+Troubleshooting:
+- **[General Troubleshooting](TROUBLESHOOTING.md)** - Common operational issues
+- **[Database Connection Issues](troubleshooting/database-connection-issues.md)** - PostgreSQL and PostGIS problems
+- **[Performance Troubleshooting](troubleshooting/performance-troubleshooting.md)** - Query optimization and monitoring
+- **[Authentication Problems](troubleshooting/authentication-problems.md)** - API keys and OIDC configuration
+- **[Import Process Issues](troubleshooting/import-process-issues.md)** - File format and validation problems
+- **[Spatial Query Problems](troubleshooting/spatial-query-problems.md)** - CRS issues and geometry validation
+
 ## 🎯 By Role
 
-### For New Developers
-1. [Getting Started Guide](development/getting-started.md)
-2. [Architecture Overview](ARCHITECTURE.md)
-3. [Contributing Guide](development/contributing.md)
-4. [API Examples](API_EXAMPLES.md)
+### For Users
+- [API Examples](API_EXAMPLES.md)
+- [Model Optimization Guide](MODEL_OPTIMIZATION_GUIDE.md)
+- [Protocol Coverage Index](specifications/protocol-coverage.md)
 
-### For Operations Teams
-1. [Performance Monitoring](performance-monitoring.md)
-2. [Troubleshooting Guides](troubleshooting/)
-3. [Operational Excellence](OPERATIONAL_EXCELLENCE.md)
-4. [Backup and Restore](backup-restore.md)
-5. [Zero-Downtime Migrations](zero-downtime-migrations.md)
-6. [Credential Rotation](credential-rotation.md)
+### For Developers
+- [Getting Started Guide](development/getting-started.md)
+- [Architecture Overview](ARCHITECTURE.md)
+- [Contributing Guide](development/contributing.md)
+- [Testing Excellence Guide](TESTING_EXCELLENCE_GUIDE.md)
 
-### For System Architects
-1. [Architecture Decision Records](adr/)
-2. [Clean Architecture Implementation](adr/0012-clean-architecture-implementation.md)
-3. [Performance Optimization Strategies](adr/0016-performance-optimization-strategies.md)
-4. [Caching Strategy](CACHING_STRATEGY.md)
-
-### For QA Engineers
-1. [Testing Excellence Guide](TESTING_EXCELLENCE_GUIDE.md)
-2. [CITE Conformance Testing](cite-conformance-testing.md)
-3. [Performance Testing](performance-testing.md)
-4. [Test Kit Documentation](../tests/Honua.TestKit/README.md)
+### For DevOps / Operations
+- [Infrastructure Deployments](../infrastructure/README.md)
+- [Performance Monitoring](performance-monitoring.md)
+- [Operational Excellence](OPERATIONAL_EXCELLENCE.md)
+- [General Troubleshooting](TROUBLESHOOTING.md)
 
 ## 📋 Quick Reference
 
