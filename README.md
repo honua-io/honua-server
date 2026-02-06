@@ -1,14 +1,15 @@
 # Honua Server
 
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/honua-io/honua-server/branch/trunk/graph/badge.svg)](https://codecov.io/gh/honua-io/honua-server)
 [![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
 [![License](https://img.shields.io/badge/License-Elastic_License_2.0-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-Honua Server is a cloud-native, PostGIS-native GIS API server that publishes a single Postgres/PostGIS database through modern, open standards — no ETL, no proprietary stacks.
+Cloud Native GIS Server. Modern GIS Infrastructure for the Cloud Era.
+
+Honua Server is a cloud-native, open GIS server designed for interoperability, performance, and long-term flexibility.
 
 Modern GIS infrastructure for the cloud era:
 - **Modernize without rip-and-replace** — import existing services, keep legacy clients running, and move to open standards incrementally.
