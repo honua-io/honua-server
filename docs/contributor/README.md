@@ -17,6 +17,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 ## Testing and quality
 - `TESTING_EXCELLENCE_GUIDE.md`
+- `CI_QUALITY_GATES.md`
 - `ODATA_TEST_PARITY.md`
 - `cite-conformance-testing.md`
 - `cite-tiles-conformance-testing.md`

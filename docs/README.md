@@ -33,6 +33,7 @@ Contributor Resources:
 
 Testing and Quality:
 - **[Testing Excellence Guide](contributor/TESTING_EXCELLENCE_GUIDE.md)** - Testing strategy and best practices
+- **[CI and Quality Gates](contributor/CI_QUALITY_GATES.md)** - CI workflows and contributor gates
 - **[Test Kit Documentation](../tests/Honua.TestKit/README.md)** - Shared testing infrastructure
 - **[OData Test Parity](contributor/ODATA_TEST_PARITY.md)** - Protocol testing coverage
 - **[CITE Conformance Testing](contributor/cite-conformance-testing.md)** - Standards compliance testing

@@ -2,19 +2,13 @@
 
 This document summarizes the operational tooling that exists in this repository today. It focuses on what is implemented, not future plans.
 
-## CI and Quality Gates
+## Release and Image Automation
 
-- `ci.yml`: build, format check, and full test suite (dotnet + python + js) on push/PR.
-- `pr-validation.yml`: fast validation for PRs.
-- `codeql.yml`: CodeQL static analysis.
-- `container-security.yml`: Hadolint, Trivy, container structure tests, and runtime security checks.
-- `security-nightly.yml` / `trivy-nightly.yml`: scheduled vulnerability scans.
-- `performance.yml`, `performance-benchmarks.yml`, `load-soak-nightly.yml`: performance and soak tests.
-- `cite-conformance.yml`, `cite-tiles-conformance.yml`: OGC conformance testing.
-- `nightly-container-build.yml`: nightly container image builds.
-- `deploy.yml`: build and publish container images only (no environment deployment).
+- `deploy.yml`: build and publish container images (no environment deployment).
+- `nightly-container-build.yml`: nightly image builds.
+- `container-security.yml`, `security-nightly.yml`, `trivy-nightly.yml`: container and vulnerability scanning.
 
-Builds are configured to treat warnings as errors (`TreatWarningsAsErrors=true`) and verify formatting with `dotnet format`.
+Contributor-focused CI and quality gates are documented separately in `docs/contributor/CI_QUALITY_GATES.md`.
 
 ## Deployment Artifacts
 

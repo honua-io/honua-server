@@ -325,6 +325,24 @@ h1 {
   opacity: 0.75;
 }
 
+.diagram-section {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(14, 36, 51, 0.08);
+  display: flex;
+  justify-content: center;
+}
+
+.diagram-section img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+  display: block;
+}
+
 .panel-card {
   background: var(--card);
   border-radius: var(--radius-md);
@@ -623,5 +641,9 @@ code {
 
   .logo-banner__label {
     width: 100%;
+  }
+
+  .diagram-section {
+    padding: 14px;
   }
 }
