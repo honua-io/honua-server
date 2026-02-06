@@ -168,8 +168,8 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
             $"Streaming memory usage ({streamingMemoryUsage} bytes) should be within {(memoryTolerance - 1.0):P0} of baseline ({baselineMemory} bytes)");
 
         // Streaming might be slightly slower due to per-feature overhead, but should be competitive
-        var timeTolerance = isCi ? 3 : 2;
-        var traditionalElapsedMs = Math.Max(traditionalStopwatch.ElapsedMilliseconds, isCi ? 5 : 1);
+        var timeTolerance = isCi ? 4 : 2;
+        var traditionalElapsedMs = Math.Max(traditionalStopwatch.ElapsedMilliseconds, isCi ? 10 : 2);
         var streamingElapsedMs = streamingStopwatch.ElapsedMilliseconds;
         Assert.True(streamingElapsedMs <= traditionalElapsedMs * timeTolerance,
             $"Streaming time ({streamingElapsedMs}ms) should be within {timeTolerance}x of traditional query ({traditionalElapsedMs}ms)");

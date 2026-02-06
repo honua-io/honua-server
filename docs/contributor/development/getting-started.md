@@ -208,9 +208,9 @@ tests/
 └── Honua.Architecture.Tests/ # Architecture enforcement tests
 
 docs/
-├── adr/                    # Architecture Decision Records
-├── troubleshooting/        # Troubleshooting guides
-└── development/            # Developer documentation
+├── user/                   # User documentation (APIs, standards)
+├── contributor/            # Contributor docs (architecture, dev, testing)
+└── devops/                 # Deployment + operations guides
 ```
 
 ## Development Workflow
@@ -573,7 +573,7 @@ git commit -m "test: add integration tests for import service"
 After completing the setup:
 
 1. **Explore the Codebase:**
-   - Read existing ADRs in `docs/adr/`
+   - Read existing ADRs in `docs/contributor/adr/`
    - Review test examples in `tests/Honua.Server.Tests/`
    - Understand feature organization in `src/Honua.Server/Features/`
 
@@ -590,9 +590,9 @@ After completing the setup:
 ## Getting Help
 
 **Documentation:**
-- Architecture Decision Records: `docs/adr/`
-- Troubleshooting guides: `docs/troubleshooting/`
-- API examples: `docs/API_EXAMPLES.md`
+- Architecture Decision Records: `docs/contributor/adr/`
+- Troubleshooting guides: `docs/devops/troubleshooting/`
+- API examples: `docs/user/API_EXAMPLES.md`
 
 **Development Support:**
 - GitHub Issues for bugs and features

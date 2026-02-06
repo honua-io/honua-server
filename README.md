@@ -21,7 +21,7 @@ Protocols:
 - **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
 - **Vector Tiles (MVT)** — PostGIS-native tile generation.
 
-Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`, including serverless options (Lambda + Functions). Admin UI is in progress; see `docs/ROADMAP.md` for what comes next.
+Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`, including serverless options (Lambda + Functions). Admin UI is in progress; see `docs/contributor/ROADMAP.md` for what comes next.
 
 ## Status
 
@@ -140,24 +140,27 @@ Limits__Attachments__AllowedMimeTypes="image/*,application/pdf"
 
 **Validation**: Invalid configuration will cause startup failure with detailed error messages. All limits are validated for logical consistency (e.g., DefaultRecordCount ≤ MaxRecordCount).
 
-See `docs/adr/0008-env-var-configuration.md` for complete environment variable reference.
+See `docs/contributor/adr/0008-env-var-configuration.md` for complete environment variable reference.
 
 ## Documentation
 
 User documentation:
-- **[API Examples](docs/API_EXAMPLES.md)** - Comprehensive examples for all supported protocols (GeoServices REST, OGC API Features, OData v4, MVT)
-- **[Protocol Coverage Index](docs/specifications/protocol-coverage.md)** - Coverage status across supported standards
+- **[Control Plane API](docs/user/CONTROL_PLANE_API.md)** - Admin + automation API (headless use)
+- **[Standards APIs](docs/user/STANDARDS_APIS.md)** - FeatureServer, OGC, OData, MVT
+- **[API Examples](docs/user/API_EXAMPLES.md)** - Comprehensive examples for standards APIs
+- **[Protocol Coverage Index](docs/user/specifications/protocol-coverage.md)** - Coverage status across supported standards
 
-Developer documentation:
-- **[Getting Started](docs/development/getting-started.md)** - Development environment setup
-- **[Architecture Documentation](docs/ARCHITECTURE.md)** - System design and architectural decisions
-- **[ADR Index](docs/adr/README.md)** - Architecture Decision Records with complete rationale
+Contributor documentation:
+- **[Agent Instructions](AGENTS.md)** - Canonical agent and project rules
+- **[Getting Started](docs/contributor/development/getting-started.md)** - Development environment setup
+- **[Architecture Documentation](docs/contributor/ARCHITECTURE.md)** - System design and architectural decisions
+- **[ADR Index](docs/contributor/adr/README.md)** - Architecture Decision Records with complete rationale
 
 DevOps documentation:
 - **[Infrastructure Deployments](infrastructure/README.md)** - Docker, Helm, and Terraform options
-- **[Operational Excellence](docs/OPERATIONAL_EXCELLENCE.md)** - Production best practices
-- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
+- **[Operational Excellence](docs/devops/OPERATIONAL_EXCELLENCE.md)** - Production best practices
+- **[Troubleshooting Guide](docs/devops/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
 
 ## Roadmap
 
-See `docs/ROADMAP.md` for the staged plan (Beta, GA, Later).
+See `docs/contributor/ROADMAP.md` for the staged plan (Beta, GA, Later).

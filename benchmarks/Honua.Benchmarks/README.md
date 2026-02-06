@@ -218,5 +218,5 @@ Update targets in:
 
 - [BenchmarkDotNet Documentation](https://benchmarkdotnet.org/)
 - [.NET Performance Guidelines](https://docs.microsoft.com/en-us/dotnet/standard/performance/)
-- [Honua Server Architecture Documentation](../../docs/ARCHITECTURE.md)
-- [Performance Testing ADR](../../docs/adr/0011-testing-requirements.md)
+- [Honua Server Architecture Documentation](../../docs/contributor/ARCHITECTURE.md)
+- [Performance Testing ADR](../../docs/contributor/adr/0011-testing-strategy.md)

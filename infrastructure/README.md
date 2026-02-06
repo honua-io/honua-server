@@ -24,11 +24,11 @@ This folder contains deployment templates for Honua Server across local, Kuberne
 
 ## Images
 
-Published base images and tags are documented in `../docs/CONTAINER_IMAGES.md`. Serverless deployments may require images that include runtime adapters for Lambda or Azure Functions.
+Published base images and tags are documented in `../docs/devops/CONTAINER_IMAGES.md`. Serverless deployments may require images that include runtime adapters for Lambda or Azure Functions.
 
 ## Required Configuration
 
 - `ConnectionStrings__DefaultConnection`
 - `HONUA_ADMIN_PASSWORD`
 
-See `../docs/SECURITY_CONFIGURATION.md` for production hardening guidance and `../docs/serverless-deployments.md` for serverless-specific constraints.
+See `../docs/devops/SECURITY_CONFIGURATION.md` for production hardening guidance and `../docs/devops/serverless-deployments.md` for serverless-specific constraints.

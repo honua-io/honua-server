@@ -327,7 +327,7 @@ internal sealed partial class ODataSearchService
                     .Select(f =>
                     {
                         var escapedField = f.Replace("'", "''", StringComparison.Ordinal);
-                        return $"COALESCE(attributes->>'{escapedField}', '') ILIKE {termParameter} ESCAPE '\\\\'";
+                        return $"COALESCE(attributes->>'{escapedField}', '') ILIKE {termParameter} ESCAPE '\\'";
                     })
                     .ToList();
 

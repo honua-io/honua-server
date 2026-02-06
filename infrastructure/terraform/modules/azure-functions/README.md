@@ -25,6 +25,8 @@ module "honua" {
 }
 ```
 
+Image tags and registries are documented in `docs/devops/CONTAINER_IMAGES.md`.
+
 ## Notes
 - Azure Functions custom containers require Functions host settings (`FUNCTIONS_WORKER_RUNTIME=custom`) and a handler configuration inside the image.
 - The default `plan_sku_name` is `EP1` (Premium). Set it to `Y1` for Consumption if you accept stricter limits.

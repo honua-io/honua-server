@@ -1,6 +1,6 @@
 # OData v4 Coverage Matrix
 
-This page summarizes OData v4 coverage in Honua Server, focusing on operations and query options. It complements the protocol testing map in docs/ODATA_TEST_PARITY.md.
+This page summarizes OData v4 coverage in Honua Server, focusing on operations and query options. It complements the protocol testing map in ../../contributor/ODATA_TEST_PARITY.md.
 
 Legend:
 - Implemented: endpoint exists and behavior is supported.

@@ -204,12 +204,9 @@ Honua/
 │   └── perf-baseline.json         # Benchmark baseline for regression
 │
     └── docs/
-        ├── api/                       # API documentation
-        ├── architecture/              # Architecture decisions
-        └── deployment/                # Deployment guides
-        ├── kubernetes.md          # Helm install guide
-        ├── aws.md                 # AWS ECS/Fargate guide
-        └── azure.md               # Azure Container Apps guide
+        ├── user/                      # API + standards docs
+        ├── contributor/               # Architecture + development
+        └── devops/                    # Deployment + operations
 ```
 
 ### Key Architectural Principles

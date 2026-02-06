@@ -272,7 +272,7 @@ Severity assessment:
 
 ## Phase-Based Development
 
-See `docs/MVP_PLAN.md` for detailed phase breakdown. Current focus should always align with the active phase. Do not implement features from future phases.
+See `docs/contributor/MVP_PLAN.md` for detailed phase breakdown. Current focus should always align with the active phase. Do not implement features from future phases.
 
 ## Commit Guidelines
 

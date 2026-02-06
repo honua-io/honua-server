@@ -25,6 +25,8 @@ module "honua" {
 }
 ```
 
+Image tags and registries are documented in `docs/devops/CONTAINER_IMAGES.md`.
+
 ## Notes
 - Lambda container images must be stored in ECR.
 - API Gateway HTTP API has a 30s max integration timeout; keep `lambda_timeout_seconds` in sync.

@@ -57,7 +57,7 @@ dotnet run --project benchmarks/Honua.Benchmarks -c Release -- --filter *SqlGene
 ./scripts/run-load-soak-tests.sh --profile soak --duration 90m
 ```
 
-Detailed guidance and thresholds live in `docs/load-soak-testing.md`.
+Detailed guidance and thresholds live in `load-soak-testing.md`.
 
 ## Performance Targets
 

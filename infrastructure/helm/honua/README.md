@@ -69,7 +69,7 @@ helm lint infrastructure/helm/honua
 helm template honua infrastructure/helm/honua
 ```
 
-For ingress testing on a local Kubernetes cluster, see `docs/development/k3d-helm.md`.
+For ingress testing on a local Kubernetes cluster, see `docs/contributor/development/k3d-helm.md`.
 
 Run the Helm test hook:
 

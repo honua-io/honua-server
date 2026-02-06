@@ -322,7 +322,7 @@ services.AddSingleton<IResponseCache, DistributedResponseCache>();
 
 ## Resource Links
 
-- **Comprehensive Documentation**: `docs/CACHING_STRATEGY.md`
+- **Comprehensive Documentation**: `docs/devops/CACHING_STRATEGY.md`
 - **Implementation**: `src/Honua.Server/Features/Infrastructure/Caching/`
 - **Tests**: `tests/Honua.Server.Tests/Infrastructure/Caching/`
-- **Performance Report**: `docs/MEMORY_OPTIMIZATIONS_REPORT.md`
+- **Performance Report**: `docs/devops/MEMORY_OPTIMIZATIONS_REPORT.md`

@@ -1,9 +1,9 @@
 # OGC API Features Coverage Matrix
 
 This page summarizes OGC API Features coverage in Honua Server, focusing on the public operations and query parameters. It complements the specification notes in:
-- docs/specifications/ogc-api-features-part1-core.md
-- docs/specifications/ogc-api-features-part2-crs.md
-- docs/specifications/ogc-api-features-part3-filtering.md
+- ogc-api-features-part1-core.md
+- ogc-api-features-part2-crs.md
+- ogc-api-features-part3-filtering.md
 
 Legend:
 - Implemented: endpoint exists and behavior is supported.

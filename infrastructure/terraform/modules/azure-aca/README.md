@@ -25,6 +25,8 @@ module "honua" {
 }
 ```
 
+Image tags and registries are documented in `docs/devops/CONTAINER_IMAGES.md`.
+
 ## PostGIS
 Set `enable_postgis = true` to attempt to enable the PostGIS extension via `psql`. This requires local network access to the database.
 

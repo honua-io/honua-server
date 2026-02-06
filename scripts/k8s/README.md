@@ -53,4 +53,4 @@ HONUA_SKIP_MIGRATIONS=true scripts/k8s/helm-install.sh
 
 ## Docs
 
-- `docs/development/k3d-helm.md`
+- `docs/contributor/development/k3d-helm.md`

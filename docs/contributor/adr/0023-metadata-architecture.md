@@ -123,5 +123,5 @@ Redis is a read-through cache for derived metadata and read models only:
 - Add tests: schema validation, up-conversion, manifest round-trip.
 
 ### Related ADRs
-- `docs/adr/0017-redis-caching-with-fallback.md`
-- `docs/adr/0021-redis-usage-and-hybridcache-deferral.md`
+- `docs/contributor/adr/0017-redis-caching-with-fallback.md`
+- `docs/contributor/adr/0021-redis-usage-and-hybridcache-deferral.md`

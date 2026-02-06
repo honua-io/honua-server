@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Honua Server! This guide provides
 
 1. **Read the Developer Guide**: Start with [`getting-started.md`](getting-started.md) to set up your development environment.
 
-2. **Understand the Architecture**: Review the Architecture Decision Records in [`docs/adr/`](../adr/) to understand key design decisions.
+2. **Understand the Architecture**: Review the Architecture Decision Records in [`docs/contributor/adr/`](../adr/) to understand key design decisions.
 
 3. **Check Existing Issues**: Look at [GitHub Issues](https://github.com/your-org/honua-server/issues) for tasks marked with `good first issue` or `help wanted`.
 

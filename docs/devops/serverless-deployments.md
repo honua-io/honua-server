@@ -38,24 +38,15 @@ Azure Functions:
 - Custom container support varies by plan. Premium or Dedicated plans are recommended for predictable cold start and scale behavior.
 - The container must be compatible with the Functions custom container model (Functions host + custom handler). The Terraform module assumes you provide a Functions-compatible image.
 
-## Image Build Notes
+## Image Selection
 
-- Build JIT images with `docker/Dockerfile` and AOT images with `docker/Dockerfile.aot`.
-- Serverless runtimes may require a compatibility layer (Lambda Runtime API or Functions host + custom handler). Ensure the final image is Lambda/Functions-compatible before pushing to your registry.
+- Use supported Honua images from Docker Hub or GHCR. See `CONTAINER_IMAGES.md` for registries and tag guidance.
+- Serverless runtimes often require a compatibility layer (Lambda Runtime API or Functions host + custom handler). If required, **extend** the supported base image and publish it to your registry (ECR/ACR).
 - Honua listens on port `8080` by default; keep your runtime adapter or host configured to forward to that port.
 
 ## Published Images
 
-Honua publishes base images you can extend for serverless runtimes:
-
-- Docker Hub: `honuaio/honua-server`
-- GHCR: `ghcr.io/honua-io/honua-server`
-
-Common tags:
-- `latest` (trunk)
-- `vX.Y.Z`, `vX.Y`, `vX` (release tags)
-- `nightly` (JIT)
-- `nightly-aot` (AOT)
+See `CONTAINER_IMAGES.md` for supported registries and tag guidance.
 
 ## Terraform Usage
 
@@ -94,17 +85,13 @@ curl -f -H "X-API-Key: ${HONUA_ADMIN_PASSWORD}" "${HONUA_URL}/api/v1/admin/confi
 
 ## Manual Validation Checklist (AWS + Azure)
 
-- Build and publish a **Lambda-compatible** JIT image.
-- Deploy `examples/aws-serverless` with `honua_image_uri` set to the JIT image, then run the smoke tests above.
-- Build and publish a **Lambda-compatible** AOT image.
-- Re-deploy `examples/aws-serverless` with the AOT image and repeat smoke tests.
-- Build and publish a **Functions-compatible** JIT image.
-- Deploy `examples/azure-functions` with `honua_image` set to the JIT image, then run the smoke tests above.
-- Build and publish a **Functions-compatible** AOT image.
-- Re-deploy `examples/azure-functions` with the AOT image and repeat smoke tests.
+- Publish a **Lambda-compatible** image (often by extending a supported base image).
+- Deploy `examples/aws-serverless` with `honua_image_uri` set to that image, then run the smoke tests above.
+- Publish a **Functions-compatible** image (often by extending a supported base image).
+- Deploy `examples/azure-functions` with `honua_image` set to that image, then run the smoke tests above.
 
 ## Notes
 
 - These templates provision PostgreSQL and Redis to keep Honua stateless. If you bring existing services, set the connection string variables accordingly and disable provisioning where supported.
-- Build and publish Lambda/Functions-compatible images for both JIT and AOT. The Honua Dockerfiles under `docker/` produce standard containers; serverless runtimes may require a compatibility layer.
+- Serverless runtimes may require a compatibility layer. Extend a supported base image if needed and validate in your target environment.
 - Real cloud account validation (AWS + Azure) is still required for final verification.

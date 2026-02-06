@@ -5,6 +5,7 @@ using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OData.Services;
 
 namespace Honua.Server.Tests.Features.OData;
@@ -39,9 +40,9 @@ public sealed class ODataSearchServiceSqlTests
 
         method.Should().NotBeNull();
 
-        var condition = (string)method!.Invoke(null, new object[] { terms, layer })!;
+        var fragment = (SqlFragment)method!.Invoke(null, new object[] { terms, layer })!;
 
-        condition.Should().Contain("attributes->>'O''Reilly'");
-        condition.Should().NotContain("attributes->>'O'Reilly'");
+        fragment.Sql.Should().Contain("attributes->>'O''Reilly'");
+        fragment.Sql.Should().NotContain("attributes->>'O'Reilly'");
     }
 }
