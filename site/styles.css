@@ -192,6 +192,15 @@ h1 {
   color: var(--ink);
 }
 
+.emphasis {
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: rgba(31, 111, 122, 0.12);
+  padding: 0 6px;
+  border-radius: 8px;
+  box-decoration-break: clone;
+}
+
 .cta-row {
   display: flex;
   flex-wrap: wrap;
@@ -266,6 +275,54 @@ h1 {
 .hero-panel {
   display: grid;
   gap: 16px;
+}
+
+.logo-banner {
+  margin-top: 24px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(230, 240, 243, 0.7);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-banner__label {
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.logo-banner__logos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.logo-badge {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(211, 226, 230, 0.9);
+  background: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.02em;
+}
+
+.logo-banner__logos img {
+  height: 28px;
+  width: auto;
+  filter: grayscale(1);
+  opacity: 0.75;
 }
 
 .panel-card {
@@ -525,6 +582,11 @@ code {
     width: 90px;
     height: 90px;
   }
+
+  .logo-banner {
+    border-radius: var(--radius-lg);
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 600px) {
@@ -553,5 +615,13 @@ code {
 
   .footer-cta {
     padding: 24px;
+  }
+
+  .logo-banner {
+    padding: 14px;
+  }
+
+  .logo-banner__label {
+    width: 100%;
   }
 }
