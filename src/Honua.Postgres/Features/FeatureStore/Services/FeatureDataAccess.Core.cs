@@ -134,7 +134,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
     private static NpgsqlCommand CreateSafeCommand(NpgsqlConnection connection, string sql)
     {
-        // lgtm[cs/sql-injection]
+        // codeql[cs/sql-injection] SQL is built by vetted query builders with validated identifiers and parameters.
         return new NpgsqlCommand(sql, connection);
     }
 

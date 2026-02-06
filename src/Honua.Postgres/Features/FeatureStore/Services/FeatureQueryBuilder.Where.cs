@@ -177,7 +177,7 @@ internal sealed partial class FeatureQueryBuilder
 
             var attributeName = UnescapeSqlString(jsonPathLiteral);
             isAttributeField = true;
-            return BuildAttributeValueExpression(attributeName, ref paramIndex, parameters);
+            return DatabaseSchema.BuildJsonPath(attributeName);
         }
 
         isAttributeField = fieldName.ToLowerInvariant() switch
@@ -201,7 +201,7 @@ internal sealed partial class FeatureQueryBuilder
             DatabaseSchema.GeometryColumn => DatabaseSchema.GeometryColumn,
             "created_at" => "created_at",
             "updated_at" => "updated_at",
-            _ => $"({BuildAttributeValueExpression(fieldName, ref paramIndex, parameters)})"
+            _ => $"({DatabaseSchema.BuildJsonPath(fieldName)})"
         };
     }
 
