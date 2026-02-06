@@ -327,6 +327,7 @@ h1 {
 
 .diagram-section {
   margin-top: 18px;
+  margin-bottom: 32px;
   padding: 18px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
@@ -368,11 +369,19 @@ h1 {
   margin-top: 72px;
 }
 
+main .section:first-child {
+  margin-top: 0;
+}
+
 .section.highlight {
   padding: 28px;
   border-radius: var(--radius-lg);
   background: linear-gradient(160deg, #f6fafb 0%, #e6f3f6 100%);
   border: 1px solid var(--border);
+}
+
+.section-header {
+  margin-bottom: 24px;
 }
 
 .section-header h2 {
@@ -387,8 +396,12 @@ h1 {
   color: var(--muted);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
-  margin: 0 0 24px;
+  margin: 0;
   max-width: 720px;
+}
+
+.section-header p + p {
+  margin-top: 8px;
 }
 
 .grid {
@@ -471,7 +484,7 @@ h1 {
 }
 
 .callout {
-  margin-top: 20px;
+  margin-top: 0;
   padding: 14px 18px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -479,6 +492,9 @@ h1 {
   font-weight: 600;
 }
 
+.section > * + .callout {
+  margin-top: 20px;
+}
 .note {
   color: var(--muted);
   font-size: var(--fs-small);
