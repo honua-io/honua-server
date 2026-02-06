@@ -317,7 +317,6 @@ services.AddSingleton<IResponseCache, DistributedResponseCache>();
 - [ ] Don't cache sensitive data without encryption
 - [ ] Respect user permissions in cache keys
 - [ ] Implement tenant isolation if required
-- [ ] Log cache operations for auditing
 - [ ] Clear sensitive data from cache on logout
 
 ## Resource Links

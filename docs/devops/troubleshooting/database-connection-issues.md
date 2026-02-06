@@ -245,7 +245,7 @@ psql -h localhost -U postgres -d honua
 GRANT USAGE ON SCHEMA topology TO your_app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA topology TO your_app_user;
 
--- For future tables
+-- For new tables
 ALTER DEFAULT PRIVILEGES IN SCHEMA topology GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO your_app_user;
 ```
 

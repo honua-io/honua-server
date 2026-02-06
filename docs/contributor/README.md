@@ -12,9 +12,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - `ARCHITECTURE_DIAGRAMS.md`
 - `adr/README.md`
 
-## Roadmap and plans
-- `ROADMAP.md`
-- `MVP_PLAN.md`
+## Principles
 - `HONUA_MANIFESTO.md`
 
 ## Testing and quality

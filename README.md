@@ -1,4 +1,4 @@
-# Honua Server MVP
+# Honua Server
 
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/honua-io/honua-server/branch/trunk/graph/badge.svg)](https://codecov.io/gh/honua-io/honua-server)
@@ -8,12 +8,13 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-Honua Server is a lightweight, PostGIS-native API layer that publishes one database through multiple GIS and data protocols — without ETL or proprietary stacks.
+Honua Server is a cloud-native, PostGIS-native GIS API server that publishes a single Postgres/PostGIS database through modern, open standards — no ETL, no proprietary stacks.
 
-Why it matters:
-- **One PostGIS source, many clients** — ArcGIS (GeoServices REST), OGC API Features, OData/BI tools, and vector tiles.
-- **Full editing support** — applyEdits, attachments, related records, and transactions (not just read-only tiles).
-- **Container-first** — quick local/dev setup and straightforward cloud deployment.
+Modern GIS infrastructure for the cloud era:
+- **Modernize without rip-and-replace** — import existing services, keep legacy clients running, and move to open standards incrementally.
+- **Open standards everywhere** — GeoServices REST (FeatureServer), OGC API Features/Tiles, OData v4, and vector tiles (MVT).
+- **Enterprise data access** — OData v4 for Excel/Power BI with spatial queries.
+- **Cloud-native by default** — containers, Helm/Terraform templates, and serverless-friendly images.
 
 Protocols:
 - **GeoServices REST FeatureServer** — GeoServices REST compatible queries + full editing (applyEdits, attachments, related records).
@@ -21,12 +22,10 @@ Protocols:
 - **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
 - **Vector Tiles (MVT)** — PostGIS-native tile generation.
 
-Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`, including serverless options (Lambda + Functions). Admin UI is in progress; see `docs/contributor/ROADMAP.md` for what comes next.
+Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`, including serverless options (Lambda + Functions). The Admin UI is available at `/admin` when enabled (`HONUA_SERVE_ADMIN_UI=true`).
 
-## Status
+## Entrypoints
 
-MVP endpoints are implemented and functional, but APIs are still stabilizing.
-Current entrypoints:
 - `/healthz/live`
 - `/healthz/ready`
 - `/api/v1/admin`
@@ -68,36 +67,22 @@ docker run -p 8080:8080 \
 - `nightly` for nightly JIT images
 - `nightly-aot` for nightly AOT images
 
-## Current capabilities
-Implemented (server + admin API):
+## Capabilities
+
 - PostGIS-only data source.
 - FeatureServer: query, applyEdits, attachments, related records.
 - OGC API Features: collections/items, filters, bbox/geometry, POST/PUT/DELETE transactions.
 - OGC API Tiles: tilesets metadata + vector tiles.
-- OData v4: CRUD with spatial functions (`geo.distance`, `geo.intersects`); $batch/$apply/$search endpoints exist with limited coverage.
+- OData v4: CRUD with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch`.
 - Vector tiles (MVT): PostGIS `ST_AsMVT` via `/tiles/{layerId}/{z}/{x}/{y}.mvt`.
 - TileJSON metadata: `/tiles/{layerId}/tile.json` with MapLibre style discovery.
 - Public MapLibre styles: `/api/styles/{layerId}.json`.
 - File import: GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ — no GDAL required.
 - CRS support: PostGIS-based reprojection, EPSG via `spatial_ref_sys`, auto-detect from source files.
 - Admin APIs: connections, services/layers/relationships/styles, import jobs, operations progress.
+- Admin UI (Blazor WASM) served at `/admin` when enabled.
 - OIDC authentication (server-side plumbing) and optional Redis metadata cache.
 - .NET Aspire local dev orchestration with dashboard (traces, logs, metrics, health).
-
-Pending MVP items (open issues):
-- Service enable/disable controls (#58).
-- Admin UI (project setup, connections, publishing, health dashboard, map preview) (#25, #26, #27, #42, #43).
-- Embedded Maputnik style editor (#30).
-- Canonical cross-protocol style pipeline (#244).
-- Esri Service Import Wizard UI (#187).
-- GCP Terraform module (#34).
-- Docs and security hardening (#38, #39).
-
-## Deferred (post-MVP)
-- **Operational/enterprise**: audit logging/storage + compliance dashboards, secure-connection allowlist/audit, edge rate limiting templates (nginx/ALB/WAF).
-- **Beta:** Query caching, GeometryServer basics, MapServer export, OData `$expand`/`$apply`, OGC API Styles.
-- **GA:** OData `/$batch`, legacy OGC (WFS/WMS), layer-level RBAC, audit logging.
-- **Later:** Additional databases (SQL Server, MySQL, SQLite, DuckDB, warehouses, NoSQL, Oracle), additional file formats (FileGDB, MapInfo TAB — requires GDAL), additional outputs (KML export, Shapefile export, PNG/JPEG), object storage, AI features, CLI/agent tooling.
 
 ## Configuration
 
@@ -160,7 +145,3 @@ DevOps documentation:
 - **[Infrastructure Deployments](infrastructure/README.md)** - Docker, Helm, and Terraform options
 - **[Operational Excellence](docs/devops/OPERATIONAL_EXCELLENCE.md)** - Production best practices
 - **[Troubleshooting Guide](docs/devops/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
-
-## Roadmap
-
-See `docs/contributor/ROADMAP.md` for the staged plan (Beta, GA, Later).

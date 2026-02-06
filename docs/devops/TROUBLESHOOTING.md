@@ -239,7 +239,7 @@ services:
 **Solution**:
 1. Restore NuGet packages: `dotnet restore`
 2. Clean and rebuild: `dotnet clean && dotnet build`
-3. Check .NET SDK version: `dotnet --version` (requires .NET 8.0 or later)
+3. Check .NET SDK version: `dotnet --version` (requires .NET 10.0 or later)
 
 **Symptom**: Test failures due to database issues
 

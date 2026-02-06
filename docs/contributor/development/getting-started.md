@@ -6,7 +6,7 @@ This guide helps new developers set up their development environment and underst
 
 ### Required Software
 
-- **.NET 8.0 SDK** or later
+- **.NET 10.0 SDK** or later
 - **PostgreSQL 14+** with PostGIS extension
 - **Redis** (optional, for caching - has in-memory fallback)
 - **Docker** and **Docker Compose** (recommended for easy setup)
@@ -57,7 +57,7 @@ docker compose --profile minio up -d
 
 # Check service health
 docker compose ps
-curl http://localhost:8080/health
+curl http://localhost:8080/healthz/ready
 ```
 
 ### 3. Initialize Database
@@ -75,10 +75,10 @@ docker exec -it honua-postgres psql -U postgres -d honua -c "SELECT PostGIS_Vers
 
 ```bash
 # Test health endpoint
-curl http://localhost:8080/health | jq .
+curl http://localhost:8080/healthz/ready | jq .
 
 # Test admin endpoint (OIDC for browser UI; API key is automation-only)
-curl -H "X-API-Key: dev-admin-key" http://localhost:8080/admin/configuration | jq .
+curl -H "X-API-Key: dev-admin-key" http://localhost:8080/api/v1/admin/config | jq .
 
 # Test feature server endpoint
 curl "http://localhost:8080/rest/services/1/FeatureServer?f=json" | jq .
@@ -92,11 +92,11 @@ For developers who prefer manual setup or need to customize the environment:
 
 **Ubuntu/Debian:**
 ```bash
-# Install .NET 8
+# Install .NET 10
 wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
 sudo dpkg -i packages-microsoft-prod.deb
 sudo apt update
-sudo apt install -y dotnet-sdk-8.0
+sudo apt install -y dotnet-sdk-10.0
 
 # Install PostgreSQL with PostGIS
 sudo apt install -y postgresql-14 postgresql-14-postgis-3 postgresql-client-14
@@ -107,7 +107,7 @@ sudo apt install -y redis-server
 
 **macOS:**
 ```bash
-# Install .NET 8
+# Install .NET 10
 brew install dotnet
 
 # Install PostgreSQL with PostGIS
@@ -118,7 +118,7 @@ brew install redis
 ```
 
 **Windows:**
-- Download .NET 8 SDK from https://dotnet.microsoft.com/download
+- Download .NET 10 SDK from https://dotnet.microsoft.com/download
 - Install PostgreSQL from https://www.postgresql.org/download/windows/
 - Install PostGIS from https://postgis.net/windows_downloads/
 - Install Redis from https://redis.io/docs/getting-started/installation/install-redis-on-windows/
@@ -199,7 +199,7 @@ src/
 ├── Honua.Postgres/         # PostgreSQL implementations
 │   ├── Features/           # Feature implementations
 │   └── Infrastructure/     # Database infrastructure
-└── Honua.Admin/            # Blazor WASM admin UI (future)
+└── Honua.Admin/            # Blazor WASM admin UI
 
 tests/
 ├── Honua.TestKit/          # Shared test infrastructure
@@ -609,6 +609,6 @@ git commit -m "feat: ..." # Commit changes
 
 # Debugging
 docker logs honua-server  # Application logs
-curl http://localhost:8080/health  # Health check
+curl http://localhost:8080/healthz/ready  # Health check
 psql -h localhost -U postgres -d honua  # Database access
 ```

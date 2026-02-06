@@ -576,5 +576,4 @@ graph TB
 ## See Also
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Detailed architecture prose
-- [MVP_PLAN.md](./MVP_PLAN.md) - Implementation phases and criteria
 - [ADRs](./adr/) - Architecture Decision Records

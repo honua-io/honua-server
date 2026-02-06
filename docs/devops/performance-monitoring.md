@@ -133,7 +133,7 @@ Returns comprehensive performance data:
     "processorCount": 8,
     "machineName": "server-01",
     "workingSet": 158720000,
-    "frameworkVersion": "8.0.0"
+    "frameworkVersion": "10.0.0"
   },
   "http": {
     "totalRequests": 12034,
@@ -173,9 +173,9 @@ Returns database performance statistics:
 }
 ```
 
-## Admin Health Dashboard (MVP)
+## Admin Observability Endpoints
 
-The Admin UI health dashboard (`/admin/health`) aggregates the built-in health/metrics endpoints along with a lightweight recent error buffer:
+Honua exposes lightweight observability endpoints intended for tooling or custom dashboards:
 
 - `/healthz/live` and `/healthz/ready` for service status.
 - `/api/v1/metrics/health`, `/performance`, `/database`, `/cache`, `/memory` for metrics snapshots.
@@ -183,12 +183,11 @@ The Admin UI health dashboard (`/admin/health`) aggregates the built-in health/m
 - `/api/v1/admin/observability/telemetry` for telemetry configuration status.
 
 The recent error buffer is intentionally lightweight and non-persistent. Configure its size with
-`Monitoring:RecentErrors:Capacity` (environment variable: `HONUA__MONITORING__RECENTERRORS__CAPACITY`).
+`Monitoring:RecentErrors:Capacity` (environment variable: `Monitoring__RecentErrors__Capacity`).
 Entries are sanitized to avoid exposing sensitive data.
 
-When OpenTelemetry OTLP export is configured (`Tracing:OtlpEndpoint` or `OTEL_EXPORTER_OTLP_ENDPOINT`), the
-dashboard surfaces a link to your telemetry backend. Without OTLP, the dashboard still works using only
-the built-in endpoints.
+When OpenTelemetry OTLP export is configured (`Tracing:OtlpEndpoint` or `OTEL_EXPORTER_OTLP_ENDPOINT`), you can
+link these endpoints into your telemetry backend or dashboards.
 
 ## Monitoring Integration
 

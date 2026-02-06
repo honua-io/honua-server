@@ -29,8 +29,6 @@ This section is for installing, configuring, operating, and upgrading Honua in p
 
 ## Security
 - `SECURITY_CONFIGURATION.md`
-- `PRODUCTION_SECURITY.md`
-- `SECURITY_AUDIT_REPORT.md`
 - `AUTHORIZATION_MATRIX.md`
 - `CONTAINER_SECURITY.md`
 - `CSP_ENHANCEMENT.md`

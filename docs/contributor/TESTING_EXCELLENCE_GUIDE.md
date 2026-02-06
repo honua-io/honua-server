@@ -304,7 +304,6 @@ var result = await operation.ShouldCompleteWithin(
 ## 📖 Additional Resources
 
 - [Architecture Decision Records (ADRs)](./adrs/) - Testing decisions and rationale
-- [MVP Plan](./MVP_PLAN.md) - Phase-based testing strategy
 - [Performance Testing Guide](./PERFORMANCE_TESTING.md) - Detailed benchmarking
 - [Security Testing Guide](./SECURITY_TESTING.md) - Threat model and mitigations
 

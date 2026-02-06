@@ -8,7 +8,7 @@ namespace Honua.Architecture.Tests;
 
 /// <summary>
 /// Basic architecture tests to validate project structure
-/// Reference: MVP_PLAN.md Architecture Guardrails
+/// Reference: AGENTS.md Architecture Guardrails
 /// </summary>
 [Trait("Category", "Architecture")]
 public class BasicArchitectureTests

@@ -2,7 +2,7 @@
 
 This guide covers secret management, OIDC hardening, and proxy-related security settings.
 
-Audit logging and compliance storage are post-MVP and not available in the current build.
+Audit logging and compliance storage are not implemented in the current build.
 
 ## Secret Management
 
@@ -139,7 +139,7 @@ When running behind a reverse proxy/load balancer:
 Use environment references for any storage or monitoring credentials:
 
 ```bash
-# File storage secrets (future providers)
+# File storage secrets
 FileStorage__AwsS3__AccessKeyId=env:HONUA_S3_KEY_ID
 FileStorage__AwsS3__SecretAccessKey=env:HONUA_S3_SECRET
 FileStorage__AzureBlob__ConnectionString=env:HONUA_AZURE_BLOB_CONN

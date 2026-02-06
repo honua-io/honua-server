@@ -60,20 +60,6 @@ We are explicit about the tradeoff. The enterprise tier will prioritize features
 - Low-ops adoption: marketplace installers + turnkey templates.
 - Infra efficiency: cost-effective, cloud-native, scalable.
 
-## The roadmap (north star, not a promise)
-
-Honua’s long-term goal is a full-stack geospatial platform that spans ingestion, serving, analytics, and automation across both Esri and open standards.
-
-Directionally, that means:
-
-- Support for the core cloud-native geospatial standards and formats (without forcing lock-in). See guide.cloudnativegeo.org.
-- Raster and imagery as first-class citizens.
-- Broader data backends beyond PostGIS (cloud warehouses and enterprise databases).
-- Geo-events, geofencing, and real-time pipelines.
-- Geo-ETL and automated publishing workflows.
-- Mobile data collection that syncs with core services.
-- Geoprocessing at scale.
-
 ## Why now
 
 Cloud maturity, rising GIS licensing costs, and demand for cross-platform data access make a modern, interoperable GIS platform inevitable. Honua is that platform.

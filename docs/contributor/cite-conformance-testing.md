@@ -124,7 +124,7 @@ cite-results/
 
 ### Success Criteria
 
-For MVP conformance:
+For conformance runs:
 - **Core**: 100% pass rate (required)
 - **OpenAPI 3.0**: 100% pass rate (required)
 - **GeoJSON**: 100% pass rate (required)

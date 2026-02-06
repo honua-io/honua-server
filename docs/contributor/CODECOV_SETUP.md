@@ -7,28 +7,19 @@ This document explains the comprehensive code coverage setup using Codecov for t
 Our Codecov integration provides:
 - **Automated Coverage Collection**: Every PR and push to trunk
 - **Multiple Coverage Types**: Unit, Integration, and Combined reports
-- **Coverage Thresholds**: Progressive gates with clear roadmap
+- **Coverage Thresholds**: CI-enforced gates with documented targets
 - **Visual Reports**: HTML reports, badges, and trend tracking
 - **Local Development**: Scripts for local coverage analysis
 
-## 📊 Coverage Targets & Roadmap
+## 📊 Coverage Targets
 
 ### Current Thresholds (CI Enforced)
 - **Line Coverage**: ≥ 1% (baseline above current ~0.7%)
 - **Branch Coverage**: ≥ 0.5% (baseline above current ~0.4%)
 
-### Progressive Roadmap
-```
-Phase 0: Current (~0.7% / 0.4%)
-    ↓
-Phase 1: 1% / 0.5% ← Current CI threshold
-    ↓
-Phase 2: 10% / 5% ← Development milestone
-    ↓
-Phase 3: 40% / 30% ← Pre-production
-    ↓
-MVP Goal: 80% / 70% ← Production ready
-```
+### Long-Term Targets
+- **Line Coverage**: 80%
+- **Branch Coverage**: 70%
 
 ## 🔧 Configuration Files
 

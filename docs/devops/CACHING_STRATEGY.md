@@ -698,7 +698,6 @@ services.AddSingleton<ICacheInvalidationService, RedisCacheInvalidationService>(
 1. **Cache Keys**: Don't include sensitive data in cache keys
 2. **Access Control**: Ensure cached data respects user permissions
 3. **Data Isolation**: Implement tenant isolation where applicable
-4. **Audit Logging**: Log cache operations for sensitive data
 5. **Encryption**: Consider encrypting cached data containing PII
 
 This caching strategy provides a solid foundation for high-performance geospatial data serving while maintaining flexibility for different deployment scenarios and operational requirements.

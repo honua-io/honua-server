@@ -24,7 +24,6 @@ Architecture Documentation:
 - **[Architecture Decision Records (ADRs)](contributor/adr/)** - Key architectural decisions and rationale
 - **[Architecture Overview](contributor/ARCHITECTURE.md)** - System design and component interaction
 - **[Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md)** - System diagrams
-- **[MVP Plan](contributor/MVP_PLAN.md)** - Development phases and roadmap
 
 Contributor Resources:
 - **[Agent Instructions](../AGENTS.md)** - Canonical agent and project rules
@@ -102,7 +101,7 @@ docker compose --profile redis up -d  # Optional Redis
 docker compose --profile minio up -d  # Optional MinIO
 dotnet test                       # Run all tests
 dotnet format Honua.sln          # Format code
-curl http://localhost:8080/health # Health check
+curl http://localhost:8080/healthz/ready # Health check
 
 # Troubleshooting
 docker logs honua-server          # Application logs
@@ -131,10 +130,10 @@ Cache__Provider="Redis"
 
 ### Important URLs
 ```
-Health Check:     http://localhost:8080/health
-Admin UI:         http://localhost:8080/admin
+Health Check:     http://localhost:8080/healthz/ready
+Admin UI:         http://localhost:8080/admin (when enabled)
 Feature Server:   http://localhost:8080/rest/services/1/FeatureServer
-OGC Features:     http://localhost:8080/collections
+OGC Features:     http://localhost:8080/ogc/features/collections
 OData Endpoint:   http://localhost:8080/odata
 ```
 
@@ -153,40 +152,12 @@ Tags:
 - `nightly` (nightly JIT)
 - `nightly-aot` (nightly AOT)
 
-Note: When OIDC is enabled, the `/odata` endpoints require bearer token auth (Power BI/Excel can use Organizational Account or Web API).
+Note: OData write endpoints require authentication (API key or OIDC when configured). Read access follows layer access policy.
 
 ### OIDC Bootstrap (Initial Setup)
 Honua does not provide an in-app bootstrap flow for OIDC. Configure your IdP and
 set env vars before startup. See `docs/devops/SECURITY_CONFIGURATION.md` for step-by-step
 examples and role mapping guidance.
-
-## 📈 Documentation Status
-
-### Comprehensive Coverage
-- ✅ Architecture decisions documented (22 ADRs)
-- ✅ Development setup and contribution guidelines
-- ✅ Troubleshooting guides for common issues
-- ✅ Performance optimization strategies
-- ✅ Testing strategy and requirements
-
-### Key Documentation Principles
-- **Problem-Solution Oriented**: Each guide addresses specific real-world issues
-- **Runnable Examples**: All code snippets are tested and functional
-- **Progressive Disclosure**: Information organized from basic to advanced
-- **Searchable**: Clear headings and consistent structure for easy navigation
-
-## 🔄 Keeping Documentation Current
-
-### Update Triggers
-- New architectural decisions → Add ADR
-- Common support issues → Update troubleshooting guides
-- Performance improvements → Update optimization guides
-- API changes → Update examples and guides
-
-### Review Schedule
-- **Monthly**: Review troubleshooting guides for new common issues
-- **Quarterly**: Update performance benchmarks and optimization guides
-- **Per Release**: Update API examples and architectural documentation
 
 ## 🤝 Contributing to Documentation
 
