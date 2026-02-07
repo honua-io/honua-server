@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.MapServer.Rendering;
 [Trait("Component", "MapServer")]
 public class StyleTranslatorTests
 {
-    private static readonly ImmutableDictionary<string, object?> EmptyProps =
+    private static readonly ImmutableDictionary<string, object?> _emptyProps =
         ImmutableDictionary<string, object?>.Empty;
 
     [UnitTest]
@@ -94,7 +94,7 @@ public class StyleTranslatorTests
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
 
-        var style = StyleTranslator.ResolveFillStyle(layer, EmptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layer, _emptyProps);
 
         style.FillColor.Alpha.Should().BeGreaterThan(0);
     }
@@ -104,7 +104,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"#ff0000","fill-opacity":1.0}}]""");
 
-        var style = StyleTranslator.ResolveFillStyle(layers[0], EmptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps);
 
         style.FillColor.Red.Should().Be(255);
         style.FillColor.Green.Should().Be(0);
@@ -116,7 +116,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"#ff0000","fill-outline-color":"#00ff00"}}]""");
 
-        var style = StyleTranslator.ResolveFillStyle(layers[0], EmptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps);
 
         style.OutlineColor.Should().NotBeNull();
         style.OutlineColor!.Value.Green.Should().Be(255);
@@ -127,7 +127,7 @@ public class StyleTranslatorTests
     {
         var layer = new MapLibreStyleLayer { Type = "line" };
 
-        var style = StyleTranslator.ResolveLineStyle(layer, EmptyProps);
+        var style = StyleTranslator.ResolveLineStyle(layer, _emptyProps);
 
         style.LineWidth.Should().BeGreaterThan(0);
     }
@@ -137,7 +137,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"l","type":"line","paint":{"line-color":"#0000ff","line-width":3}}]""");
 
-        var style = StyleTranslator.ResolveLineStyle(layers[0], EmptyProps);
+        var style = StyleTranslator.ResolveLineStyle(layers[0], _emptyProps);
 
         style.LineColor.Blue.Should().Be(255);
         style.LineWidth.Should().Be(3f);
@@ -148,7 +148,7 @@ public class StyleTranslatorTests
     {
         var layer = new MapLibreStyleLayer { Type = "circle" };
 
-        var style = StyleTranslator.ResolveCircleStyle(layer, EmptyProps);
+        var style = StyleTranslator.ResolveCircleStyle(layer, _emptyProps);
 
         style.Radius.Should().BeGreaterThan(0);
     }
@@ -158,7 +158,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","paint":{"circle-radius":8,"circle-color":"#00ff00","circle-stroke-color":"#000000","circle-stroke-width":2}}]""");
 
-        var style = StyleTranslator.ResolveCircleStyle(layers[0], EmptyProps);
+        var style = StyleTranslator.ResolveCircleStyle(layers[0], _emptyProps);
 
         style.Radius.Should().Be(8f);
         style.FillColor.Green.Should().Be(255);

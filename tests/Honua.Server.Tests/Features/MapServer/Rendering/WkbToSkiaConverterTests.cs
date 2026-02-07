@@ -11,7 +11,7 @@ namespace Honua.Server.Tests.Features.MapServer.Rendering;
 [Trait("Component", "MapServer")]
 public class WkbToSkiaConverterTests
 {
-    private static readonly Func<double, double, SKPoint> IdentityTransform =
+    private static readonly Func<double, double, SKPoint> _identityTransform =
         (x, y) => new SKPoint((float)x, (float)y);
 
     [UnitTest]
@@ -19,7 +19,7 @@ public class WkbToSkiaConverterTests
     {
         var wkb = CreateWkbPoint(10.0, 20.0);
 
-        var result = WkbToSkiaConverter.Convert(wkb, IdentityTransform);
+        var result = WkbToSkiaConverter.Convert(wkb, _identityTransform);
 
         result.IsPoint.Should().BeTrue();
         result.Points.Should().NotBeNull();
@@ -34,7 +34,7 @@ public class WkbToSkiaConverterTests
     {
         var wkb = CreateWkbLineString([(0, 0), (10, 10), (20, 0)]);
 
-        var result = WkbToSkiaConverter.Convert(wkb, IdentityTransform);
+        var result = WkbToSkiaConverter.Convert(wkb, _identityTransform);
 
         result.IsPoint.Should().BeFalse();
         result.IsPolygon.Should().BeFalse();
@@ -48,7 +48,7 @@ public class WkbToSkiaConverterTests
     {
         var wkb = CreateWkbPolygon([(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)]);
 
-        var result = WkbToSkiaConverter.Convert(wkb, IdentityTransform);
+        var result = WkbToSkiaConverter.Convert(wkb, _identityTransform);
 
         result.IsPolygon.Should().BeTrue();
         result.Path.Should().NotBeNull();
@@ -61,7 +61,7 @@ public class WkbToSkiaConverterTests
     {
         var wkb = CreateWkbMultiPoint([(1, 2), (3, 4), (5, 6)]);
 
-        var result = WkbToSkiaConverter.Convert(wkb, IdentityTransform);
+        var result = WkbToSkiaConverter.Convert(wkb, _identityTransform);
 
         result.IsPoint.Should().BeTrue();
         result.Points.Should().NotBeNull();
@@ -71,7 +71,7 @@ public class WkbToSkiaConverterTests
     [UnitTest]
     public void Convert_NullGeometry_ReturnsEmptyResult()
     {
-        var result = WkbToSkiaConverter.Convert(null!, IdentityTransform);
+        var result = WkbToSkiaConverter.Convert(null!, _identityTransform);
 
         result.Path.Should().BeNull();
         result.Points.Should().BeNull();
@@ -80,7 +80,7 @@ public class WkbToSkiaConverterTests
     [UnitTest]
     public void Convert_EmptyGeometry_ReturnsEmptyResult()
     {
-        var result = WkbToSkiaConverter.Convert([], IdentityTransform);
+        var result = WkbToSkiaConverter.Convert([], _identityTransform);
 
         result.Path.Should().BeNull();
         result.Points.Should().BeNull();
@@ -89,7 +89,7 @@ public class WkbToSkiaConverterTests
     [UnitTest]
     public void Convert_TooShortGeometry_ReturnsEmptyResult()
     {
-        var result = WkbToSkiaConverter.Convert([1, 0, 0], IdentityTransform);
+        var result = WkbToSkiaConverter.Convert([1, 0, 0], _identityTransform);
 
         result.Path.Should().BeNull();
         result.Points.Should().BeNull();
@@ -115,7 +115,7 @@ public class WkbToSkiaConverterTests
     {
         var wkb = CreateWkbPointBigEndian(10.0, 20.0);
 
-        var result = WkbToSkiaConverter.Convert(wkb, IdentityTransform);
+        var result = WkbToSkiaConverter.Convert(wkb, _identityTransform);
 
         result.IsPoint.Should().BeTrue();
         result.Points.Should().NotBeNull();

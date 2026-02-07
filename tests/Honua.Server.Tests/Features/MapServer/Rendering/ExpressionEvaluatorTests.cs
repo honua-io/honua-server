@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.MapServer.Rendering;
 [Trait("Component", "MapServer")]
 public class ExpressionEvaluatorTests
 {
-    private static readonly ImmutableDictionary<string, object?> EmptyProps =
+    private static readonly ImmutableDictionary<string, object?> _emptyProps =
         ImmutableDictionary<string, object?>.Empty;
 
     private static ImmutableDictionary<string, object?> Props(params (string Key, object? Value)[] items) =>
@@ -35,7 +35,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = JsonDocument.Parse("""["get", "missing"]""").RootElement;
 
-        var result = ExpressionEvaluator.Evaluate(expr, EmptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
         result.Should().BeNull();
     }
@@ -56,7 +56,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = JsonDocument.Parse("""["has", "missing"]""").RootElement;
 
-        var result = ExpressionEvaluator.Evaluate(expr, EmptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
         result.Should().Be(false);
     }
@@ -66,7 +66,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = JsonDocument.Parse("""["!", ["has", "name"]]""").RootElement;
 
-        var result = ExpressionEvaluator.Evaluate(expr, EmptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
         result.Should().Be(true);
     }
@@ -197,7 +197,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = JsonDocument.Parse("""["+", 10, 20]""").RootElement;
 
-        var result = ExpressionEvaluator.Evaluate(expr, EmptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
         result.Should().BeOfType<double>().Which.Should().Be(30.0);
     }
@@ -277,7 +277,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = JsonDocument.Parse("5.0").RootElement;
 
-        var result = ExpressionEvaluator.EvaluateFloat(expr, EmptyProps, 0f);
+        var result = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, 0f);
 
         result.Should().Be(5.0f);
     }
