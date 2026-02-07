@@ -34,57 +34,76 @@ The CSP builder includes predefined configurations for geospatial APIs:
 
 ### Basic Configuration
 
-```json
-{
-  "SecurityHeaders": {
-    "Csp": {
-      "PolicyType": "GeospatialApi",
-      "AllowDevelopmentFeatures": false,
-      "ReportOnly": false
-    }
-  }
-}
+```bash
+# Basic CSP settings for production deployment
+SECURITYHEADERS__CSP__POLICYTYPE=GeospatialApi
+SECURITYHEADERS__CSP__ALLOWDEVELOPMENTFEATURES=false
+SECURITYHEADERS__CSP__REPORTONLY=false
 ```
 
 ### Advanced Configuration
 
-```json
-{
-  "SecurityHeaders": {
-    "Csp": {
-      "PolicyType": "GeospatialApi",
-      "AllowDevelopmentFeatures": false,
-      "TrustedTileServers": [
-        "*.openstreetmap.org",
-        "api.mapbox.com",
-        "*.tiles.mapbox.com"
-      ],
-      "TrustedCdns": [
-        "cdnjs.cloudflare.com",
-        "unpkg.com"
-      ],
-      "TrustedGeospatialApis": [
-        "api.mapbox.com",
-        "nominatim.openstreetmap.org"
-      ],
-      "WebSocketUrls": [
-        "wss://realtime.example.com"
-      ],
-      "AllowedScriptHashes": [
-        "sha256-abc123def456..."
-      ],
-      "AllowedStyleHashes": [
-        "sha256-xyz789uvw012..."
-      ],
-      "CustomDirectives": {
-        "manifest-src": "'self'",
-        "worker-src": "'self' blob:"
-      },
-      "ReportUri": "/csp-violation-report",
-      "ReportOnly": false
-    }
-  }
-}
+```bash
+# Advanced CSP configuration with trusted domains
+SECURITYHEADERS__CSP__POLICYTYPE=GeospatialApi
+SECURITYHEADERS__CSP__ALLOWDEVELOPMENTFEATURES=false
+
+# Trusted tile servers for map rendering
+SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__0=*.openstreetmap.org
+SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__1=api.mapbox.com
+SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__2=*.tiles.mapbox.com
+
+# Trusted CDNs for geospatial libraries
+SECURITYHEADERS__CSP__TRUSTEDCDNS__0=cdnjs.cloudflare.com
+SECURITYHEADERS__CSP__TRUSTEDCDNS__1=unpkg.com
+
+# Trusted geospatial API endpoints
+SECURITYHEADERS__CSP__TRUSTEDGEOSPATIALAPIS__0=api.mapbox.com
+SECURITYHEADERS__CSP__TRUSTEDGEOSPATIALAPIS__1=nominatim.openstreetmap.org
+
+# WebSocket URLs for real-time features
+SECURITYHEADERS__CSP__WEBSOCKETURLS__0=wss://realtime.example.com
+
+# Security hashes for specific scripts/styles
+SECURITYHEADERS__CSP__ALLOWEDSCRIPTHASHES__0=sha256-abc123def456...
+SECURITYHEADERS__CSP__ALLOWEDSTYLEHASHES__0=sha256-xyz789uvw012...
+
+# Custom CSP directives
+SECURITYHEADERS__CSP__CUSTOMDIRECTIVES__MANIFEST_SRC='self'
+SECURITYHEADERS__CSP__CUSTOMDIRECTIVES__WORKER_SRC='self' blob:
+
+# Reporting configuration
+SECURITYHEADERS__CSP__REPORTURI=/csp-violation-report
+SECURITYHEADERS__CSP__REPORTONLY=false
+```
+
+### Docker Compose Example
+
+```yaml
+services:
+  honua:
+    image: honuaio/honua-server:latest
+    environment:
+      # Basic CSP for production
+      - SECURITYHEADERS__CSP__POLICYTYPE=GeospatialApi
+      - SECURITYHEADERS__CSP__ALLOWDEVELOPMENTFEATURES=false
+      - SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__0=*.openstreetmap.org
+      - SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__1=api.mapbox.com
+      - SECURITYHEADERS__CSP__REPORTONLY=false
+```
+
+### Kubernetes ConfigMap Example
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: honua-csp-config
+data:
+  SECURITYHEADERS__CSP__POLICYTYPE: "GeospatialApi"
+  SECURITYHEADERS__CSP__ALLOWDEVELOPMENTFEATURES: "false"
+  SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__0: "*.openstreetmap.org"
+  SECURITYHEADERS__CSP__TRUSTEDTILESERVERS__1: "api.mapbox.com"
 ```
 
 ## Policy Types
