@@ -29,25 +29,12 @@ psql -h localhost -U postgres -d honua -c "SELECT schemaname FROM pg_tables WHER
 
 **Solutions**:
 
-1. **Environment Variable Format**:
+1. **Environment Variable (Local Development)**:
    ```bash
-   # Correct format
    export ConnectionStrings__DefaultConnection="Host=localhost;Database=honua;Username=postgres;Password=postgres;Port=5432"
-
-   # For Docker environments
-   export ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres;Port=5432"
    ```
 
-2. **Configuration File Format** (`appsettings.json`):
-   ```json
-   {
-     "ConnectionStrings": {
-       "DefaultConnection": "Host=localhost;Database=honua;Username=postgres;Password=postgres;Port=5432"
-     }
-   }
-   ```
-
-3. **Docker Compose Environment Variables**:
+2. **Docker Compose**:
    ```yaml
    services:
      honua-server:
@@ -56,6 +43,16 @@ psql -h localhost -U postgres -d honua -c "SELECT schemaname FROM pg_tables WHER
        depends_on:
          postgres:
            condition: service_healthy
+   ```
+
+3. **Kubernetes**:
+   ```yaml
+   env:
+   - name: ConnectionStrings__DefaultConnection
+     valueFrom:
+       secretKeyRef:
+         name: honua-db-secret
+         key: connection-string
    ```
 
 **Verification**:
