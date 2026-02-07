@@ -1,34 +1,28 @@
 # Connection Pool Sizing Guide
 
-This document provides guidance for configuring PostgreSQL connection pool settings in Honua Server for optimal performance.
+Configure PostgreSQL connection pooling for optimal Honua Server performance in production deployments.
 
-## Overview
+## Quick Configuration
 
-Honua Server uses Npgsql's built-in connection pooling with NpgsqlDataSource. Connection pooling reduces the overhead of establishing database connections by reusing existing connections from a pool.
+Set these environment variables in your deployment:
 
-## Configuration Options
+```bash
+# Connection pool settings
+HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE=100
+HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT=100
+HONUA__LIMITS__CONNECTIONS__REQUESTTIMEOUT=120s
 
-### Environment Variables
-
-| Variable | Default | Range | Description |
-|----------|---------|-------|-------------|
-| `HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE` | 100 | 10-500 | Maximum connections in the pool |
-| `HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT` | 100 | 10-1000 | Maximum concurrent queries |
-| `HONUA__LIMITS__CONNECTIONS__REQUESTTIMEOUT` | 120s | 10s-10min | Request timeout duration |
-
-### Configuration in appsettings.json
-
-```json
-{
-  "Limits": {
-    "Connections": {
-      "MaxConnectionPoolSize": 100,
-      "MaxConcurrent": 100,
-      "RequestTimeout": "00:02:00"
-    }
-  }
-}
+# Database connection with pooling parameters
+ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=honua;Password=yourpassword;Minimum Pool Size=10;Maximum Pool Size=100;Connection Idle Lifetime=300"
 ```
+
+## Environment Variables Reference
+
+| Variable | Default | Description | Example |
+|----------|---------|-------------|---------|
+| `HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE` | 100 | Maximum connections in pool | `50` for small, `200` for high load |
+| `HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT` | 100 | Maximum concurrent queries | `50` for small, `500` for high load |
+| `HONUA__LIMITS__CONNECTIONS__REQUESTTIMEOUT` | 120s | Request timeout | `30s`, `5min` |
 
 ## Sizing Guidelines
 
@@ -55,15 +49,48 @@ Pool Size = (Expected Concurrent Requests) × (Avg Query Duration in seconds) + 
 Pool Size = 100 × 0.05 + 20 = 25 connections
 ```
 
+## Deployment Examples
+
+### Docker Compose
+```yaml
+services:
+  honua:
+    image: honuaio/honua-server:latest
+    environment:
+      # Small production (50 concurrent users)
+      - HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE=50
+      - HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT=50
+      - HONUA__LIMITS__CONNECTIONS__REQUESTTIMEOUT=60s
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=honua;Username=honua;Password=yourpass;Maximum Pool Size=50;Connection Idle Lifetime=300
+```
+
+### Kubernetes
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: honua
+        env:
+        # High load production (500+ concurrent users)
+        - name: HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE
+          value: "200"
+        - name: HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT
+          value: "200"
+        - name: HONUA__LIMITS__CONNECTIONS__REQUESTTIMEOUT
+          value: "120s"
+```
+
 ### Recommended Settings by Workload
 
-| Workload Type | Pool Size | Max Concurrent | Notes |
-|---------------|-----------|----------------|-------|
-| **Development** | 10-20 | 20 | Minimal resources |
-| **Small Production** | 20-50 | 50 | <100 concurrent users |
-| **Medium Production** | 50-100 | 100 | 100-500 concurrent users |
-| **High Load Production** | 100-200 | 200 | 500+ concurrent users |
-| **High Concurrency** | 200-500 | 500 | Heavy spatial queries |
+| Workload | Pool Size | Max Concurrent | Environment Variables |
+|----------|-----------|----------------|----------------------|
+| **Development** | 10-20 | 20 | `MAXCONNECTIONPOOLSIZE=20 MAXCONCURRENT=20` |
+| **Small Production** | 20-50 | 50 | `MAXCONNECTIONPOOLSIZE=50 MAXCONCURRENT=50` |
+| **Medium Production** | 50-100 | 100 | `MAXCONNECTIONPOOLSIZE=100 MAXCONCURRENT=100` |
+| **High Load** | 100-200 | 200 | `MAXCONNECTIONPOOLSIZE=200 MAXCONCURRENT=200` |
 
 ### PostgreSQL Server Considerations
 
@@ -135,13 +162,32 @@ ORDER BY duration DESC;
 **Symptoms:**
 - Requests timing out
 - Errors: "connection pool exhausted"
-- Increasing queue depth
+- High response times
 
 **Solutions:**
-1. Increase `MaxConnectionPoolSize`
-2. Reduce query duration (add indexes, optimize queries)
-3. Scale horizontally (add more app instances)
-4. Implement query caching for repeated requests
+1. **Increase pool size:**
+   ```bash
+   # Double the pool size
+   HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE=200
+   HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT=200
+   ```
+
+2. **Scale horizontally:**
+   ```bash
+   # Kubernetes: increase replicas
+   kubectl scale deployment honua --replicas=3
+
+   # Docker Compose: add more instances
+   docker-compose up --scale honua=3
+   ```
+
+3. **Check PostgreSQL limits:**
+   ```sql
+   -- Ensure PostgreSQL can handle your pool size × replicas
+   -- Example: 100 pool × 3 replicas = 300 + 50 overhead = 350
+   ALTER SYSTEM SET max_connections = 350;
+   SELECT pg_reload_conf();
+   ```
 
 ### Connection Leaks
 
@@ -188,24 +234,43 @@ WHERE datname = 'honua'
 
 ## Best Practices
 
-1. **Start Conservative**: Begin with lower pool sizes and scale up based on monitoring
+### 1. Start Small and Scale Up
+```bash
+# Start with conservative settings
+HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE=50
+HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT=50
 
-2. **Match Pool to Workload**: Spatial queries need larger pools than simple CRUD
+# Monitor and increase based on usage patterns
+```
 
-3. **Monitor Before Tuning**: Collect baseline metrics before making changes
+### 2. Match PostgreSQL Settings
+```bash
+# Calculate PostgreSQL max_connections
+# Formula: (pool_size × replicas) + 50 overhead
+# Example: (100 × 3 replicas) + 50 = 350
 
-4. **Test Under Load**: Use load testing to validate settings before production
+# In PostgreSQL:
+# ALTER SYSTEM SET max_connections = 350;
+```
 
-5. **Set Timeouts**: Always configure request timeouts to prevent runaway queries
+### 3. Use Load Testing
+```bash
+# Test your configuration before production
+# Use tools like k6, wrk, or Artillery to validate pool sizing
 
-6. **Use Connection Strings Wisely**: Include essential settings:
-   ```
-   Server=localhost;Database=honua;
-   Minimum Pool Size=10;
-   Maximum Pool Size=100;
-   Connection Idle Lifetime=300;
-   Connection Pruning Interval=10;
-   ```
+# Example test command:
+# k6 run --vus 100 --duration 60s load-test.js
+```
+
+### 4. Monitor Key Metrics
+- Pool utilization (keep < 80% average)
+- Connection wait times (keep < 10ms)
+- Query duration (watch for > 1s queries)
+
+### 5. Essential Connection String Settings
+```bash
+ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=honua;Password=pass;Maximum Pool Size=100;Connection Idle Lifetime=300;Connection Pruning Interval=10"
+```
 
 ## Related Resources
 
