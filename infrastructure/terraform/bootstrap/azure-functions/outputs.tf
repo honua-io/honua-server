@@ -1,5 +1,5 @@
 output "client_id" {
-  value = azuread_application.terraform.application_id
+  value = azuread_application.terraform.client_id
 }
 
 output "client_secret" {

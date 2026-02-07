@@ -41,7 +41,7 @@ variable "enable_nat_gateway" {
 }
 
 variable "image" {
-  description = "Lambda container image URI (ECR)."
+  description = "Lambda container image URI (ECR). AOT builds (vX.Y.Z-aot) are recommended for faster cold starts."
   type        = string
 }
 

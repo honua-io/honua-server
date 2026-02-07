@@ -1,6 +1,15 @@
-# Docker Compose Sample
+# Docker Compose Sample (pre-built image)
 
-This sample runs Honua Server with PostGIS and optional Redis/MinIO using Docker Compose.
+This compose file runs a **pre-built Honua Server image** with PostGIS and optional Redis/MinIO. Use this for evaluating Honua or deploying it without building from source.
+
+> **For development**, use the root `docker-compose.yml` instead — it builds Honua from source and mounts local code. See the [Getting Started guide](../../docs/contributor/development/getting-started.md).
+
+| | Root `docker-compose.yml` | This file |
+|---|---|---|
+| **Purpose** | Development (builds from source) | Evaluation / deployment (pre-built image) |
+| **Image** | Built from local Dockerfile | `honuaio/honua-server:latest` (or override) |
+| **DB credentials** | `honua_user` / `honua_password` | `honua` / `honua_dev_password` |
+| **Auth** | Development mode | `HONUA_DEV_AUTH=true` (disable for prod) |
 
 ## Requirements
 - Docker

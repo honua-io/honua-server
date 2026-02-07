@@ -16,8 +16,3 @@ variable "scope" {
   default     = ""
 }
 
-variable "client_secret" {
-  type        = string
-  description = "Optional client secret value. If empty, one will be generated."
-  default     = ""
-}

@@ -101,6 +101,7 @@ resource "azurerm_redis_cache" "this" {
   non_ssl_port_enabled          = var.redis_enable_non_ssl_port
   public_network_access_enabled = var.redis_public_network_access_enabled
   subnet_id                     = var.redis_subnet_id != "" ? var.redis_subnet_id : null
+  minimum_tls_version           = "1.2"
   tags                          = local.tags
 }
 
@@ -115,14 +116,14 @@ resource "azurerm_application_insights" "this" {
 
 locals {
   base_app_settings = {
-    FUNCTIONS_WORKER_RUNTIME              = var.functions_worker_runtime
-    FUNCTIONS_CUSTOMHANDLER_PORT          = tostring(var.container_port)
-    WEBSITES_PORT                         = tostring(var.container_port)
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE   = "false"
-    AzureWebJobsStorage                   = azurerm_storage_account.this.primary_connection_string
-    ConnectionStrings__DefaultConnection  = local.db_connection_string
-    HONUA_ADMIN_PASSWORD                  = var.admin_password
-    HONUA_SKIP_MIGRATIONS                 = var.skip_migrations ? "true" : "false"
+    FUNCTIONS_WORKER_RUNTIME             = var.functions_worker_runtime
+    FUNCTIONS_CUSTOMHANDLER_PORT         = tostring(var.container_port)
+    WEBSITES_PORT                        = tostring(var.container_port)
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE  = "false"
+    AzureWebJobsStorage                  = azurerm_storage_account.this.primary_connection_string
+    ConnectionStrings__DefaultConnection = local.db_connection_string
+    HONUA_ADMIN_PASSWORD                 = var.admin_password
+    HONUA_SKIP_MIGRATIONS                = var.skip_migrations ? "true" : "false"
   }
   redis_settings = local.redis_connection != "" ? {
     ConnectionStrings__redis = local.redis_connection
@@ -148,7 +149,7 @@ resource "azurerm_linux_function_app" "this" {
   storage_account_name       = azurerm_storage_account.this.name
   storage_account_access_key = azurerm_storage_account.this.primary_access_key
 
-  https_only                 = true
+  https_only                  = true
   functions_extension_version = var.functions_extension_version
 
   app_settings = local.app_settings

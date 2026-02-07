@@ -89,3 +89,81 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+
+  build-and-push-aot:
+    name: Build & Push AOT Container Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DOCKERHUB }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME_DOCKERHUB }}
+          tags: |
+            type=ref,event=branch,suffix=-aot
+            type=ref,event=tag,suffix=-aot
+            type=semver,pattern={{version}},suffix=-aot
+            type=semver,pattern={{major}}.{{minor}},suffix=-aot
+            type=semver,pattern={{major}},suffix=-aot
+            type=sha,prefix={{branch}}-,suffix=-aot
+            type=raw,value=latest-aot,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=aot
+          cache-to: type=gha,mode=max,scope=aot
+          provenance: true
+          sbom: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results-aot.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-results-aot.sarif'
+          category: 'trivy-aot'

@@ -8,7 +8,7 @@ Thank you for your interest in contributing to Honua Server! This guide provides
 
 2. **Understand the Architecture**: Review the Architecture Decision Records in [`docs/contributor/adr/`](../adr/) to understand key design decisions.
 
-3. **Check Existing Issues**: Look at [GitHub Issues](https://github.com/your-org/honua-server/issues) for tasks marked with `good first issue` or `help wanted`.
+3. **Check Existing Issues**: Look at [GitHub Issues](https://github.com/honua-io/honua-server/issues) for tasks marked with `good first issue` or `help wanted`.
 
 ## Development Philosophy
 
@@ -39,7 +39,7 @@ git clone https://github.com/YOUR_USERNAME/honua-server.git
 cd honua-server
 
 # Add the upstream remote
-git remote add upstream https://github.com/your-org/honua-server.git
+git remote add upstream https://github.com/honua-io/honua-server.git
 
 # Set up development environment
 docker compose up -d

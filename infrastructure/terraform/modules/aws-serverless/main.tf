@@ -39,9 +39,9 @@ locals {
   db_connection_string = "Host=${module.rds.db_instance_address};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
   lambda_environment = merge({
     ConnectionStrings__DefaultConnection = local.db_connection_string
-    HONUA_ADMIN_PASSWORD                = var.admin_password
-    HONUA_SKIP_MIGRATIONS               = var.skip_migrations ? "true" : "false"
-  }, local.redis_connection != "" ? {
+    HONUA_ADMIN_PASSWORD                 = var.admin_password
+    HONUA_SKIP_MIGRATIONS                = var.skip_migrations ? "true" : "false"
+    }, local.redis_connection != "" ? {
     ConnectionStrings__redis = local.redis_connection
   } : {}, var.additional_env)
 }

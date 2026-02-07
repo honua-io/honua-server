@@ -31,13 +31,12 @@ resource "azuread_application" "terraform" {
 }
 
 resource "azuread_service_principal" "terraform" {
-  application_id = azuread_application.terraform.application_id
+  client_id = azuread_application.terraform.client_id
 }
 
 resource "azuread_service_principal_password" "terraform" {
   service_principal_id = azuread_service_principal.terraform.object_id
-  value                = var.client_secret != "" ? var.client_secret : null
-  end_date_relative    = var.client_secret != "" ? null : "8760h"
+  end_date_relative    = "8760h"
 }
 
 resource "azurerm_role_definition" "terraform" {

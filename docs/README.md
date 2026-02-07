@@ -1,190 +1,67 @@
 # Honua Server Documentation
 
-This directory contains comprehensive documentation for the Honua Server geospatial platform.
+## Start here
 
-## 📋 Quick Start
+| I want to... | Go to |
+|---|---|
+| Set up a dev environment | [Getting Started](contributor/development/getting-started.md) |
+| Deploy to production | [Infrastructure](../infrastructure/README.md) |
+| Call the API | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
+| Manage services and layers | [Control Plane API](user/CONTROL_PLANE_API.md) |
+| Contribute code | [Contributing](contributor/development/contributing.md) |
 
-New to Honua Server? Start here:
-- **[User Docs](user/README.md)** - Control plane + standards APIs
-- **[DevOps Docs](devops/README.md)** - Deploy, operate, and monitor
-- **[Contributor Docs](contributor/README.md)** - Build and extend Honua
+## User documentation
 
-## 📚 Documentation Categories
+- [Standards APIs](user/STANDARDS_APIS.md) — FeatureServer, OGC API Features/Tiles, OData v4, MVT
+- [Control Plane API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
+- [API Examples](user/API_EXAMPLES.md) — request/response examples for all protocols
+- [Model Optimization](user/MODEL_OPTIMIZATION_GUIDE.md) — data modeling best practices
+- [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support
+- [Protocol Coverage Index](user/specifications/protocol-coverage.md) — standards coverage overview
 
-### 👥 User Documentation
-- **[Control Plane API (Honua)](user/CONTROL_PLANE_API.md)** - Admin + automation API
-- **[Standards APIs](user/STANDARDS_APIS.md)** - FeatureServer, OGC, OData, MVT
-- **[API Examples](user/API_EXAMPLES.md)** - Sample requests for standards APIs
-- **[Model Optimization Guide](user/MODEL_OPTIMIZATION_GUIDE.md)** - Data model best practices
-- **[FeatureServer Coverage](user/feature-server-matrix.md)** - FeatureServer operations and parameters
-- **[Protocol Coverage Index](user/specifications/protocol-coverage.md)** - Standards coverage overview
+## Contributor documentation
 
-### 🧑‍💻 Contributor Documentation
-Architecture Documentation:
-- **[Architecture Decision Records (ADRs)](contributor/adr/)** - Key architectural decisions and rationale
-- **[Architecture Overview](contributor/ARCHITECTURE.md)** - System design and component interaction
-- **[Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md)** - System diagrams
+**Development:**
+- [Getting Started](contributor/development/getting-started.md) — prerequisites, setup, first run
+- [Contributing](contributor/development/contributing.md) — code style, testing, PR process
+- [K3d + Helm](contributor/development/k3d-helm.md) — local Kubernetes development
 
-Contributor Resources:
-- **[Agent Instructions](../AGENTS.md)** - Canonical agent and project rules
-- **[Getting Started](contributor/development/getting-started.md)** - Development environment setup
-- **[Contributing Guide](contributor/development/contributing.md)** - How to contribute to the project
-- **[Pre-PR Checklist](contributor/PRE_PR_CHECKLIST.md)** - Code review preparation
+**Architecture:**
+- [Architecture Overview](contributor/ARCHITECTURE.md) — system design and component interaction
+- [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
+- [ADRs](contributor/adr/) — architecture decision records
 
-Testing and Quality:
-- **[Testing Excellence Guide](contributor/TESTING_EXCELLENCE_GUIDE.md)** - Testing strategy and best practices
-- **[CI and Quality Gates](contributor/CI_QUALITY_GATES.md)** - CI workflows and contributor gates
-- **[Test Kit Documentation](../tests/Honua.TestKit/README.md)** - Shared testing infrastructure
-- **[OData Test Parity](contributor/ODATA_TEST_PARITY.md)** - Protocol testing coverage
-- **[CITE Conformance Testing](contributor/cite-conformance-testing.md)** - Standards compliance testing
+**Testing:**
+- [Testing Guide](contributor/TESTING_EXCELLENCE_GUIDE.md) — strategy and best practices
+- [CI Quality Gates](contributor/CI_QUALITY_GATES.md) — CI workflows and enforcement
+- [Pre-PR Checklist](contributor/PRE_PR_CHECKLIST.md) — code review preparation
 
-### 🛠️ DevOps Documentation
-Deployments and Operations:
-- **[Infrastructure Deployments](../infrastructure/README.md)** - Docker, Helm, and Terraform options
-- **[Serverless Deployments](devops/serverless-deployments.md)** - AWS Lambda + Azure Functions templates
-- **[Docker Compose Sample](../infrastructure/docker-compose/README.md)** - Local Docker Compose stack (PostGIS + Redis + Honua Server)
-- **[Container Images](devops/CONTAINER_IMAGES.md)** - Publishing, tags, and registry usage
-- **[Operational Excellence](devops/OPERATIONAL_EXCELLENCE.md)** - Production best practices
-- **[Runbooks](devops/runbooks/README.md)** - Operational playbooks and response steps
+## DevOps documentation
 
-Performance and Reliability:
-- **[Performance Monitoring](devops/performance-monitoring.md)** - Monitoring setup and metrics
-- **[Performance Testing](devops/performance-testing.md)** - Load testing and benchmarking
-- **[Caching Strategy](devops/CACHING_STRATEGY.md)** - Redis and in-memory caching
-- **[Memory Optimizations](devops/MEMORY_OPTIMIZATIONS_REPORT.md)** - Memory usage optimization
-- **[Query Optimization](devops/query-optimization.md)** - Database performance tuning
-- **[Connection Pool Sizing](devops/connection-pool-sizing.md)** - Database connection optimization
+**Deployment:**
+- [Infrastructure](../infrastructure/README.md) — Docker Compose, Helm, Terraform
+- [Serverless](devops/serverless-deployments.md) — AWS Lambda and Azure Functions
+- [Container Images](devops/CONTAINER_IMAGES.md) — registries, tags, and publishing
 
-Security:
-- **[Security Configuration](devops/SECURITY_CONFIGURATION.md)** - Secrets, OIDC hardening, and proxy settings
-- **[Container Security](devops/CONTAINER_SECURITY.md)** - Docker security best practices
-- **[CSP Enhancement](devops/CSP_ENHANCEMENT.md)** - Content Security Policy configuration
-- **[Authorization Matrix](devops/AUTHORIZATION_MATRIX.md)** - Endpoint access requirements
-- **[Credential Rotation](devops/credential-rotation.md)** - Rotation procedures for secrets and keys
-- **[Backup and Restore](devops/backup-restore.md)** - Recovery procedures and RTO/RPO targets
-- **[Zero-Downtime Migrations](devops/zero-downtime-migrations.md)** - Safe schema evolution strategy
+**Operations:**
+- [Operational Excellence](devops/OPERATIONAL_EXCELLENCE.md) — current operational tooling
+- [Runbooks](devops/runbooks/README.md) — incident response playbooks
+- [Troubleshooting](devops/TROUBLESHOOTING.md) — common issues and fixes
+  - [Database connections](devops/troubleshooting/database-connection-issues.md)
+  - [Performance](devops/troubleshooting/performance-troubleshooting.md)
+  - [Authentication](devops/troubleshooting/authentication-problems.md)
+  - [Imports](devops/troubleshooting/import-process-issues.md)
+  - [Spatial queries](devops/troubleshooting/spatial-query-problems.md)
 
-Troubleshooting:
-- **[General Troubleshooting](devops/TROUBLESHOOTING.md)** - Common operational issues
-- **[Database Connection Issues](devops/troubleshooting/database-connection-issues.md)** - PostgreSQL and PostGIS problems
-- **[Performance Troubleshooting](devops/troubleshooting/performance-troubleshooting.md)** - Query optimization and monitoring
-- **[Authentication Problems](devops/troubleshooting/authentication-problems.md)** - API keys and OIDC configuration
-- **[Import Process Issues](devops/troubleshooting/import-process-issues.md)** - File format and validation problems
-- **[Spatial Query Problems](devops/troubleshooting/spatial-query-problems.md)** - CRS issues and geometry validation
-
-## 🎯 By Role
-
-### For Users
-- [Control Plane API](user/CONTROL_PLANE_API.md)
-- [Standards APIs](user/STANDARDS_APIS.md)
-- [API Examples](user/API_EXAMPLES.md)
-
-### For Contributors
-- [Agent Instructions](../AGENTS.md)
-- [Getting Started Guide](contributor/development/getting-started.md)
-- [Architecture Overview](contributor/ARCHITECTURE.md)
-- [Contributing Guide](contributor/development/contributing.md)
-- [Testing Excellence Guide](contributor/TESTING_EXCELLENCE_GUIDE.md)
-
-### For DevOps / Operations
-- [Infrastructure Deployments](../infrastructure/README.md)
+**Performance:**
 - [Performance Monitoring](devops/performance-monitoring.md)
-- [Operational Excellence](devops/OPERATIONAL_EXCELLENCE.md)
-- [General Troubleshooting](devops/TROUBLESHOOTING.md)
+- [Caching Strategy](devops/CACHING_STRATEGY.md)
+- [Query Optimization](devops/query-optimization.md)
+- [Connection Pool Sizing](devops/connection-pool-sizing.md)
 
-## 📋 Quick Reference
-
-### Common Commands
-```bash
-# Development
-docker compose up -d              # Start development environment
-docker compose --profile redis up -d  # Optional Redis
-docker compose --profile minio up -d  # Optional MinIO
-dotnet test                       # Run all tests
-dotnet format Honua.sln          # Format code
-curl http://localhost:8080/healthz/ready # Health check
-
-# Troubleshooting
-docker logs honua-server          # Application logs
-psql -h localhost -U postgres -d honua  # Database access
-redis-cli ping                    # Redis connectivity
-```
-
-### Environment Variables
-```bash
-# Database
-ConnectionStrings__DefaultConnection="Host=localhost;Database=honua;Username=postgres;Password=postgres"
-
-# Authentication
-OIDC__ENABLED=true
-OIDC__AZUREAD__ENABLED=true
-OIDC__AZUREAD__TENANTID="your-tenant-id"
-OIDC__AZUREAD__CLIENTID="your-client-id"
-OIDC__TOKENVALIDATION__VALIDAUDIENCES__0="api://your-client-id"
-OIDC__ADMINROLES__0="admin"
-HONUA_ADMIN_PASSWORD="secure-api-key" # automation only, not for browser UI
-
-# Performance
-Limits__Query__MaxRecordCount=2000
-Cache__Provider="Redis"
-```
-
-### Important URLs
-```
-Health Check:     http://localhost:8080/healthz/ready
-Admin UI:         http://localhost:8080/admin (when enabled)
-Feature Server:   http://localhost:8080/rest/services/1/FeatureServer
-OGC Features:     http://localhost:8080/ogc/features/collections
-OData Endpoint:   http://localhost:8080/odata
-```
-
-### Container Images
-```bash
-# Docker Hub (default)
-docker pull honuaio/honua-server:latest
-
-# GHCR
-docker pull ghcr.io/honua-io/honua-server:latest
-```
-
-Tags:
-- `latest` (trunk)
-- `vX.Y.Z`, `vX.Y`, `vX` (release tags)
-- `nightly` (nightly JIT)
-- `nightly-aot` (nightly AOT)
-
-Note: OData write endpoints require authentication (API key or OIDC when configured). Read access follows layer access policy.
-
-### OIDC Bootstrap (Initial Setup)
-Honua does not provide an in-app bootstrap flow for OIDC. Configure your IdP and
-set env vars before startup. See `docs/devops/SECURITY_CONFIGURATION.md` for step-by-step
-examples and role mapping guidance.
-
-## 🤝 Contributing to Documentation
-
-Documentation improvements are welcome! See the [Contributing Guide](contributor/development/contributing.md) for:
-- Documentation style guidelines
-- How to propose new guides
-- Template for new troubleshooting scenarios
-- Review process for documentation changes
-
-## 💬 Getting Help
-
-**For Contributor Questions:**
-- Check relevant troubleshooting guide first
-- Search existing GitHub Issues and Discussions
-- Create new GitHub Discussion for questions
-
-**For Documentation Issues:**
-- Missing information → Create GitHub Issue
-- Incorrect information → Create GitHub Issue with correction
-- New scenario needed → Propose in GitHub Discussion
-
-**Emergency Support:**
-- Check [Operational Excellence](OPERATIONAL_EXCELLENCE.md) for incident response
-- Follow troubleshooting guides for immediate issues
-- Escalate through standard support channels
-
----
-
-*This documentation is living and continuously improved based on real-world usage and feedback.*
+**Security:**
+- [Security Configuration](devops/SECURITY_CONFIGURATION.md) — OIDC, secrets, proxy settings
+- [Authorization Matrix](devops/AUTHORIZATION_MATRIX.md) — endpoint access requirements
+- [Container Security](devops/CONTAINER_SECURITY.md)
+- [Credential Rotation](devops/credential-rotation.md)
+- [Backup and Restore](devops/backup-restore.md)

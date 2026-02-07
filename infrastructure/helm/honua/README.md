@@ -1,6 +1,6 @@
 # Honua Helm Chart
 
-This chart deploys Honua Server on Kubernetes with optional Bitnami PostgreSQL and Redis subcharts.
+Deploys Honua Server on Kubernetes with optional Bitnami PostgreSQL and Redis subcharts.
 
 ## Quick start
 
@@ -12,16 +12,77 @@ helm install honua infrastructure/helm/honua \
   --set config.env.HONUA_ADMIN_UI="true"
 ```
 
-## AOT vs JIT images
-Set the image tag to a published AOT or JIT build:
+## Production example
 
-```bash
-helm upgrade --install honua infrastructure/helm/honua \
-  --set image.repository=ghcr.io/honua-io/honua-server \
-  --set image.tag=nightly-aot
+Create a `values-prod.yaml`:
+
+```yaml
+replicaCount: 3
+
+image:
+  repository: ghcr.io/honua-io/honua-server
+  tag: "v1.2.3-aot"   # Pin to a release AOT tag
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: nginx   # or alb, traefik, etc.
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: gis.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: honua-tls
+      hosts:
+        - gis.example.com
+
+config:
+  env:
+    HONUA_ADMIN_UI: "true"
+    HONUA_OBSERVABILITY: "true"
+    HONUA_OPENTELEMETRY: "true"
+    ASPNETCORE_ENVIRONMENT: "Production"
+    ASPNETCORE_URLS: "http://+:8080"
+    Public__BaseUrl: "https://gis.example.com"
+
+secret:
+  env:
+    ConnectionStrings__DefaultConnection: "Host=postgis.internal;Database=honua;Username=honua;Password=<secret>;SSL Mode=Require"
+    HONUA_ADMIN_PASSWORD: "<strong-secret>"
+    ConnectionStrings__redis: "redis.internal:6379"
 ```
 
-## PostgreSQL subchart (optional)
+Deploy with:
+
+```bash
+helm dependency update infrastructure/helm/honua
+helm upgrade --install honua infrastructure/helm/honua -f values-prod.yaml
+```
+
+## External PostGIS database (recommended for production)
+
+For production, point `ConnectionStrings__DefaultConnection` at a managed PostGIS database (e.g., Amazon RDS, Azure Flexible Server, Cloud SQL) rather than using the Bitnami subchart.
+
+> The Bitnami PostgreSQL subchart **does not include PostGIS**. Honua requires PostGIS for migrations and spatial queries. For anything beyond local development, use an external PostGIS-enabled database.
+
+## PostgreSQL subchart (dev only)
 
 ```bash
 helm upgrade --install honua infrastructure/helm/honua \
@@ -32,12 +93,9 @@ helm upgrade --install honua infrastructure/helm/honua \
   --set secret.env.HONUA_ADMIN_PASSWORD="change-me"
 ```
 
-When `postgresql.enabled=true`, the chart auto-populates `ConnectionStrings__DefaultConnection` if you do not supply it.
+When `postgresql.enabled=true`, the chart auto-populates `ConnectionStrings__DefaultConnection` if you don't supply one.
 
-Note: Honua requires PostGIS for migrations. The Bitnami PostgreSQL subchart does not include PostGIS.
-For full functionality, point `ConnectionStrings__DefaultConnection` at a PostGIS-enabled database.
-
-## Redis subchart (optional)
+## Redis subchart
 
 ```bash
 helm upgrade --install honua infrastructure/helm/honua \
@@ -45,21 +103,53 @@ helm upgrade --install honua infrastructure/helm/honua \
   --set secret.env.HONUA_ADMIN_PASSWORD="change-me"
 ```
 
-When `redis.enabled=true`, the chart auto-populates `ConnectionStrings__redis` if you do not supply it.
+When `redis.enabled=true`, the chart auto-populates `ConnectionStrings__redis`.
 
-## Required configuration
+## AOT vs JIT images
 
-In non-development environments, Honua requires:
-- `ConnectionStrings__DefaultConnection`
-- `HONUA_ADMIN_PASSWORD`
+The chart defaults to AOT (`latest-aot`). AOT images start faster and use less memory. To use JIT instead:
 
-You can supply these via `secret.env` (chart-managed secret) or by pointing `secret.name` to an existing secret.
+```bash
+helm upgrade --install honua infrastructure/helm/honua \
+  --set image.tag=latest
+```
+
+For production, pin to a release tag: `v1.2.3-aot` (AOT) or `v1.2.3` (JIT).
+
+## Using an existing secret
+
+Instead of chart-managed secrets, reference a pre-existing Kubernetes secret:
+
+```yaml
+secret:
+  create: false
+  name: my-honua-secret   # Must contain ConnectionStrings__DefaultConnection and HONUA_ADMIN_PASSWORD
+```
+
+## Key values
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `replicaCount` | 1 | Number of pods. Use 3+ for production. |
+| `image.tag` | `latest-aot` | Image tag. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
+| `resources` | `{}` | CPU/memory requests and limits. **Set for production.** |
+| `autoscaling.enabled` | false | Enable HPA. |
+| `ingress.enabled` | false | Enable ingress. |
+| `config.env.*` | — | Non-secret environment variables (stored in ConfigMap). |
+| `secret.env.*` | — | Secret environment variables (stored in Secret). |
+| `secret.name` | `""` | Reference an existing secret instead of chart-managed. |
+| `extraEnv` | `[]` | Additional env vars from external sources (e.g. `valueFrom`). |
+| `postgresql.enabled` | false | Enable Bitnami PostgreSQL subchart (dev only). |
+| `redis.enabled` | false | Enable Bitnami Redis subchart. |
+
+See `values.yaml` for the complete reference.
 
 ## Health checks
 
-The chart wires probes to:
-- `/healthz/live`
-- `/healthz/ready`
+The chart configures probes on:
+- **Liveness**: `/healthz/live` (is the process alive?)
+- **Readiness**: `/healthz/ready` (is the database connected?)
+- **Startup**: `/healthz/live` with 30 retries (initial boot tolerance)
 
 ## Local validation
 
@@ -67,12 +157,7 @@ The chart wires probes to:
 helm dependency update infrastructure/helm/honua
 helm lint infrastructure/helm/honua
 helm template honua infrastructure/helm/honua
+helm test honua  # After install, runs the test hook
 ```
 
-For ingress testing on a local Kubernetes cluster, see `docs/contributor/development/k3d-helm.md`.
-
-Run the Helm test hook:
-
-```bash
-helm test honua
-```
+For ingress testing on a local Kubernetes cluster, see [K3d + Helm guide](../../../docs/contributor/development/k3d-helm.md).

@@ -39,32 +39,52 @@ Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **E
 
 ## Quick Start
 
+You need **Docker** and **Docker Compose v2+**. Nothing else.
+
 ```bash
-dotnet run --project src/Honua.Server
+git clone https://github.com/honua-io/honua-server.git
+cd honua-server
+
+# Start PostGIS + Honua Server
+docker compose up -d
+
+# Wait for healthy, then verify
+curl http://localhost:8080/healthz/ready
 ```
 
-## Docker (optional)
+The root `docker-compose.yml` starts PostGIS and builds the server from source. Migrations run automatically on first boot. Once ready, the server is available at `http://localhost:8080`.
 
-**Local Development (with Aspire):**
+Optional services (add as needed):
 ```bash
-cd src/Honua.AppHost
-dotnet run
-# Opens Aspire dashboard with Honua + PostgreSQL + Redis
+# Redis (caching)
+HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
+
+# MinIO (S3-compatible file storage for imports)
+HONUA_STORAGE_PROVIDER=AwsS3 HONUA_S3_BUCKET=honua-dev \
+  HONUA_S3_SERVICE_URL=http://minio:9000 \
+  HONUA_S3_ACCESS_KEY_ID=minioadmin HONUA_S3_SECRET_ACCESS_KEY=minioadmin \
+  docker compose --profile minio up -d
 ```
 
-**Docker:**
+For manual .NET development (without Docker), see the [Getting Started guide](docs/contributor/development/getting-started.md).
+
+### .NET Aspire (alternative)
+
+If you have the .NET Aspire workload installed, you can use the AppHost for local orchestration with a dashboard (traces, logs, metrics):
+```bash
+dotnet run --project src/Honua.AppHost
+```
+
+### Run a pre-built image
+
 ```bash
 docker run -p 8080:8080 \
-  -e ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres" \
+  -e ConnectionStrings__DefaultConnection="Host=host.docker.internal;Database=honua;Username=postgres;Password=postgres" \
   -e HONUA_ADMIN_PASSWORD="change-me" \
   honuaio/honua-server:latest
 ```
 
-**Image tags:**
-- `latest` on trunk builds
-- `vX.Y.Z`, `vX.Y`, `vX` on release tags
-- `nightly` for nightly JIT images
-- `nightly-aot` for nightly AOT images
+This requires an existing PostGIS database. For image tags and registries, see [Container Images](docs/devops/CONTAINER_IMAGES.md).
 
 ## Capabilities
 
@@ -85,62 +105,52 @@ docker run -p 8080:8080 \
 
 ## Configuration
 
-### Minimal Config (env)
+Every setting is controlled via environment variables. Copy `.env.example` for a full reference.
 
+**Required** (all deployments):
 ```bash
 ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres"
 HONUA_ADMIN_PASSWORD="change-me"
 ```
 
-### Advanced Configuration
-
-**Resource Limits** (Issue #63 - shared across all protocols):
+**Common options:**
 ```bash
-# Query limits (affects all protocols: FeatureServer, OGC API, OData, MVT)
-Limits__Query__MaxRecordCount=2000        # Max features per query
-Limits__Query__DefaultRecordCount=1000    # Default when not specified
-Limits__Query__MaxOffset=1000000          # Max paging offset
-Limits__Query__QueryTimeout=00:00:30      # Query execution timeout
+# Feature flags
+HONUA_ADMIN_UI=true                       # Enable web admin UI at /admin
+HONUA_OBSERVABILITY=true                  # Enable metrics endpoints
+HONUA_SKIP_MIGRATIONS=false               # Skip auto-migrations (set true for serverless)
 
-# Geometry limits
-Limits__Geometry__MaxVertices=10000       # Max vertices per geometry
-Limits__Geometry__MaxPolygons=100         # Max polygons per geometry
-Limits__Geometry__MaxCoordinateValue=180  # Max coordinate value
+# Cache (Redis)
+ConnectionStrings__Redis="localhost:6379"  # Or use HONUA_REDIS_URL in Docker Compose
 
-# Edit limits (FeatureServer applyEdits, OGC API transactions, OData CRUD)
-Limits__Edits__MaxPayloadSize=10485760    # 10MB max request payload
-Limits__Edits__MaxFeaturesPerRequest=1000 # Max features per edit operation
-Limits__Edits__MaxAttachmentSize=52428800 # 50MB max attachment size
+# Query limits (shared across all protocols)
+Limits__Query__MaxRecordCount=2000
+Limits__Query__DefaultRecordCount=1000
+Limits__Query__QueryTimeout=00:00:30
 
-# Connection limits
-Limits__Connections__MaxConcurrent=100    # Max concurrent requests
-Limits__Connections__RequestTimeout=00:01:00  # Request timeout
-
-# Optional: CORS, basemap provider, attachment types
-Cors__AllowedOrigins__0="http://localhost:3000"
-Basemap__Provider="openfreemap"
-Limits__Attachments__AllowedMimeTypes="image/*,application/pdf"
+# CORS
+Cors__AllowedOrigins__0="https://myapp.example.com"
 ```
 
-**Validation**: Invalid configuration will cause startup failure with detailed error messages. All limits are validated for logical consistency (e.g., DefaultRecordCount ≤ MaxRecordCount).
-
-See `docs/contributor/adr/0008-env-var-configuration.md` for complete environment variable reference.
+Invalid configuration causes a startup failure with a detailed error message. See [`.env.example`](.env.example) for every available variable and [`docs/contributor/adr/0008-env-var-configuration.md`](docs/contributor/adr/0008-env-var-configuration.md) for design rationale.
 
 ## Documentation
 
-User documentation:
-- **[Control Plane API](docs/user/CONTROL_PLANE_API.md)** - Admin + automation API (headless use)
+**Getting started:**
+- **[Developer Setup](docs/contributor/development/getting-started.md)** - Full development environment guide
+- **[Deploying to Production](infrastructure/README.md)** - Docker Compose, Helm, Terraform, and serverless options
+
+**API reference:**
 - **[Standards APIs](docs/user/STANDARDS_APIS.md)** - FeatureServer, OGC, OData, MVT
-- **[API Examples](docs/user/API_EXAMPLES.md)** - Comprehensive examples for standards APIs
-- **[Protocol Coverage Index](docs/user/specifications/protocol-coverage.md)** - Coverage status across supported standards
+- **[Control Plane API](docs/user/CONTROL_PLANE_API.md)** - Admin and automation endpoints
+- **[API Examples](docs/user/API_EXAMPLES.md)** - Request/response examples for all protocols
 
-Contributor documentation:
-- **[Agent Instructions](AGENTS.md)** - Canonical agent and project rules
-- **[Getting Started](docs/contributor/development/getting-started.md)** - Development environment setup
-- **[Architecture Documentation](docs/contributor/ARCHITECTURE.md)** - System design and architectural decisions
-- **[ADR Index](docs/contributor/adr/README.md)** - Architecture Decision Records with complete rationale
+**Architecture and contributing:**
+- **[Architecture](docs/contributor/ARCHITECTURE.md)** - System design and component interaction
+- **[ADRs](docs/contributor/adr/README.md)** - Architecture Decision Records
+- **[Contributing](docs/contributor/development/contributing.md)** - Code style, testing, and PR process
 
-DevOps documentation:
-- **[Infrastructure Deployments](infrastructure/README.md)** - Docker, Helm, and Terraform options
-- **[Operational Excellence](docs/devops/OPERATIONAL_EXCELLENCE.md)** - Production best practices
-- **[Troubleshooting Guide](docs/devops/TROUBLESHOOTING.md)** - Solutions to common issues and debugging tips
+**Operations:**
+- **[Security Configuration](docs/devops/SECURITY_CONFIGURATION.md)** - OIDC, secrets, and proxy hardening
+- **[Troubleshooting](docs/devops/TROUBLESHOOTING.md)** - Common issues and debugging
+- **[Runbooks](docs/devops/runbooks/README.md)** - Operational playbooks

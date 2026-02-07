@@ -23,9 +23,9 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image (AOT or JIT)."
+  description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster startup and lower memory."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
+  default     = "ghcr.io/honua-io/honua-server:latest-aot"
 }
 
 variable "container_cpu" {

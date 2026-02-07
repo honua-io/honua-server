@@ -42,6 +42,7 @@ output "certificate_arn" {
 output "redis_connection_secret_arn" {
   description = "Secrets Manager ARN for the Redis connection string (if set)."
   value       = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+  sensitive   = true
 }
 
 output "redis_primary_endpoint" {
