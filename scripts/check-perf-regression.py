@@ -28,11 +28,15 @@ class PerformanceRegression:
 class PerformanceChecker:
     """Performance regression checker"""
 
-    def __init__(self, baseline_file: str, current_file: str, threshold: float = 0.10):
+    def __init__(self, baseline_file: str, current_file: str, threshold: float = 0.10,
+                 skip_on_env_mismatch: bool = False):
         self.baseline_file = Path(baseline_file)
         self.current_file = Path(current_file)
         self.threshold = threshold
+        self.skip_on_env_mismatch = skip_on_env_mismatch
         self.regressions: List[PerformanceRegression] = []
+        self.env_mismatches: List[Tuple[str, str, str]] = []
+        self.env_mismatch_skipped = False
 
     def load_json(self, file_path: Path) -> Optional[Dict]:
         """Load and parse JSON file"""
@@ -177,10 +181,25 @@ class PerformanceChecker:
             # For throughput, etc - lower values are worse
             change_percent = (baseline_value - current_value) / baseline_value
             if change_percent > self.threshold:
-                self.regressions.append(PerformanceRegression(
-                    metric_name, baseline_value, current_value,
-                    self.threshold, change_percent
-                ))
+                    self.regressions.append(PerformanceRegression(
+                        metric_name, baseline_value, current_value,
+                        self.threshold, change_percent
+                    ))
+
+    @staticmethod
+    def _normalize_env_value(value: Optional[str]) -> str:
+        return " ".join(str(value or "").split()).strip()
+
+    def _collect_environment_mismatches(self, baseline: Dict, current: Dict) -> None:
+        self.env_mismatches = []
+        baseline_env = baseline.get('Environment', {}) or {}
+        current_env = current.get('Environment', {}) or {}
+
+        for key in ("Runtime", "OS", "Hardware"):
+            baseline_value = self._normalize_env_value(baseline_env.get(key))
+            current_value = self._normalize_env_value(current_env.get(key))
+            if baseline_value and current_value and baseline_value != current_value:
+                self.env_mismatches.append((key, baseline_value, current_value))
 
     def check_regressions(self) -> bool:
         """Check for performance regressions"""
@@ -195,6 +214,16 @@ class PerformanceChecker:
 
         if not baseline_data or not current_data:
             return False
+
+        self._collect_environment_mismatches(baseline_data, current_data)
+        if self.env_mismatches:
+            print("⚠️ Environment mismatch detected:")
+            for key, baseline_value, current_value in self.env_mismatches:
+                print(f"  {key}: {baseline_value} → {current_value}")
+            if self.skip_on_env_mismatch:
+                print("ℹ️ Skipping regression checks due to environment mismatch.")
+                self.env_mismatch_skipped = True
+                return True
 
         # Check different types of regressions
         self.check_latency_regression(baseline_data, current_data)
@@ -228,6 +257,14 @@ Threshold: {self.threshold*100:.1f}%
 ## Summary
 
 """
+
+        if self.env_mismatches:
+            report += "## Environment Mismatch\n\n"
+            for key, baseline_value, current_value in self.env_mismatches:
+                report += f"- **{key}**: {baseline_value} → {current_value}\n"
+            if self.env_mismatch_skipped:
+                report += "\nRegression checks were skipped because environments differ.\n"
+            report += "\n"
 
         if self.regressions:
             report += f"❌ **{len(self.regressions)} regression(s) detected**\n\n"
@@ -266,12 +303,19 @@ def main():
     parser.add_argument('--threshold', type=float, default=0.10,
                        help='Regression threshold (default: 0.10 = 10%)')
     parser.add_argument('--report', help='Generate markdown report to file')
+    parser.add_argument('--skip-on-env-mismatch', action='store_true',
+                       help='Skip regression checks when baseline and current environments differ')
     parser.add_argument('--fail-on-regression', action='store_true',
                        help='Exit with non-zero code on regression')
 
     args = parser.parse_args()
 
-    checker = PerformanceChecker(args.baseline, args.current, args.threshold)
+    checker = PerformanceChecker(
+        args.baseline,
+        args.current,
+        args.threshold,
+        skip_on_env_mismatch=args.skip_on_env_mismatch
+    )
     no_regressions = checker.check_regressions()
 
     if args.report:
