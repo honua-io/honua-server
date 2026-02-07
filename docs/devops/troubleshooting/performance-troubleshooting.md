@@ -1,106 +1,65 @@
-# Performance Troubleshooting Guide
+# Honua Performance Troubleshooting
 
-This guide helps diagnose and resolve performance issues in Honua Server, including query optimization, caching problems, and monitoring bottlenecks.
+Diagnose and resolve performance issues in Honua Server deployments.
 
-## Quick Performance Diagnostics
-
-### System-Level Diagnostics
+## Quick Honua Diagnostics
 
 ```bash
-# Check CPU and memory usage
-htop
-# or
-top
+# Check Honua performance metrics
+curl -s http://localhost:8080/api/v1/admin/performance/summary
 
-# Monitor disk I/O
-iostat -x 1
+# Monitor Honua container resources
+docker stats honua-server
 
-# Check network utilization
-iftop
-# or
-nethogs
+# Check for slow queries in Honua logs
+docker logs honua-server | grep -E "(slow|timeout|performance|exceeded)"
 
-# PostgreSQL process monitoring
-ps aux | grep postgres | head -10
+# Test Honua API response times
+curl -w "Total: %{time_total}s\n" -o /dev/null -s http://localhost:8080/rest/services
+
+# Check Honua database health
+curl -s http://localhost:8080/api/v1/admin/database/health
 ```
 
-### Application Diagnostics
+## Slow Honua API Responses
 
-```bash
-# Check application logs for performance warnings
-docker logs honua-server | grep -E "(slow|timeout|performance)"
+### Symptom: Feature queries taking >500ms
 
-# Monitor active connections
-curl -s http://localhost:8080/health | jq '.database.connectionCount'
+**Troubleshooting**:
 
-# Check cache hit ratios
-curl -s http://localhost:8080/api/v1/metrics/cache | jq '{hit_ratio: (.hitRatio * 100), total_requests: .totalRequests}'
-```
+1. **Check Honua query performance**:
+   ```bash
+   # Check Honua's built-in performance monitoring
+   curl http://localhost:8080/api/v1/admin/performance/queries
 
-## Query Performance Issues
+   # Test specific layer performance
+   time curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?f=json&resultRecordCount=100"
 
-### Symptom: Slow Feature Queries (>500ms)
-
-**Root Cause Analysis**:
-
-1. **Check Query Execution Plans**:
-   ```sql
-   -- Connect to database
-   psql -h localhost -U postgres -d honua
-
-   -- Enable query timing
-   \timing on
-
-   -- Analyze slow queries
-   EXPLAIN ANALYZE SELECT * FROM honua.features WHERE layer_id = 1 LIMIT 100;
-
-   -- Check for missing indexes
-   EXPLAIN (ANALYZE, BUFFERS)
-   SELECT * FROM honua.features
-   WHERE ST_Intersects(geometry, ST_MakeEnvelope(-122.5, 37.7, -122.3, 37.8, 4326));
-   ```
-
-2. **Identify Missing Indexes**:
-   ```sql
-   -- Check existing indexes
-   SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'features';
-
-   -- Find tables without spatial indexes
-   SELECT schemaname, tablename
-   FROM pg_tables t
-   WHERE schemaname = 'honua'
-   AND NOT EXISTS (
-       SELECT 1 FROM pg_indexes i
-       WHERE i.tablename = t.tablename
-       AND i.indexdef LIKE '%gist%'
-   );
+   # Check if spatial indexes exist (Honua creates these automatically)
+   curl http://localhost:8080/api/v1/admin/database/indexes
    ```
 
 **Solutions**:
 
-1. **Add Missing Spatial Indexes**:
-   ```sql
-   -- Create spatial index (if missing)
-   CREATE INDEX CONCURRENTLY idx_features_geom
-   ON honua.features USING gist(geometry);
-
-   -- Create filtered indexes for common queries
-   CREATE INDEX CONCURRENTLY idx_features_layer_geom
-   ON honua.features USING gist(layer_id, geometry);
-
-   -- Add btree index for layer_id lookups
-   CREATE INDEX CONCURRENTLY idx_features_layer_id
-   ON honua.features(layer_id);
-   ```
-
-2. **Optimize Query Limits**:
+1. **Tune Honua query limits**:
    ```bash
-   # Reduce default query limits for better performance
-   export Limits__Query__DefaultRecordCount=500
-   export Limits__Query__MaxRecordCount=2000
+   # Reduce default record counts for faster responses
+   LIMITS__QUERY__DEFAULTRECORDCOUNT=500
+   LIMITS__QUERY__MAXRECORDCOUNT=2000
+   LIMITS__QUERY__MAXEXECUTIONTIME=30s
    ```
 
-3. **Update Table Statistics**:
+2. **Enable Honua query caching**:
+   ```bash
+   # Enable response caching
+   HONUA_DATABASE__QUERYCACHE__MAXCACHEDSTATEMENTS=200
+   HONUA_DATABASE__QUERYCACHE__ENABLEAUTOMATICCACHING=true
+
+   # Configure Redis for distributed caching
+   ConnectionStrings__Redis=redis:6379
+   ```
+
+3. **Check data size and complexity**:
    ```sql
    -- Update PostgreSQL statistics
    ANALYZE honua.features;
@@ -338,134 +297,84 @@ tail -f /var/log/redis/redis-server.log
 
 ## Memory Usage Issues
 
-### Symptom: High Memory Consumption
-
-**Diagnostic Steps**:
-
-1. **Monitor Application Memory**:
-   ```bash
-   # Check process memory usage
-   ps aux | grep dotnet | awk '{print $4, $6, $11}' | sort -n
-
-   # Monitor .NET garbage collection
-   dotnet-dump collect -p $(pgrep dotnet)
-   dotnet-gcdump collect -p $(pgrep dotnet)
-   ```
-
-2. **Check PostgreSQL Memory Usage**:
-   ```sql
-   -- Check PostgreSQL memory settings
-   SHOW shared_buffers;
-   SHOW work_mem;
-   SHOW maintenance_work_mem;
-   SHOW effective_cache_size;
-
-   -- Monitor buffer cache hit ratio
-   SELECT
-       round(
-           100.0 * sum(blks_hit) / (sum(blks_hit) + sum(blks_read)), 2
-       ) AS buffer_cache_hit_ratio
-   FROM pg_stat_database;
-   ```
+### Symptom: Honua container using too much memory
 
 **Solutions**:
 
-1. **Configure .NET Memory Limits**:
+1. **Set Honua memory limits**:
    ```bash
-   # Set garbage collection options
-   export DOTNET_GCConserveMemory=3
-   export DOTNET_GCHeapHardLimit=1073741824  # 1GB limit
-   export DOTNET_GCHighMemPercent=75
+   # Configure .NET memory limits for containers
+   DOTNET_GCConserveMemory=3
+   DOTNET_GCHeapHardLimit=1073741824  # 1GB limit
+   DOTNET_GCHighMemPercent=75
    ```
 
-2. **Optimize PostgreSQL Memory**:
+2. **Limit Honua geometry processing**:
    ```bash
-   # Edit postgresql.conf for 4GB system
-   shared_buffers = 1GB              # 25% of RAM
-   effective_cache_size = 3GB        # 75% of RAM
-   work_mem = 16MB                   # Per connection
-   maintenance_work_mem = 256MB      # For maintenance operations
+   # Reduce memory usage for large geometries
+   LIMITS__GEOMETRY__MAXVERTICES=5000
+   LIMITS__QUERY__MAXRECORDCOUNT=1000
+   MEMORYMANAGEMENT__MAXCACHEENTRIES=5000
    ```
 
-3. **Reduce Geometry Memory Usage**:
+3. **Monitor container memory**:
    ```bash
-   # Limit geometry processing
-   export Limits__Geometry__MaxVertices=5000
-   export Limits__Query__MaxRecordCount=1000
+   # Monitor Honua container memory usage
+   docker stats honua-server
+
+   # Set Docker memory limits
+   docker run --memory=2g honuaio/honua-server:latest
+
+   # In Docker Compose:
+   services:
+     honua-server:
+       deploy:
+         resources:
+           limits:
+             memory: 2G
    ```
 
 ## Network and I/O Performance
 
 ### Symptom: Slow API Response Times
 
-**Diagnostic Steps**:
-
-1. **Measure Response Times**:
-   ```bash
-   # Test API endpoint performance
-   curl -w "@curl-format.txt" -o /dev/null -s "http://localhost:8080/rest/services/1/FeatureServer/0/query?f=json"
-
-   # Create curl-format.txt
-   cat > curl-format.txt << 'EOF'
-        time_namelookup:  %{time_namelookup}\n
-           time_connect:  %{time_connect}\n
-        time_appconnect:  %{time_appconnect}\n
-       time_pretransfer:  %{time_pretransfer}\n
-          time_redirect:  %{time_redirect}\n
-     time_starttransfer:  %{time_starttransfer}\n
-                        ----------\n
-             time_total:  %{time_total}\n
-   EOF
-   ```
-
-2. **Check Disk I/O Performance**:
-   ```bash
-   # Monitor disk usage for PostgreSQL data
-   iostat -x 1 5
-
-   # Check PostgreSQL data directory usage
-   du -sh /var/lib/postgresql/14/main/
-
-   # Monitor slow queries writing to disk
-   tail -f /var/log/postgresql/postgresql-14-main.log | grep -E "(duration|slow)"
-   ```
-
 **Solutions**:
 
-1. **Enable Response Compression**:
+1. **Test Honua API performance**:
    ```bash
-   # Already configured in Honua.Server
-   # Verify compression is working
-   curl -H "Accept-Encoding: gzip" -v http://localhost:8080/rest/services/1/FeatureServer
+   # Test feature server response times
+   curl -w "Total: %{time_total}s\n" -o /dev/null -s \
+     "http://localhost:8080/rest/services/1/FeatureServer/0/query?f=json&resultRecordCount=100"
+
+   # Test OGC API Features
+   curl -w "Total: %{time_total}s\n" -o /dev/null -s \
+     "http://localhost:8080/collections/layer1/items?limit=100"
+
+   # Verify response compression
+   curl -H "Accept-Encoding: gzip" -v http://localhost:8080/rest/services
    ```
 
-2. **Optimize Database I/O**:
-   ```sql
-   -- Enable parallel query processing
-   SET max_parallel_workers_per_gather = 2;
-   SET parallel_tuple_cost = 0.1;
-   SET parallel_setup_cost = 1000;
+2. **Optimize Honua connection pooling**:
+   ```bash
+   # Tune connection pool for better performance
+   HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE=100
+   HONUA__LIMITS__CONNECTIONS__MAXCONCURRENT=100
+   HONUA__LIMITS__CONNECTIONS__REQUESTTIMEOUT=30s
 
-   -- Configure checkpoint behavior
-   ALTER SYSTEM SET checkpoint_completion_target = 0.7;
-   ALTER SYSTEM SET checkpoint_timeout = '15min';
-   SELECT pg_reload_conf();
+   # Use larger connection pool for high load
+   HONUA__LIMITS__CONNECTIONS__MAXCONNECTIONPOOLSIZE=200
    ```
 
-3. **Use Connection Pooling**:
+3. **Monitor PostgreSQL container**:
    ```bash
-   # Install and configure pgBouncer for connection pooling
-   sudo apt-get install pgbouncer
+   # Monitor PostgreSQL container performance
+   docker stats postgres
 
-   # Configure pgbouncer.ini
-   [databases]
-   honua = host=localhost port=5432 dbname=honua
+   # Check PostgreSQL data volume usage
+   docker exec postgres df -h /var/lib/postgresql/data
 
-   [pgbouncer]
-   listen_port = 6432
-   pool_mode = transaction
-   default_pool_size = 25
-   max_client_conn = 100
+   # Monitor slow queries in PostgreSQL logs
+   docker logs postgres | grep -E "(duration|slow)"
    ```
 
 ## Monitoring and Alerting
