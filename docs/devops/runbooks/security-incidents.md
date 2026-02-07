@@ -2,57 +2,34 @@
 
 **Alert**: HonuaSecurityIncident
 **Severity**: Critical
-**Response Time**: < 5 minutes
+**Goal**: Contain, assess, and eradicate security issues quickly.
 
-## Symptoms
-- Unexpected admin access
-- Suspicious authentication failures
-- Abuse patterns or data exfiltration indicators
+---
 
 ## Immediate Actions
 
-### 1. Contain (0-5 minutes)
-- Block suspicious IPs at the edge/WAF
-- Disable affected credentials if known
-- Notify security team
+- Restrict access (network rules, WAF, or firewall).
+- Rotate exposed credentials.
+- Preserve logs for investigation.
 
-### 2. Preserve Evidence (5-10 minutes)
-```bash
-# Collect recent logs
-kubectl logs --since=30m -l app=honua-server -n honua-production > incident-logs.txt
-```
+---
 
-## Diagnostics
+## Diagnose
 
-### Review Audit Logs
-- Search for authorization failures/successes on admin or metrics endpoints
-- Correlate with user IDs and IPs
+- Identify the affected surface (Admin API, data APIs, infrastructure).
+- Determine scope and timeline of access.
+- Validate integrity of data stores and backups.
 
-### Validate Credential Usage
-- Check API key usage logs
-- Review OIDC token issuer/audience mismatches
+---
 
-## Common Actions
+## Mitigate
 
-### Rotate Credentials
-- Rotate `HONUA_ADMIN_PASSWORD`
-- Rotate OIDC client secrets
-- Rotate database credentials if exposed
+- Disable compromised credentials and revoke tokens.
+- Roll back recent changes if exploit is related to deployment.
+- Patch or isolate vulnerable services.
 
-### Reduce Attack Surface
-- Tighten rate limits
-- Disable anonymous read access by setting layer/service access policies (e.g., `allowAnonymous=false` or restricting tenants/roles)
-- Restrict admin endpoints to a management network
+---
 
-## Escalation
+## Escalate
 
-Escalate immediately if:
-- Data exfiltration is suspected
-- Admin credentials compromised
-- Multiple systems affected
-
-## Recovery
-
-- Restore clean configuration
-- Re-enable services in stages
-- Document incident details and timeline
+Escalate immediately to security leadership and incident response.
