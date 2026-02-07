@@ -4,11 +4,10 @@
 
 | I want to... | Go to |
 |---|---|
-| Set up a dev environment | [Getting Started](contributor/development/getting-started.md) |
-| Deploy to production | [Infrastructure](../infrastructure/README.md) |
 | **Consume geospatial data** | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
 | **Manage the server** | [Control Plane API](user/CONTROL_PLANE_API.md) |
-| Contribute code | [Contributing](contributor/development/contributing.md) |
+| Deploy to production | [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) |
+| Monitor and troubleshoot | [DevOps Guide](devops/README.md) |
 
 ## User documentation
 
@@ -30,7 +29,6 @@
 
 **Deployment:**
 - [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — specific deployment patterns for different use cases
-- [Infrastructure](../infrastructure/README.md) — Docker Compose, Helm, Terraform
 - [Serverless](devops/serverless-deployments.md) — AWS Lambda and Azure Functions
 - [Container Images](devops/CONTAINER_IMAGES.md) — registries, tags, and publishing
 
@@ -57,19 +55,6 @@
 - [Credential Rotation](devops/credential-rotation.md)
 - [Backup and Restore](devops/backup-restore.md)
 
-## Contributor documentation
+---
 
-**Development:**
-- [Getting Started](contributor/development/getting-started.md) — prerequisites, setup, first run
-- [Contributing](contributor/development/contributing.md) — code style, testing, PR process
-- [K3d + Helm](contributor/development/k3d-helm.md) — local Kubernetes development
-
-**Architecture:**
-- [Architecture Overview](contributor/ARCHITECTURE.md) — system design and component interaction
-- [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
-- [ADRs](contributor/adr/) — architecture decision records
-
-**Testing:**
-- [Testing Guide](contributor/TESTING_EXCELLENCE_GUIDE.md) — strategy and best practices
-- [CI Quality Gates](contributor/CI_QUALITY_GATES.md) — CI workflows and enforcement
-- [Pre-PR Checklist](contributor/PRE_PR_CHECKLIST.md) — code review preparation
+*This documentation is focused on using and operating Honua Server. For development and contribution information, see the project repository.*
