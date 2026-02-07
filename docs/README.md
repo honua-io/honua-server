@@ -6,20 +6,20 @@
 |---|---|
 | Set up a dev environment | [Getting Started](contributor/development/getting-started.md) |
 | Deploy to production | [Infrastructure](../infrastructure/README.md) |
-| Call the API | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
-| Manage services and layers | [Control Plane API](user/CONTROL_PLANE_API.md) |
+| **Consume geospatial data** | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
+| **Manage the server** | [Control Plane API](user/CONTROL_PLANE_API.md) |
 | Contribute code | [Contributing](contributor/development/contributing.md) |
 
 ## User documentation
 
 **Getting Started:**
 - [User Journeys](user/USER_JOURNEYS.md) — role-based guides for GIS professionals, developers, analysts
-- [Standards APIs](user/STANDARDS_APIS.md) — FeatureServer, OGC API Features/Tiles, OData v4, MVT
-- [API Examples](user/API_EXAMPLES.md) — request/response examples for all protocols
+- [Geospatial Data APIs](user/STANDARDS_APIS.md) — FeatureServer, OGC API Features/Tiles, OData v4, MVT
+- [API Examples](user/API_EXAMPLES.md) — request/response examples for geospatial data access
 
 **Integration & Architecture:**
 - [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches and code examples
-- [Control Plane API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
+- [Server Management API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
 - [Model Optimization](user/MODEL_OPTIMIZATION_GUIDE.md) — data modeling best practices
 
 **Reference:**

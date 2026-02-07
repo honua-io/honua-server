@@ -1,7 +1,7 @@
-# Control Plane API (Honua)
+# Server Management API (Control Plane)
 
-The Control Plane API powers the Honua Admin UI and can be used directly for **headless automation**
-(e.g., provisioning connections, publishing services, importing data, and orchestration).
+The Server Management API powers the Honua Admin UI and can be used directly for **headless automation**
+(e.g., provisioning connections, publishing services, importing data, and orchestration). This is separate from the geospatial data access APIs.
 
 ## When to use it
 - Integrate Honua into another platform

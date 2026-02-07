@@ -324,7 +324,7 @@ After importing data:
 
 - [Database Connections](connections-guide.md) - Setting up import destinations
 - [Layer Publishing](layers-guide.md) - Publishing imported data
-- [Standards APIs](../STANDARDS_APIS.md) - Using imported data via APIs
+- [Geospatial Data APIs](../STANDARDS_APIS.md) - Using imported data via APIs
 - [Performance Monitoring](../../devops/performance-monitoring.md) - Monitoring import performance
 
 ---

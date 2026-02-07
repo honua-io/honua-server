@@ -4,12 +4,12 @@ This section is for people **using Honua in production** — API consumers, GIS 
 
 ## Getting Started
 - **[User Journeys](USER_JOURNEYS.md)** - Role-based guides for GIS professionals, developers, data analysts
-- **[Standards APIs](STANDARDS_APIS.md)** - FeatureServer, OGC API Features/Tiles, OData v4, MVT overview
+- **[Geospatial Data APIs](STANDARDS_APIS.md)** - FeatureServer, OGC API Features/Tiles, OData v4, MVT overview
 
 ## Integration & Development
 - **[Integration Patterns](INTEGRATION_PATTERNS.md)** - Common integration approaches with code examples
-- **[API Examples](API_EXAMPLES.md)** - Practical request/response examples for all protocols
-- **[Control Plane API](CONTROL_PLANE_API.md)** - Admin + automation API for workflows and UI
+- **[Geospatial API Examples](API_EXAMPLES.md)** - Practical request/response examples for data access
+- **[Server Management API](CONTROL_PLANE_API.md)** - Admin + automation API for workflows and UI
 
 ## Reference & Optimization
 - **[Model Optimization Guide](MODEL_OPTIMIZATION_GUIDE.md)** - Data modeling best practices

@@ -365,7 +365,7 @@ After previewing your data:
 - [Map Styles](styles-guide.md) - Creating custom visualizations
 - [Layer Publishing](layers-guide.md) - Publishing data for preview
 - [Vector Tiles](../STANDARDS_APIS.md#vector-tiles-mvt) - Understanding tile services
-- [API Examples](../API_EXAMPLES.md) - Using Honua maps in applications
+- [Geospatial API Examples](../API_EXAMPLES.md) - Using Honua maps in applications
 
 ---
 *Map preview transforms raw spatial data into insightful visualizations - use it to explore, validate, and share your geospatial information effectively.*

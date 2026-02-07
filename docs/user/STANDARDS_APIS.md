@@ -1,6 +1,6 @@
-# Standards APIs
+# Geospatial Data APIs (Standards-Based)
 
-Honua exposes industry-standard GIS APIs for interoperability with existing clients and tools.
+Honua exposes industry-standard GIS APIs for geospatial data access and interoperability with existing clients and tools. These are separate from the server management API.
 
 ## Supported standards
 - GeoServices REST FeatureServer (Esri-compatible)

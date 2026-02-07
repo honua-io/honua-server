@@ -59,9 +59,9 @@ For system-level issues, see [DevOps Troubleshooting](../../devops/troubleshooti
 
 ## 🔗 **Related Documentation**
 
-- [Control Plane API](../CONTROL_PLANE_API.md) - API automation
-- [Standards APIs](../STANDARDS_APIS.md) - Using published services
-- [API Examples](../API_EXAMPLES.md) - Integration examples
+- [Server Management API](../CONTROL_PLANE_API.md) - Admin automation
+- [Geospatial Data APIs](../STANDARDS_APIS.md) - Using published services
+- [Geospatial API Examples](../API_EXAMPLES.md) - Data integration examples
 
 ---
 *For deployment and configuration, see [DevOps Documentation](../../devops/)*

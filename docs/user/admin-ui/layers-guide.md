@@ -213,8 +213,8 @@ After publishing layers:
 
 - [Database Connections](connections-guide.md) - Setting up data sources
 - [Data Import](import-guide.md) - Adding data to publish
-- [Standards APIs](../STANDARDS_APIS.md) - Using published services
-- [API Examples](../API_EXAMPLES.md) - Integration code examples
+- [Geospatial Data APIs](../STANDARDS_APIS.md) - Using published services
+- [Geospatial API Examples](../API_EXAMPLES.md) - Integration code examples
 
 ---
 *Layer publishing transforms your spatial data into standards-compliant web services accessible by any GIS client or web application.*

@@ -81,7 +81,7 @@ Monitor individual API service health:
 - **OGC Features**: OGC API Features endpoint health
 - **OData**: OData v4 service health
 - **Vector Tiles**: MVT tile service health
-- **Control Plane**: Admin API health
+- **Server Management API**: Admin API health
 
 *🖼️ Screenshot needed: Service health grid with individual endpoint status*
 

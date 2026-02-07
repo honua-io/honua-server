@@ -1,6 +1,6 @@
-# API Usage Examples
+# Geospatial Data API Examples
 
-This document provides comprehensive examples for using Honua Server's multiple API protocols.
+This document provides comprehensive examples for using Honua Server's geospatial data access protocols (not the server management API).
 
 ## 🌍 **Protocol Quick Reference**
 
