@@ -537,7 +537,7 @@ resource "aws_kms_alias" "honua" {
 
 locals {
   db_password          = var.db_password != null ? var.db_password : random_password.db[0].result
-  db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=true" : ""
+  db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   kms_key_arn          = var.kms_key_arn != "" ? var.kms_key_arn : aws_kms_key.honua[0].arn
   alb_logs_bucket_name = var.alb_access_logs_bucket_name != "" ? var.alb_access_logs_bucket_name : "${local.name}-alb-logs-${random_id.alb_logs_suffix.hex}"
   certificate_arn      = var.alb_certificate_arn != "" ? var.alb_certificate_arn : (local.use_managed_cert ? aws_acm_certificate_validation.this[0].certificate_arn : "")

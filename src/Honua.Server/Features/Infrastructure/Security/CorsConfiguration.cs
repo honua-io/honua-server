@@ -173,8 +173,7 @@ public static class CorsConfiguration
             }
 
             var originHost = originUri.Host;
-            if (originHost.EndsWith(hostSuffix, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(originHost, hostSuffix, StringComparison.OrdinalIgnoreCase))
+            if (originHost.EndsWith("." + hostSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

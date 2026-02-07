@@ -65,7 +65,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         var tableNameOnly = "features";
         _tableName = string.IsNullOrEmpty(dependencies.SchemaName)
             ? tableNameOnly
-            : $"{dependencies.SchemaName}.{tableNameOnly}";
+            : $"{Infrastructure.SchemaSearchPath.ValidateAndQuote(dependencies.SchemaName)}.{tableNameOnly}";
     }
 
     private static partial class Log

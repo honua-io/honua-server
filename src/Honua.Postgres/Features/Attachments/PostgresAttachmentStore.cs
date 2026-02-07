@@ -35,7 +35,9 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _tableName = string.IsNullOrEmpty(schemaName) ? "attachments" : $"{schemaName}.attachments";
+        _tableName = string.IsNullOrEmpty(schemaName)
+            ? "attachments"
+            : $"{Infrastructure.SchemaSearchPath.ValidateAndQuote(schemaName)}.attachments";
     }
 
     public async Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)

@@ -332,7 +332,11 @@ internal sealed partial class FeatureQueryBuilder
         var dangerousPatterns = new[]
         {
             "UNION", "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
-            "EXEC", "EXECUTE", "xp_", "sp_", "INFORMATION_SCHEMA", "--", "/*", "*/", ";"
+            "EXEC", "EXECUTE", "xp_", "sp_", "INFORMATION_SCHEMA", "--", "/*", "*/", ";",
+            "COPY", "TRUNCATE", "GRANT", "REVOKE", "VACUUM", "ANALYZE", "EXPLAIN",
+            "DO", "RAISE", "PERFORM", "NOTIFY", "LISTEN",
+            "pg_read_file", "pg_write_file", "pg_ls_dir", "pg_stat_file",
+            "lo_import", "lo_export", "pg_sleep", "current_setting", "set_config"
         };
 
         foreach (var pattern in dangerousPatterns)

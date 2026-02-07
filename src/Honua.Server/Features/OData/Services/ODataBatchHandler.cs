@@ -564,8 +564,7 @@ internal sealed partial class ODataBatchHandler
             {
                 Log.BatchRequestParseFailed(_logger, request.Id, ex);
                 rollback = true;
-                var message = ex is ArgumentException ? ex.Message : "Failed to parse request.";
-                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", message));
+                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", "Failed to parse request."));
             }
         }
 
@@ -933,7 +932,7 @@ internal sealed partial class ODataBatchHandler
         catch (ArgumentException ex)
         {
             Log.BatchRequestParseFailed(_logger, request.Id, ex);
-            return CreateErrorResponse(request.Id, 400, "InvalidRequest", ex.Message);
+            return CreateErrorResponse(request.Id, 400, "InvalidRequest", "Invalid request parameters.");
         }
         catch (Exception ex)
         {
@@ -988,9 +987,9 @@ internal sealed partial class ODataBatchHandler
         {
             feature = await CreateFeatureFromBodyAsync(body, layer, cancellationToken: cancellationToken);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return CreateErrorResponse(requestId, 400, "InvalidRequest", ex.Message);
+            return CreateErrorResponse(requestId, 400, "InvalidRequest", "Invalid request data.");
         }
 
         var created = await _featureWriter.CreateAsync(layer.Id, feature, cancellationToken);
@@ -1047,9 +1046,9 @@ internal sealed partial class ODataBatchHandler
         {
             updatedFeature = await CreateFeatureFromBodyAsync(body, layer, objectId.Value, existing.Value, cancellationToken);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return CreateErrorResponse(requestId, 400, "InvalidRequest", ex.Message);
+            return CreateErrorResponse(requestId, 400, "InvalidRequest", "Invalid request data.");
         }
 
         var result = await _featureWriter.UpdateAsync(layer.Id, updatedFeature, cancellationToken);

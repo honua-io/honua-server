@@ -21,8 +21,9 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
-        string schema = string.IsNullOrEmpty(schemaName) ? "honua" : schemaName;
-        _layersTable = $"{schema}.layers";
+        string quotedSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(
+            string.IsNullOrEmpty(schemaName) ? "honua" : schemaName);
+        _layersTable = $"{quotedSchema}.layers";
     }
 
     /// <inheritdoc />

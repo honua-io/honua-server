@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 
@@ -347,7 +348,7 @@ public static class OidcAuthenticationExtensions
                     OidcAuthenticationLog.JwtAuthenticationFailed(logger, context.Exception.Message);
                     return Task.CompletedTask;
                 },
-                OnTokenValidated = context =>
+                OnTokenValidated = async context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
                     var userId = context.Principal?.FindFirst(oidcOptions.ClaimsMapping.UserIdClaimType)?.Value ?? "unknown";
@@ -355,26 +356,47 @@ public static class OidcAuthenticationExtensions
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection)
                     {
-                        var cache = context.HttpContext.RequestServices.GetService<IMemoryCache>();
+                        var distributedCache = context.HttpContext.RequestServices.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>();
+                        var memoryCache = context.HttpContext.RequestServices.GetService<IMemoryCache>();
                         var tokenKey = TryGetTokenReplayKey(context.SecurityToken);
-                        if (cache != null && !string.IsNullOrWhiteSpace(tokenKey) && context.SecurityToken is JwtSecurityToken jwtToken)
+                        if (!string.IsNullOrWhiteSpace(tokenKey) && context.SecurityToken is JwtSecurityToken jwtToken)
                         {
-                            if (cache.TryGetValue(tokenKey, out _))
-                            {
-                                OidcAuthenticationLog.TokenReplayDetected(logger, userId);
-                                context.Fail("Token replay detected");
-                                return Task.CompletedTask;
-                            }
-
                             var expiresOn = GetReplayCacheExpiration(jwtToken, oidcOptions.TokenValidation);
-                            cache.Set(tokenKey, true, new MemoryCacheEntryOptions
+
+                            // Prefer distributed cache for multi-instance deployments
+                            if (distributedCache != null)
                             {
-                                AbsoluteExpiration = expiresOn
-                            });
+                                var existing = await distributedCache.GetStringAsync(tokenKey);
+                                if (existing != null)
+                                {
+                                    OidcAuthenticationLog.TokenReplayDetected(logger, userId);
+                                    context.Fail("Token replay detected");
+                                    return;
+                                }
+
+                                await distributedCache.SetStringAsync(tokenKey, "1",
+                                    new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
+                                    {
+                                        AbsoluteExpiration = expiresOn
+                                    });
+                            }
+                            else if (memoryCache != null)
+                            {
+                                // Fall back to in-memory cache for single-instance deployments
+                                if (memoryCache.TryGetValue(tokenKey, out _))
+                                {
+                                    OidcAuthenticationLog.TokenReplayDetected(logger, userId);
+                                    context.Fail("Token replay detected");
+                                    return;
+                                }
+
+                                memoryCache.Set(tokenKey, true, new MemoryCacheEntryOptions
+                                {
+                                    AbsoluteExpiration = expiresOn
+                                });
+                            }
                         }
                     }
-
-                    return Task.CompletedTask;
                 }
             };
         });

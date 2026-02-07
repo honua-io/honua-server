@@ -297,7 +297,7 @@ public sealed class TokenValidationOptions
     /// <summary>
     /// Gets or sets whether to enable token replay protection.
     /// </summary>
-    public bool EnableTokenReplayProtection { get; set; }
+    public bool EnableTokenReplayProtection { get; set; } = true;
 
     /// <summary>
     /// Gets or sets the maximum replay cache duration (0 uses token expiry).

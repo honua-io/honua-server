@@ -100,17 +100,6 @@ internal sealed class ApiKeyAuthenticationHandler(
             return _authOptions.IsDevelopmentMode || _authOptions.IsTestMode;
         }
 
-        // Check if we're in development environment AND admin password is empty/not configured
-        if (_authOptions.IsDevelopmentMode)
-        {
-            string? adminPassword = _authOptions.AdminPassword;
-            if (string.IsNullOrEmpty(adminPassword))
-            {
-                AuthenticationLog.DevelopmentEnvironmentAuthBypass(Logger);
-                return true;
-            }
-        }
-
         return false;
     }
 
@@ -209,7 +198,8 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? failureMessage = Context.Items["AuthFailureMessage"] as string;
         if (!string.IsNullOrEmpty(failureMessage))
         {
-            string problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{failureMessage}}"}""";
+            string escapedMessage = failureMessage.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{escapedMessage}}"}""";
             return Response.WriteAsync(problemDetails);
         }
 

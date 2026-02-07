@@ -403,7 +403,7 @@ if (serveAdminUi)
 // Add correlation ID middleware early in pipeline (before request logging)
 app.UseCorrelationId();
 
-if (useTestSchemaHeaders)
+if (useTestSchemaHeaders && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test")))
 {
     app.UseTestSchemaHeaders();
 }

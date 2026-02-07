@@ -24,8 +24,22 @@ internal static partial class SchemaSearchPath
         }
 
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SET search_path TO {sanitized}, public;";
+        command.CommandText = $"SET search_path TO \"{sanitized}\", public;";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates a schema name against the safe identifier pattern.
+    /// </summary>
+    public static string ValidateAndQuote(string schemaName)
+    {
+        var sanitized = schemaName.Trim();
+        if (!_schemaNameRegex.IsMatch(sanitized))
+        {
+            throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
+        }
+
+        return $"\"{sanitized}\"";
     }
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]

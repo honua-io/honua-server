@@ -52,7 +52,7 @@ resource "random_password" "db" {
 
 locals {
   db_password          = var.db_admin_password != null ? var.db_admin_password : random_password.db[0].result
-  db_connection_string = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=true"
+  db_connection_string = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_enabled        = var.redis_enabled || var.redis_connection_string != ""
   redis_create         = var.redis_enabled && var.redis_connection_string == ""
   redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")

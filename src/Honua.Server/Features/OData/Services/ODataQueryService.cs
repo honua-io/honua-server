@@ -53,7 +53,7 @@ internal sealed partial class ODataQueryService
             }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
             {
-                error = ex.Message;
+                error = "Invalid filter expression.";
                 return new FeatureQuery();
             }
         }

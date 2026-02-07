@@ -109,7 +109,7 @@ Enable token replay protection to reject repeated use of the same JWT.
 }
 ```
 
-- **Cache scope**: Uses `IMemoryCache` (per instance). In multi-instance deployments, add a shared cache or external replay detection.
+- **Cache scope**: Uses `IDistributedCache` when available (e.g. Redis), falling back to `IMemoryCache` (per instance). In multi-instance deployments, configure a shared distributed cache.
 - **Token IDs**: Uses `jti` when present, otherwise the raw token hash.
 
 ## Forwarded Headers and Public Base URL
@@ -151,3 +151,87 @@ Monitoring__IntelligentAlerting__NotificationChannels__Webhook__Url=env:HONUA_AL
 Monitoring__IntelligentAlerting__NotificationChannels__Webhook__Headers__Authorization=env:HONUA_ALERT_WEBHOOK_AUTH
 Monitoring__IntelligentAlerting__NotificationChannels__Sms__ApiKey=env:HONUA_SMS_API_KEY
 ```
+
+## Rate Limiting
+
+Honua does not implement application-level rate limiting. Rate limiting should be
+enforced at the edge infrastructure layer (reverse proxy, load balancer, or API gateway).
+
+### Recommended Approach
+
+| Deployment | Recommended Tool | Notes |
+|---|---|---|
+| Docker / self-hosted | nginx `limit_req` / Caddy `rate_limit` | Closest to the application |
+| AWS ECS / Fargate | ALB request-rate rules or AWS WAF | Managed, scales automatically |
+| AWS Lambda | API Gateway throttling + WAF | Per-stage and per-key limits |
+| Azure Container Apps | Azure Front Door / WAF policies | Regional rate limiting |
+| Azure Functions | Azure API Management or Front Door | Per-subscription throttling |
+| Kubernetes | Ingress controller (e.g. nginx-ingress `limit-rps`) | Cluster-level enforcement |
+
+### Configuration Guidance
+
+At minimum, operators should configure:
+
+1. **Global request rate** - cap total requests per IP (e.g. 100 req/s).
+2. **Authentication endpoint rate** - stricter limits on `/admin/login` and token endpoints (e.g. 5 req/min per IP).
+3. **Upload endpoint rate** - limit attachment uploads to prevent storage abuse (e.g. 10 req/min per IP).
+4. **Tile endpoint burst** - map tile requests are bursty by nature; allow short bursts (e.g. 200 req/s) but cap sustained throughput.
+
+### nginx Example
+
+```nginx
+# Define rate limit zones
+limit_req_zone $binary_remote_addr zone=global:10m rate=100r/s;
+limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/m;
+limit_req_zone $binary_remote_addr zone=upload:10m rate=10r/m;
+
+server {
+    # Global rate limit with burst
+    limit_req zone=global burst=50 nodelay;
+
+    # Stricter limit on auth endpoints
+    location /admin/login {
+        limit_req zone=auth burst=3 nodelay;
+        proxy_pass http://honua;
+    }
+
+    # Stricter limit on uploads
+    location ~ ^/layers/.*/attachments {
+        limit_req zone=upload burst=5 nodelay;
+        proxy_pass http://honua;
+    }
+}
+```
+
+### AWS WAF Example
+
+```json
+{
+  "Name": "HonuaRateLimit",
+  "Priority": 1,
+  "Action": { "Block": {} },
+  "Statement": {
+    "RateBasedStatement": {
+      "Limit": 2000,
+      "AggregateKeyType": "IP"
+    }
+  },
+  "VisibilityConfig": {
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "HonuaRateLimit"
+  }
+}
+```
+
+### Design Decision
+
+Application-level rate limiting was intentionally deferred for the MVP. Edge-based
+rate limiting is preferred because it:
+
+- Rejects abusive traffic before it reaches the application process
+- Avoids adding middleware latency to every request
+- Leverages battle-tested infrastructure components
+- Scales independently of application instances
+
+See ADR-0004 for the full architectural decision record.

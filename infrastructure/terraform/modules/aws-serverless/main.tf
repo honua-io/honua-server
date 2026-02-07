@@ -35,8 +35,12 @@ resource "random_password" "redis_auth" {
 
 locals {
   db_password          = var.db_password != null ? var.db_password : random_password.db[0].result
-  db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=true" : ""
+  db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   db_connection_string = "Host=${module.rds.db_instance_address};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
+  # NOTE: Lambda environment variables are encrypted at rest by AWS KMS but are visible
+  # in the AWS Console/API. For enhanced secret management, use the AWS Parameters and
+  # Secrets Lambda Extension to resolve secrets from Secrets Manager at runtime.
+  # See: https://docs.aws.amazon.com/systems-manager/latest/userguide/ps-integration-lambda-extensions.html
   lambda_environment = merge({
     ConnectionStrings__DefaultConnection = local.db_connection_string
     HONUA_ADMIN_PASSWORD                 = var.admin_password

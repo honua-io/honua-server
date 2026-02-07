@@ -73,12 +73,12 @@ internal static class LayerPublishingEndpoints
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer list invalid request");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Layer list connection not found");
-            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -161,12 +161,12 @@ internal static class LayerPublishingEndpoints
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer publish invalid request");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Layer publish connection not found");
-            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (UnauthorizedAccessException)
         {
@@ -222,12 +222,12 @@ internal static class LayerPublishingEndpoints
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer toggle invalid request");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Layer toggle connection not found");
-            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (UnauthorizedAccessException)
         {
@@ -276,12 +276,12 @@ internal static class LayerPublishingEndpoints
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle invalid request");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle connection not found");
-            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (UnauthorizedAccessException)
         {

@@ -181,7 +181,7 @@ internal sealed partial class ODataCrudService
         catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
-            return ODataCrudResult<Dictionary<string, object?>>.BadRequest(ex.Message);
+            return ODataCrudResult<Dictionary<string, object?>>.BadRequest("Invalid request data.");
         }
         catch (Exception ex)
         {
@@ -312,7 +312,7 @@ internal sealed partial class ODataCrudService
         catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<Dictionary<string, object?>>.BadRequest(ex.Message);
+            return ODataCrudResult<Dictionary<string, object?>>.BadRequest("Invalid request data.");
         }
         catch (Exception ex)
         {
