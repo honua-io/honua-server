@@ -312,12 +312,7 @@ jobs:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
     - name: Run Core Benchmarks
-      run: |
-        dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
-          --filter "*SqlGeneration*" \
-          --job short \
-          --exporters json \
-          --artifacts "cross-platform-${{ matrix.os }}"
+      run: dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- --filter "*SqlGeneration*" --job short --exporters json --artifacts "cross-platform-${{ matrix.os }}"
 
     - name: Upload Cross-Platform Results
       uses: actions/upload-artifact@v4
