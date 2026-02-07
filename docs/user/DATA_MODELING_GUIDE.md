@@ -110,18 +110,18 @@ CREATE TABLE infrastructure (
 
 #### **Data Type Mapping**
 
-| Use Case | PostgreSQL Type | OData EDM Type | GeoJSON Type | Notes |
-|----------|-----------------|----------------|--------------|-------|
-| **Text Identifiers** | VARCHAR(50) | Edm.String | string | Short, indexed fields |
-| **Long Text** | TEXT | Edm.String | string | Descriptions, comments |
-| **Integers** | INTEGER | Edm.Int32 | number | Counts, flags, enums |
-| **Large Integers** | BIGINT | Edm.Int64 | number | IDs, timestamps |
-| **Decimals** | DECIMAL(p,s) | Edm.Decimal | number | Precise measurements |
-| **Floats** | DOUBLE PRECISION | Edm.Double | number | Scientific data |
-| **Dates** | DATE | Edm.Date | string | Date-only values |
-| **Timestamps** | TIMESTAMP WITH TIME ZONE | Edm.DateTimeOffset | string | Full date/time |
-| **Booleans** | BOOLEAN | Edm.Boolean | boolean | True/false flags |
-| **JSON Data** | JSONB | Edm.String | object | Structured attributes |
+| Use Case | PostgreSQL Type | OData EDM Type | GeoJSON Type | Esri JSON Type | Notes |
+|----------|-----------------|----------------|--------------|----------------|-------|
+| **Text Identifiers** | VARCHAR(50) | Edm.String | string | esriFieldTypeString | Short, indexed fields |
+| **Long Text** | TEXT | Edm.String | string | esriFieldTypeString | Descriptions, comments |
+| **Integers** | INTEGER | Edm.Int32 | number | esriFieldTypeInteger | Counts, flags, enums |
+| **Large Integers** | BIGINT | Edm.Int64 | number | esriFieldTypeOID | IDs, timestamps |
+| **Decimals** | DECIMAL(p,s) | Edm.Decimal | number | esriFieldTypeDouble | Precise measurements |
+| **Floats** | DOUBLE PRECISION | Edm.Double | number | esriFieldTypeDouble | Scientific data |
+| **Dates** | DATE | Edm.Date | string | esriFieldTypeDate | Date-only values |
+| **Timestamps** | TIMESTAMP WITH TIME ZONE | Edm.DateTimeOffset | string | esriFieldTypeDate | Full date/time |
+| **Booleans** | BOOLEAN | Edm.Boolean | boolean | esriFieldTypeString | True/false flags (Esri uses text) |
+| **JSON Data** | JSONB | Edm.String | object | esriFieldTypeString | Structured attributes as JSON text |
 
 ### **Advanced Schema Patterns**
 
