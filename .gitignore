@@ -126,8 +126,12 @@ node_modules/
 
 # Terraform
 **/.terraform/
+**/.terraform.lock.hcl
 infrastructure/terraform/.external_modules/
 infrastructure/terraform/modules/.external_modules/
+
+# Helm
+infrastructure/helm/*/charts/
 
 # Cake
 tools/**
