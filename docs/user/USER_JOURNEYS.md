@@ -475,9 +475,9 @@ autoscaling:
 ```
 
 **Next Steps:**
-- [Deployment Scenarios](../../devops/DEPLOYMENT_SCENARIOS.md) - Production deployment patterns
-- [Performance Monitoring](../../devops/performance-monitoring.md) - System monitoring setup
-- [Performance Testing](../../devops/performance-testing.md) - Load testing and optimization
+- [Deployment Scenarios](../devops/DEPLOYMENT_SCENARIOS.md) - Production deployment patterns
+- [Performance Monitoring](../devops/performance-monitoring.md) - System monitoring setup
+- [Performance Testing](../devops/performance-testing.md) - Load testing and optimization
 
 ---
 
