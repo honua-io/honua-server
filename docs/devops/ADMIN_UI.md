@@ -25,40 +25,60 @@ http://localhost:8080/admin/
 
 ### Standalone (CDN/S3)
 
-Build and host `Honua.Admin` as static assets, then point it to the server API:
+Build and host `Honua.Admin` as static assets:
 
-1. Update `src/Honua.Admin/wwwroot/appsettings.json`:
-```json
-{
-  "AdminApi": {
-    "BaseUrl": "https://api.example.com/api/v1/admin/",
-    "Scopes": [ "honua.admin" ]
-  }
-}
+1. **Configure during build** (environment variables):
+```bash
+# Set API endpoint during build
+ADMINAPI__BASEURL=https://api.example.com/api/v1/admin/
+ADMINAPI__SCOPES__0=honua.admin
+
+# Build the standalone UI
+dotnet publish src/Honua.Admin -c Release
 ```
 
-2. Build and upload `src/Honua.Admin/bin/Release/net10.0/publish/wwwroot`.
+2. **Upload static assets**: Deploy `src/Honua.Admin/bin/Release/net10.0/publish/wwwroot` to CDN/S3.
 
-3. Disable integrated hosting on the server and allow the UI origin:
+3. **Configure server for CORS**:
 ```bash
+# Allow the standalone UI origin
 HONUA_SERVE_ADMIN_UI=false
 HONUA_ADMIN_UI_CORS_ORIGINS=https://admin.example.com
 ```
 
+4. **Docker build example**:
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY . .
+ENV ADMINAPI__BASEURL=https://api.example.com/api/v1/admin/
+RUN dotnet publish src/Honua.Admin -c Release -o /app/publish
+# Deploy /app/publish/wwwroot to your CDN
+```
+
 ## Authentication
 
-The Admin UI uses OIDC with PKCE. Configure the identity provider settings in
-`src/Honua.Admin/wwwroot/appsettings.json` before deploying.
+The Admin UI uses OIDC with PKCE. Configure identity provider settings via environment variables during build:
 
-```json
-{
-  "Oidc": {
-    "Authority": "https://identity.example.com/",
-    "ClientId": "honua-admin",
-    "ResponseType": "code",
-    "DefaultScopes": [ "openid", "profile", "email", "honua.admin" ]
-  }
-}
+```bash
+# OIDC configuration for Admin UI
+OIDC__AUTHORITY=https://identity.example.com/
+OIDC__CLIENTID=honua-admin
+OIDC__RESPONSETYPE=code
+OIDC__DEFAULTSCOPES__0=openid
+OIDC__DEFAULTSCOPES__1=profile
+OIDC__DEFAULTSCOPES__2=email
+OIDC__DEFAULTSCOPES__3=honua.admin
+```
+
+**Docker build with OIDC**:
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ENV OIDC__AUTHORITY=https://identity.example.com/
+ENV OIDC__CLIENTID=honua-admin
+ENV OIDC__DEFAULTSCOPES__0=openid
+ENV OIDC__DEFAULTSCOPES__1=honua.admin
+RUN dotnet publish src/Honua.Admin -c Release
 ```
 
 ## Local Development
