@@ -20,7 +20,7 @@
 **Integration & Architecture:**
 - [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches and code examples
 - [Server Management API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
-- [Model Optimization](user/MODEL_OPTIMIZATION_GUIDE.md) — data modeling best practices
+- [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling best practices
 
 **Reference:**
 - [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support

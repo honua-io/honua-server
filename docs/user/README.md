@@ -12,7 +12,7 @@ This section is for people **using Honua in production** — API consumers, GIS 
 - **[Server Management API](CONTROL_PLANE_API.md)** - Admin + automation API for workflows and UI
 
 ## Reference & Optimization
-- **[Model Optimization Guide](MODEL_OPTIMIZATION_GUIDE.md)** - Data modeling best practices
+- **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices
 - **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri compatibility details
 - **[Protocol Coverage Index](specifications/protocol-coverage.md)** - Standards coverage overview
 

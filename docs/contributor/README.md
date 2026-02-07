@@ -18,6 +18,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 **Design Patterns:**
 - [**Shared Model Patterns**](SHARED_MODEL_PATTERNS.md) — common data model approaches
+- [**Code Model Optimization**](CODE_MODEL_OPTIMIZATION.md) — protocol model class optimization and inheritance patterns
 - [**GIS Crosscutting Concerns**](GIS_CROSSCUTTING_CONCERNS.md) — spatial data handling patterns
 - [**Adaptive Sampling**](ADAPTIVE_SAMPLING.md) — performance optimization techniques
 
