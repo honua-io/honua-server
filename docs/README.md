@@ -26,23 +26,6 @@
 - [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support
 - [Protocol Coverage Index](user/specifications/protocol-coverage.md) — standards coverage overview
 
-## Contributor documentation
-
-**Development:**
-- [Getting Started](contributor/development/getting-started.md) — prerequisites, setup, first run
-- [Contributing](contributor/development/contributing.md) — code style, testing, PR process
-- [K3d + Helm](contributor/development/k3d-helm.md) — local Kubernetes development
-
-**Architecture:**
-- [Architecture Overview](contributor/ARCHITECTURE.md) — system design and component interaction
-- [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
-- [ADRs](contributor/adr/) — architecture decision records
-
-**Testing:**
-- [Testing Guide](contributor/TESTING_EXCELLENCE_GUIDE.md) — strategy and best practices
-- [CI Quality Gates](contributor/CI_QUALITY_GATES.md) — CI workflows and enforcement
-- [Pre-PR Checklist](contributor/PRE_PR_CHECKLIST.md) — code review preparation
-
 ## DevOps documentation
 
 **Deployment:**
@@ -73,3 +56,20 @@
 - [Container Security](devops/CONTAINER_SECURITY.md)
 - [Credential Rotation](devops/credential-rotation.md)
 - [Backup and Restore](devops/backup-restore.md)
+
+## Contributor documentation
+
+**Development:**
+- [Getting Started](contributor/development/getting-started.md) — prerequisites, setup, first run
+- [Contributing](contributor/development/contributing.md) — code style, testing, PR process
+- [K3d + Helm](contributor/development/k3d-helm.md) — local Kubernetes development
+
+**Architecture:**
+- [Architecture Overview](contributor/ARCHITECTURE.md) — system design and component interaction
+- [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
+- [ADRs](contributor/adr/) — architecture decision records
+
+**Testing:**
+- [Testing Guide](contributor/TESTING_EXCELLENCE_GUIDE.md) — strategy and best practices
+- [CI Quality Gates](contributor/CI_QUALITY_GATES.md) — CI workflows and enforcement
+- [Pre-PR Checklist](contributor/PRE_PR_CHECKLIST.md) — code review preparation
