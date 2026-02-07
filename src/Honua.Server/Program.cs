@@ -465,6 +465,9 @@ app.MapAdminObservabilityEndpoints();
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();
 
+// Configure service settings endpoints (protocol toggles + MapServer config)
+app.MapServiceSettingsEndpoints();
+
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();
 

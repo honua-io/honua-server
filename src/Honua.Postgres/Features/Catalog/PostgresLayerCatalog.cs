@@ -14,7 +14,7 @@ namespace Honua.Postgres.Features.Catalog;
 /// <summary>
 /// PostgreSQL implementation of layer catalog for PostGIS metadata discovery
 /// </summary>
-internal sealed class PostgresLayerCatalog : ILayerCatalog
+internal sealed class PostgresLayerCatalog : ILayerCatalog, IServiceMetadataUpdater
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _layersTable;
@@ -630,5 +630,24 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         }
 
         return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.CatalogMetadata);
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateServiceMetadataAsync(string serviceName, CatalogMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_servicesTable}
+            SET metadata = @metadata::jsonb, updated_at = NOW()
+            WHERE LOWER(service_name) = LOWER(@serviceName)
+            """;
+
+        var metadataJson = JsonSerializer.Serialize(metadata, CatalogJsonContext.Default.CatalogMetadata);
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@serviceName", serviceName);
+        _ = command.Parameters.AddWithValue("@metadata", metadataJson);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

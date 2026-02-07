@@ -96,6 +96,7 @@ builder.Services.AddScoped<ILayerPublishingClient, LayerPublishingClient>();
 builder.Services.AddScoped<IEsriImportClient, EsriImportClient>();
 builder.Services.AddScoped<IFileImportClient, FileImportClient>();
 builder.Services.AddScoped<ILayerStyleClient, LayerStyleClient>();
+builder.Services.AddScoped<IServiceSettingsClient, ServiceSettingsClient>();
 
 await builder.Build().RunAsync();
 

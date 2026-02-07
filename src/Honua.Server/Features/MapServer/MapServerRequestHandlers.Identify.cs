@@ -69,6 +69,12 @@ internal static partial class MapServerEndpoints
         }
 
         var service = serviceResult.Resource!;
+        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+        if (protocolError is not null)
+        {
+            return protocolError;
+        }
+
         var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
         if (accessError != null)
         {

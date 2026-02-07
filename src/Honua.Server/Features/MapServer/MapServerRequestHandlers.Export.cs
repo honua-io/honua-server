@@ -68,10 +68,6 @@ internal static partial class MapServerEndpoints
             imageHeight = DefaultImageHeight;
         }
 
-        // Clamp image dimensions
-        imageWidth = Math.Clamp(imageWidth, 1, MaxImageDimension);
-        imageHeight = Math.Clamp(imageHeight, 1, MaxImageDimension);
-
         MapServerLog.ExportRequested(logger, serviceId, imageWidth, imageHeight);
         var stopwatch = Stopwatch.StartNew();
 
@@ -84,6 +80,20 @@ internal static partial class MapServerEndpoints
         }
 
         var service = serviceResult.Resource!;
+        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+        if (protocolError is not null)
+        {
+            return protocolError;
+        }
+
+        // Apply per-service MapServer config if present
+        var mapConfig = service.Metadata?.MapServer;
+        var maxDimension = mapConfig?.MaxImageWidth ?? MaxImageDimension;
+        var maxDimensionH = mapConfig?.MaxImageHeight ?? MaxImageDimension;
+        var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
+        imageWidth = Math.Clamp(imageWidth, 1, maxDimension);
+        imageHeight = Math.Clamp(imageHeight, 1, maxDimensionH);
+
         var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
         if (accessError != null)
         {
@@ -165,7 +175,7 @@ internal static partial class MapServerEndpoints
                 SpatialFilter = spatialFilter,
                 SpatialReferenceSrid = serviceSrid,
                 OutputSrid = imageSrid,
-                Limit = MaxFeaturesPerLayer
+                Limit = maxFeatures
             };
 
             var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
