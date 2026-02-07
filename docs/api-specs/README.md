@@ -35,15 +35,23 @@ Honua Server provides comprehensive OpenAPI specifications for all supported pro
 {% swagger src="ogc-api-tiles.json" %}
 {% endswagger %}
 
-## 🔗 **Server Management API**
+## ⚙️ **Server Management API**
 
 **Protocol**: REST API
 **Base URL**: `/api/v1/admin`
+**OpenAPI Spec**: [admin-api.json](admin-api.json)
 **Authentication**: API Key or OIDC required
 
-> **Note**: The Server Management API OpenAPI spec is available at runtime: `https://your-honua-server.com/api/v1/admin/openapi.json`
->
-> For detailed documentation and examples, see the [Server Management API Guide](../user/CONTROL_PLANE_API.md).
+**What you can do**:
+- Manage database connections (create, test, list)
+- Publish and configure layers from database tables
+- Control layer enabling/disabling and protocol settings
+- Manage map styles and layer styling
+- Monitor system health and observability
+- Access recent errors and telemetry status
+
+{% swagger src="admin-api.json" %}
+{% endswagger %}
 
 ## 🚀 **GeoServices REST FeatureServer**
 
