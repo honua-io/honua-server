@@ -14,6 +14,10 @@
 * [📊 API Examples](user/API_EXAMPLES.md)
 * [🔗 Integration Patterns](user/INTEGRATION_PATTERNS.md)
 
+## Interactive API Docs
+
+* [🌐 API Specifications](api-specs/README.md)
+
 ### Admin UI
 
 * [🎛️ Admin Interface](user/admin-ui/README.md)
