@@ -27,7 +27,7 @@ Coordinate transformation is currently handled in PostGIS (ST_Transform) rather 
 - Consolidate geometry conversion + Z/M detection into IGeometryService and route OGC/FeatureServer/OData through it to avoid divergent behavior.
 - Add protocol adapters for filters: ArcGIS SQL -> internal AST, OData -> internal AST, CQL2 -> internal AST, with shared SQL translation.
 - Implement request-side CRS handling for transactions (Content-Crs / input CRS) with explicit reprojection and axis-order normalization instead of strict SRID equality.
-- Define a CRS-aware precision/tolerance policy (rounding, simplification thresholds) and apply consistently across GeoJSON/GML/EsriJSON.
+- Define a CRS-aware precision/tolerance policy (rounding, simplification thresholds) and apply consistently across GeoJSON and EsriJSON.
 
 ## Priority Order
 1. Decide OData spatial contract and validate with real clients (Excel/Power BI) so metadata and payloads match expectations.

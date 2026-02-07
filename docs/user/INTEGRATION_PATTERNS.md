@@ -59,7 +59,7 @@ export async function fetchFeatures(collectionId, { bbox, limit = 100, filter })
 ### **GIS Clients (ArcGIS/QGIS)**
 
 - **ArcGIS Pro**: `http://<host>/rest/services/{id}/FeatureServer`
-- **QGIS WFS**: `http://<host>/ogc/features`
+- **QGIS (OGC API Features)**: `http://<host>/ogc/features`
 
 ---
 

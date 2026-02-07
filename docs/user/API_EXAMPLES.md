@@ -36,6 +36,11 @@ All examples assume `http://localhost:8080` as the base URL. If your deployment 
 curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=json"
 ```
 
+**GeoJSON output:**
+```bash
+curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=geojson"
+```
+
 **Example response (trimmed):**
 ```json
 {
@@ -76,6 +81,29 @@ curl "http://localhost:8080/ogc/features/collections/parcels/items?bbox=-122.5,3
 
 ```bash
 curl "http://localhost:8080/ogc/features/collections/parcels/items?filter=population%20%3E%2010000&filter-lang=cql2-text"
+```
+
+### **Output Formats**
+
+**GeoJSON (default for features):**
+```bash
+curl "http://localhost:8080/ogc/features/collections/parcels/items?f=geojson"
+```
+
+**GML (features only):**
+```bash
+curl "http://localhost:8080/ogc/features/collections/parcels/items?f=gml"
+```
+
+**HTML (metadata and features):**
+```bash
+curl "http://localhost:8080/ogc/features/collections?f=html"
+```
+
+**Accept header negotiation:**
+```bash
+curl -H "Accept: application/gml+xml;version=3.2" \
+  "http://localhost:8080/ogc/features/collections/parcels/items"
 ```
 
 ---

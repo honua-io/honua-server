@@ -6,7 +6,7 @@ This section is for installing, configuring, operating, and upgrading Honua in p
 
 **Deployment Scenarios:**
 - [**Deployment Scenarios**](DEPLOYMENT_SCENARIOS.md) — specific deployment patterns for different use cases
-- [**Infrastructure**](../../infrastructure/README.md) — Docker Compose, Helm, and Terraform configurations
+- **Infrastructure Templates** - Docker Compose, Helm, and Terraform are in `infrastructure/`
 - [**Serverless Deployments**](serverless-deployments.md) — AWS Lambda and Azure Functions
 - [**Container Images**](CONTAINER_IMAGES.md) — registries, tags, and publishing
 

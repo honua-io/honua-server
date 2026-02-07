@@ -4,7 +4,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 ## 🚀 **Getting Started**
 
-- [**Agent Guidelines**](../../AGENTS.md) — AI agent development guidelines and patterns
+- **Agent Guidelines** - see `AGENTS.md` in the repository root
 - [**Development Setup**](development/getting-started.md) — prerequisites, installation, and first run
 - [**Contributing Guide**](development/contributing.md) — code style, testing, and PR process
 - [**K3d + Helm Development**](development/k3d-helm.md) — local Kubernetes development

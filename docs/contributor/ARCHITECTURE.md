@@ -338,6 +338,5 @@ OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:14268"
 
 For detailed deployment instructions and examples, see:
 - [Deployment Scenarios](../devops/DEPLOYMENT_SCENARIOS.md) - Specific deployment patterns
-- [Infrastructure Examples](../../infrastructure/README.md) - Docker Compose, Helm, Terraform
+- [DevOps Overview](../devops/README.md) - Operational docs and checklists
 - [Performance Monitoring](../devops/performance-monitoring.md) - Observability setup
-

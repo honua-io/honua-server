@@ -530,7 +530,7 @@ Contributors are recognized in several ways:
 
 ## Code of Conduct
 
-We follow the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). Please read it to understand expected behavior in our community.
+We follow the Contributor Covenant Code of Conduct. Please review your organization’s code of conduct policies for expected behavior.
 
 ## License
 

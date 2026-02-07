@@ -51,6 +51,10 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /collections/{id}/items
 ```
 
+**Output formats:**
+- Metadata: `json` or `html`
+- Features: `geojson` (default), `json`, `gml`, `html`
+
 **Typical use cases:**
 - QGIS and open-source GIS tooling
 - Vendor-neutral integration

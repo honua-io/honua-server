@@ -28,7 +28,7 @@ curl http://localhost:8080/healthz/ready
 
 **GIS client endpoints:**
 - ArcGIS Pro: `http://<host>/rest/services/{id}/FeatureServer`
-- QGIS (WFS): `http://<host>/ogc/features`
+- QGIS (OGC API Features): `http://<host>/ogc/features`
 
 **Next Steps:**
 - [Geospatial API Examples](API_EXAMPLES.md)
