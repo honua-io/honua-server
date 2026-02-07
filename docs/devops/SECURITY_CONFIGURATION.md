@@ -98,15 +98,10 @@ If your IdP uses a non-standard roles claim, set:
 
 Enable token replay protection to reject repeated use of the same JWT.
 
-```json
-{
-  "Oidc": {
-    "TokenValidation": {
-      "EnableTokenReplayProtection": true,
-      "TokenReplayCacheDuration": "00:10:00"
-    }
-  }
-}
+```bash
+# Enable token replay protection
+OIDC__TOKENVALIDATION__ENABLETOKENREPLAYPROTECTION=true
+OIDC__TOKENVALIDATION__TOKENREPLAYCACHEDURATION=00:10:00
 ```
 
 - **Cache scope**: Uses `IDistributedCache` when available (e.g. Redis), falling back to `IMemoryCache` (per instance). In multi-instance deployments, configure a shared distributed cache.
@@ -116,17 +111,25 @@ Enable token replay protection to reject repeated use of the same JWT.
 
 When running behind a reverse proxy/load balancer:
 
-```json
-{
-  "ForwardedHeaders": {
-    "Enabled": true,
-    "ForwardLimit": 1,
-    "KnownProxies": ["10.0.0.10"]
-  },
-  "Public": {
-    "BaseUrl": "https://api.honua.example.com"
-  }
-}
+```bash
+# Forwarded headers configuration
+FORWARDEDHEADERS__ENABLED=true
+FORWARDEDHEADERS__FORWARDLIMIT=1
+FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.10
+
+# Public base URL for link generation
+PUBLIC__BASEURL=https://api.honua.example.com
+```
+
+**Docker Compose example:**
+```yaml
+services:
+  honua:
+    environment:
+      - FORWARDEDHEADERS__ENABLED=true
+      - FORWARDEDHEADERS__FORWARDLIMIT=1
+      - FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.10
+      - PUBLIC__BASEURL=https://api.honua.example.com
 ```
 
 - **`ForwardedHeaders`** controls trusted proxy header processing.
