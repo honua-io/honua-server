@@ -1,0 +1,62 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+namespace Honua.Server.Features.MapServer;
+
+/// <summary>
+/// Maps MapServer REST API endpoints for dynamic map image generation.
+/// </summary>
+internal static partial class MapServerEndpoints
+{
+    /// <summary>
+    /// Maps MapServer REST API endpoints using AOT-compatible routing.
+    /// </summary>
+    public static IEndpointRouteBuilder MapMapServerEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer", (Delegate)HandleGetServiceMetadata)
+            .WithDisplayName("Get MapServer Service Metadata")
+            .WithName("GetMapServerMetadata")
+            .WithSummary("Get MapServer service metadata")
+            .WithDescription("Returns metadata for a MapServer service including all layers")
+            .WithTags("MapServer")
+            .CacheOutput("ServiceMetadata");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/export", (Delegate)HandleExport)
+            .WithDisplayName("Export Map Image")
+            .WithName("MapServerExport")
+            .WithSummary("Export a map image")
+            .WithDescription("Generates a raster map image from layer features with MapLibre styling")
+            .WithTags("MapServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/identify", (Delegate)HandleIdentify)
+            .WithDisplayName("Identify Features")
+            .WithName("MapServerIdentify")
+            .WithSummary("Identify features at a location")
+            .WithDescription("Identifies features at a given point on the map")
+            .WithTags("MapServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/legend", (Delegate)HandleLegend)
+            .WithDisplayName("Get Map Legend")
+            .WithName("MapServerLegend")
+            .WithSummary("Get map legend")
+            .WithDescription("Returns legend information with swatch images for all visible layers")
+            .WithTags("MapServer")
+            .CacheOutput("ServiceMetadata");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryGet)
+            .WithDisplayName("Query MapServer Layer (GET)")
+            .WithName("MapServerQueryGet")
+            .WithSummary("Query features from a MapServer layer using GET")
+            .WithDescription("Query features - redirects to FeatureServer query endpoint")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryPost)
+            .WithDisplayName("Query MapServer Layer (POST)")
+            .WithName("MapServerQueryPost")
+            .WithSummary("Query features from a MapServer layer using POST")
+            .WithDescription("Query features - redirects to FeatureServer query endpoint")
+            .WithTags("MapServer");
+
+        return endpoints;
+    }
+}
