@@ -4,7 +4,7 @@ This section is for people **using Honua in production** — API consumers, GIS 
 
 ## Getting Started
 - **[User Journeys](USER_JOURNEYS.md)** - Role-based guides for GIS professionals, developers, data analysts
-- **[Geospatial Data APIs](STANDARDS_APIS.md)** - FeatureServer, OGC API Features/Tiles, OData v4, MVT overview
+- **[Geospatial Data APIs](STANDARDS_APIS.md)** - FeatureServer + MapServer, OGC API Features/Tiles, OData v4, MVT overview
 
 ## Integration & Development
 - **[Integration Patterns](INTEGRATION_PATTERNS.md)** - Common integration approaches with code examples
@@ -13,7 +13,8 @@ This section is for people **using Honua in production** — API consumers, GIS 
 
 ## Reference & Optimization
 - **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices
-- **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri compatibility details
+- **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri FeatureServer compatibility details
+- **[MapServer Coverage Matrix](map-server-matrix.md)** - Esri MapServer compatibility details
 - **[Protocol Coverage Index](specifications/protocol-coverage.md)** - Standards coverage overview
 
 ## Admin UI

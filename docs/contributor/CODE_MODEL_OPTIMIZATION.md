@@ -4,7 +4,7 @@ This guide documents the model class optimization implemented to reduce duplicat
 
 ## Overview
 
-The Honua Server supports multiple protocols (FeatureServer, OGC API Features, OData v4) that often require similar data structures with protocol-specific serialization formats. Before optimization, these shared patterns were duplicated across protocol implementations, leading to maintenance overhead and inconsistency risks.
+The Honua Server supports multiple protocols (FeatureServer, MapServer, OGC API Features, OData v4) that often require similar data structures with protocol-specific serialization formats. Before optimization, these shared patterns were duplicated across protocol implementations, leading to maintenance overhead and inconsistency risks.
 
 ## Problem Analysis
 

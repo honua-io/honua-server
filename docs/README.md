@@ -13,7 +13,7 @@
 
 **Getting Started:**
 - [User Journeys](user/USER_JOURNEYS.md) — role-based guides for GIS professionals, developers, analysts
-- [Geospatial Data APIs](user/STANDARDS_APIS.md) — FeatureServer, OGC API Features/Tiles, OData v4, MVT
+- [Geospatial Data APIs](user/STANDARDS_APIS.md) — FeatureServer + MapServer, OGC API Features/Tiles, OData v4, MVT
 - [API Examples](user/API_EXAMPLES.md) — request/response examples for geospatial data access
 
 **Integration & Architecture:**
@@ -23,6 +23,7 @@
 
 **Reference:**
 - [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support
+- [MapServer Coverage](user/map-server-matrix.md) — map rendering operation support
 - [Protocol Coverage Index](user/specifications/protocol-coverage.md) — standards coverage overview
 
 ## DevOps documentation

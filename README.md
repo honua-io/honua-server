@@ -7,11 +7,11 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, and edit spatial data through industry-standard protocols — GeoServices REST, OGC API, OData v4, and vector tiles — backed by PostGIS.
+**Cloud-native geospatial feature server.** Publish, query, and edit spatial data through industry-standard protocols — GeoServices REST (FeatureServer + MapServer), OGC API, OData v4, and vector tiles — backed by PostGIS.
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (Esri-compatible), OGC API Features/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (Esri-compatible FeatureServer + MapServer), OGC API Features/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile, GeoPackage, CSV, KML/KMZ, and WKT directly. Import from live Esri REST services for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -56,7 +56,7 @@ dotnet run --project src/Honua.AppHost
 
 | Protocol | Endpoint | Clients |
 |---|---|---|
-| GeoServices REST FeatureServer | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri SDKs, ArcGIS Online |
+| GeoServices REST FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` and `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs, ArcGIS Online |
 | OGC API Features | `/ogc/features` | QGIS, MapLibre, any OGC client |
 | OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
@@ -70,6 +70,8 @@ dotnet run --project src/Honua.AppHost
 ## Capabilities
 
 **Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions.
+
+**Map rendering** — MapServer export, identify, and legend endpoints for Esri map clients.
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 

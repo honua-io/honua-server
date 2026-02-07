@@ -8,7 +8,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 | If you're using... | Use this API | Endpoint Pattern | Why |
 |-------------------|-------------|------------------|-----|
-| **ArcGIS Pro/Desktop** | FeatureServer | `/rest/services/{id}/FeatureServer` | Esri compatibility |
+| **ArcGIS Pro/Desktop** | FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` or `/rest/services/{id}/MapServer` | Esri compatibility (data + maps) |
 | **QGIS/OpenLayers** | OGC API Features | `/ogc/features` | Open standards |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
 | **Web Maps (MapLibre)** | Vector Tiles | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering |
@@ -34,6 +34,26 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - ArcGIS Pro connectivity
 - ArcGIS SDK clients
 - Legacy FeatureServer integrations
+
+---
+
+## **GeoServices REST MapServer**
+
+**Best for**: Esri map rendering workflows (dynamic map images, identify, legends)
+
+**Endpoint structure:**
+```
+/rest/services/{service-name}/MapServer
+|-- /export
+|-- /identify
+|-- /legend
+|-- /{layer-id}/query
+```
+
+**Typical use cases:**
+- ArcGIS Pro map rendering
+- Dynamic map images for web clients
+- Identify and legend requests from Esri tooling
 
 ---
 
@@ -113,3 +133,4 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [Geospatial API Examples](API_EXAMPLES.md)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
+- [MapServer Coverage Matrix](map-server-matrix.md)

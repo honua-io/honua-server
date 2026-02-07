@@ -33,7 +33,7 @@ C4Context
     Rel(analyst, excel, "Analyzes in")
     Rel(admin, honua, "Manages via Admin UI")
 
-    Rel(geoservices_client, honua, "FeatureServer REST", "HTTPS")
+    Rel(geoservices_client, honua, "FeatureServer / MapServer REST", "HTTPS")
     Rel(qgis, honua, "OGC API Features", "HTTPS")
     Rel(maplibre, honua, "Vector Tiles (MVT)", "HTTPS")
     Rel(excel, honua, "OData v4", "HTTPS")
@@ -62,7 +62,7 @@ graph TB
         PostGIS[(PostgreSQL + PostGIS)]
     end
 
-    GeoServicesClient -->|FeatureServer REST| API
+    GeoServicesClient -->|FeatureServer / MapServer REST| API
     QGIS -->|OGC API Features| API
     MapLibre -->|MVT Tiles| API
     Excel -->|OData v4| API
@@ -82,7 +82,7 @@ Shows the deployable units that make up Honua.
 graph TB
     subgraph "Honua System"
         subgraph "Application Containers"
-            Server["<b>Honua.Server</b><br/><i>ASP.NET Core API</i><br/><br/>Hosts all protocol endpoints:<br/>• FeatureServer REST<br/>• OGC API Features<br/>• OData v4<br/>• Vector Tiles<br/>• Admin API"]
+            Server["<b>Honua.Server</b><br/><i>ASP.NET Core API</i><br/><br/>Hosts all protocol endpoints:<br/>• FeatureServer REST<br/>• MapServer REST<br/>• OGC API Features<br/>• OData v4<br/>• Vector Tiles<br/>• Admin API"]
 
             AdminUI["<b>Honua.Admin</b><br/><i>Blazor WebAssembly</i><br/><br/>Admin interface:<br/>• Connection management<br/>• Layer publishing<br/>• File import<br/>• Style editing"]
         end
@@ -123,7 +123,7 @@ Shows the internal structure of the main API container.
 graph TB
     subgraph "Honua.Server Container"
         subgraph "API Layer (Minimal APIs)"
-            FS[FeatureServer<br/>Endpoints]
+            FS[FeatureServer + MapServer<br/>Endpoints]
             OGC[OGC Features<br/>Endpoints]
             OData[OData v4<br/>Endpoints]
             MVT[Vector Tile<br/>Endpoints]
