@@ -337,7 +337,8 @@ h1 {
   justify-content: center;
 }
 
-.diagram-section img {
+.diagram-section img,
+.diagram-section svg {
   max-width: 100%;
   height: auto;
   border-radius: var(--radius-md);

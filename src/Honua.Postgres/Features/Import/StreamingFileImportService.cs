@@ -4,13 +4,11 @@
 using System.Collections.Frozen;
 using System.Data;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Xml;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -24,7 +22,6 @@ using NetTopologySuite.IO.Esri;
 using NetTopologySuite.IO.Esri.Shapefiles.Readers;
 using Npgsql;
 using NpgsqlTypes;
-using Coordinate = NetTopologySuite.Geometries.Coordinate;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Postgres.Features.Import;
@@ -404,9 +401,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var featureStream = format switch
         {
             SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Wkt => ReadWktStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Kml => ReadKmlStreamingAsync(fileStream, cancellationToken),
-            SupportedFileFormat.Gpx => ReadGpxStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
@@ -888,9 +885,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             var featureStream = format.Value switch
             {
                 SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Wkt => ReadWktStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Kml => ReadKmlStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Gpx => ReadGpxStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
                 SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
@@ -1445,424 +1442,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
     }
 
-    #region Streaming Readers for Other Formats
-
-    /// <summary>
-    /// Stream WKT features line by line.
-    /// </summary>
-    private async IAsyncEnumerable<IFeature> ReadWktStreamingAsync(
-        Stream stream,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var wktReader = new WKTReader();
-        using var reader = new StreamReader(stream, leaveOpen: true);
-
-        string? line;
-        while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            IFeature? feature = null;
-            try
-            {
-                var geometry = wktReader.Read(line.Trim());
-                if (geometry != null)
-                {
-                    feature = new Feature(geometry, new AttributesTable());
-                }
-            }
-            catch
-            {
-                // Skip invalid WKT lines
-            }
-
-            if (feature != null)
-                yield return feature;
-        }
-    }
-
-    /// <summary>
-    /// Stream KML features using XmlReader for memory efficiency.
-    /// </summary>
-    private async IAsyncEnumerable<IFeature> ReadKmlStreamingAsync(
-        Stream stream,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var settings = new XmlReaderSettings
-        {
-            Async = true,
-            IgnoreWhitespace = true,
-            IgnoreComments = true
-        };
-
-        using var reader = XmlReader.Create(stream, settings);
-        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "Placemark")
-            {
-                var feature = await ParseKmlPlacemarkAsync(reader, geometryFactory, cancellationToken);
-                if (feature != null)
-                    yield return feature;
-            }
-        }
-    }
-
-    private static async Task<IFeature?> ParseKmlPlacemarkAsync(
-        XmlReader reader,
-        GeometryFactory geometryFactory,
-        CancellationToken cancellationToken)
-    {
-        var attributes = new AttributesTable();
-        NtsGeometry? geometry = null;
-        var depth = reader.Depth;
-
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Placemark")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
-            {
-                switch (reader.LocalName)
-                {
-                    case "name":
-                        var name = await reader.ReadElementContentAsStringAsync();
-                        attributes.Add("name", name);
-                        break;
-                    case "description":
-                        var desc = await reader.ReadElementContentAsStringAsync();
-                        attributes.Add("description", desc);
-                        break;
-                    case "Point":
-                        geometry = await ParseKmlPointAsync(reader, geometryFactory, cancellationToken);
-                        break;
-                    case "LineString":
-                        geometry = await ParseKmlLineStringAsync(reader, geometryFactory, cancellationToken);
-                        break;
-                    case "Polygon":
-                        geometry = await ParseKmlPolygonAsync(reader, geometryFactory, cancellationToken);
-                        break;
-                }
-            }
-        }
-
-        return new Feature(geometry, attributes);
-    }
-
-    private static async Task<NtsGeometry?> ParseKmlPointAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Point")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
-            {
-                var coords = await reader.ReadElementContentAsStringAsync();
-                var parts = coords.Trim().Split(',');
-                if (parts.Length >= 2 &&
-                    double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
-                    double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
-                {
-                    return factory.CreatePoint(new Coordinate(lon, lat));
-                }
-            }
-        }
-        return null;
-    }
-
-    private static async Task<NtsGeometry?> ParseKmlLineStringAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "LineString")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
-            {
-                var coords = await reader.ReadElementContentAsStringAsync();
-                var coordinates = ParseKmlCoordinates(coords);
-                if (coordinates.Length >= 2)
-                    return factory.CreateLineString(coordinates);
-            }
-        }
-        return null;
-    }
-
-    private static async Task<NtsGeometry?> ParseKmlPolygonAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        LinearRing? outerRing = null;
-        var innerRings = new List<LinearRing>();
-
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Polygon")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
-            {
-                if (reader.LocalName == "outerBoundaryIs")
-                {
-                    outerRing = await ParseKmlBoundaryAsync(reader, factory, "outerBoundaryIs", cancellationToken);
-                }
-                else if (reader.LocalName == "innerBoundaryIs")
-                {
-                    var ring = await ParseKmlBoundaryAsync(reader, factory, "innerBoundaryIs", cancellationToken);
-                    if (ring != null)
-                        innerRings.Add(ring);
-                }
-            }
-        }
-
-        if (outerRing != null)
-            return factory.CreatePolygon(outerRing, innerRings.ToArray());
-
-        return null;
-    }
-
-    private static async Task<LinearRing?> ParseKmlBoundaryAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        string boundaryName,
-        CancellationToken cancellationToken)
-    {
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == boundaryName)
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
-            {
-                var coords = await reader.ReadElementContentAsStringAsync();
-                var coordinates = ParseKmlCoordinates(coords);
-                if (coordinates.Length >= 4)
-                    return factory.CreateLinearRing(coordinates);
-            }
-        }
-        return null;
-    }
-
-    private static readonly char[] _kmlCoordinateSeparators = { ' ', '\n', '\r', '\t' };
-
-    private static Coordinate[] ParseKmlCoordinates(string coordsString)
-    {
-        var coords = new List<Coordinate>();
-        var parts = coordsString.Trim().Split(_kmlCoordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var part in parts)
-        {
-            var components = part.Split(',');
-            if (components.Length >= 2 &&
-                double.TryParse(components[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
-                double.TryParse(components[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
-            {
-                coords.Add(new Coordinate(lon, lat));
-            }
-        }
-
-        return coords.ToArray();
-    }
-
-    /// <summary>
-    /// Stream GPX features using XmlReader for memory efficiency.
-    /// </summary>
-    private async IAsyncEnumerable<IFeature> ReadGpxStreamingAsync(
-        Stream stream,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var settings = new XmlReaderSettings
-        {
-            Async = true,
-            IgnoreWhitespace = true,
-            IgnoreComments = true
-        };
-
-        using var reader = XmlReader.Create(stream, settings);
-        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.Element)
-            {
-                IFeature? feature = null;
-                switch (reader.LocalName)
-                {
-                    case "wpt":
-                        feature = await ParseGpxWaypointAsync(reader, geometryFactory, cancellationToken);
-                        break;
-                    case "trk":
-                        feature = await ParseGpxTrackAsync(reader, geometryFactory, cancellationToken);
-                        break;
-                    case "rte":
-                        feature = await ParseGpxRouteAsync(reader, geometryFactory, cancellationToken);
-                        break;
-                }
-
-                if (feature != null)
-                    yield return feature;
-            }
-        }
-    }
-
-    private static async Task<IFeature?> ParseGpxWaypointAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        var lat = reader.GetAttribute("lat");
-        var lon = reader.GetAttribute("lon");
-
-        if (lat == null || lon == null ||
-            !double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) ||
-            !double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
-            return null;
-
-        var attributes = new AttributesTable();
-        var geometry = factory.CreatePoint(new Coordinate(longitude, latitude));
-
-        using (var subtree = reader.ReadSubtree())
-        {
-            await subtree.ReadAsync();
-            while (await subtree.ReadAsync())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (subtree.NodeType != XmlNodeType.Element)
-                {
-                    continue;
-                }
-
-                var name = subtree.LocalName;
-                if (subtree.IsEmptyElement)
-                {
-                    attributes.Add(name, string.Empty);
-                    continue;
-                }
-
-                var value = await subtree.ReadElementContentAsStringAsync();
-                attributes.Add(name, value);
-            }
-        }
-
-        return new Feature(geometry, attributes);
-    }
-
-    private static async Task<IFeature?> ParseGpxTrackAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        var attributes = new AttributesTable();
-        var allCoordinates = new List<Coordinate>();
-
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "trk")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
-            {
-                if (reader.LocalName == "name")
-                {
-                    attributes.Add("name", await reader.ReadElementContentAsStringAsync());
-                }
-                else if (reader.LocalName == "trkpt")
-                {
-                    var lat = reader.GetAttribute("lat");
-                    var lon = reader.GetAttribute("lon");
-                    if (lat != null && lon != null &&
-                        double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
-                        double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
-                    {
-                        allCoordinates.Add(new Coordinate(longitude, latitude));
-                    }
-                }
-            }
-        }
-
-        if (allCoordinates.Count >= 2)
-        {
-            var geometry = factory.CreateLineString(allCoordinates.ToArray());
-            return new Feature(geometry, attributes);
-        }
-
-        return null;
-    }
-
-    private static async Task<IFeature?> ParseGpxRouteAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
-    {
-        var attributes = new AttributesTable();
-        var coordinates = new List<Coordinate>();
-
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "rte")
-                break;
-
-            if (reader.NodeType == XmlNodeType.Element)
-            {
-                if (reader.LocalName == "name")
-                {
-                    attributes.Add("name", await reader.ReadElementContentAsStringAsync());
-                }
-                else if (reader.LocalName == "rtept")
-                {
-                    var lat = reader.GetAttribute("lat");
-                    var lon = reader.GetAttribute("lon");
-                    if (lat != null && lon != null &&
-                        double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
-                        double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
-                    {
-                        coordinates.Add(new Coordinate(longitude, latitude));
-                    }
-                }
-            }
-        }
-
-        if (coordinates.Count >= 2)
-        {
-            var geometry = factory.CreateLineString(coordinates.ToArray());
-            return new Feature(geometry, attributes);
-        }
-
-        return null;
-    }
-
     /// <summary>
     /// Stream Shapefile features from extracted components on disk.
     /// </summary>
@@ -2044,8 +1623,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     {
         return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
-
-    #endregion
 
     #region Table Management
 
