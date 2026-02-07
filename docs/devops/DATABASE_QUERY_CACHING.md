@@ -22,43 +22,50 @@ Honua Server implements intelligent prepared statement caching to optimize datab
 
 ## Configuration
 
-### Basic Configuration (appsettings.json)
+### Environment Variables
 
-```json
-{
-  "Database": {
-    "QueryCache": {
-      "MaxCachedStatements": 100,
-      "StatementLifetimeMinutes": 30,
-      "MinExecutionsForCaching": 3,
-      "EnableAutomaticCaching": true,
-      "EnablePerformanceLogging": false,
-      "CleanupIntervalMinutes": 10
-    }
-  }
-}
+```bash
+# Production settings (recommended defaults)
+HONUA_DATABASE__QUERYCACHE__MAXCACHEDSTATEMENTS=100
+HONUA_DATABASE__QUERYCACHE__STATEMENTLIFETIMEMINUTES=30
+HONUA_DATABASE__QUERYCACHE__MINEXECUTIONSFORCACHING=3
+HONUA_DATABASE__QUERYCACHE__ENABLEAUTOMATICCACHING=true
+HONUA_DATABASE__QUERYCACHE__ENABLEPERFORMANCELOGGING=false
+HONUA_DATABASE__QUERYCACHE__CLEANUPINTERVALMINUTES=10
 ```
 
-### Development Configuration (appsettings.Development.json)
+### Docker Compose Example
 
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Honua.Postgres.Features.Infrastructure.Caching": "Debug"
-    }
-  },
-  "Database": {
-    "QueryCache": {
-      "MaxCachedStatements": 50,
-      "StatementLifetimeMinutes": 15,
-      "MinExecutionsForCaching": 2,
-      "EnableAutomaticCaching": true,
-      "EnablePerformanceLogging": true,
-      "CleanupIntervalMinutes": 5
-    }
-  }
-}
+```yaml
+services:
+  honua:
+    image: honuaio/honua-server:latest
+    environment:
+      # Database query caching
+      - HONUA_DATABASE__QUERYCACHE__MAXCACHEDSTATEMENTS=100
+      - HONUA_DATABASE__QUERYCACHE__STATEMENTLIFETIMEMINUTES=30
+      - HONUA_DATABASE__QUERYCACHE__MINEXECUTIONSFORCACHING=3
+      - HONUA_DATABASE__QUERYCACHE__ENABLEAUTOMATICCACHING=true
+      - HONUA_DATABASE__QUERYCACHE__ENABLEPERFORMANCELOGGING=false
+      - HONUA_DATABASE__QUERYCACHE__CLEANUPINTERVALMINUTES=10
+```
+
+### Kubernetes Example
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: honua
+        env:
+        # Query cache settings for high-performance deployment
+        - name: HONUA_DATABASE__QUERYCACHE__MAXCACHEDSTATEMENTS
+          value: "200"
+        - name: HONUA_DATABASE__QUERYCACHE__ENABLEPERFORMANCELOGGING
+          value: "true"
 ```
 
 ### Configuration Options
