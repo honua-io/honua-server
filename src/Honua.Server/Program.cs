@@ -273,6 +273,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.EsriImportApiJsonContext.Default,
