@@ -908,11 +908,11 @@ graph TD
 
 Choose your scenario and follow the deployment guide:
 
-- [**Development Setup**](../contributor/development/getting-started.md) - Start here for development
-- [**Production Deployment**](production-deployment.md) - Kubernetes production setup *(placeholder)*
-- [**Monitoring Setup**](monitoring-setup.md) - Observability configuration *(placeholder)*
+- [**Performance Monitoring**](performance-monitoring.md) - System monitoring and observability
+- [**Performance Testing**](performance-testing.md) - Load testing and optimization
 - [**Security Configuration**](SECURITY_CONFIGURATION.md) - Authentication and security
-- [**Performance Tuning**](performance-tuning.md) - Optimization guide *(placeholder)*
+- [**Query Optimization**](query-optimization.md) - Database performance tuning
+- [**Troubleshooting**](TROUBLESHOOTING.md) - Common deployment issues
 
 ---
 *Choose the deployment scenario that matches your team size, performance requirements, and operational capabilities.*
