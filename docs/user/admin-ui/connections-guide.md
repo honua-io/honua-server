@@ -215,7 +215,7 @@ After configuring database connections:
 
 - [Layer Publishing Guide](layers-guide.md) - Use connections to publish layers
 - [Security Configuration](../../devops/SECURITY_CONFIGURATION.md) - Secure connection strings
-- [Database Setup](../../devops/database-setup.md) - PostGIS database preparation
+- [Database Connection Issues](../../devops/troubleshooting/database-connection-issues.md) - PostGIS setup and troubleshooting
 
 ---
 *Connection management provides the foundation for all Honua Server functionality. Ensure your connections are healthy before proceeding to layer publishing.*

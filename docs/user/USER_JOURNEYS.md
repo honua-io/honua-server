@@ -124,7 +124,7 @@ Features
 
 **Next Steps:**
 - [OData API Examples](API_EXAMPLES.md#odata-v4-api)
-- [Model Optimization Guide](MODEL_OPTIMIZATION_GUIDE.md)
+- [Data Modeling Guide](DATA_MODELING_GUIDE.md)
 
 ---
 
@@ -475,9 +475,9 @@ autoscaling:
 ```
 
 **Next Steps:**
-- [Production Deployment Guide](../../devops/production-deployment.md) *(placeholder)*
-- [Monitoring Setup](../../devops/monitoring-setup.md) *(placeholder)*
-- [Performance Tuning](../../devops/performance-tuning.md) *(placeholder)*
+- [Deployment Scenarios](../../devops/DEPLOYMENT_SCENARIOS.md) - Production deployment patterns
+- [Performance Monitoring](../../devops/performance-monitoring.md) - System monitoring setup
+- [Performance Testing](../../devops/performance-testing.md) - Load testing and optimization
 
 ---
 
@@ -719,9 +719,8 @@ class ResilientHonuaClient {
 - **Desktop Apps**: Electron, .NET MAUI
 
 **Next Steps:**
-- [Integration Patterns](integration-patterns.md) *(placeholder)*
-- [API Rate Limiting](api-rate-limiting.md) *(placeholder)*
-- [Webhook Configuration](webhook-setup.md) *(placeholder)*
+- [Integration Patterns](INTEGRATION_PATTERNS.md) - Common integration approaches
+- [Server Management API](CONTROL_PLANE_API.md) - Admin and automation endpoints
 
 ---
 

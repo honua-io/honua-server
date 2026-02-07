@@ -4,16 +4,15 @@ This index groups the protocol coverage pages that document which operations and
 
 ## Coverage pages
 
-- OGC API Features coverage: ogc-api-features-coverage.md
-- OData v4 coverage: odata-v4-coverage.md
-- GeoServices FeatureServer coverage (Esri REST): ../feature-server-matrix.md
+- [OGC API Features coverage](ogc-api-features-coverage.md)
+- [OData v4 coverage](odata-v4-coverage.md)
+- [GeoServices FeatureServer coverage (Esri REST)](../feature-server-matrix.md)
 
 ## Related specification notes
 
-- OGC API Features Part 1 (Core): ogc-api-features-part1-core.md
-- OGC API Features Part 2 (CRS): ogc-api-features-part2-crs.md
-- OGC API Features Part 3 (Filtering): ogc-api-features-part3-filtering.md
-- OData test parity: ../../contributor/ODATA_TEST_PARITY.md
+- [OGC API Features Part 1 (Core)](ogc-api-features-part1-core.md)
+- [OGC API Features Part 2 (CRS)](ogc-api-features-part2-crs.md)
+- [OGC API Features Part 3 (Filtering)](ogc-api-features-part3-filtering.md)
 
 ## Esri REST Feature Service coverage
 
