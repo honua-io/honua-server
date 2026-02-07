@@ -12,10 +12,17 @@
 
 ## User documentation
 
+**Getting Started:**
+- [User Journeys](user/USER_JOURNEYS.md) — role-based guides for GIS professionals, developers, analysts
 - [Standards APIs](user/STANDARDS_APIS.md) — FeatureServer, OGC API Features/Tiles, OData v4, MVT
-- [Control Plane API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
 - [API Examples](user/API_EXAMPLES.md) — request/response examples for all protocols
+
+**Integration & Architecture:**
+- [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches and code examples
+- [Control Plane API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
 - [Model Optimization](user/MODEL_OPTIMIZATION_GUIDE.md) — data modeling best practices
+
+**Reference:**
 - [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support
 - [Protocol Coverage Index](user/specifications/protocol-coverage.md) — standards coverage overview
 
@@ -39,6 +46,7 @@
 ## DevOps documentation
 
 **Deployment:**
+- [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — specific deployment patterns for different use cases
 - [Infrastructure](../infrastructure/README.md) — Docker Compose, Helm, Terraform
 - [Serverless](devops/serverless-deployments.md) — AWS Lambda and Azure Functions
 - [Container Images](devops/CONTAINER_IMAGES.md) — registries, tags, and publishing

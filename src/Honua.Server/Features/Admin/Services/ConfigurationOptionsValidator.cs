@@ -37,9 +37,6 @@ internal static class ConfigurationOptionsValidator
             // Validate performance monitoring options
             ValidatePerformanceMonitoringOptions(serviceProvider, errors);
 
-            // Validate tile options
-            ValidateTileOptions(serviceProvider, errors);
-
             // Validate adaptive sampling options
             ValidateAdaptiveSamplingOptions(serviceProvider, errors);
 
@@ -164,29 +161,6 @@ internal static class ConfigurationOptionsValidator
         catch (Exception ex)
         {
             errors.Add($"Failed to validate Performance Monitoring options: {ex.Message}");
-        }
-    }
-
-    private static void ValidateTileOptions(IServiceProvider serviceProvider, List<string> errors)
-    {
-        try
-        {
-            // Note: TileOptions doesn't exist in the analysis, but if it did, this is how we'd validate it
-            // var tileOptions = serviceProvider.GetRequiredService<IOptions<TileOptions>>().Value;
-
-            // Example validation logic:
-            // if (tileOptions.MinZoom > tileOptions.MaxZoom)
-            // {
-            //     errors.Add("Tiles:MinZoom must be less than or equal to MaxZoom");
-            // }
-        }
-        catch (InvalidOperationException)
-        {
-            // TileOptions service not registered - skip validation
-        }
-        catch (Exception ex)
-        {
-            errors.Add($"Failed to validate Tile options: {ex.Message}");
         }
     }
 

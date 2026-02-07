@@ -133,24 +133,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         return Volatile.Read(ref _currentSamplingRate);
     }
 
-    /// <summary>
-    /// Gets adaptive sampling statistics for monitoring.
-    /// </summary>
-    public AdaptiveSamplingStats GetStats()
-    {
-        var metrics = _metricsCollector.GetCurrentMetrics();
-        var errorRate = _metricsCollector.GetCurrentErrorRate();
-
-        return new AdaptiveSamplingStats
-        {
-            CurrentSamplingRate = Volatile.Read(ref _currentSamplingRate),
-            SystemLoad = CalculateSystemLoad(metrics),
-            ErrorRate = errorRate,
-            IsAdaptiveEnabled = _options.Enabled,
-            LastEvaluation = DateTime.UtcNow
-        };
-    }
-
     private void EvaluateAndAdjustSamplingRate(object? state)
     {
         if (_disposed)
@@ -396,29 +378,4 @@ public interface IAdaptiveSampler
     /// </summary>
     double GetCurrentSamplingRate();
 
-    /// <summary>
-    /// Gets statistics about the adaptive sampling behavior.
-    /// </summary>
-    AdaptiveSamplingStats GetStats();
-}
-
-/// <summary>
-/// Statistics about adaptive sampling behavior.
-/// </summary>
-public sealed record AdaptiveSamplingStats
-{
-    /// <summary>Current effective sampling rate.</summary>
-    public double CurrentSamplingRate { get; init; }
-
-    /// <summary>Calculated system load factor (0.0 - 1.0).</summary>
-    public double SystemLoad { get; init; }
-
-    /// <summary>Current error rate percentage.</summary>
-    public double ErrorRate { get; init; }
-
-    /// <summary>Whether adaptive sampling is enabled.</summary>
-    public bool IsAdaptiveEnabled { get; init; }
-
-    /// <summary>Timestamp of the last evaluation.</summary>
-    public DateTime LastEvaluation { get; init; }
 }

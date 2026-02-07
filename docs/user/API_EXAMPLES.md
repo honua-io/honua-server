@@ -2,14 +2,646 @@
 
 This document provides comprehensive examples for using Honua Server's multiple API protocols.
 
+## 🌍 **Protocol Quick Reference**
+
+| Protocol | Best For | Endpoint | Example Client |
+|----------|----------|----------|----------------|
+| **FeatureServer REST** | ArcGIS compatibility | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri SDKs |
+| **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
+| **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
+| **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
+
+*📸 Placeholder: Interactive protocol selection flowchart*
+
 ## Table of Contents
 
+- [Multi-Language SDK Examples](#multi-language-sdk-examples)
 - [GeoServices REST API](#geoservices-rest-api)
 - [OGC API Features](#ogc-api-features)
 - [OData v4 API](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
+- [Integration Patterns](#integration-patterns)
 - [Authentication](#authentication)
 - [Error Handling](#error-handling)
+
+## 💻 **Multi-Language SDK Examples**
+
+### **JavaScript/TypeScript**
+
+**ArcGIS REST JS (FeatureServer)**
+```javascript
+import { queryFeatures, addFeatures } from '@esri/arcgis-rest-feature-service';
+
+// Query features with spatial filter
+const queryResponse = await queryFeatures({
+  url: 'http://localhost:8080/rest/services/1/FeatureServer/0',
+  where: "population > 10000",
+  geometry: {
+    xmin: -122.5,
+    ymin: 37.7,
+    xmax: -122.3,
+    ymax: 37.8
+  },
+  geometryType: 'esriGeometryEnvelope',
+  spatialRel: 'esriSpatialRelIntersects'
+});
+
+console.log(`Found ${queryResponse.features.length} features`);
+```
+
+**OGC API Features Client**
+```javascript
+// Modern fetch-based client
+class OGCFeaturesClient {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl;
+  }
+
+  async getCollections() {
+    const response = await fetch(`${this.baseUrl}/ogc/features/collections`);
+    return response.json();
+  }
+
+  async getFeatures(collectionId, options = {}) {
+    const params = new URLSearchParams();
+    if (options.bbox) params.append('bbox', options.bbox.join(','));
+    if (options.limit) params.append('limit', options.limit);
+    if (options.filter) params.append('filter', options.filter);
+
+    const response = await fetch(
+      `${this.baseUrl}/ogc/features/collections/${collectionId}/items?${params}`
+    );
+    return response.json();
+  }
+
+  async createFeature(collectionId, geoJsonFeature) {
+    const response = await fetch(
+      `${this.baseUrl}/ogc/features/collections/${collectionId}/items`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/geo+json' },
+        body: JSON.stringify(geoJsonFeature)
+      }
+    );
+    return response.json();
+  }
+}
+
+// Usage example
+const client = new OGCFeaturesClient('http://localhost:8080');
+
+// Get all features in San Francisco bay area
+const features = await client.getFeatures('layer1', {
+  bbox: [-122.5, 37.7, -122.3, 37.8],
+  limit: 100
+});
+```
+
+**Vector Tiles with MapLibre**
+```javascript
+import maplibregl from 'maplibre-gl';
+
+// High-performance vector tile map
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      'honua-tiles': {
+        type: 'vector',
+        tiles: ['http://localhost:8080/tiles/{layerId}/{z}/{x}/{y}.mvt'],
+        minzoom: 0,
+        maxzoom: 14
+      }
+    },
+    layers: [{
+      id: 'features-fill',
+      type: 'fill',
+      source: 'honua-tiles',
+      'source-layer': 'features',
+      paint: {
+        'fill-color': [
+          'case',
+          ['<', ['get', 'population'], 1000], '#ffffcc',
+          ['<', ['get', 'population'], 5000], '#a1dab4',
+          ['<', ['get', 'population'], 10000], '#41b6c4',
+          '#225ea8'
+        ],
+        'fill-opacity': 0.8
+      }
+    }]
+  }
+});
+
+// Add interactivity
+map.on('click', 'features-fill', (e) => {
+  new maplibregl.Popup()
+    .setLngLat(e.lngLat)
+    .setHTML(
+      `<h3>${e.features[0].properties.name}</h3>
+       <p>Population: ${e.features[0].properties.population?.toLocaleString()}</p>`
+    )
+    .addTo(map);
+});
+```
+
+### **Python**
+
+**GeoServices with Requests**
+```python
+import requests
+import json
+
+class HonuaGeoServicesClient:
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.session = requests.Session()
+
+    def query_features(self, service_id, layer_id, **params):
+        """Query features with flexible parameters"""
+        url = f"{self.base_url}/rest/services/{service_id}/FeatureServer/{layer_id}/query"
+
+        # Default parameters
+        query_params = {
+            'f': 'json',
+            'where': '1=1',
+            'returnGeometry': 'true',
+            'outFields': '*'
+        }
+
+        # Override with user parameters
+        query_params.update(params)
+
+        response = self.session.get(url, params=query_params)
+        response.raise_for_status()
+        return response.json()
+
+    def apply_edits(self, service_id, layer_id, adds=None, updates=None, deletes=None):
+        """Apply feature edits (create, update, delete)"""
+        url = f"{self.base_url}/rest/services/{service_id}/FeatureServer/{layer_id}/applyEdits"
+
+        data = {
+            'f': 'json',
+            'rollbackOnFailure': 'true'
+        }
+
+        if adds:
+            data['adds'] = json.dumps(adds)
+        if updates:
+            data['updates'] = json.dumps(updates)
+        if deletes:
+            data['deletes'] = ','.join(map(str, deletes))
+
+        response = self.session.post(url, data=data)
+        response.raise_for_status()
+        return response.json()
+
+# Usage example
+client = HonuaGeoServicesClient('http://localhost:8080')
+
+# Spatial query with population filter
+features = client.query_features(
+    service_id=1,
+    layer_id=0,
+    where="population > 5000",
+    geometry=json.dumps({
+        "xmin": -122.5,
+        "ymin": 37.7,
+        "xmax": -122.3,
+        "ymax": 37.8
+    }),
+    geometryType="esriGeometryEnvelope",
+    spatialRel="esriSpatialRelIntersects"
+)
+
+print(f"Found {len(features['features'])} features")
+```
+
+**OGC API with GeoPandas**
+```python
+import geopandas as gpd
+import requests
+from shapely.geometry import box
+
+class HonuaOGCClient:
+    def __init__(self, base_url):
+        self.base_url = base_url
+
+    def get_collections(self):
+        """Get available feature collections"""
+        response = requests.get(f"{self.base_url}/ogc/features/collections")
+        response.raise_for_status()
+        return response.json()
+
+    def get_features_as_geodataframe(self, collection_id, bbox=None, limit=None, cql_filter=None):
+        """Get features as a GeoPandas GeoDataFrame"""
+        params = {'f': 'json'}
+
+        if bbox:
+            params['bbox'] = ','.join(map(str, bbox))
+        if limit:
+            params['limit'] = limit
+        if cql_filter:
+            params['filter'] = cql_filter
+            params['filter-lang'] = 'cql2-text'
+
+        response = requests.get(
+            f"{self.base_url}/ogc/features/collections/{collection_id}/items",
+            params=params
+        )
+        response.raise_for_status()
+
+        geojson_data = response.json()
+        return gpd.GeoDataFrame.from_features(geojson_data['features'])
+
+    def create_feature(self, collection_id, geodataframe_row):
+        """Create a new feature from a GeoDataFrame row"""
+        feature = {
+            "type": "Feature",
+            "geometry": geodataframe_row.geometry.__geo_interface__,
+            "properties": geodataframe_row.drop('geometry').to_dict()
+        }
+
+        response = requests.post(
+            f"{self.base_url}/ogc/features/collections/{collection_id}/items",
+            json=feature,
+            headers={'Content-Type': 'application/geo+json'}
+        )
+        response.raise_for_status()
+        return response.json()
+
+# Usage example
+client = HonuaOGCClient('http://localhost:8080')
+
+# Get features in San Francisco as GeoDataFrame
+sf_bbox = [-122.5, 37.7, -122.3, 37.8]
+gdf = client.get_features_as_geodataframe(
+    'layer1',
+    bbox=sf_bbox,
+    cql_filter="population > 10000"
+)
+
+# Perform spatial analysis
+gdf['area'] = gdf.geometry.area
+high_density = gdf[gdf['population'] / gdf['area'] > 1000]
+
+print(f"Found {len(high_density)} high-density areas")
+```
+
+**OData with Pandas**
+```python
+import pandas as pd
+import requests
+
+class HonuaODataClient:
+    def __init__(self, base_url):
+        self.base_url = base_url
+
+    def query_to_dataframe(self, entity_set, filter_expr=None, select=None, orderby=None, top=None):
+        """Query OData endpoint and return as pandas DataFrame"""
+        params = {}
+
+        if filter_expr:
+            params['$filter'] = filter_expr
+        if select:
+            params['$select'] = ','.join(select) if isinstance(select, list) else select
+        if orderby:
+            params['$orderby'] = orderby
+        if top:
+            params['$top'] = top
+
+        response = requests.get(
+            f"{self.base_url}/odata/{entity_set}",
+            params=params
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        return pd.DataFrame(data['value'])
+
+    def spatial_query(self, filter_expr, distance_km=None):
+        """Perform spatial queries with distance"""
+        if distance_km:
+            filter_expr += f" and geo.distance(geometry, geography'POINT(-122.4 37.8)') lt {distance_km * 1000}"
+
+        return self.query_to_dataframe('Features', filter_expr)
+
+# Usage example
+client = HonuaODataClient('http://localhost:8080')
+
+# Get features with spatial and attribute filters
+features_df = client.query_to_dataframe(
+    'Features',
+    filter_expr="LayerId eq 1 and population gt 5000",
+    select=['name', 'population', 'geometry'],
+    orderby='population desc',
+    top=100
+)
+
+# Spatial distance query
+nearby_features = client.spatial_query(
+    "LayerId eq 1 and category eq 'restaurant'",
+    distance_km=1
+)
+
+print(f"Found {len(nearby_features)} restaurants within 1km")
+```
+
+### **C# / .NET**
+
+**GeoServices with HttpClient**
+```csharp
+using System.Text.Json;
+using System.Text;
+
+public class HonuaGeoServicesClient
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _baseUrl;
+
+    public HonuaGeoServicesClient(string baseUrl)
+    {
+        _baseUrl = baseUrl;
+        _httpClient = new HttpClient();
+    }
+
+    public async Task<QueryResponse> QueryFeaturesAsync(
+        int serviceId,
+        int layerId,
+        string whereClause = "1=1",
+        object geometry = null,
+        string spatialRel = "esriSpatialRelIntersects")
+    {
+        var url = $"{_baseUrl}/rest/services/{serviceId}/FeatureServer/{layerId}/query";
+
+        var parameters = new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["where"] = whereClause,
+            ["returnGeometry"] = "true",
+            ["outFields"] = "*"
+        };
+
+        if (geometry != null)
+        {
+            parameters["geometry"] = JsonSerializer.Serialize(geometry);
+            parameters["spatialRel"] = spatialRel;
+        }
+
+        var content = new FormUrlEncodedContent(parameters);
+        var response = await _httpClient.PostAsync(url, content);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<QueryResponse>(json);
+    }
+
+    public async Task<ApplyEditsResponse> ApplyEditsAsync(
+        int serviceId,
+        int layerId,
+        IEnumerable<Feature> adds = null,
+        IEnumerable<Feature> updates = null,
+        IEnumerable<int> deletes = null)
+    {
+        var url = $"{_baseUrl}/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits";
+
+        var parameters = new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["rollbackOnFailure"] = "true"
+        };
+
+        if (adds?.Any() == true)
+            parameters["adds"] = JsonSerializer.Serialize(adds);
+
+        if (updates?.Any() == true)
+            parameters["updates"] = JsonSerializer.Serialize(updates);
+
+        if (deletes?.Any() == true)
+            parameters["deletes"] = string.Join(",", deletes);
+
+        var content = new FormUrlEncodedContent(parameters);
+        var response = await _httpClient.PostAsync(url, content);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<ApplyEditsResponse>(json);
+    }
+}
+
+// Usage example
+var client = new HonuaGeoServicesClient("http://localhost:8080");
+
+// Query with spatial filter
+var bbox = new
+{
+    xmin = -122.5,
+    ymin = 37.7,
+    xmax = -122.3,
+    ymax = 37.8
+};
+
+var features = await client.QueryFeaturesAsync(
+    serviceId: 1,
+    layerId: 0,
+    whereClause: "population > 5000",
+    geometry: bbox
+);
+
+Console.WriteLine($"Found {features.Features.Length} features");
+```
+
+**OData with OData Client**
+```csharp
+using Microsoft.OData.Client;
+
+public class HonuaDataContext : DataServiceContext
+{
+    public HonuaDataContext(Uri serviceRoot) : base(serviceRoot) { }
+
+    public DataServiceQuery<Feature> Features => CreateQuery<Feature>("Features");
+    public DataServiceQuery<Layer> Layers => CreateQuery<Layer>("Layers");
+}
+
+// Usage with LINQ
+var context = new HonuaDataContext(new Uri("http://localhost:8080/odata"));
+
+// Query with LINQ
+var urbanAreas = await context.Features
+    .Where(f => f.LayerId == 1 && f.Population > 10000)
+    .OrderByDescending(f => f.Population)
+    .Take(50)
+    .ExecuteAsync();
+
+// Spatial query with geo functions (if supported)
+var nearbyFeatures = await context.Features
+    .AddQueryOption("$filter", "geo.distance(geometry, geography'POINT(-122.4 37.8)') lt 1000")
+    .ExecuteAsync();
+
+Console.WriteLine($"Found {nearbyFeatures.Count()} features within 1km");
+```
+
+### **R**
+
+**Spatial Data Analysis with R**
+```r
+library(httr)
+library(jsonlite)
+library(sf)
+library(dplyr)
+
+# Function to query Honua OGC API
+query_honua_features <- function(base_url, collection_id, bbox = NULL, filter = NULL, limit = NULL) {
+  url <- paste0(base_url, "/ogc/features/collections/", collection_id, "/items")
+
+  # Build query parameters
+  params <- list(f = "json")
+  if (!is.null(bbox)) params$bbox <- paste(bbox, collapse = ",")
+  if (!is.null(filter)) {
+    params$filter <- filter
+    params$`filter-lang` <- "cql2-text"
+  }
+  if (!is.null(limit)) params$limit <- limit
+
+  # Make request
+  response <- GET(url, query = params)
+  stop_for_status(response)
+
+  # Parse GeoJSON and convert to sf
+  geojson_data <- content(response, "text") %>% fromJSON()
+
+  # Convert to sf object
+  if (length(geojson_data$features) > 0) {
+    return(st_read(content(response, "text"), quiet = TRUE))
+  } else {
+    return(st_sf())
+  }
+}
+
+# Usage example
+base_url <- "http://localhost:8080"
+
+# Get features in San Francisco Bay Area
+sf_bbox <- c(-122.5, 37.7, -122.3, 37.8)
+features <- query_honua_features(
+  base_url,
+  "layer1",
+  bbox = sf_bbox,
+  filter = "population > 5000",
+  limit = 1000
+)
+
+# Spatial analysis with sf
+features <- features %>%
+  mutate(
+    area_km2 = as.numeric(st_area(geometry)) / 1000000,
+    density = population / area_km2
+  )
+
+# Find high density areas
+high_density <- features %>%
+  filter(density > 1000) %>%
+  arrange(desc(density))
+
+cat("Found", nrow(high_density), "high-density areas\n")
+
+# Plot with ggplot2
+library(ggplot2)
+
+ggplot(features) +
+  geom_sf(aes(fill = density)) +
+  scale_fill_viridis_c(name = "Population\nDensity") +
+  theme_minimal() +
+  labs(title = "Population Density Map")
+```
+
+### **Java**
+
+**GeoServices with Spring WebClient**
+```java
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+@Service
+public class HonuaGeoServicesClient {
+
+    private final WebClient webClient;
+
+    public HonuaGeoServicesClient(String baseUrl) {
+        this.webClient = WebClient.builder()
+            .baseUrl(baseUrl)
+            .build();
+    }
+
+    public Mono<QueryResponse> queryFeatures(int serviceId, int layerId, QueryParameters params) {
+        return webClient.get()
+            .uri(uriBuilder -> uriBuilder
+                .path("/rest/services/{serviceId}/FeatureServer/{layerId}/query")
+                .queryParam("f", "json")
+                .queryParam("where", params.getWhereClause())
+                .queryParam("returnGeometry", "true")
+                .queryParam("outFields", "*")
+                .build(serviceId, layerId))
+            .retrieve()
+            .bodyToMono(QueryResponse.class);
+    }
+
+    public Mono<ApplyEditsResponse> applyEdits(int serviceId, int layerId, ApplyEditsRequest request) {
+        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+        formData.add("f", "json");
+        formData.add("rollbackOnFailure", "true");
+
+        if (request.getAdds() != null && !request.getAdds().isEmpty()) {
+            formData.add("adds", objectMapper.writeValueAsString(request.getAdds()));
+        }
+
+        return webClient.post()
+            .uri("/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits", serviceId, layerId)
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .body(BodyInserters.fromFormData(formData))
+            .retrieve()
+            .bodyToMono(ApplyEditsResponse.class);
+    }
+}
+
+// Usage example
+@Autowired
+private HonuaGeoServicesClient honuaClient;
+
+public void demonstrateUsage() {
+    // Query features
+    QueryParameters params = QueryParameters.builder()
+        .whereClause("population > 5000")
+        .spatialFilter(BoundingBox.of(-122.5, 37.7, -122.3, 37.8))
+        .build();
+
+    QueryResponse response = honuaClient.queryFeatures(1, 0, params)
+        .block(); // In real code, use reactive chains
+
+    System.out.println("Found " + response.getFeatures().size() + " features");
+
+    // Create new features
+    List<Feature> newFeatures = Arrays.asList(
+        Feature.builder()
+            .geometry(Point.of(-122.4, 37.8))
+            .attributes(Map.of("name", "New Point", "population", 1500))
+            .build()
+    );
+
+    ApplyEditsRequest editRequest = ApplyEditsRequest.builder()
+        .adds(newFeatures)
+        .build();
+
+    ApplyEditsResponse editResponse = honuaClient.applyEdits(1, 0, editRequest)
+        .block();
+
+    System.out.println("Created " + editResponse.getAddResults().size() + " features");
+}
+```
+
+*📸 Placeholder: Code editor showing multi-language SDK examples*
+
+---
 
 ## GeoServices REST API
 

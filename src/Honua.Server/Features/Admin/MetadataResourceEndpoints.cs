@@ -21,8 +21,6 @@ internal static class MetadataResourceEndpoints
 {
     private const string DefaultNamespace = "default";
 
-    internal sealed class MetadataResourceEndpointsLog;
-
     /// <summary>
     /// Maps metadata resource endpoints for admin API.
     /// </summary>
