@@ -199,15 +199,23 @@ builder.Services.AddSingleton<IResponseCache, MemoryResponseCache>();
 builder.Services.AddScoped<IStreamingFeatureStore, PostgresFeatureStore>();
 ```
 
-**Configuration**: Memory limits and cache expiration can be configured via `appsettings.json`:
-```json
-{
-  "MemoryManagement": {
-    "MaxCacheEntries": 10000,
-    "DefaultCacheExpiration": "00:30:00",
-    "MaxCoordinatePoolSize": 1000
-  }
-}
+**Configuration**: Memory limits and cache expiration via environment variables:
+```bash
+# Memory management settings
+MEMORYMANAGEMENT__MAXCACHEENTRIES=10000
+MEMORYMANAGEMENT__DEFAULTCACHEEXPIRATION=00:30:00
+MEMORYMANAGEMENT__MAXCOORDINATEPOOLSIZE=1000
+```
+
+**Docker deployment example:**
+```yaml
+services:
+  honua:
+    environment:
+      # Tune memory settings for your workload
+      - MEMORYMANAGEMENT__MAXCACHEENTRIES=20000
+      - MEMORYMANAGEMENT__DEFAULTCACHEEXPIRATION=00:15:00
+      - MEMORYMANAGEMENT__MAXCOORDINATEPOOLSIZE=2000
 ```
 
 ## Monitoring and Metrics
