@@ -36,6 +36,8 @@ internal sealed class ODataCrudHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -52,14 +54,13 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: cancellationToken);
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
         if (result.IsSuccess && result.Data is Dictionary<string, object?> payload)
@@ -113,6 +114,8 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -151,7 +154,7 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, resolvedLayerId.Value, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context, resolvedLayerId.Value, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -160,14 +163,13 @@ internal sealed class ODataCrudHandler(
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
             resolvedLayerId.Value,
-            cancellationToken);
+            effectiveToken);
         if (rbacError != null)
         {
             return rbacError;
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
         if (result.IsSuccess)
@@ -209,6 +211,8 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -240,7 +244,7 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -249,14 +253,13 @@ internal sealed class ODataCrudHandler(
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
             layerId,
-            cancellationToken);
+            effectiveToken);
         if (rbacError != null)
         {
             return rbacError;
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
@@ -306,6 +309,8 @@ internal sealed class ODataCrudHandler(
         long objectId,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -316,7 +321,7 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -325,13 +330,11 @@ internal sealed class ODataCrudHandler(
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
             layerId,
-            cancellationToken);
+            effectiveToken);
         if (rbacError != null)
         {
             return rbacError;
         }
-
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();

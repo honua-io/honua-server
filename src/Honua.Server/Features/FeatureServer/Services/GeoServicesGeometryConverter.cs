@@ -559,11 +559,18 @@ internal static class GeoServicesGeometryConverter
 
     private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon)
     {
-        yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true);
+        if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
+        {
+            yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true);
+        }
 
         for (var i = 0; i < polygon.NumInteriorRings; i++)
         {
-            yield return BuildRingCoordinates(polygon.GetInteriorRingN(i), clockwise: false);
+            var interiorRing = polygon.GetInteriorRingN(i);
+            if (interiorRing != null && !interiorRing.IsEmpty)
+            {
+                yield return BuildRingCoordinates(interiorRing, clockwise: false);
+            }
         }
     }
 

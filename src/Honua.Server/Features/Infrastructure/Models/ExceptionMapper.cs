@@ -248,12 +248,7 @@ internal static class ExceptionMapper
 
         if (message.Contains("orderby", StringComparison.OrdinalIgnoreCase))
         {
-            if (message.Length > 200)
-            {
-                return message[..200] + "...";
-            }
-
-            return message;
+            return "Invalid orderBy parameter.";
         }
 
         if (message.Contains("datetime", StringComparison.OrdinalIgnoreCase))

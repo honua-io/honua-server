@@ -163,7 +163,6 @@ internal sealed partial class FeatureDataAccess
             command.Parameters.AddWithValue(param);
         }
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
-        ApplyCommandTimeout(command, _queryTimeoutSeconds);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 

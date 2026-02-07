@@ -285,7 +285,7 @@ internal sealed class OgcFeaturesGeometryServices
 
     private static int CountPolygonVertices(Polygon polygon)
     {
-        var count = polygon.ExteriorRing.NumPoints;
+        var count = polygon.ExteriorRing?.NumPoints ?? 0;
         for (int i = 0; i < polygon.NumInteriorRings; i++)
         {
             count += polygon.GetInteriorRingN(i).NumPoints;

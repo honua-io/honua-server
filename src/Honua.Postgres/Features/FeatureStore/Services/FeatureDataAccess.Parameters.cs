@@ -36,14 +36,7 @@ internal sealed partial class FeatureDataAccess
 
         AddWhereParameters(command, whereParameters, ref parameterIndex);
 
-        if (query.SpatialFilter.HasValue)
-        {
-            AddSpatialFilterParameters(command, query, ref parameterIndex);
-        }
-        else
-        {
-            AddRegularPaginationParameters(command, query, ref parameterIndex);
-        }
+        AddRegularPaginationParameters(command, query, ref parameterIndex);
 
         if (query.Offset.HasValue)
         {
@@ -59,19 +52,7 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
-    private void AddSpatialFilterParameters(NpgsqlCommand command, FeatureQuery query, ref int parameterIndex)
-    {
-        var filter = query.SpatialFilter!.Value;
 
-        if (filter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
-        {
-            AddKnnParameters(command, filter, query, ref parameterIndex);
-        }
-        else
-        {
-            AddRegularSpatialParameters(command, filter, query, ref parameterIndex);
-        }
-    }
 
     private static void AddKnnParameters(
         NpgsqlCommand command,
@@ -94,22 +75,8 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
-    private void AddRegularSpatialParameters(NpgsqlCommand command, SpatialFilter filter, FeatureQuery query, ref int parameterIndex)
-    {
-        AddParameterValue(command, ref parameterIndex, filter.Geometry);
 
-        if (filter.SpatialRelationship == SpatialRelationship.WithinDistance ||
-            filter.SpatialRelationship == SpatialRelationship.BeyondDistance)
-        {
-            var distanceInMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
-            AddParameterValue(command, ref parameterIndex, distanceInMeters);
-        }
 
-        if (query.Limit.HasValue)
-        {
-            AddParameterValue(command, ref parameterIndex, query.Limit.Value);
-        }
-    }
 
     private static void AddRegularPaginationParameters(NpgsqlCommand command, FeatureQuery query, ref int parameterIndex)
     {

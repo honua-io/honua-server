@@ -44,7 +44,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     private readonly ConcurrentDictionary<string, int> _connectionCounts = new();
     private readonly Timer _cleanupTimer;
     private bool? _prepareSupported;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>
     /// Metrics for tracking statement execution patterns
@@ -509,6 +509,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
     private void CleanupExpiredStatements(object? state)
     {
+        if (_disposed)
+            return;
+
         try
         {
             var cutoff = DateTime.UtcNow.AddMinutes(-_options.StatementLifetimeMinutes);

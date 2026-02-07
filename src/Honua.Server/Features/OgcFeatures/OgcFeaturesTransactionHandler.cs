@@ -82,6 +82,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid batch request payload.");
             }
 
+            const int maxBatchOperations = 1000;
+            if (batchRequest.Operations.Count > maxBatchOperations)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    $"Batch request exceeds maximum of {maxBatchOperations} operations.");
+            }
+
             var results = new List<BatchOperationResult>();
             var hasErrors = false;
 
@@ -203,7 +210,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var etag = GenerateETag(existing.Value);
                 if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.OrdinalIgnoreCase))
                 {
-                    return Results.StatusCode(412); // Precondition Failed
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource has been modified since the provided ETag.");
                 }
             }
 
@@ -539,9 +549,32 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private static string GenerateETag(Feature feature)
     {
-        // Generate a simple ETag based on feature ID and a hash of its content
-        var content = $"{feature.Id}_{feature.Geometry?.Length ?? 0}_{feature.Attributes?.Count ?? 0}";
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(content)))[..16];
+        // Generate an ETag based on a hash of the full feature content
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        writer.WriteStartObject();
+        writer.WriteNumber("id", feature.Id);
+        if (feature.Geometry != null)
+        {
+            writer.WriteBase64String("g", feature.Geometry);
+        }
+
+        if (feature.Attributes != null)
+        {
+            writer.WriteStartObject("a");
+            foreach (var kvp in feature.Attributes.OrderBy(x => x.Key, StringComparer.Ordinal))
+            {
+                writer.WritePropertyName(kvp.Key);
+                JsonSerializer.Serialize(writer, kvp.Value);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream.ToArray()))[..16];
     }
 
     private static partial class Log

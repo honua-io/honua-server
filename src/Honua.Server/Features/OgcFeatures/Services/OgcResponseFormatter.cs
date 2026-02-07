@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using System.IO;
 using System.Net;
+using System.Security;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -104,8 +104,9 @@ internal static class OgcResponseFormatter
 
         foreach (var feature in features)
         {
+            var escapedId = SecurityElement.Escape(feature.Id.ToString());
             builder.AppendLine("  <wfs:member>");
-            builder.AppendLine($"    <gml:Feature gml:id=\"{feature.Id}\">");
+            builder.AppendLine($"    <gml:Feature gml:id=\"{escapedId}\">");
             builder.AppendLine(BuildGmlGeometry(feature.Geometry, "      "));
             BuildGmlProperties(builder, feature.Properties, "      ");
             builder.AppendLine("    </gml:Feature>");
@@ -135,8 +136,9 @@ internal static class OgcResponseFormatter
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
+            var escapedId = SecurityElement.Escape(feature.Id.ToString());
             await writer.WriteLineAsync("  <wfs:member>");
-            await writer.WriteLineAsync($"    <gml:Feature gml:id=\"{feature.Id}\">");
+            await writer.WriteLineAsync($"    <gml:Feature gml:id=\"{escapedId}\">");
             WriteGmlGeometry(writer, feature.GeometryGml, "      ");
             WriteGmlProperties(writer, feature.Attributes, "      ");
             await writer.WriteLineAsync("    </gml:Feature>");
@@ -154,9 +156,10 @@ internal static class OgcResponseFormatter
     public static string BuildGmlSingleFeature(GeoJsonFeature feature)
     {
         var builder = new StringBuilder();
+        var escapedId = SecurityElement.Escape(feature.Id?.ToString());
         builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\">");
         builder.AppendLine("  <wfs:member>");
-        builder.AppendLine($"    <gml:Feature gml:id=\"{feature.Id}\">");
+        builder.AppendLine($"    <gml:Feature gml:id=\"{escapedId}\">");
         builder.AppendLine(BuildGmlGeometry(feature.Geometry, "      "));
         BuildGmlProperties(builder, feature.Properties, "      ");
         builder.AppendLine("    </gml:Feature>");
@@ -315,16 +318,170 @@ internal static class OgcResponseFormatter
 
     private static string BuildGmlMultiPoint(string coordinatesJson, string indent)
     {
+        try
+        {
+            using var document = JsonDocument.Parse(coordinatesJson);
+            var points = document.RootElement.EnumerateArray().ToArray();
+            if (points.Length > 0)
+            {
+                var builder = new StringBuilder();
+                builder.AppendLine($"{indent}<gml:MultiPoint>");
+
+                foreach (var point in points)
+                {
+                    var coords = point.EnumerateArray().ToArray();
+                    if (coords.Length >= 2)
+                    {
+                        var x = coords[0].GetDouble();
+                        var y = coords[1].GetDouble();
+                        builder.AppendLine($"{indent}  <gml:pointMember>");
+                        builder.AppendLine($"{indent}    <gml:Point><gml:pos>{x} {y}</gml:pos></gml:Point>");
+                        builder.AppendLine($"{indent}  </gml:pointMember>");
+                    }
+                }
+
+                builder.Append($"{indent}</gml:MultiPoint>");
+                return builder.ToString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall back to simple representation
+        }
+
         return $"{indent}<gml:MultiPoint />";
     }
 
     private static string BuildGmlMultiLineString(string coordinatesJson, string indent)
     {
+        try
+        {
+            using var document = JsonDocument.Parse(coordinatesJson);
+            var lineStrings = document.RootElement.EnumerateArray().ToArray();
+            if (lineStrings.Length > 0)
+            {
+                var builder = new StringBuilder();
+                builder.AppendLine($"{indent}<gml:MultiLineString>");
+
+                foreach (var lineString in lineStrings)
+                {
+                    var coordinates = new List<string>();
+                    foreach (var coord in lineString.EnumerateArray())
+                    {
+                        var coordArray = coord.EnumerateArray().ToArray();
+                        if (coordArray.Length >= 2)
+                        {
+                            var x = coordArray[0].GetDouble();
+                            var y = coordArray[1].GetDouble();
+                            coordinates.Add($"{x} {y}");
+                        }
+                    }
+
+                    if (coordinates.Count > 0)
+                    {
+                        var posListContent = string.Join(" ", coordinates);
+                        builder.AppendLine($"{indent}  <gml:lineStringMember>");
+                        builder.AppendLine($"{indent}    <gml:LineString><gml:posList>{posListContent}</gml:posList></gml:LineString>");
+                        builder.AppendLine($"{indent}  </gml:lineStringMember>");
+                    }
+                }
+
+                builder.Append($"{indent}</gml:MultiLineString>");
+                return builder.ToString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall back to simple representation
+        }
+
         return $"{indent}<gml:MultiLineString />";
     }
 
     private static string BuildGmlMultiPolygon(string coordinatesJson, string indent)
     {
+        try
+        {
+            using var document = JsonDocument.Parse(coordinatesJson);
+            var polygons = document.RootElement.EnumerateArray().ToArray();
+            if (polygons.Length > 0)
+            {
+                var builder = new StringBuilder();
+                builder.AppendLine($"{indent}<gml:MultiPolygon>");
+
+                foreach (var polygon in polygons)
+                {
+                    var rings = polygon.EnumerateArray().ToArray();
+                    if (rings.Length > 0)
+                    {
+                        builder.AppendLine($"{indent}  <gml:polygonMember>");
+                        builder.AppendLine($"{indent}    <gml:Polygon>");
+
+                        // Exterior ring
+                        var exteriorRing = rings[0];
+                        var coordinates = new List<string>();
+                        foreach (var coord in exteriorRing.EnumerateArray())
+                        {
+                            var coordArray = coord.EnumerateArray().ToArray();
+                            if (coordArray.Length >= 2)
+                            {
+                                var x = coordArray[0].GetDouble();
+                                var y = coordArray[1].GetDouble();
+                                coordinates.Add($"{x} {y}");
+                            }
+                        }
+
+                        if (coordinates.Count > 0)
+                        {
+                            var posListContent = string.Join(" ", coordinates);
+                            builder.AppendLine($"{indent}      <gml:exterior>");
+                            builder.AppendLine($"{indent}        <gml:LinearRing>");
+                            builder.AppendLine($"{indent}          <gml:posList>{posListContent}</gml:posList>");
+                            builder.AppendLine($"{indent}        </gml:LinearRing>");
+                            builder.AppendLine($"{indent}      </gml:exterior>");
+                        }
+
+                        // Interior rings (holes)
+                        for (int i = 1; i < rings.Length; i++)
+                        {
+                            var interiorRing = rings[i];
+                            var interiorCoordinates = new List<string>();
+                            foreach (var coord in interiorRing.EnumerateArray())
+                            {
+                                var coordArray = coord.EnumerateArray().ToArray();
+                                if (coordArray.Length >= 2)
+                                {
+                                    var x = coordArray[0].GetDouble();
+                                    var y = coordArray[1].GetDouble();
+                                    interiorCoordinates.Add($"{x} {y}");
+                                }
+                            }
+
+                            if (interiorCoordinates.Count > 0)
+                            {
+                                var posListContent = string.Join(" ", interiorCoordinates);
+                                builder.AppendLine($"{indent}      <gml:interior>");
+                                builder.AppendLine($"{indent}        <gml:LinearRing>");
+                                builder.AppendLine($"{indent}          <gml:posList>{posListContent}</gml:posList>");
+                                builder.AppendLine($"{indent}        </gml:LinearRing>");
+                                builder.AppendLine($"{indent}      </gml:interior>");
+                            }
+                        }
+
+                        builder.AppendLine($"{indent}    </gml:Polygon>");
+                        builder.AppendLine($"{indent}  </gml:polygonMember>");
+                    }
+                }
+
+                builder.Append($"{indent}</gml:MultiPolygon>");
+                return builder.ToString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall back to simple representation
+        }
+
         return $"{indent}<gml:MultiPolygon />";
     }
 
