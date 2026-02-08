@@ -23,8 +23,8 @@ internal sealed class PostgresGeometryOperationService(
 
         if (geodesic)
         {
-            // Cast to geography for geodesic buffering, then back to geometry for WKB output
-            cmd.CommandText = "SELECT ST_AsBinary(ST_Buffer(ST_SetSRID($1::geometry, $2)::geography, $3)::geometry)";
+            // Transform to WGS84 before geography cast; PostGIS geography only supports SRID 4326.
+            cmd.CommandText = "SELECT ST_AsBinary(ST_Buffer(ST_Transform(ST_SetSRID($1::geometry, $2), 4326)::geography, $3)::geometry)";
         }
         else
         {

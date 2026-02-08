@@ -61,6 +61,41 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Buffer)]
     [Endpoint("POST /rest/services/geometry/buffer")]
+    public async Task Buffer_GeodesicProjectedInSR_ReturnsPolygon()
+    {
+        // Arrange - a point in Web Mercator (projected SRID)
+        var request = new BufferRequest
+        {
+            Geometries = [JsonDocument.Parse("""{"x": 0, "y": 0}""").RootElement],
+            InSR = 3857,
+            Distances = [1000],
+            Unit = "esriMeters",
+            Geodesic = true
+        };
+
+        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+
+        // Assert
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+
+        var geom = result.Geometries![0];
+        geom.GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_MultipleDistances_ReturnsMultipleGeometries()
     {
         // Arrange - two points with two distances
