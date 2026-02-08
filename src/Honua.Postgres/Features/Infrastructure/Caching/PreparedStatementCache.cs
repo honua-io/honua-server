@@ -490,13 +490,16 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
     private void EvictLeastRecentlyUsed(string connectionId)
     {
-        var lruKey = _cache
+        var connectionEntries = _cache
             .Where(kvp => kvp.Key.ConnectionId == connectionId)
-            .OrderBy(kvp => kvp.Value.LastUsed)
-            .Select(kvp => kvp.Key)
-            .FirstOrDefault();
+            .ToArray();
 
-        if (lruKey != default && TryRemoveCachedStatement(lruKey, out var removed) && removed != null)
+        if (connectionEntries.Length == 0)
+            return;
+
+        var lruEntry = connectionEntries.MinBy(kvp => kvp.Value.LastUsed);
+
+        if (TryRemoveCachedStatement(lruEntry.Key, out var removed) && removed != null)
         {
             removed.Dispose();
 

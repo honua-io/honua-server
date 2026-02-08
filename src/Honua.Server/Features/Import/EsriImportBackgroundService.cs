@@ -163,8 +163,9 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
                 {
                     return;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Log.CancellationMonitorPollFailed(_logger, id, ex);
                 }
 
                 try
@@ -371,5 +372,8 @@ internal sealed partial class EsriImportBackgroundService : BackgroundService
 
         [LoggerMessage(7710, LogLevel.Error, "Error in background processing loop")]
         public static partial void ProcessingError(ILogger logger, Exception exception);
+
+        [LoggerMessage(7711, LogLevel.Debug, "Cancellation monitor poll failed for job {JobId}")]
+        public static partial void CancellationMonitorPollFailed(ILogger logger, string jobId, Exception exception);
     }
 }

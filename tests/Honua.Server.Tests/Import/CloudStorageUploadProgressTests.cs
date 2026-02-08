@@ -23,7 +23,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
-[Collection("Database")]
+[Collection("Emulators")]
 [Protocol(Protocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class AwsS3UploadProgressTests : IAsyncLifetime

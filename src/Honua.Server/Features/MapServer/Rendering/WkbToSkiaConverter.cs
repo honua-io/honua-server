@@ -69,15 +69,31 @@ internal static class WkbToSkiaConverter
         reader.IsLittleEndian = byteOrder == 1;
 
         var rawType = reader.ReadInt32();
-        // Mask out SRID and Z/M flags from type
-        var geometryType = rawType & 0xFF;
-        var hasSrid = (rawType & 0x20000000) != 0;
-        var hasZ = (rawType & 0x80000000) != 0 || (geometryType >= 1000 && geometryType < 2000);
-        var hasM = (rawType & 0x40000000) != 0 || (geometryType >= 2000 && geometryType < 3000);
 
-        if (geometryType >= 1000)
+        // Detect EWKB flags (PostGIS extended WKB format)
+        var hasSrid = (rawType & 0x20000000) != 0;
+        var hasZ = (rawType & unchecked((int)0x80000000)) != 0;
+        var hasM = (rawType & 0x40000000) != 0;
+
+        // Mask out EWKB flag bits to get the base type
+        var geometryType = rawType & 0xFFFF;
+
+        // Handle ISO WKB type ranges: 1000-1999 = Z, 2000-2999 = M, 3000-3999 = ZM
+        if (geometryType >= 3000 && geometryType < 4000)
         {
-            geometryType %= 1000;
+            hasZ = true;
+            hasM = true;
+            geometryType -= 3000;
+        }
+        else if (geometryType >= 2000 && geometryType < 3000)
+        {
+            hasM = true;
+            geometryType -= 2000;
+        }
+        else if (geometryType >= 1000 && geometryType < 2000)
+        {
+            hasZ = true;
+            geometryType -= 1000;
         }
 
         if (hasSrid)
@@ -123,45 +139,8 @@ internal static class WkbToSkiaConverter
         }
 
         var path = new SKPath();
-        var first = true;
-        for (int i = 0; i < numPoints; i++)
+        try
         {
-            var x = reader.ReadDouble();
-            var y = reader.ReadDouble();
-            SkipExtraDimensions(reader, dimensions);
-
-            var point = transform(x, y);
-            if (first)
-            {
-                path.MoveTo(point);
-                first = false;
-            }
-            else
-            {
-                path.LineTo(point);
-            }
-        }
-
-        return new GeometryConversionResult { Path = path };
-    }
-
-    private static GeometryConversionResult ReadPolygon(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
-    {
-        var numRings = reader.ReadInt32();
-        if (numRings == 0)
-        {
-            return default;
-        }
-
-        var path = new SKPath();
-        for (int ring = 0; ring < numRings; ring++)
-        {
-            var numPoints = reader.ReadInt32();
-            if (numPoints == 0)
-            {
-                continue;
-            }
-
             var first = true;
             for (int i = 0; i < numPoints; i++)
             {
@@ -181,10 +160,63 @@ internal static class WkbToSkiaConverter
                 }
             }
 
-            path.Close();
+            return new GeometryConversionResult { Path = path };
+        }
+        catch
+        {
+            path.Dispose();
+            throw;
+        }
+    }
+
+    private static GeometryConversionResult ReadPolygon(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
+    {
+        var numRings = reader.ReadInt32();
+        if (numRings == 0)
+        {
+            return default;
         }
 
-        return new GeometryConversionResult { Path = path, IsPolygon = true };
+        var path = new SKPath();
+        try
+        {
+            for (int ring = 0; ring < numRings; ring++)
+            {
+                var numPoints = reader.ReadInt32();
+                if (numPoints == 0)
+                {
+                    continue;
+                }
+
+                var first = true;
+                for (int i = 0; i < numPoints; i++)
+                {
+                    var x = reader.ReadDouble();
+                    var y = reader.ReadDouble();
+                    SkipExtraDimensions(reader, dimensions);
+
+                    var point = transform(x, y);
+                    if (first)
+                    {
+                        path.MoveTo(point);
+                        first = false;
+                    }
+                    else
+                    {
+                        path.LineTo(point);
+                    }
+                }
+
+                path.Close();
+            }
+
+            return new GeometryConversionResult { Path = path, IsPolygon = true };
+        }
+        catch
+        {
+            path.Dispose();
+            throw;
+        }
     }
 
     private static GeometryConversionResult ReadMultiPoint(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
@@ -212,79 +244,107 @@ internal static class WkbToSkiaConverter
     {
         var numGeometries = reader.ReadInt32();
         var combinedPath = new SKPath();
-
-        for (int i = 0; i < numGeometries; i++)
+        try
         {
-            var result = ReadGeometry(reader, transform);
-            if (result.Path != null)
+            for (int i = 0; i < numGeometries; i++)
             {
-                combinedPath.AddPath(result.Path);
-                result.Path.Dispose();
+                var result = ReadGeometry(reader, transform);
+                if (result.Path != null)
+                {
+                    combinedPath.AddPath(result.Path);
+                    result.Path.Dispose();
+                }
             }
-        }
 
-        return new GeometryConversionResult { Path = combinedPath };
+            return new GeometryConversionResult { Path = combinedPath };
+        }
+        catch
+        {
+            combinedPath.Dispose();
+            throw;
+        }
     }
 
     private static GeometryConversionResult ReadMultiPolygon(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
     {
         var numGeometries = reader.ReadInt32();
         var combinedPath = new SKPath();
-
-        for (int i = 0; i < numGeometries; i++)
+        try
         {
-            var result = ReadGeometry(reader, transform);
-            if (result.Path != null)
+            for (int i = 0; i < numGeometries; i++)
             {
-                combinedPath.AddPath(result.Path);
-                result.Path.Dispose();
+                var result = ReadGeometry(reader, transform);
+                if (result.Path != null)
+                {
+                    combinedPath.AddPath(result.Path);
+                    result.Path.Dispose();
+                }
             }
-        }
 
-        return new GeometryConversionResult { Path = combinedPath, IsPolygon = true };
+            return new GeometryConversionResult { Path = combinedPath, IsPolygon = true };
+        }
+        catch
+        {
+            combinedPath.Dispose();
+            throw;
+        }
     }
 
     private static GeometryConversionResult ReadGeometryCollection(WkbReader reader, Func<double, double, SKPoint> transform)
     {
         var numGeometries = reader.ReadInt32();
-        var combinedPath = new SKPath();
-        var allPoints = new List<SKPoint>();
-        var isPolygon = false;
-        var isPoint = true;
-
-        for (int i = 0; i < numGeometries; i++)
+        SKPath? combinedPath = new SKPath();
+        try
         {
-            var result = ReadGeometry(reader, transform);
-            if (result.Path != null)
+            var allPoints = new List<SKPoint>();
+            var isPolygon = false;
+            var isPoint = true;
+
+            for (int i = 0; i < numGeometries; i++)
             {
-                combinedPath.AddPath(result.Path);
-                result.Path.Dispose();
-                isPoint = false;
+                var result = ReadGeometry(reader, transform);
+                if (result.Path != null)
+                {
+                    combinedPath.AddPath(result.Path);
+                    result.Path.Dispose();
+                    isPoint = false;
+                }
+
+                if (result.Points != null)
+                {
+                    allPoints.AddRange(result.Points);
+                }
+
+                if (result.IsPolygon)
+                {
+                    isPolygon = true;
+                }
+
+                if (!result.IsPoint)
+                {
+                    isPoint = false;
+                }
             }
 
-            if (result.Points != null)
+            if (combinedPath.PointCount == 0)
             {
-                allPoints.AddRange(result.Points);
+                combinedPath.Dispose();
+                combinedPath = null;
             }
 
-            if (result.IsPolygon)
+            return new GeometryConversionResult
             {
-                isPolygon = true;
-            }
-
-            if (!result.IsPoint)
-            {
-                isPoint = false;
-            }
+                Path = combinedPath,
+                Points = allPoints.Count > 0 ? [.. allPoints] : null,
+                IsPoint = isPoint && allPoints.Count > 0,
+                IsPolygon = isPolygon
+            };
         }
-
-        return new GeometryConversionResult
+        catch
         {
-            Path = combinedPath.PointCount > 0 ? combinedPath : null,
-            Points = allPoints.Count > 0 ? [.. allPoints] : null,
-            IsPoint = isPoint && allPoints.Count > 0,
-            IsPolygon = isPolygon
-        };
+            combinedPath?.Dispose();
+            throw;
+        }
     }
 
     private static void SkipExtraDimensions(WkbReader reader, int dimensions)

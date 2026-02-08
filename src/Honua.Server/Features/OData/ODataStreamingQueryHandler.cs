@@ -695,10 +695,10 @@ internal sealed partial class ODataStreamingQueryHandler(
     /// </summary>
     private static partial class Log
     {
-        [LoggerMessage(EventId = 3005, Level = LogLevel.Warning, Message = "Invalid OData streaming features query for layer {LayerId}.")]
+        [LoggerMessage(EventId = 3020, Level = LogLevel.Warning, Message = "Invalid OData streaming features query for layer {LayerId}.")]
         public static partial void InvalidFeaturesQuery(ILogger logger, int layerId, Exception exception);
 
-        [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "OData streaming features query failed for layer {LayerId}.")]
+        [LoggerMessage(EventId = 3021, Level = LogLevel.Error, Message = "OData streaming features query failed for layer {LayerId}.")]
         public static partial void FeaturesQueryFailed(ILogger logger, int layerId, Exception exception);
     }
 }

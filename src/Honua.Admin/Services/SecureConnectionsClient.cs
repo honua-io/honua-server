@@ -38,7 +38,7 @@ internal sealed class SecureConnectionsClient : ISecureConnectionsClient
 
     public async Task<ApiResult<IReadOnlyList<SecureConnectionSummary>>> GetConnectionsAsync(CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.GetAsync("connections", cancellationToken);
+        using var response = await _httpClient.GetAsync("connections", cancellationToken);
         var result = await ApiResponseReader.ReadWrappedAsync<List<SecureConnectionSummary>>(response, cancellationToken);
 
         return result.Success
@@ -48,31 +48,31 @@ internal sealed class SecureConnectionsClient : ISecureConnectionsClient
 
     public async Task<ApiResult<SecureConnectionDetail>> GetConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.GetAsync($"connections/{connectionId}", cancellationToken);
+        using var response = await _httpClient.GetAsync($"connections/{connectionId}", cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<SecureConnectionDetail>(response, cancellationToken);
     }
 
     public async Task<ApiResult<SecureConnectionSummary>> CreateConnectionAsync(CreateSecureConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("connections", request, cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync("connections", request, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<SecureConnectionSummary>(response, cancellationToken);
     }
 
     public async Task<ApiResult<ConnectionTestResult>> TestDraftConnectionAsync(CreateSecureConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("connections/test", request, cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync("connections/test", request, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<ConnectionTestResult>(response, cancellationToken);
     }
 
     public async Task<ApiResult<SecureConnectionSummary>> UpdateConnectionAsync(Guid connectionId, UpdateSecureConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PutAsJsonAsync($"connections/{connectionId}", request, cancellationToken);
+        using var response = await _httpClient.PutAsJsonAsync($"connections/{connectionId}", request, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<SecureConnectionSummary>(response, cancellationToken);
     }
 
     public async Task<ApiResult<bool>> DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.DeleteAsync($"connections/{connectionId}", cancellationToken);
+        using var response = await _httpClient.DeleteAsync($"connections/{connectionId}", cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var error = await ApiResponseReader.ReadErrorAsync(response, cancellationToken);
@@ -85,7 +85,7 @@ internal sealed class SecureConnectionsClient : ISecureConnectionsClient
     public async Task<ApiResult<ConnectionTestResult>> TestConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"connections/{connectionId}/test");
-        var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<ConnectionTestResult>(response, cancellationToken);
     }
 }

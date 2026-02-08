@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -16,6 +17,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcTiles.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -476,6 +478,14 @@ internal static class TilesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Collection not found.");
         }
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.TileGeneration, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcTiles);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id.ToString());
+        activity?.SetTag(HonuaTelemetry.Tags.TileZ, zoomLevel);
+        activity?.SetTag(HonuaTelemetry.Tags.TileX, tileCol);
+        activity?.SetTag(HonuaTelemetry.Tags.TileY, tileRow);
+
         var validationResult = ValidateTileQueryParameters(context, layer, datetime, subset, crs, subsetCrs, out var temporalFilter);
         if (validationResult is not null)
         {
@@ -491,9 +501,13 @@ internal static class TilesEndpoints
         var tileData = await tileProvider.GetMvtTileAsync(layer.Id, tileCol, tileRow, zoomLevel, query, tileOptionsValue, tileLimits, cancellationToken);
         if (tileData == null || tileData.Length == 0)
         {
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
             return Results.NoContent();
         }
 
+        activity?.SetStatus(ActivityStatusCode.Ok);
+        activity?.SetTag("honua.tile.bytes", tileData.Length);
         return CreateTileResult(tileData, tileOptionsValue.CacheMaxAge);
     }
 

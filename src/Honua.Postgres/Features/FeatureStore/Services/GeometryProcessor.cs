@@ -128,7 +128,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         }
 
         var wgs84Srid = SpatialReference.WGS84.Wkid;
-        if (layerSrid.HasValue)
+        if (layerSrid.HasValue && layerSrid.Value != wgs84Srid)
         {
             geometryOperand = $"ST_Transform({geometryOperand}, {wgs84Srid})";
         }

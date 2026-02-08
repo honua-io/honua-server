@@ -23,7 +23,7 @@ This guide covers the security-critical configuration surfaces for Honua Server.
 ## Edge Security
 
 - Terminate TLS at the edge (nginx, ALB, gateway).
-- Enforce rate limiting at the edge.
+- Enforce rate limiting at the edge — see [Rate Limiting](RATE_LIMITING.md) for configuration templates.
 - Restrict admin endpoints to internal networks where possible.
 
 ---
@@ -37,6 +37,7 @@ This guide covers the security-critical configuration surfaces for Honua Server.
 
 ## Related Docs
 
+- [Rate Limiting](RATE_LIMITING.md)
 - [Credential Rotation](credential-rotation.md)
 - [CSP Enhancement](CSP_ENHANCEMENT.md)
 - [Authorization Matrix](AUTHORIZATION_MATRIX.md)

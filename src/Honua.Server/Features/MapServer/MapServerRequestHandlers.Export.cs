@@ -13,6 +13,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.MapServer.Models;
 using Honua.Server.Features.MapServer.Rendering;
+using Honua.ServiceDefaults;
 using SkiaSharp;
 
 namespace Honua.Server.Features.MapServer;
@@ -70,6 +71,14 @@ internal static partial class MapServerEndpoints
 
         MapServerLog.ExportRequested(logger, serviceId, imageWidth, imageHeight);
         var stopwatch = Stopwatch.StartNew();
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.MapServerExport, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "export");
+        activity?.SetTag("honua.mapserver.width", imageWidth);
+        activity?.SetTag("honua.mapserver.height", imageHeight);
+        activity?.SetTag("honua.mapserver.format", parameters.Format);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
@@ -197,6 +206,9 @@ internal static partial class MapServerEndpoints
 
         stopwatch.Stop();
         MapServerLog.ExportCompleted(logger, serviceId, totalFeatureCount, stopwatch.Elapsed.TotalMilliseconds);
+        HonuaTelemetry.SetSuccess(activity, totalFeatureCount);
+        HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
+        activity?.SetTag("honua.mapserver.layer_count", visibleLayers.Length);
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, parameters.Format);
         return ReturnImageResult(imageBytes, parameters, imageWidth, imageHeight, extent, context);
@@ -344,7 +356,8 @@ internal static partial class MapServerEndpoints
 
                 if (lineStyle.DashArray is { Length: > 0 })
                 {
-                    linePaint.PathEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
+                    using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
+                    linePaint.PathEffect = dashEffect;
                 }
 
                 if (result.Path != null)

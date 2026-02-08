@@ -146,7 +146,7 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         return ValueTask.FromResult<object>(result);
     }
 
-    private static string? ComputeETagForValueResult(
+    private string? ComputeETagForValueResult(
         object? value,
         IETagService etagService,
         JsonSerializerOptions serializerOptions)
@@ -167,9 +167,9 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             // Type info not available in AOT-friendly serializer options.
             return null;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // If we can't compute ETag, return null
+            Log.ETagComputationFailed(_logger, ex);
             return null;
         }
     }
@@ -195,6 +195,10 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         [LoggerMessage(EventId = 4105, Level = LogLevel.Warning,
             Message = "ETag service not available for {Path}")]
         public static partial void ETagServiceNotAvailable(ILogger logger, string path);
+
+        [LoggerMessage(EventId = 4106, Level = LogLevel.Debug,
+            Message = "ETag computation failed, skipping ETag header")]
+        public static partial void ETagComputationFailed(ILogger logger, Exception exception);
     }
 
     /// <summary>

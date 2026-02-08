@@ -9,6 +9,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Ogc.Common;
+using Microsoft.Extensions.Logging;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -23,7 +24,7 @@ internal sealed record BoundingBox(double MinX, double MinY, double MaxX, double
 /// <summary>
 /// Processes and combines CQL2, spatial, and temporal filters for OGC Features queries.
 /// </summary>
-internal sealed class OgcFilterProcessor
+internal sealed partial class OgcFilterProcessor
 {
     private const string InvalidCqlFilterPrefix = "Invalid CQL filter";
     private const string FilterLangCql2Text = "cql2-text";
@@ -71,13 +72,16 @@ internal sealed class OgcFilterProcessor
 
     private readonly IFilterExpressionService _filterExpressionService;
     private readonly ICrsRegistry _crsRegistry;
+    private readonly ILogger<OgcFilterProcessor> _logger;
 
     public OgcFilterProcessor(
         IFilterExpressionService filterExpressionService,
-        ICrsRegistry crsRegistry)
+        ICrsRegistry crsRegistry,
+        ILogger<OgcFilterProcessor> logger)
     {
         _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -552,6 +556,7 @@ internal sealed class OgcFilterProcessor
         }
         catch (Exception)
         {
+            // Failed to swap geometry axis order, return original
             return geometry;
         }
     }
@@ -841,5 +846,12 @@ internal sealed class OgcFilterProcessor
             seq.SetX(i, y);
             seq.SetY(i, x);
         }
+    }
+
+    private static partial class FilterLog
+    {
+        [LoggerMessage(EventId = 5470, Level = LogLevel.Warning,
+            Message = "Axis swap failed for spatial filter geometry, returning original geometry")]
+        public static partial void AxisSwapFailed(ILogger logger, Exception exception);
     }
 }

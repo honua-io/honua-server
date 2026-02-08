@@ -50,6 +50,6 @@ namespace Honua.Server.Features.OData.Models;
 // Expanded/search result types
 [JsonSerializable(typeof(ODataExpandedResponse))]
 [JsonSerializable(typeof(ODataSearchResult))]
-internal partial class ODataJsonContext : JsonSerializerContext
+internal sealed partial class ODataJsonContext : JsonSerializerContext
 {
 }

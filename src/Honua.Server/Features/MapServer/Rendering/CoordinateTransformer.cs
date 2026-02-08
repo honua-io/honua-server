@@ -10,7 +10,7 @@ namespace Honua.Server.Features.MapServer.Rendering;
 internal static class CoordinateTransformer
 {
     private const double EarthRadius = 6378137.0;
-    private const double MaxLatitude = 85.06;
+    private const double MaxLatitude = 85.0511287798066;
 
     /// <summary>
     /// Converts a bounding box from one SRID to another.
@@ -41,8 +41,8 @@ internal static class CoordinateTransformer
             return new SkiaMapRenderer.RenderExtent(minLon, minLat, maxLon, maxLat);
         }
 
-        // Unsupported transform - return as-is
-        return extent;
+        throw new NotSupportedException(
+            $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported. Only EPSG:4326 and EPSG:3857 transforms are available.");
     }
 
     /// <summary>
@@ -65,7 +65,8 @@ internal static class CoordinateTransformer
             return WebMercatorToLonLat(x, y);
         }
 
-        return (x, y);
+        throw new NotSupportedException(
+            $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported. Only EPSG:4326 and EPSG:3857 transforms are available.");
     }
 
     /// <summary>
@@ -105,8 +106,9 @@ internal static class CoordinateTransformer
 
         var extentWidth = extent.Width;
 
-        // If geographic coordinates, convert width to meters at center latitude
-        if (srid == 4326)
+        // If geographic coordinates, convert width to meters at center latitude.
+        // Most EPSG codes in 4000-4999 are geographic CRSs (lat/lon in degrees).
+        if (srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999))
         {
             var centerLat = (extent.MinY + extent.MaxY) / 2.0;
             extentWidth = extentWidth * Math.PI / 180.0 * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
