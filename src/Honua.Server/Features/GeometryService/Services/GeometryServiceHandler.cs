@@ -26,7 +26,7 @@ internal sealed class GeometryServiceHandler(
     /// <summary>
     /// Unit conversion factors to meters.
     /// </summary>
-    private static readonly Dictionary<string, double> UnitConversions = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, double> _unitConversions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["esriMeters"] = 1.0,
         ["esriFeet"] = 0.3048,
@@ -238,7 +238,7 @@ internal sealed class GeometryServiceHandler(
             return 1.0;
         }
 
-        return UnitConversions.TryGetValue(unit, out var multiplier) ? multiplier : 1.0;
+        return _unitConversions.TryGetValue(unit, out var multiplier) ? multiplier : 1.0;
     }
 
     private static IResult CreateError(int code, string message)
