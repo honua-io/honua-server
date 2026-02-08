@@ -259,6 +259,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 return StandardErrorHelpers.CreateConflict(context, ex.Message);
             }
+            catch (ResourceNotFoundException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (InvalidOperationException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (ArgumentException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid feature payload.");
+            }
+            catch (NotSupportedException ex)
+            {
+                return StandardErrorHelpers.CreateFromException(context, ex);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
