@@ -14,7 +14,7 @@ internal static partial class MapServerEndpoints
     public static IEndpointRouteBuilder MapMapServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/rest/services/{serviceId}/MapServer",
-                static (HttpContext context) => HandleGetServiceMetadata(context))
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGetServiceMetadata(context))
             .WithDisplayName("Get MapServer Service Metadata")
             .WithName("GetMapServerMetadata")
             .WithSummary("Get MapServer service metadata")
@@ -23,7 +23,7 @@ internal static partial class MapServerEndpoints
             .CacheOutput("ServiceMetadata");
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/export",
-                static (HttpContext context) => HandleExport(context))
+                static (HttpContext context, CancellationToken cancellationToken) => HandleExport(context))
             .WithDisplayName("Export Map Image")
             .WithName("MapServerExport")
             .WithSummary("Export a map image")
@@ -31,7 +31,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/identify",
-                static (HttpContext context) => HandleIdentify(context))
+                static (HttpContext context, CancellationToken cancellationToken) => HandleIdentify(context))
             .WithDisplayName("Identify Features")
             .WithName("MapServerIdentify")
             .WithSummary("Identify features at a location")
@@ -39,7 +39,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/legend",
-                static (HttpContext context) => HandleLegend(context))
+                static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
             .WithDisplayName("Get Map Legend")
             .WithName("MapServerLegend")
             .WithSummary("Get map legend")
