@@ -7,6 +7,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -99,7 +100,7 @@ internal static class ServiceSettingsEndpoints
             string serviceName,
             UpdateProtocolsRequest request,
             ILayerCatalog catalog,
-            IServiceMetadataUpdater metadataUpdater,
+            [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -143,7 +144,7 @@ internal static class ServiceSettingsEndpoints
             string serviceName,
             UpdateMapServerSettingsRequest request,
             ILayerCatalog catalog,
-            IServiceMetadataUpdater metadataUpdater,
+            [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
