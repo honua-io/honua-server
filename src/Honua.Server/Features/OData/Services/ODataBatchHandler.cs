@@ -19,11 +19,6 @@ using Honua.Server.Features.OData.Models;
 namespace Honua.Server.Features.OData.Services;
 
 /// <summary>
-/// Log category for OData batch operations.
-/// </summary>
-internal sealed class ODataBatchLog;
-
-/// <summary>
 /// Handles OData v4 $batch operations with support for atomicity groups.
 /// </summary>
 internal sealed partial class ODataBatchHandler

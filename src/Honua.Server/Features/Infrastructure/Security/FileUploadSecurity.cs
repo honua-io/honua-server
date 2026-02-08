@@ -360,11 +360,6 @@ internal static class FileUploadSecurity
                 "passthru(",
                 "<?php",
                 "<%",
-                "{{",
-                "function(",
-                "var ",
-                "const ",
-                "let ",
             };
 
             var maxPatternLength = 0;

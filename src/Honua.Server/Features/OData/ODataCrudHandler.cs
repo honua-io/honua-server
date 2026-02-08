@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -8,6 +9,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
@@ -36,6 +38,8 @@ internal sealed class ODataCrudHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -52,14 +56,19 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: cancellationToken);
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
         }
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureQuery, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "query");
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
         if (result.IsSuccess && result.Data is Dictionary<string, object?> payload)
@@ -99,6 +108,8 @@ internal sealed class ODataCrudHandler(
                 "Features",
                 isSingle: true,
                 select: select);
+
+            HonuaTelemetry.SetSuccess(activity);
         }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
@@ -113,6 +124,8 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -151,7 +164,7 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, resolvedLayerId.Value, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context, resolvedLayerId.Value, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -160,14 +173,19 @@ internal sealed class ODataCrudHandler(
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
             resolvedLayerId.Value,
-            cancellationToken);
+            effectiveToken);
         if (rbacError != null)
         {
             return rbacError;
         }
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "create");
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, resolvedLayerId.Value);
+
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
         if (result.IsSuccess)
@@ -194,6 +212,7 @@ internal sealed class ODataCrudHandler(
             }
 
             await InvalidateCacheAsync(context, resolvedLayerId.Value, effectiveToken);
+            HonuaTelemetry.SetSuccess(activity);
         }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
@@ -209,6 +228,8 @@ internal sealed class ODataCrudHandler(
         [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -240,7 +261,7 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -249,14 +270,19 @@ internal sealed class ODataCrudHandler(
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
             layerId,
-            cancellationToken);
+            effectiveToken);
         if (rbacError != null)
         {
             return rbacError;
         }
 
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "update");
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
@@ -292,6 +318,7 @@ internal sealed class ODataCrudHandler(
             }
 
             await InvalidateCacheAsync(context, layerId, effectiveToken);
+            HonuaTelemetry.SetSuccess(activity);
         }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
@@ -306,6 +333,8 @@ internal sealed class ODataCrudHandler(
         long objectId,
         CancellationToken cancellationToken = default)
     {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
         var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
             context,
             _validationService,
@@ -316,7 +345,7 @@ internal sealed class ODataCrudHandler(
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -325,13 +354,17 @@ internal sealed class ODataCrudHandler(
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
             layerId,
-            cancellationToken);
+            effectiveToken);
         if (rbacError != null)
         {
             return rbacError;
         }
 
-        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "delete");
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
@@ -339,6 +372,7 @@ internal sealed class ODataCrudHandler(
         if (result.IsSuccess)
         {
             await InvalidateCacheAsync(context, layerId, effectiveToken);
+            HonuaTelemetry.SetSuccess(activity);
         }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);

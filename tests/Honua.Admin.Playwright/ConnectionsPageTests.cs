@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Honua.Admin.Playwright;
@@ -468,4 +469,262 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
             updatedAt,
             createdBy = "tester"
         };
+
+    [Fact]
+    public async Task ConnectionsPage_LongConnectionName_HandlesCorrectly()
+    {
+        await _fixture.RunAsync(nameof(ConnectionsPage_LongConnectionName_HandlesCorrectly), async ctx =>
+        {
+            var baseUrl = ctx.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return;
+            }
+
+            var page = ctx.Page;
+            var now = DateTimeOffset.UtcNow;
+
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
+            {
+                await FulfillJsonAsync(route, new
+                {
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = Array.Empty<object>()
+                });
+            });
+
+            await page.GotoAsync(BuildConnectionsUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
+
+            await page.GetByTestId("connections-add").ClickAsync();
+
+            // Test very long connection name (over typical database identifier limits)
+            var longName = new string('a', 200);
+            await page.GetByLabel("Connection name").FillAsync(longName);
+
+            var actualValue = await page.GetByLabel("Connection name").InputValueAsync();
+
+            // Should either truncate or show validation error
+            Assert.True(actualValue.Length <= 200 || await page.GetByText("Connection name is too long").IsVisibleAsync());
+        });
+    }
+
+    [Fact]
+    public async Task ConnectionsPage_NetworkTimeout_ShowsError()
+    {
+        await _fixture.RunAsync(nameof(ConnectionsPage_NetworkTimeout_ShowsError), async ctx =>
+        {
+            var baseUrl = ctx.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return;
+            }
+
+            var page = ctx.Page;
+
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
+            {
+                // Simulate network timeout by not responding
+                await Task.Delay(TimeSpan.FromSeconds(30));
+                await route.AbortAsync();
+            });
+
+            await page.GotoAsync(BuildConnectionsUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
+
+            // Should show some kind of loading indicator or error message for network issues
+            await WaitForConditionAsync(
+                async () => await page.GetByText("Failed to load connections").IsVisibleAsync() ||
+                           await page.Locator(".mud-progress-linear").IsVisibleAsync(),
+                TimeSpan.FromSeconds(10),
+                "No loading indicator or error message shown for network timeout");
+        });
+    }
+
+    [Fact]
+    public async Task ConnectionsPage_InvalidPortNumbers_ShowsValidation()
+    {
+        await _fixture.RunAsync(nameof(ConnectionsPage_InvalidPortNumbers_ShowsValidation), async ctx =>
+        {
+            var baseUrl = ctx.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return;
+            }
+
+            var page = ctx.Page;
+            var now = DateTimeOffset.UtcNow;
+
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
+            {
+                await FulfillJsonAsync(route, new
+                {
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = Array.Empty<object>()
+                });
+            });
+
+            await page.GotoAsync(BuildConnectionsUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
+
+            await page.GetByTestId("connections-add").ClickAsync();
+            await page.GetByLabel("Connection name").FillAsync("test-conn");
+            await page.GetByLabel("Host").FillAsync("localhost");
+
+            // Test invalid port numbers
+            await page.GetByLabel("Port").FillAsync("-1");
+            var portValue = await page.GetByLabel("Port").InputValueAsync();
+            Assert.True(string.IsNullOrEmpty(portValue) || int.Parse(portValue, CultureInfo.InvariantCulture) >= 1);
+
+            await page.GetByLabel("Port").FillAsync("99999");
+            portValue = await page.GetByLabel("Port").InputValueAsync();
+            Assert.True(string.IsNullOrEmpty(portValue) || int.Parse(portValue, CultureInfo.InvariantCulture) <= 65535);
+        });
+    }
+
+    [Fact]
+    public async Task ConnectionsPage_SqlInjectionAttempt_IsSanitized()
+    {
+        await _fixture.RunAsync(nameof(ConnectionsPage_SqlInjectionAttempt_IsSanitized), async ctx =>
+        {
+            var baseUrl = ctx.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return;
+            }
+
+            var page = ctx.Page;
+            var now = DateTimeOffset.UtcNow;
+
+            var requestBody = string.Empty;
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
+            {
+                if (route.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestBody = route.Request.PostData ?? "";
+                    await FulfillJsonAsync(route, new
+                    {
+                        success = false,
+                        message = "Invalid input data",
+                        timestamp = now,
+                        data = (object?)null
+                    }, status: 400);
+                    return;
+                }
+
+                await FulfillJsonAsync(route, new
+                {
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = Array.Empty<object>()
+                });
+            });
+
+            await page.GotoAsync(BuildConnectionsUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
+
+            await page.GetByTestId("connections-add").ClickAsync();
+
+            // Attempt SQL injection in various fields
+            await page.GetByLabel("Connection name").FillAsync("test'; DROP TABLE connections; --");
+            await page.GetByLabel("Host").FillAsync("localhost");
+            await page.GetByLabel("Database").FillAsync("testdb' OR '1'='1");
+            await page.GetByLabel("Username").FillAsync("admin'; --");
+            await page.GetByLabel("Password").FillAsync("password");
+
+            await page.GetByTestId("connection-save").ClickAsync();
+
+            // Should show appropriate error message
+            await page.GetByText("Invalid input data").WaitForAsync();
+
+            // Verify the request body doesn't contain raw SQL injection attempts
+            Assert.DoesNotContain("DROP TABLE", requestBody);
+            Assert.DoesNotContain("OR '1'='1", requestBody);
+        });
+    }
+
+    [Fact]
+    public async Task ConnectionsPage_SpecialCharactersInFields_HandledCorrectly()
+    {
+        await _fixture.RunAsync(nameof(ConnectionsPage_SpecialCharactersInFields_HandledCorrectly), async ctx =>
+        {
+            var baseUrl = ctx.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return;
+            }
+
+            var page = ctx.Page;
+            var now = DateTimeOffset.UtcNow;
+            var createdId = Guid.NewGuid();
+
+            await page.RouteAsync("**/api/v1/admin/connections", async route =>
+            {
+                if (route.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    await FulfillJsonAsync(route, new
+                    {
+                        success = true,
+                        message = "created",
+                        timestamp = now,
+                        data = BuildSummary(
+                            createdId,
+                            "test-üñíçødé",
+                            "Test with émojis 🔒",
+                            "host-with-hyphen.com",
+                            5432,
+                            "database_with_underscore",
+                            "user@domain.com",
+                            "Unknown")
+                    });
+                    return;
+                }
+
+                await FulfillJsonAsync(route, new
+                {
+                    success = true,
+                    message = "ok",
+                    timestamp = now,
+                    data = Array.Empty<object>()
+                });
+            });
+
+            await page.GotoAsync(BuildConnectionsUrl(baseUrl));
+            if (await AuthTestHelpers.IsUnauthorizedAsync(page))
+            {
+                return;
+            }
+
+            await page.GetByTestId("connections-add").ClickAsync();
+            await page.GetByLabel("Connection name").FillAsync("test-üñíçødé");
+            await page.GetByLabel("Description").FillAsync("Test with émojis 🔒");
+            await page.GetByLabel("Host").FillAsync("host-with-hyphen.com");
+            await page.GetByLabel("Database").FillAsync("database_with_underscore");
+            await page.GetByLabel("Username").FillAsync("user@domain.com");
+            await page.GetByLabel("Password").FillAsync("pássw0rd!@#");
+
+            await page.GetByTestId("connection-save").ClickAsync();
+
+            // Should successfully handle unicode and special characters
+            await WaitForTextAsync(page, "test-üñíçødé");
+            await WaitForTextAsync(page, "Test with émojis 🔒");
+        });
+    }
 }

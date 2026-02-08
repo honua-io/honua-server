@@ -447,7 +447,9 @@ public static class OidcAuthenticationExtensions
 
             if (!string.IsNullOrWhiteSpace(jwtToken.RawData))
             {
-                return $"raw:{jwtToken.RawData}";
+                var hash = System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(jwtToken.RawData));
+                return $"raw:{Convert.ToHexStringLower(hash)}";
             }
         }
 

@@ -1,76 +1,35 @@
 # High Error Rate Runbook
 
 **Alert**: HonuaHighErrorRate
-**Severity**: Critical
-**Response Time**: < 10 minutes
+**Severity**: High
+**Goal**: Reduce 5xx errors and stabilize traffic.
 
-## Symptoms
-- 5xx rate above threshold
-- Spike in 4xx/5xx from clients
-- Errors across multiple endpoints
+---
 
-## Immediate Actions
+## Immediate Checks
 
-### 1. Confirm Impact (0-3 minutes)
-```bash
-curl -f https://api.honua.example.com/healthz/ready
-curl -s https://api.honua.example.com/api/v1/metrics/health | jq '.status'
-```
+- Check error rate in your metrics dashboard.
+- Review recent logs for top error causes.
+- Verify database connectivity and timeouts.
 
-### 2. Inspect Logs (3-7 minutes)
-```bash
-kubectl logs --since=15m -l app=honua-server -n honua-production | grep -E "ERROR|Exception"
-```
+---
 
-## Diagnostics
+## Diagnose
 
-### Check Recent Deployments
-- Review release timeline
-- Compare error spike with deploy time
+- Is the error rate isolated to a specific endpoint or protocol?
+- Do errors correlate with traffic spikes or a recent deploy?
+- Are timeouts or pool exhaustion errors appearing?
 
-### Validate Dependencies
-```bash
-# Database connectivity
-kubectl exec -it deployment/honua-server -n honua-production -- \
-  psql -h postgres.honua.internal -U honua_prod -c "SELECT 1;"
+---
 
-# Cache
-redis-cli ping
-```
+## Mitigate
 
-### Identify Endpoint Hotspots
-- Inspect logs for repeated endpoint paths
-- Check for malformed client requests or auth failures
+- Roll back recent changes if errors began after deploy.
+- Scale replicas to relieve load.
+- Tighten query limits temporarily if requests are heavy.
 
-## Common Causes & Fixes
+---
 
-### Cause 1: Breaking Change Deployed
-**Fix**:
-- Roll back to previous version
-- Confirm schema compatibility
+## Escalate
 
-### Cause 2: Dependency Outage
-**Fix**:
-- Failover database if available
-- Restore cache connectivity
-
-### Cause 3: Invalid Client Traffic
-**Fix**:
-- Rate limit offending IPs
-- Validate input validation failures
-
-## Escalation
-
-Escalate if:
-- Errors persist > 30 minutes
-- Data integrity is at risk
-
-## Recovery
-
-```bash
-# Roll back
-kubectl rollout undo deployment/honua-server -n honua-production
-
-# Restart pods
-kubectl rollout restart deployment/honua-server -n honua-production
-```
+Escalate if errors persist beyond 30 minutes or affect critical customers.

@@ -12,6 +12,8 @@ namespace Honua.Server.Features.Ogc.Common;
 /// </summary>
 internal static class OgcOpenApiSpecUtilities
 {
+    private const int MaxCacheEntries = 50;
+
     private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _openApiCache =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -72,6 +74,27 @@ internal static class OgcOpenApiSpecUtilities
     {
         var rootPath = Path.GetFullPath(contentRootPath);
         var cacheKey = $"{rootPath}|{openApiFileName}";
+
+        // Use GetOrAdd first - this is atomic and handles the common case without racing
+        if (_openApiCache.TryGetValue(cacheKey, out var existing))
+        {
+            return existing.Value;
+        }
+
+        // Only evict when at capacity and the key is genuinely new.
+        // Eviction is best-effort; concurrent adds may slightly exceed MaxCacheEntries.
+        if (_openApiCache.Count >= MaxCacheEntries)
+        {
+            // Remove one arbitrary entry rather than clearing the whole cache
+            foreach (var kvp in _openApiCache)
+            {
+                if (_openApiCache.TryRemove(kvp))
+                {
+                    break;
+                }
+            }
+        }
+
         var cacheEntry = _openApiCache.GetOrAdd(cacheKey, _ => new Lazy<Task<string?>>(
             () => ReadOpenApiContentAsync(rootPath, openApiFileName)));
         return cacheEntry.Value;

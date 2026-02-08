@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -64,6 +66,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return rbacError;
             }
 
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "batch");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
             var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
                 context.Request,
                 layer,
@@ -80,6 +88,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             if (batchRequest == null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid batch request payload.");
+            }
+
+            const int maxBatchOperations = 1000;
+            if (batchRequest.Operations.Count > maxBatchOperations)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    $"Batch request exceeds maximum of {maxBatchOperations} operations.");
             }
 
             var results = new List<BatchOperationResult>();
@@ -137,6 +152,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 await InvalidateCacheAsync(context, layerId, cancellationToken);
             }
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
+            HonuaTelemetry.SetSuccess(activity, response.SuccessCount);
             return Results.Json(response, OgcJsonContext.Default.BatchOperationResponse, statusCode: statusCode);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -180,6 +196,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return rbacError;
             }
 
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "replace");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
@@ -203,7 +225,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var etag = GenerateETag(existing.Value);
                 if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.OrdinalIgnoreCase))
                 {
-                    return Results.StatusCode(412); // Precondition Failed
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource has been modified since the provided ETag.");
                 }
             }
 
@@ -243,11 +268,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
                 await InvalidateCacheAsync(context, layerId, cancellationToken);
+                HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
             catch (ResourceConflictException ex)
             {
                 return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            }
+            catch (ResourceNotFoundException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (InvalidOperationException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (ArgumentException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid feature payload.");
+            }
+            catch (NotSupportedException ex)
+            {
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -539,9 +581,32 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private static string GenerateETag(Feature feature)
     {
-        // Generate a simple ETag based on feature ID and a hash of its content
-        var content = $"{feature.Id}_{feature.Geometry?.Length ?? 0}_{feature.Attributes?.Count ?? 0}";
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(content)))[..16];
+        // Generate an ETag based on a hash of the full feature content
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        writer.WriteStartObject();
+        writer.WriteNumber("id", feature.Id);
+        if (feature.Geometry != null)
+        {
+            writer.WriteBase64String("g", feature.Geometry);
+        }
+
+        if (feature.Attributes != null)
+        {
+            writer.WriteStartObject("a");
+            foreach (var kvp in feature.Attributes.OrderBy(x => x.Key, StringComparer.Ordinal))
+            {
+                writer.WritePropertyName(kvp.Key);
+                JsonSerializer.Serialize(writer, kvp.Value);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream.ToArray()))[..16];
     }
 
     private static partial class Log

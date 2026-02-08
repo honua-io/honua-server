@@ -12,74 +12,6 @@ namespace Honua.Core.Features.Shared.Models;
 public static class FieldDefinitionExtensions
 {
     /// <summary>
-    /// Converts a FieldDefinition from the Core catalog domain to a GeoServices-compatible field info
-    /// </summary>
-    /// <param name="field">The core field definition</param>
-    /// <returns>A new FieldDefinitionBase with GeoServices type mapping</returns>
-    public static T ToGeoServicesField<T>(this FieldDefinition field) where T : FieldDefinitionBase, new()
-    {
-        return new T
-        {
-            Name = field.Name,
-            Type = field.GeoServicesType,
-            Alias = field.DisplayName,
-            Length = field.Length,
-            Nullable = field.Nullable,
-            DefaultValue = field.DefaultValue
-        };
-    }
-
-    /// <summary>
-    /// Converts an Esri field type to the corresponding FieldType enum
-    /// </summary>
-    /// <param name="esriType">The Esri field type string</param>
-    /// <returns>The corresponding FieldType enum value</returns>
-    public static FieldType ToFieldType(this string esriType)
-    {
-        return esriType.ToUpperInvariant() switch
-        {
-            "ESRIFIELDTYPEOID" => FieldType.BigInteger,
-            "ESRIFIELDTYPEINTEGER" => FieldType.Integer,
-            "ESRIFIELDTYPESMALLINTEGER" => FieldType.Integer,
-            "ESRIFIELDTYPEDOUBLE" => FieldType.Double,
-            "ESRIFIELDTYPESINGLE" => FieldType.Float,
-            "ESRIFIELDTYPESTRING" => FieldType.String,
-            "ESRIFIELDTYPEDATE" => FieldType.DateTime,
-            "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" => FieldType.Uuid,
-            "ESRIFIELDTYPEBLOB" => FieldType.Binary,
-            "ESRIFIELDTYPEXML" => FieldType.Json, // Map XML to JSON for simplicity
-            "ESRIFIELDTYPEGEOMETRY" => FieldType.Geometry,
-            _ => FieldType.String // Default fallback
-        };
-    }
-
-    /// <summary>
-    /// Converts a FieldType enum to the corresponding Esri field type string
-    /// </summary>
-    /// <param name="fieldType">The FieldType enum value</param>
-    /// <returns>The corresponding Esri field type string</returns>
-    public static string ToEsriType(this FieldType fieldType)
-    {
-        return fieldType switch
-        {
-            FieldType.String => "esriFieldTypeString",
-            FieldType.Integer => "esriFieldTypeInteger",
-            FieldType.BigInteger => "esriFieldTypeInteger",
-            FieldType.Double => "esriFieldTypeDouble",
-            FieldType.Float => "esriFieldTypeSingle",
-            FieldType.Boolean => "esriFieldTypeSmallInteger", // Boolean as 0/1
-            FieldType.DateTime => "esriFieldTypeDate",
-            FieldType.Date => "esriFieldTypeDate",
-            FieldType.Time => "esriFieldTypeString", // Time as formatted string
-            FieldType.Geometry => "esriFieldTypeGeometry",
-            FieldType.Json => "esriFieldTypeString", // JSON as string
-            FieldType.Binary => "esriFieldTypeBlob",
-            FieldType.Uuid => "esriFieldTypeGUID",
-            _ => "esriFieldTypeString"
-        };
-    }
-
-    /// <summary>
     /// Converts an Esri field type to the corresponding PostgreSQL type
     /// </summary>
     /// <param name="esriType">The Esri field type string</param>
@@ -130,22 +62,6 @@ public static class FieldDefinitionExtensions
             FieldType.Uuid => "UUID",
             _ => "TEXT"
         };
-    }
-
-    /// <summary>
-    /// Creates a FieldDefinition from an EsriFieldInfo-like object
-    /// </summary>
-    /// <param name="esriField">The Esri field definition</param>
-    /// <returns>A new FieldDefinition with converted types</returns>
-    public static FieldDefinition ToFieldDefinition(this FieldDefinitionBase esriField)
-    {
-        return new FieldDefinition(
-            Name: esriField.Name,
-            Type: esriField.Type.ToFieldType(),
-            Length: esriField.Length,
-            Nullable: esriField.Nullable,
-            DefaultValue: esriField.DefaultValue,
-            Description: esriField.Alias);
     }
 
     /// <summary>

@@ -69,7 +69,7 @@ public static class CorsConfiguration
                 policy.WithOrigins(explicitOrigins);
             }
 
-            policy.WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            policy.WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                   .WithHeaders("Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID")
                   .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
                   .SetPreflightMaxAge(TimeSpan.FromMinutes(preflightMaxAgeMinutes));

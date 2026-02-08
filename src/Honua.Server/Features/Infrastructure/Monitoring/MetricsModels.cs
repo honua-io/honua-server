@@ -252,8 +252,4 @@ public sealed class CacheTypeMetrics
     /// </summary>
     public required long Evictions { get; init; }
 
-    /// <summary>
-    /// Average operation time in milliseconds.
-    /// </summary>
-    public required double AvgOperationTimeMs { get; init; }
 }

@@ -22,6 +22,25 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresSecureConnectionRegistry> _logger;
 
+    private static string ToLowerString(ConnectionHealthStatus status) => status switch
+    {
+        ConnectionHealthStatus.Unknown => "unknown",
+        ConnectionHealthStatus.Healthy => "healthy",
+        ConnectionHealthStatus.Unhealthy => "unhealthy",
+        _ => status.ToString().ToLowerInvariant()
+    };
+
+    private static string ToLowerString(CoreSslMode mode) => mode switch
+    {
+        CoreSslMode.Disable => "disable",
+        CoreSslMode.Allow => "allow",
+        CoreSslMode.Prefer => "prefer",
+        CoreSslMode.Require => "require",
+        CoreSslMode.VerifyCA => "verifyca",
+        CoreSslMode.VerifyFull => "verifyfull",
+        _ => mode.ToString().ToLowerInvariant()
+    };
+
     // Logger message delegates for performance
     private static readonly Action<ILogger, string, Guid, Exception?> _logConnectionCreated =
         LoggerMessage.Define<string, Guid>(LogLevel.Information, new EventId(1, nameof(_logConnectionCreated)),
@@ -352,13 +371,13 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
             command.CommandText = sql;
             command.Parameters.Add(new NpgsqlParameter("@connection_id", connectionId));
-            command.Parameters.Add(new NpgsqlParameter("@health_status", healthStatus.ToString().ToLowerInvariant()));
+            command.Parameters.Add(new NpgsqlParameter("@health_status", ToLowerString(healthStatus)));
 
             var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
             if (rowsAffected > 0)
             {
-                _logHealthStatusUpdated(_logger, connectionId, healthStatus.ToString(), null);
+                _logHealthStatusUpdated(_logger, connectionId, ToLowerString(healthStatus), null);
                 return true;
             }
 
@@ -381,7 +400,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         command.Parameters.Add(new NpgsqlParameter("@database_name", connection.DatabaseName));
         command.Parameters.Add(new NpgsqlParameter("@username", connection.Username));
         command.Parameters.Add(new NpgsqlParameter("@ssl_required", connection.SslRequired));
-        command.Parameters.Add(new NpgsqlParameter("@ssl_mode", connection.SslMode.ToString().ToLowerInvariant()));
+        command.Parameters.Add(new NpgsqlParameter("@ssl_mode", ToLowerString(connection.SslMode)));
         command.Parameters.Add(new NpgsqlParameter("@connection_string_encrypted", (object?)connection.ConnectionStringEncrypted ?? DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("@encryption_key_version", connection.EncryptionKeyVersion));
         command.Parameters.Add(new NpgsqlParameter("@secret_ref", (object?)connection.SecretRef ?? DBNull.Value));

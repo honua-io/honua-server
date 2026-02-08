@@ -6,7 +6,7 @@ namespace Honua.ServiceDefaults;
 /// <summary>
 /// Configuration options for OpenTelemetry distributed tracing.
 /// </summary>
-public class TracingOptions
+public sealed class TracingOptions
 {
     /// <summary>
     /// Configuration section name.

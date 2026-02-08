@@ -40,48 +40,6 @@ public static class FeatureServerExtensions
             spatialRefInfo.Wkt);
 
     /// <summary>
-    /// Converts a shared SpatialReference to FeatureServer GeoServicesSpatialReference
-    /// </summary>
-    /// <param name="spatialRef">Shared spatial reference</param>
-    /// <returns>FeatureServer GeoServices spatial reference</returns>
-    public static GeoServicesSpatialReference ToGeoServicesSpatialReference(this SpatialReference spatialRef)
-        => new()
-        {
-            Wkid = spatialRef.Wkid,
-            LatestWkid = spatialRef.LatestWkid,
-            Wkt = spatialRef.Wkt
-        };
-
-    /// <summary>
-    /// Converts FeatureServer GeoServicesSpatialReference to shared SpatialReference
-    /// </summary>
-    /// <param name="geoServicesSpatialRef">FeatureServer GeoServices spatial reference</param>
-    /// <returns>Shared spatial reference</returns>
-    public static SpatialReference ToSpatialReference(this GeoServicesSpatialReference geoServicesSpatialRef)
-        => SpatialReference.Create(
-            geoServicesSpatialRef.Wkid ?? 0,
-            geoServicesSpatialRef.LatestWkid,
-            vcsWkid: null,
-            latestVcsWkid: null,
-            wkt: geoServicesSpatialRef.Wkt);
-
-    /// <summary>
-    /// Converts nullable FeatureServer GeoServicesSpatialReference to nullable shared SpatialReference
-    /// </summary>
-    /// <param name="geoServicesSpatialRef">FeatureServer GeoServices spatial reference</param>
-    /// <returns>Nullable shared spatial reference</returns>
-    public static SpatialReference? ToNullableSpatialReference(this GeoServicesSpatialReference? geoServicesSpatialRef)
-        => geoServicesSpatialRef?.ToSpatialReference();
-
-    /// <summary>
-    /// Converts nullable shared SpatialReference to nullable FeatureServer GeoServicesSpatialReference
-    /// </summary>
-    /// <param name="spatialRef">Nullable shared spatial reference</param>
-    /// <returns>Nullable FeatureServer GeoServices spatial reference</returns>
-    public static GeoServicesSpatialReference? ToNullableGeoServicesSpatialReference(this SpatialReference? spatialRef)
-        => spatialRef?.ToGeoServicesSpatialReference();
-
-    /// <summary>
     /// Converts a FeatureExtent to FeatureServer ExtentInfo
     /// </summary>
     /// <param name="extent">Feature extent</param>
@@ -108,18 +66,6 @@ public static class FeatureServerExtensions
             extentInfo.Xmax,
             extentInfo.Ymax,
             extentInfo.SpatialReference.ToSpatialReference().ToSrid());
-
-    /// <summary>
-    /// Converts a shared ServiceError to FeatureServer EditError
-    /// </summary>
-    /// <param name="serviceError">Shared service error</param>
-    /// <returns>FeatureServer edit error</returns>
-    public static EditError ToEditError(this ServiceError serviceError)
-        => new()
-        {
-            Code = serviceError.ToNumericErrorCode(),
-            Description = serviceError.Message
-        };
 
     /// <summary>
     /// Converts FeatureServer EditError to shared ServiceError
@@ -154,14 +100,6 @@ public static class FeatureServerExtensions
             geoJsonFeature.Id,
             geoJsonFeature.Properties.AsReadOnly(),
             geoJsonFeature.Geometry != null);
-
-    /// <summary>
-    /// Converts a shared PagedResponseBase to properties for FeatureServer QueryResponse
-    /// </summary>
-    /// <param name="pagedBase">Shared paged response base</param>
-    /// <returns>Tuple of count and exceeded transfer limit properties</returns>
-    public static (long? Count, bool ExceededTransferLimit) ToQueryResponseProperties(this PagedResponseBase pagedBase)
-        => (pagedBase.TotalCount, pagedBase.ExceededTransferLimit);
 
     /// <summary>
     /// Creates a PagedResponseBase from FeatureServer QueryResponse properties

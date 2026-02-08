@@ -1,0 +1,14 @@
+# GitBook configuration for Honua Server Documentation
+root: ./
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md
+
+format: markdown
+
+# Redirect old GitHub Pages URLs to maintain links
+redirects:
+  user/STANDARDS_APIS: user/standards-apis
+  user/CONTROL_PLANE_API: user/control-plane-api
+  devops/DEPLOYMENT_SCENARIOS: devops/deployment-scenarios

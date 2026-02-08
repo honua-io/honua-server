@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -16,6 +17,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -60,6 +62,12 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return rbacError;
             }
 
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "create");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
             var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {
@@ -96,6 +104,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
             var response = ToOgcFeature(created, inputCrs.AxisOrder, createLinks);
 
+            HonuaTelemetry.SetSuccess(activity);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -141,6 +150,12 @@ internal sealed partial class OgcFeaturesCrudHandler(
             {
                 return rbacError;
             }
+
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "update");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
@@ -199,6 +214,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 MediaTypes.GeoJson);
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
             var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+            HonuaTelemetry.SetSuccess(activity);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -241,6 +257,12 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return rbacError;
             }
 
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "delete");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
@@ -253,6 +275,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             }
 
             await InvalidateCacheAsync(context, layerId, cancellationToken);
+            HonuaTelemetry.SetSuccess(activity);
             return Results.NoContent();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

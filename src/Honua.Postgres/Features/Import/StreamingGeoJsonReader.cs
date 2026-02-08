@@ -423,6 +423,8 @@ internal sealed class StreamingGeoJsonReader
         foreach (var lineCoords in coords.EnumerateArray())
         {
             var coordinates = ParseCoordinateArray(lineCoords);
+            if (coordinates.Length < 2)
+                continue;
             lineStrings.Add(_geometryFactory.CreateLineString(coordinates));
         }
         return _geometryFactory.CreateMultiLineString(lineStrings.ToArray());
@@ -434,6 +436,8 @@ internal sealed class StreamingGeoJsonReader
         foreach (var ringCoords in coords.EnumerateArray())
         {
             var coordinates = ParseCoordinateArray(ringCoords);
+            if (coordinates.Length < 4)
+                continue;
             rings.Add(_geometryFactory.CreateLinearRing(coordinates));
         }
 

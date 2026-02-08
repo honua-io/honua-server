@@ -43,7 +43,7 @@ public record ServiceDefinition(
     /// <summary>
     /// All unique field definitions across all layers in the service
     /// </summary>
-    public FieldDefinition[] AllFields => Layers
+    public FieldDefinition[] AllFields => _allFields ??= Layers
         .SelectMany(layer => layer.Fields)
         .DistinctBy(f => f.Name)
         .OrderBy(f => f.Name)
@@ -53,36 +53,19 @@ public record ServiceDefinition(
     /// All unique field definitions as ReadOnlySpan for efficient enumeration
     /// </summary>
     [JsonIgnore]
-    public ReadOnlySpan<FieldDefinition> AllFieldsSpan =>
-        AllFieldsMemory.Span;
+    public ReadOnlySpan<FieldDefinition> AllFieldsSpan => AllFields;
 
     /// <summary>
     /// All unique field definitions as Memory for efficient slicing and sharing
     /// </summary>
-    public Memory<FieldDefinition> AllFieldsMemory
-    {
-        get
-        {
-            // Cache the result to avoid repeated expensive computations
-            if (_allFieldsCache == null)
-            {
-                var allFields = Layers
-                    .SelectMany(layer => layer.Fields)
-                    .DistinctBy(f => f.Name)
-                    .OrderBy(f => f.Name)
-                    .ToArray();
-                _allFieldsCache = new Memory<FieldDefinition>(allFields);
-            }
-            return _allFieldsCache.Value;
-        }
-    }
+    public Memory<FieldDefinition> AllFieldsMemory => AllFields;
 
-    private Memory<FieldDefinition>? _allFieldsCache;
+    private FieldDefinition[]? _allFields;
 
     /// <summary>
     /// All unique geometry types present in service layers
     /// </summary>
-    public GeometryType[] GeometryTypes => Layers
+    public GeometryType[] GeometryTypes => _geometryTypes ??= Layers
         .Select(layer => layer.GeometryType)
         .Where(type => type != GeometryType.None)
         .Distinct()
@@ -93,32 +76,14 @@ public record ServiceDefinition(
     /// All unique geometry types as ReadOnlySpan for efficient enumeration
     /// </summary>
     [JsonIgnore]
-    public ReadOnlySpan<GeometryType> GeometryTypesSpan =>
-        GeometryTypesMemory.Span;
+    public ReadOnlySpan<GeometryType> GeometryTypesSpan => GeometryTypes;
 
     /// <summary>
     /// All unique geometry types as Memory for efficient slicing and sharing
     /// </summary>
-    public Memory<GeometryType> GeometryTypesMemory
-    {
-        get
-        {
-            // Cache the result to avoid repeated computations
-            if (_geometryTypesCache == null)
-            {
-                var geometryTypes = Layers
-                    .Select(layer => layer.GeometryType)
-                    .Where(type => type != GeometryType.None)
-                    .Distinct()
-                    .OrderBy(type => type.ToString())
-                    .ToArray();
-                _geometryTypesCache = new Memory<GeometryType>(geometryTypes);
-            }
-            return _geometryTypesCache.Value;
-        }
-    }
+    public Memory<GeometryType> GeometryTypesMemory => GeometryTypes;
 
-    private Memory<GeometryType>? _geometryTypesCache;
+    private GeometryType[]? _geometryTypes;
 
     /// <summary>
     /// Whether the service supports editing operations
@@ -139,28 +104,38 @@ public record ServiceDefinition(
     {
         get
         {
+            if (_computedExtentCached)
+                return _computedExtent;
+
             var layerExtents = Layers
                 .Select(layer => layer.Extent)
                 .Where(extent => extent != null)
                 .ToArray();
 
             if (layerExtents.Length == 0)
-                return null;
+            {
+                _computedExtent = null;
+            }
+            else
+            {
+                var allExtents = layerExtents.Cast<FeatureExtent>().ToArray();
+                _computedExtent = allExtents.Length == 1
+                    ? allExtents[0]
+                    : FeatureExtent.Create(
+                        allExtents.Min(e => e.MinX),
+                        allExtents.Min(e => e.MinY),
+                        allExtents.Max(e => e.MaxX),
+                        allExtents.Max(e => e.MaxY),
+                        allExtents[0].SpatialReference);
+            }
 
-            // Compute union of all layer extents manually
-            var allExtents = layerExtents.Cast<FeatureExtent>().ToArray();
-            if (allExtents.Length == 1)
-                return allExtents[0];
-
-            var minX = allExtents.Min(e => e.MinX);
-            var minY = allExtents.Min(e => e.MinY);
-            var maxX = allExtents.Max(e => e.MaxX);
-            var maxY = allExtents.Max(e => e.MaxY);
-            var srid = allExtents[0].SpatialReference; // Use first extent's SRID
-
-            return FeatureExtent.Create(minX, minY, maxX, maxY, srid);
+            _computedExtentCached = true;
+            return _computedExtent;
         }
     }
+
+    private FeatureExtent? _computedExtent;
+    private bool _computedExtentCached;
 
     /// <summary>
     /// Gets the overall extent, preferring explicitly set ServiceExtent over computed

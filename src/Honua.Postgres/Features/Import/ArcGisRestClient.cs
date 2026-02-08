@@ -250,7 +250,10 @@ internal sealed partial class ArcGisRestClient
             builder,
             options,
             onRetry: (result, delay, attempt) =>
-                Log.RetryingRequest(_logger, attempt, maxRetries, delay.TotalSeconds, GetFailureMessage(result)));
+            {
+                Log.RetryingRequest(_logger, attempt, maxRetries, delay.TotalSeconds, GetFailureMessage(result));
+                result.Result?.Dispose();
+            });
     }
 
     private static string GetFailureMessage(DelegateResult<HttpResponseMessage> result)

@@ -239,6 +239,5 @@ dotnet test --list-tests --filter "Category=Integration"
 ## 🏷️ Useful Links
 
 - [Codecov Dashboard](https://codecov.io/gh/YOUR_ORG/honua-server)
-- [Coverage Badge](.github/badges.md)
 - [Coverlet Documentation](https://github.com/coverlet-coverage/coverlet)
 - [MSTest Code Coverage](https://docs.microsoft.com/en-us/dotnet/core/testing/unit-testing-code-coverage)

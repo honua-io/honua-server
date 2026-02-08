@@ -631,4 +631,5 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.CatalogMetadata);
     }
+
 }

@@ -1,67 +1,34 @@
 # High CPU Usage Runbook
 
-**Alert**: HonuaHighCpuUsage
-**Severity**: Warning
-**Response Time**: < 1 hour
+**Alert**: HonuaHighCpu
+**Severity**: Medium
+**Goal**: Reduce CPU saturation and prevent cascading latency.
 
-## Symptoms
-- CPU utilization consistently above threshold
-- Increased latency or throttling
+---
 
-## Immediate Actions
+## Immediate Checks
 
-### 1. Check CPU Utilization
-```bash
-kubectl top pods -n honua-production
-kubectl top nodes
-```
+- Identify which nodes or pods are maxed.
+- Correlate CPU spikes with traffic or specific endpoints.
 
-### 2. Review Recent Changes
-- Confirm whether a deploy correlates with CPU spike
+---
 
-## Diagnostics
+## Diagnose
 
-### Identify Hot Endpoints
-- Inspect logs for high-frequency endpoints
-- Check for large spatial queries or heavy filters
+- Expensive spatial queries or large result sets.
+- Missing indexes causing sequential scans.
+- High concurrency with insufficient limits.
 
-### Database Load
-```sql
-SELECT query, mean_time, calls
-FROM pg_stat_statements
-ORDER BY calls DESC
-LIMIT 10;
-```
+---
 
-## Common Causes & Fixes
+## Mitigate
 
-### Cause 1: Expensive Queries
-**Fix**:
-- Add indexes
-- Tighten query limits
+- Scale replicas temporarily.
+- Tighten query limits to reduce heavy requests.
+- Add or rebuild spatial indexes.
 
-### Cause 2: Insufficient Resources
-**Fix**:
-- Scale out pods
-- Increase CPU limits
+---
 
-### Cause 3: Abusive Traffic
-**Fix**:
-- Tighten rate limits
-- Apply IP blocks
+## Escalate
 
-## Escalation
-
-Escalate if:
-- CPU remains high after scaling
-- User impact exceeds SLO
-
-## Recovery
-
-```bash
-# Scale out
-kubectl scale deployment honua-server --replicas=5 -n honua-production
-
-# Roll back if correlated with recent release
-kubectl rollout undo deployment/honua-server -n honua-production
-```
+Escalate if CPU remains >90% for 30 minutes or causes errors.

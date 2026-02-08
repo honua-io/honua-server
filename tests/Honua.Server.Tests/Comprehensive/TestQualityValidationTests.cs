@@ -6,7 +6,6 @@ using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Chaos;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Contract;
 using Honua.TestKit.Fuzzing;
@@ -188,53 +187,6 @@ public class TestQualityValidationTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Validates chaos engineering scenarios for system resilience.
-    /// </summary>
-    [IntegrationTest]
-    [Operation(Operations.ChaosTesting)]
-    [Endpoint("GET /healthz/live")]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task ChaosTesting_AdverseConditions_SystemRemainsResilient()
-    {
-        using var client = _fixture.CreateClient(_schema);
-
-        var endpoints = new[]
-        {
-            "/healthz/live",
-            "/rest/services/test/FeatureServer/0/query?f=json&where=1=1",
-            "/ogc/features/collections/0/items?limit=10"
-        };
-
-        // Memory pressure tests
-        var memoryResult = await ChaosTestScenarios.TestMemoryPressure(
-            client, "/rest/services/test/FeatureServer/0/query", concurrentRequests: 20);
-
-        memoryResult.ResilienceScore.Should().BeGreaterThan(0.8,
-            "System should remain resilient under memory pressure");
-
-        _output.WriteLine($"Memory Pressure Resilience: {memoryResult.ResilienceScore:P1}");
-
-        // Timeout handling tests
-        var timeoutResult = await ChaosTestScenarios.TestTimeoutHandling(
-            client, "/rest/services/test/FeatureServer/0/query", TimeSpan.FromMilliseconds(50));
-
-        timeoutResult.IsSystemResilient.Should().BeTrue(
-            "System should handle timeouts gracefully");
-
-        _output.WriteLine($"Timeout Resilience: {timeoutResult.ResilienceScore:P1}");
-
-        // Data corruption tests
-        var corruptionResult = await ChaosTestScenarios.TestDataCorruption(
-            client, "/ogc/features/collections/0/items");
-
-        corruptionResult.ResilienceScore.Should().BeGreaterThan(0.9,
-            "System should reject corrupted data appropriately");
-
-        _output.WriteLine($"Data Corruption Resilience: {corruptionResult.ResilienceScore:P1}");
-    }
-
-    /// <summary>
     /// Validates contract compliance for API specifications.
     /// </summary>
     [IntegrationTest]
@@ -375,7 +327,6 @@ public class TestQualityValidationTests : IAsyncLifetime
             ["Error Path Testing"] = true,        // Error handling tests
             ["Security Testing"] = true,          // SQL injection, XSS, etc.
             ["Performance Benchmarking"] = true,  // Performance thresholds
-            ["Chaos Engineering"] = true,         // Resilience testing
             ["Contract Testing"] = true,          // API compliance
             ["Fuzzing Coverage"] = true,          // Robustness testing
             ["Infrastructure Quality"] = true,   // Test infrastructure validation

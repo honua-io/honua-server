@@ -1,78 +1,35 @@
 # Database Issues Runbook
 
 **Alert**: HonuaDatabaseIssues
-**Severity**: Critical
-**Response Time**: < 5 minutes
+**Severity**: High
+**Goal**: Restore database availability and performance.
 
-## Symptoms
-- Readiness fails with database unavailable
-- Connection timeouts or authentication errors
-- Elevated query latency
+---
 
-## Immediate Actions
+## Immediate Checks
 
-### 1. Validate Connectivity (0-3 minutes)
-```bash
-kubectl exec -it deployment/honua-server -n honua-production -- \
-  psql -h postgres.honua.internal -U honua_prod -c "SELECT 1;"
-```
+- Confirm database is reachable.
+- Check active connections and replication status (if applicable).
+- Review recent migrations or schema changes.
 
-### 2. Check Database Health (3-5 minutes)
-```bash
-kubectl get pods -n postgres
-kubectl logs deployment/postgres -n postgres --since=30m
-```
+---
 
-## Diagnostics
+## Diagnose
 
-### Connection Pool Saturation
-```sql
-SELECT count(*) FROM pg_stat_activity;
-SELECT * FROM pg_stat_activity WHERE state = 'active';
-```
+- Connection pool exhaustion
+- Slow queries or missing indexes
+- Disk saturation or replication lag
 
-### Slow Queries
-```sql
-SELECT query, mean_time, calls
-FROM pg_stat_statements
-ORDER BY mean_time DESC
-LIMIT 10;
-```
+---
 
-### Migration State
-- Review application logs for migration failures
-- Confirm latest schema version in `schema_versions`
+## Mitigate
 
-## Common Causes & Fixes
+- Restart or fail over database if required.
+- Reduce app concurrency temporarily.
+- Roll back recent schema changes if they correlate with the issue.
 
-### Cause 1: Database Down
-**Fix**:
-- Restart DB pod/instance
-- Fail over to standby
+---
 
-### Cause 2: Credentials/Secret Errors
-**Fix**:
-- Validate `ConnectionStrings__DefaultConnection`
-- Verify secret references resolve correctly
+## Escalate
 
-### Cause 3: Connection Exhaustion
-**Fix**:
-- Increase connection pool
-- Scale application horizontally
-- Terminate runaway queries
-
-## Escalation
-
-Escalate if:
-- Data loss or corruption suspected
-- Failover required
-
-## Recovery
-
-```bash
-# Restart database deployment
-kubectl rollout restart deployment/postgres -n postgres
-
-# Restart application after DB recovery
-kubectl rollout restart deployment/honua-server -n honua-production
-```
+Escalate if data integrity or corruption is suspected.

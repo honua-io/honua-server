@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -62,6 +63,8 @@ internal sealed partial class EsriImportService : IEsriImportService
         IProgress<EsriImportProgress>? progress,
         CancellationToken cancellationToken = default)
     {
+        ValidateTableName(request.TableName);
+
         var stopwatch = Stopwatch.StartNew();
         var warnings = new List<string>();
         var jobId = string.IsNullOrWhiteSpace(request.JobId)
@@ -210,7 +213,7 @@ internal sealed partial class EsriImportService : IEsriImportService
         if (overwriteExisting)
         {
             await using var dropCmd = connection.CreateCommand();
-            dropCmd.CommandText = $"DROP TABLE IF EXISTS \"{tableName}\" CASCADE";
+            dropCmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(tableName)} CASCADE";
             await dropCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -248,7 +251,7 @@ internal sealed partial class EsriImportService : IEsriImportService
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE \"{tableName}\" (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(tableName)} (");
 
         for (var i = 0; i < columns.Count; i++)
         {
@@ -311,7 +314,7 @@ internal sealed partial class EsriImportService : IEsriImportService
             parameterPlaceholders += $", ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
         }
 
-        var insertSql = $"INSERT INTO \"{tableName}\" ({columnNames}) VALUES ({parameterPlaceholders})";
+        var insertSql = $"INSERT INTO {QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
 
         foreach (var feature in features)
         {
@@ -413,9 +416,14 @@ internal sealed partial class EsriImportService : IEsriImportService
                 // Polygon
                 var coordinates = rings.EnumerateArray()
                     .Select(ring => ring.EnumerateArray()
+                        .Where(coord => coord.GetArrayLength() >= 2)
                         .Select(coord => new[] { coord[0].GetDouble(), coord[1].GetDouble() })
                         .ToArray())
+                    .Where(ring => ring.Length >= 4)
                     .ToArray();
+
+                if (coordinates.Length == 0)
+                    return null;
 
                 return BuildMultiPolygonGeoJson(coordinates);
             }
@@ -425,9 +433,14 @@ internal sealed partial class EsriImportService : IEsriImportService
                 // Polyline
                 var coordinates = paths.EnumerateArray()
                     .Select(path => path.EnumerateArray()
+                        .Where(coord => coord.GetArrayLength() >= 2)
                         .Select(coord => new[] { coord[0].GetDouble(), coord[1].GetDouble() })
                         .ToArray())
+                    .Where(path => path.Length >= 2)
                     .ToArray();
+
+                if (coordinates.Length == 0)
+                    return null;
 
                 return BuildMultiLineStringGeoJson(coordinates);
             }
@@ -436,8 +449,12 @@ internal sealed partial class EsriImportService : IEsriImportService
             {
                 // Multipoint
                 var coordinates = points.EnumerateArray()
+                    .Where(p => p.GetArrayLength() >= 2)
                     .Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })
                     .ToArray();
+
+                if (coordinates.Length == 0)
+                    return null;
 
                 return BuildMultiPointGeoJson(coordinates);
             }
@@ -542,7 +559,7 @@ internal sealed partial class EsriImportService : IEsriImportService
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS \"{tableName}_geom_idx\" ON \"{tableName}\" USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(tableName + "_geom_idx")} ON {QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
@@ -552,7 +569,7 @@ internal sealed partial class EsriImportService : IEsriImportService
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"ANALYZE \"{tableName}\"";
+        cmd.CommandText = $"ANALYZE {QuoteIdentifier(tableName)}";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -592,6 +609,33 @@ internal sealed partial class EsriImportService : IEsriImportService
             StartedAt = startedAt,
             CurrentPhase = phase
         });
+    }
+
+    private static void ValidateTableName(string tableName)
+    {
+        if (string.IsNullOrWhiteSpace(tableName))
+            throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+
+        if (tableName.Length > 63)
+            throw new ArgumentException("Table name exceeds PostgreSQL identifier limit of 63 characters", nameof(tableName));
+
+        if (!Regex.IsMatch(tableName, @"^[a-zA-Z][a-zA-Z0-9_]*$"))
+            throw new ArgumentException("Table name must start with a letter and contain only letters, digits, and underscores", nameof(tableName));
+
+        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TABLE", "INDEX", "VIEW", "DATABASE", "SCHEMA"
+        };
+
+        if (keywords.Contains(tableName))
+            throw new ArgumentException(
+                string.Format(CultureInfo.InvariantCulture, "Table name '{0}' conflicts with SQL keywords", tableName),
+                nameof(tableName));
+    }
+
+    private static string QuoteIdentifier(string identifier)
+    {
+        return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
 
     private static partial class Log

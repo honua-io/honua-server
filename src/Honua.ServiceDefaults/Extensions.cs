@@ -256,15 +256,15 @@ public static partial class Extensions
 
         private static void TrimTags(Activity activity, int maxAttributes)
         {
-            var tags = activity.TagObjects.ToList();
-            if (tags.Count <= maxAttributes)
+            var excessTags = activity.TagObjects.Skip(maxAttributes).ToList();
+            if (excessTags.Count == 0)
             {
                 return;
             }
 
-            for (var i = maxAttributes; i < tags.Count; i++)
+            foreach (var tag in excessTags)
             {
-                activity.SetTag(tags[i].Key, null);
+                activity.SetTag(tag.Key, null);
             }
         }
     }

@@ -1,60 +1,26 @@
-# Credential Rotation Procedures
+# Credential Rotation
 
-This document outlines how to rotate sensitive credentials without downtime.
+Rotate credentials regularly to reduce blast radius and comply with security policies.
 
-## Rotation Targets
+---
 
-- **Admin API key (automation only)** (`HONUA_ADMIN_PASSWORD`)
-- **OIDC client secrets** (`Oidc:*:ClientSecret`)
-- **Database credentials** (`ConnectionStrings__DefaultConnection`)
-- **Cache credentials** (Redis connection string)
-- **Storage credentials** (object storage access keys)
+## What to Rotate
 
-## Recommended Cadence
+- `HONUA_ADMIN_PASSWORD` (API key)
+- OIDC client secrets
+- Database credentials
 
-- **Quarterly** for production credentials
-- **After incident** for any suspected exposure
+---
 
-## General Rotation Steps
+## Rotation Checklist
 
-1. **Create new credential** in secret provider
-2. **Update configuration** to reference new secret (use `env:` or provider refs)
-3. **Deploy** updated configuration
-4. **Verify** functionality (health + smoke tests)
-5. **Revoke** old credential after validation
+1. Update the secret in your secret manager.
+2. Redeploy or restart services to pick up changes.
+3. Verify access using a known admin endpoint.
 
-## Admin API Key Rotation (Automation)
+---
 
-```bash
-# Set a new secret reference
-HONUA_ADMIN_PASSWORD=env:HONUA_ADMIN_PASSWORD_VALUE
-HONUA_ADMIN_PASSWORD_VALUE="new-admin-key"
-```
+## Related Docs
 
-- Update client integrations that use `X-API-Key`
-- Verify access to `/api/v1/admin/*`
-
-## OIDC Client Secret Rotation
-
-- Update provider secret in IdP
-- Update `Oidc__*__ClientSecret` reference
-- Restart services
-- Validate login flow
-
-## Database Credential Rotation
-
-- Create new DB user with required permissions
-- Update connection string secret reference (or rotate the secret value in the provider)
-- Restart application instances
-- Decommission old user after validation
-
-## Cloud Secret Manager Rotation
-
-- **AWS Secrets Manager**: rotate the secret value and keep the ref stable; use `versionStage` or `versionId` if you need pinning.
-- **Azure Key Vault**: create a new version in the vault; update the ref only if you pin a version.
-
-## Verification Checklist
-
-- `/healthz/ready` is healthy
-- Admin endpoints accessible with new credentials
-- No authentication errors in logs
+- [Security Configuration](SECURITY_CONFIGURATION.md)
+- [Authentication Troubleshooting](troubleshooting/authentication-problems.md)

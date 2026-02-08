@@ -8,7 +8,7 @@ namespace Honua.Server.Features.FeatureServer.Models;
 /// <summary>
 /// Request model for the applyEdits endpoint
 /// </summary>
-public class ApplyEditsRequest
+public sealed class ApplyEditsRequest
 {
     /// <summary>
     /// Array of features to add
@@ -44,7 +44,7 @@ public class ApplyEditsRequest
 /// <summary>
 /// Response model for the applyEdits endpoint
 /// </summary>
-public class ApplyEditsResponse
+public sealed class ApplyEditsResponse
 {
     /// <summary>
     /// Results of add operations
@@ -74,7 +74,7 @@ public class ApplyEditsResponse
 /// <summary>
 /// Result of an individual edit operation
 /// </summary>
-public class EditResult
+public sealed class EditResult
 {
     /// <summary>
     /// Object ID of the affected feature
@@ -104,7 +104,7 @@ public class EditResult
 /// <summary>
 /// Error information for failed edit operations
 /// </summary>
-public class EditError
+public sealed class EditError
 {
     /// <summary>
     /// Error code

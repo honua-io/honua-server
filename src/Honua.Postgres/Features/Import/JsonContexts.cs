@@ -14,6 +14,6 @@ namespace Honua.Postgres.Features.Import;
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(object))]
-internal partial class ImportJsonContext : JsonSerializerContext
+internal sealed partial class ImportJsonContext : JsonSerializerContext
 {
 }

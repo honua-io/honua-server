@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -49,6 +51,7 @@ internal static class DatabasePerformanceEndpoints
         {
             var cache = httpContext.RequestServices.GetRequiredService<IPreparedStatementCacheStatisticsProvider>();
             var stats = cache.GetStatistics();
+            var options = httpContext.RequestServices.GetRequiredService<IOptions<QueryCacheOptions>>().Value;
 
             var response = new QueryCacheStatisticsResponse
             {
@@ -57,22 +60,19 @@ internal static class DatabasePerformanceEndpoints
                 CacheHits = stats.CacheHits,
                 CacheMisses = stats.CacheMisses,
                 HitRatio = stats.HitRatio,
-                CacheUtilization = stats.PreparedStatements > 0
-                    ? (double)stats.PreparedStatements / 100 // Assuming max 100 from config
+                CacheUtilization = options.MaxCachedStatements > 0
+                    ? (double)stats.PreparedStatements / options.MaxCachedStatements
                     : 0,
-                Performance = new QueryCachePerformanceMetrics
-                {
-                    AveragePreparationTimeMs = 0, // Would need timing data
-                    EstimatedTimeSavedMs = stats.CacheHits * 2.5, // Estimated parsing time saved
-                    MemoryUsageEstimateMb = stats.PreparedStatements * 0.1 // Rough estimate
-                },
                 CollectedAt = DateTime.UtcNow
             };
 
             return Results.Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Honua.Monitoring");
+            MonitoringLog.QueryCacheStatisticsFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 httpContext,
                 "Query cache statistics error. See server logs for details.");
@@ -120,33 +120,7 @@ internal sealed record QueryCacheStatisticsResponse
     public double CacheUtilization { get; init; }
 
     /// <summary>
-    /// Performance metrics
-    /// </summary>
-    public QueryCachePerformanceMetrics Performance { get; init; } = new();
-
-    /// <summary>
     /// Timestamp when statistics were collected
     /// </summary>
     public DateTime CollectedAt { get; init; }
-}
-
-/// <summary>
-/// Performance metrics for query cache operations
-/// </summary>
-internal sealed record QueryCachePerformanceMetrics
-{
-    /// <summary>
-    /// Average time spent preparing statements (milliseconds)
-    /// </summary>
-    public double AveragePreparationTimeMs { get; init; }
-
-    /// <summary>
-    /// Estimated total time saved by caching (milliseconds)
-    /// </summary>
-    public double EstimatedTimeSavedMs { get; init; }
-
-    /// <summary>
-    /// Estimated memory usage of the cache (megabytes)
-    /// </summary>
-    public double MemoryUsageEstimateMb { get; init; }
 }

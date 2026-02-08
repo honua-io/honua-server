@@ -13,6 +13,9 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 /// </summary>
 public static class MetricsEndpoints
 {
+    private static ILogger GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.Monitoring");
+
     /// <summary>
     /// Maps metrics endpoints to the application with formal API versioning.
     /// </summary>
@@ -74,8 +77,9 @@ public static class MetricsEndpoints
 
             return Results.Ok(healthMetrics);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            MonitoringLog.HealthMetricsFailed(GetLogger(context), ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Failed to retrieve health metrics. See server logs for details.");
@@ -125,8 +129,9 @@ public static class MetricsEndpoints
 
             return Results.Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            MonitoringLog.PerformanceMetricsFailed(GetLogger(context), ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Failed to retrieve performance metrics. See server logs for details.");
@@ -163,8 +168,9 @@ public static class MetricsEndpoints
 
             return Results.Ok(databaseMetrics);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            MonitoringLog.DatabaseMetricsFailed(GetLogger(context), ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Failed to retrieve database metrics. See server logs for details.");
@@ -196,15 +202,15 @@ public static class MetricsEndpoints
                     {
                         Hits = kvp.Value.Hits,
                         Misses = kvp.Value.Misses,
-                        Evictions = kvp.Value.Evictions,
-                        AvgOperationTimeMs = 0.0
+                        Evictions = kvp.Value.Evictions
                     })
             };
 
             return Results.Ok(cacheMetrics);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            MonitoringLog.CacheMetricsFailed(GetLogger(context), ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Failed to retrieve cache metrics. See server logs for details.");
@@ -221,8 +227,9 @@ public static class MetricsEndpoints
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
             return Results.Ok(memoryUsage);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            MonitoringLog.MemoryMetricsFailed(GetLogger(context), ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Failed to retrieve memory metrics. See server logs for details.");

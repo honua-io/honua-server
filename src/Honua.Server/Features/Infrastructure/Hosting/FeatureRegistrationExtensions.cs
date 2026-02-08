@@ -5,6 +5,7 @@ using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.GeometryService;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.MapServer;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcTiles;
@@ -26,6 +27,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddFeatureServer();
+        services.AddMapServer();
         services.AddOgcFeatures();
         services.AddOData();
         services.AddGeometryService();
@@ -42,6 +44,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapFeatureServerEndpoints();
+        endpoints.MapMapServerEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapStyleEndpoints();

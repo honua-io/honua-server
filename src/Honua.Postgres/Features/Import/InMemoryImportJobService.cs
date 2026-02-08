@@ -73,7 +73,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             }
         }
 
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var cts = new CancellationTokenSource();
         _cancellationTokens[jobId] = cts;
 
         ImportJobLog.JobQueued(_logger, jobId, request.TableName, formatName, fileSize);
@@ -563,7 +563,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
         _jobs[jobId] = state;
 
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var cts = new CancellationTokenSource();
         _cancellationTokens[jobId] = cts;
 
         UniversalImportJobLog.JobQueued(_logger, jobId, request.TableName, formatName, fileSize);

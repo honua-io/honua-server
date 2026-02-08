@@ -16,7 +16,7 @@ namespace Honua.Postgres.Features.Import;
 /// </summary>
 internal static class KmlFormatReader
 {
-    private static readonly char[] CoordinateSeparators = { ' ', '\n', '\r', '\t' };
+    private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
 
     /// <summary>
     /// Streams features from a KML file using XmlReader for memory efficiency.
@@ -206,7 +206,7 @@ internal static class KmlFormatReader
     private static Coordinate[] ParseCoordinates(string coordsString)
     {
         var coords = new List<Coordinate>();
-        var parts = coordsString.Trim().Split(CoordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
+        var parts = coordsString.Trim().Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var part in parts)
         {

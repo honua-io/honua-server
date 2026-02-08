@@ -15,6 +15,9 @@ Legend:
 This matrix tracks Honua coverage against the Esri REST Feature Service specification:
 - https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/
 
+MapServer coverage is tracked separately:
+- [MapServer Coverage Matrix](map-server-matrix.md)
+
 ## Feature Service (root resource)
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |

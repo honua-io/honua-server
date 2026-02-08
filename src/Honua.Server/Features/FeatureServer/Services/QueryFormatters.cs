@@ -399,14 +399,20 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static double[][][] BuildPolygonCoordinates(Polygon polygon)
     {
-        var rings = new List<double[][]>
+        var rings = new List<double[][]>();
+
+        if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
         {
-            BuildLineStringCoordinates(polygon.ExteriorRing)
-        };
+            rings.Add(BuildLineStringCoordinates(polygon.ExteriorRing));
+        }
 
         for (var i = 0; i < polygon.NumInteriorRings; i++)
         {
-            rings.Add(BuildLineStringCoordinates(polygon.GetInteriorRingN(i)));
+            var interiorRing = polygon.GetInteriorRingN(i);
+            if (interiorRing != null && !interiorRing.IsEmpty)
+            {
+                rings.Add(BuildLineStringCoordinates(interiorRing));
+            }
         }
 
         return rings.ToArray();
@@ -675,6 +681,8 @@ internal sealed class StreamingQueryFormatter
         // Write attributes
         writer.WriteStartObject("attributes");
 
+        // Ensure objectId is always present in attributes
+        var objectIdWritten = false;
         if (feature.Attributes != null)
         {
             foreach (var kvp in feature.Attributes)
@@ -687,8 +695,18 @@ internal sealed class StreamingQueryFormatter
                     continue;
                 }
 
+                if (string.Equals(fieldName, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    objectIdWritten = true;
+                }
+
                 await WriteJsonValueAsync(writer, fieldName, kvp.Value, cancellationToken);
             }
+        }
+
+        if (!objectIdWritten)
+        {
+            writer.WriteNumber(objectIdFieldName, feature.Id);
         }
 
         writer.WriteEndObject(); // End attributes
@@ -815,10 +833,11 @@ internal sealed class StreamingQueryFormatter
                 writer.WriteBoolean(propertyName, b);
                 break;
             case DateTime dt:
-                writer.WriteString(propertyName, dt.ToString("O")); // ISO 8601 format
+                writer.WriteNumber(propertyName, new DateTimeOffset(DateTime.SpecifyKind(
+                    dt, dt.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dt.Kind)).ToUnixTimeMilliseconds());
                 break;
             case DateTimeOffset dto:
-                writer.WriteString(propertyName, dto.ToString("O")); // ISO 8601 format
+                writer.WriteNumber(propertyName, dto.ToUnixTimeMilliseconds());
                 break;
             default:
                 // For complex objects, serialize to JSON and write as raw JSON

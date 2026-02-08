@@ -207,8 +207,7 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         {
             Hits = 80,
             Misses = 20,
-            Evictions = 5,
-            AvgOperationTimeMs = 2.5
+            Evictions = 5
         };
 
         // Assert
@@ -223,8 +222,7 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         {
             Hits = 0,
             Misses = 0,
-            Evictions = 0,
-            AvgOperationTimeMs = 0.0
+            Evictions = 0
         };
 
         // Assert

@@ -35,8 +35,8 @@ COPY . .
 ARG CONFIGURATION=Release
 ARG TARGETARCH
 RUN case "${TARGETARCH:-amd64}" in \
-        amd64) RUNTIME_ID="linux-musl-x64" ;; \
-        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        amd64) RUNTIME_ID="linux-musl-x64" ; ILC_SINGLE_THREADED="false" ;; \
+        arm64) RUNTIME_ID="linux-musl-arm64" ; ILC_SINGLE_THREADED="true" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
@@ -49,7 +49,8 @@ RUN case "${TARGETARCH:-amd64}" in \
       -p:DebugSymbols=false \
       -p:StripSymbols=true \
       -p:OptimizationPreference=Speed \
-      -p:IlcOptimizationPreference=Speed && \
+      -p:IlcOptimizationPreference=Speed \
+      -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" && \
     rm -rf /app/BlazorDebugProxy /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 

@@ -1,82 +1,36 @@
 # High Response Time Runbook
 
-**Alert**: HonuaHighResponseTime
-**Severity**: Warning
-**Response Time**: < 30 minutes
+**Alert**: HonuaHighLatency
+**Severity**: High
+**Goal**: Restore latency to acceptable levels.
 
-## Symptoms
-- P95/P99 latency above SLO
-- Slow query responses across protocols
-- Timeouts reported by clients
+---
 
-## Immediate Actions
+## Immediate Checks
 
-### 1. Verify Scope (0-5 minutes)
-```bash
-# Check health
-curl -f https://api.honua.example.com/healthz/ready
+- Check `/api/v1/metrics/performance` and `/api/v1/metrics/database`.
+- Identify the slowest endpoints.
+- Confirm database health and index usage.
 
-# Check performance metrics
-curl -s https://api.honua.example.com/api/v1/metrics/performance | jq '.memory'
-curl -s https://api.honua.example.com/api/v1/metrics/database | jq '.operations | keys'
-```
+---
 
-### 2. Identify Hot Paths (5-10 minutes)
-- Review request logs for slow endpoints
-- Check DB slow query logs
+## Diagnose
 
-## Diagnostics
+- Large queries (no filters, huge bbox, large offsets)
+- Missing spatial indexes
+- Connection pool saturation
+- CPU or memory pressure on database
 
-### Database Query Performance
-```sql
--- Top slow queries
-SELECT query, mean_time, calls
-FROM pg_stat_statements
-ORDER BY mean_time DESC
-LIMIT 10;
-```
+---
 
-### Cache Effectiveness
-```bash
-curl -s https://api.honua.example.com/api/v1/metrics/cache | jq '{hit_ratio: (.hitRatio * 100), total_requests: .totalRequests}'
-```
+## Mitigate
 
-### Resource Saturation
-```bash
-kubectl top pods -n honua-production
-kubectl top nodes
-```
+- Tighten query limits temporarily.
+- Scale app replicas.
+- Add or rebuild spatial indexes if missing.
 
-## Common Causes & Fixes
+---
 
-### Cause 1: Cache Miss Spike
-**Fix**:
-- Increase cache TTL for hot metadata
-- Verify cache is enabled and Redis is healthy
+## Escalate
 
-### Cause 2: Slow Database Queries
-**Fix**:
-- Add missing indexes
-- Reduce `Limits:Query:MaxRecordCount`
-- Optimize filters (bbox, spatial indexes)
-
-### Cause 3: CPU Saturation
-**Fix**:
-- Scale out application replicas
-- Identify expensive endpoints and rate-limit
-
-## Escalation
-
-Escalate if:
-- Latency remains above SLO for > 60 minutes
-- Timeouts exceed error budget
-
-## Recovery
-
-```bash
-# Scale out
-kubectl scale deployment honua-server --replicas=5 -n honua-production
-
-# Roll back recent deploy if latency spike aligns with release
-kubectl rollout undo deployment/honua-server -n honua-production
-```
+Escalate if latency remains above SLO for 30 minutes.

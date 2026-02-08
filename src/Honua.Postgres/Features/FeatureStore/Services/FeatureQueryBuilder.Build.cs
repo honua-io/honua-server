@@ -53,7 +53,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             BuildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
             AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
@@ -84,7 +84,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             BuildGmlSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
             AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
@@ -111,7 +111,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -141,7 +141,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
 
             if (query.Limit.HasValue)
@@ -182,7 +182,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
 
             if (query.Limit.HasValue)

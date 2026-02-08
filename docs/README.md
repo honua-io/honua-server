@@ -4,42 +4,32 @@
 
 | I want to... | Go to |
 |---|---|
-| Set up a dev environment | [Getting Started](contributor/development/getting-started.md) |
-| Deploy to production | [Infrastructure](../infrastructure/README.md) |
-| Call the API | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
-| Manage services and layers | [Control Plane API](user/CONTROL_PLANE_API.md) |
-| Contribute code | [Contributing](contributor/development/contributing.md) |
+| **Consume geospatial data** | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
+| **Manage the server** | [Control Plane API](user/CONTROL_PLANE_API.md) |
+| Deploy to production | [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) |
+| Monitor and troubleshoot | [DevOps Guide](devops/README.md) |
 
 ## User documentation
 
-- [Standards APIs](user/STANDARDS_APIS.md) — FeatureServer, OGC API Features/Tiles, OData v4, MVT
-- [Control Plane API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
-- [API Examples](user/API_EXAMPLES.md) — request/response examples for all protocols
-- [Model Optimization](user/MODEL_OPTIMIZATION_GUIDE.md) — data modeling best practices
+**Getting Started:**
+- [User Journeys](user/USER_JOURNEYS.md) — role-based guides for GIS professionals, developers, analysts
+- [Geospatial Data APIs](user/STANDARDS_APIS.md) — FeatureServer + MapServer, OGC API Features/Tiles, OData v4, MVT
+- [API Examples](user/API_EXAMPLES.md) — request/response examples for geospatial data access
+
+**Integration & Architecture:**
+- [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches and code examples
+- [Server Management API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
+- [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling best practices
+
+**Reference:**
 - [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support
+- [MapServer Coverage](user/map-server-matrix.md) — map rendering operation support
 - [Protocol Coverage Index](user/specifications/protocol-coverage.md) — standards coverage overview
-
-## Contributor documentation
-
-**Development:**
-- [Getting Started](contributor/development/getting-started.md) — prerequisites, setup, first run
-- [Contributing](contributor/development/contributing.md) — code style, testing, PR process
-- [K3d + Helm](contributor/development/k3d-helm.md) — local Kubernetes development
-
-**Architecture:**
-- [Architecture Overview](contributor/ARCHITECTURE.md) — system design and component interaction
-- [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
-- [ADRs](contributor/adr/) — architecture decision records
-
-**Testing:**
-- [Testing Guide](contributor/TESTING_EXCELLENCE_GUIDE.md) — strategy and best practices
-- [CI Quality Gates](contributor/CI_QUALITY_GATES.md) — CI workflows and enforcement
-- [Pre-PR Checklist](contributor/PRE_PR_CHECKLIST.md) — code review preparation
 
 ## DevOps documentation
 
 **Deployment:**
-- [Infrastructure](../infrastructure/README.md) — Docker Compose, Helm, Terraform
+- [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — specific deployment patterns for different use cases
 - [Serverless](devops/serverless-deployments.md) — AWS Lambda and Azure Functions
 - [Container Images](devops/CONTAINER_IMAGES.md) — registries, tags, and publishing
 
@@ -65,3 +55,7 @@
 - [Container Security](devops/CONTAINER_SECURITY.md)
 - [Credential Rotation](devops/credential-rotation.md)
 - [Backup and Restore](devops/backup-restore.md)
+
+---
+
+*This documentation is focused on using and operating Honua Server. For development and contribution information, see the project repository.*
