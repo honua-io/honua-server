@@ -24,7 +24,7 @@ internal sealed class LayerStyleClient : ILayerStyleClient
 
     public async Task<ApiResult<LayerStyleResponse>> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.GetAsync($"metadata/layers/{layerId}/style", cancellationToken);
+        using var response = await _httpClient.GetAsync($"metadata/layers/{layerId}/style", cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<LayerStyleResponse>(
             response,
             cancellationToken,
@@ -37,7 +37,7 @@ internal sealed class LayerStyleClient : ILayerStyleClient
         CancellationToken cancellationToken = default)
     {
         using var content = JsonContent.Create(request, AdminJsonContext.Default.LayerStyleUpdateRequest);
-        var response = await _httpClient.PutAsync($"metadata/layers/{layerId}/style", content, cancellationToken);
+        using var response = await _httpClient.PutAsync($"metadata/layers/{layerId}/style", content, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<LayerStyleResponse>(
             response,
             cancellationToken,

@@ -30,6 +30,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 {
     private const string CacheType = "layer-catalog";
     private const string HealthCheckKey = "__health_check__";
+    private const int MaxKeyLocks = 1000;
     private readonly IDistributedCache? _distributedCache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly CacheOptions _options;
@@ -198,19 +199,30 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         // Fallback to in-memory
         if (_options.EnableFallback)
         {
-            // Enforce max entries limit
-            while (_fallbackCache.Count >= _options.FallbackMaxEntries)
+            // Best-effort eviction: remove expired or oldest entries when at capacity.
+            // Take a single snapshot to avoid spin-looping on concurrent modifications.
+            if (_fallbackCache.Count >= _options.FallbackMaxEntries)
             {
-                // Remove oldest entry
-                var oldestKey = _fallbackCache
-                    .OrderBy(x => x.Value.ExpiresAt)
+                var now = DateTime.UtcNow;
+                var toEvict = _fallbackCache
+                    .Where(x => x.Value.ExpiresAt <= now)
                     .Select(x => x.Key)
-                    .FirstOrDefault();
+                    .ToArray();
 
-                if (oldestKey != null)
-                    _fallbackCache.TryRemove(oldestKey, out _);
-                else
-                    break;
+                foreach (var expiredKey in toEvict)
+                {
+                    _fallbackCache.TryRemove(expiredKey, out _);
+                }
+
+                // If still at capacity, remove one entry by earliest expiry
+                if (_fallbackCache.Count >= _options.FallbackMaxEntries)
+                {
+                    var oldest = _fallbackCache.MinBy(x => x.Value.ExpiresAt);
+                    if (oldest.Key != null)
+                    {
+                        _fallbackCache.TryRemove(oldest.Key, out _);
+                    }
+                }
             }
 
             _fallbackCache[prefixedKey] = new CacheEntry(data, DateTime.UtcNow.Add(ttl));
@@ -531,9 +543,29 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     private async ValueTask<KeyLock> AcquireKeyLockAsync(string key, CancellationToken cancellationToken)
     {
+        if (_keyLocks.Count > MaxKeyLocks)
+        {
+            PruneKeyLocks();
+        }
+
         var semaphore = _keyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
         await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         return new KeyLock(key, semaphore, _keyLocks);
+    }
+
+    private void PruneKeyLocks()
+    {
+        foreach (var kvp in _keyLocks)
+        {
+            if (kvp.Value.Wait(0))
+            {
+                kvp.Value.Release();
+                if (_keyLocks.TryRemove(kvp))
+                {
+                    kvp.Value.Dispose();
+                }
+            }
+        }
     }
 
     private string GetPrefixedKey(string key)

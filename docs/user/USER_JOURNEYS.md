@@ -15,7 +15,7 @@ Pick the path that matches your role and goal. Each journey is intentionally sho
 2. **Add Data**
    - Upload files or publish existing PostGIS tables via the Admin UI.
 3. **Connect a GIS Client**
-   - ArcGIS: FeatureServer endpoint
+   - ArcGIS: FeatureServer or MapServer endpoint (data vs maps)
    - QGIS: OGC API Features endpoint
 4. **Validate a Query**
    - Run a simple filter or bbox query to confirm data access.
@@ -27,12 +27,14 @@ curl http://localhost:8080/healthz/ready
 ```
 
 **GIS client endpoints:**
-- ArcGIS Pro: `http://<host>/rest/services/{id}/FeatureServer`
+- ArcGIS Pro (data): `http://<host>/rest/services/{id}/FeatureServer`
+- ArcGIS Pro (maps): `http://<host>/rest/services/{id}/MapServer`
 - QGIS (OGC API Features): `http://<host>/ogc/features`
 
 **Next Steps:**
 - [Geospatial API Examples](API_EXAMPLES.md)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
+- [MapServer Coverage Matrix](map-server-matrix.md)
 - [Protocols Overview](STANDARDS_APIS.md)
 
 ---

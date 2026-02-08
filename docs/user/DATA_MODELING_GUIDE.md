@@ -1,6 +1,6 @@
 # Honua Data Modeling Guide
 
-This guide covers Honua-specific requirements for designing database schemas that work optimally across all supported protocols (FeatureServer, OGC API Features/Tiles, OData v4, Vector Tiles).
+This guide covers Honua-specific requirements for designing database schemas that work optimally across all supported protocols (FeatureServer, MapServer, OGC API Features/Tiles, OData v4, Vector Tiles).
 
 ## 🎯 **Honua-Specific Requirements**
 

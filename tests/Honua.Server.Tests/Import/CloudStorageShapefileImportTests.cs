@@ -27,7 +27,7 @@ using NetTopologySuite.IO.Esri;
 
 namespace Honua.Server.Tests.Import;
 
-[Collection("Database")]
+[Collection("Emulators")]
 [Protocol(Protocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class AwsS3ShapefileImportTests : IAsyncLifetime
@@ -139,7 +139,7 @@ public sealed class AwsS3ShapefileImportTests : IAsyncLifetime
     }
 }
 
-[Collection("Database")]
+[Collection("Emulators")]
 [Protocol(Protocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class AzureBlobShapefileImportTests : IAsyncLifetime

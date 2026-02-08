@@ -72,7 +72,6 @@ public sealed class CacheTypeMetrics
     public long Hits { get; set; }
     public long Misses { get; set; }
     public long Evictions { get; set; }
-    public double AvgOperationTimeMs { get; set; }
     public double HitRatio { get; set; }
 }
 

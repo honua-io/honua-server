@@ -27,7 +27,7 @@ internal sealed class LayerPublishingClient : ILayerPublishingClient
 
     public async Task<ApiResult<TableDiscoveryResponse>> GetTablesAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.GetAsync($"connections/{connectionId}/tables", cancellationToken);
+        using var response = await _httpClient.GetAsync($"connections/{connectionId}/tables", cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<TableDiscoveryResponse>(response, cancellationToken);
     }
 
@@ -42,7 +42,7 @@ internal sealed class LayerPublishingClient : ILayerPublishingClient
             path += $"?serviceName={Uri.EscapeDataString(serviceName)}";
         }
 
-        var response = await _httpClient.GetAsync(path, cancellationToken);
+        using var response = await _httpClient.GetAsync(path, cancellationToken);
         var result = await ApiResponseReader.ReadWrappedAsync<List<PublishedLayerSummary>>(response, cancellationToken);
 
         return result.Success
@@ -55,7 +55,7 @@ internal sealed class LayerPublishingClient : ILayerPublishingClient
         PublishLayerRequest request,
         CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync($"connections/{connectionId}/layers", request, cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync($"connections/{connectionId}/layers", request, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<PublishedLayerSummary>(response, cancellationToken);
     }
 
@@ -73,7 +73,7 @@ internal sealed class LayerPublishingClient : ILayerPublishingClient
         }
 
         var request = new LayerEnabledRequest { Enabled = enabled };
-        var response = await _httpClient.PutAsJsonAsync(path, request, cancellationToken);
+        using var response = await _httpClient.PutAsJsonAsync(path, request, cancellationToken);
         return await ApiResponseReader.ReadWrappedAsync<PublishedLayerSummary>(response, cancellationToken);
     }
 
@@ -90,7 +90,7 @@ internal sealed class LayerPublishingClient : ILayerPublishingClient
         }
 
         var request = new LayerEnabledRequest { Enabled = enabled };
-        var response = await _httpClient.PutAsJsonAsync(path, request, cancellationToken);
+        using var response = await _httpClient.PutAsJsonAsync(path, request, cancellationToken);
         var result = await ApiResponseReader.ReadWrappedAsync<List<PublishedLayerSummary>>(response, cancellationToken);
 
         return result.Success

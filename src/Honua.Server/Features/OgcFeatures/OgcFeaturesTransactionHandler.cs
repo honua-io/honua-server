@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -63,6 +65,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 return rbacError;
             }
+
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "batch");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
             var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
                 context.Request,
@@ -144,6 +152,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 await InvalidateCacheAsync(context, layerId, cancellationToken);
             }
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
+            HonuaTelemetry.SetSuccess(activity, response.SuccessCount);
             return Results.Json(response, OgcJsonContext.Default.BatchOperationResponse, statusCode: statusCode);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -186,6 +195,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 return rbacError;
             }
+
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "replace");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
             if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
@@ -253,11 +268,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
                 await InvalidateCacheAsync(context, layerId, cancellationToken);
+                HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
             catch (ResourceConflictException ex)
             {
                 return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            }
+            catch (ResourceNotFoundException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (InvalidOperationException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (ArgumentException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid feature payload.");
+            }
+            catch (NotSupportedException ex)
+            {
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

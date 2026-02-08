@@ -74,9 +74,23 @@ public readonly record struct SpatialReference
     };
 
     /// <summary>
-    /// Whether this is a geographic (lat/lon) coordinate system
+    /// Whether this is a geographic (lat/lon) coordinate system.
+    /// Checks WKT first (most reliable), then falls back to EPSG code heuristics.
     /// </summary>
-    public readonly bool IsGeographic => Wkid == 4326 || (Wkt?.Contains("GEOGCS") == true);
+    public readonly bool IsGeographic => IsProjectedByWkt()
+        ? false
+        : IsGeographicByWkt() || IsGeographicByWkid(Wkid);
+
+    private readonly bool IsProjectedByWkt() =>
+        Wkt?.Contains("PROJCS", StringComparison.Ordinal) == true ||
+        Wkt?.Contains("PROJCRS", StringComparison.Ordinal) == true;
+
+    private readonly bool IsGeographicByWkt() =>
+        Wkt?.Contains("GEOGCS", StringComparison.Ordinal) == true ||
+        Wkt?.Contains("GEOGCRS", StringComparison.Ordinal) == true ||
+        Wkt?.Contains("GEODCRS", StringComparison.Ordinal) == true;
+
+    private static bool IsGeographicByWkid(int wkid) => wkid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
 
     /// <summary>
     /// Whether this is a projected coordinate system

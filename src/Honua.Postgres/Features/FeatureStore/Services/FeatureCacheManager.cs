@@ -21,19 +21,26 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private static readonly TimeSpan _layerSridCacheRetention = TimeSpan.FromHours(24);
     private const int MaxLayerSridCacheEntries = 10000;
 
+    // Cache state is static so it persists across scoped instances (FeatureCacheManager is registered
+    // as scoped because it depends on scoped IDatabaseConnectionProvider, but the cached values are
+    // stable for the lifetime of the application).
+    private static readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
+    private static readonly SemaphoreSlim _geometryStorageInitLock = new(1, 1);
+    private static readonly SemaphoreSlim _layerCatalogInitLock = new(1, 1);
+    private static CoreGeometryStorageType? _geometryStorageType;
+    private static bool? _hasLayerCatalog;
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<FeatureCacheManager> _logger;
     private readonly string? _tableSchema;
-
-    private readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
-    private CoreGeometryStorageType? _geometryStorageType;
-    private bool? _hasLayerCatalog;
 
     /// <summary>
     /// Performance metrics tracking
     /// </summary>
     private static class PerformanceMetrics
     {
+        private const int MaxMetricEntries = 500;
+
         private static readonly ConcurrentDictionary<string, long> _executionCounts = new();
         private static readonly ConcurrentDictionary<string, long> _totalExecutionTimeMs = new();
         private static readonly ConcurrentDictionary<string, long> _maxExecutionTimeMs = new();
@@ -41,6 +48,14 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
         public static void RecordQueryExecution(string operationType, long executionTimeMs, int? resultCount = null)
         {
+            if (_executionCounts.Count >= MaxMetricEntries && !_executionCounts.ContainsKey(operationType))
+            {
+                _executionCounts.Clear();
+                _totalExecutionTimeMs.Clear();
+                _maxExecutionTimeMs.Clear();
+                _totalResultCounts.Clear();
+            }
+
             _executionCounts.AddOrUpdate(operationType, 1, (key, value) => value + 1);
             _totalExecutionTimeMs.AddOrUpdate(operationType, executionTimeMs, (key, value) => value + executionTimeMs);
             _maxExecutionTimeMs.AddOrUpdate(operationType, executionTimeMs, (key, value) => Math.Max(value, executionTimeMs));
@@ -144,39 +159,52 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             return _geometryStorageType.Value;
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        const string sql = """
-            SELECT data_type, udt_name
-            FROM information_schema.columns
-            WHERE table_schema = COALESCE(@schema, current_schema())
-              AND table_name = @table
-              AND column_name = @column
-            """;
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("schema", (object?)_tableSchema ?? DBNull.Value);
-        command.Parameters.AddWithValue("table", "features");
-        command.Parameters.AddWithValue("column", "geometry");
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        if (await reader.ReadAsync(cancellationToken))
+        await _geometryStorageInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            var dataTypeOrdinal = reader.GetOrdinal("data_type");
-            var udtNameOrdinal = reader.GetOrdinal("udt_name");
-            var dataType = reader.GetString(dataTypeOrdinal);
-            var udtName = reader.GetString(udtNameOrdinal);
-            _geometryStorageType = ResolveGeometryStorageType(dataType, udtName);
-        }
-        else
-        {
-            _geometryStorageType = CoreGeometryStorageType.Bytea; // Default fallback
-        }
+            if (_geometryStorageType.HasValue)
+            {
+                return _geometryStorageType.Value;
+            }
 
-        return _geometryStorageType.Value;
+            await using var connection = (NpgsqlConnection)await _connectionProvider
+                .OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            const string sql = """
+                SELECT data_type, udt_name
+                FROM information_schema.columns
+                WHERE table_schema = COALESCE(@schema, current_schema())
+                  AND table_name = @table
+                  AND column_name = @column
+                """;
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("schema", (object?)_tableSchema ?? DBNull.Value);
+            command.Parameters.AddWithValue("table", "features");
+            command.Parameters.AddWithValue("column", "geometry");
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var dataTypeOrdinal = reader.GetOrdinal("data_type");
+                var udtNameOrdinal = reader.GetOrdinal("udt_name");
+                var dataType = reader.GetString(dataTypeOrdinal);
+                var udtName = reader.GetString(udtNameOrdinal);
+                _geometryStorageType = ResolveGeometryStorageType(dataType, udtName);
+            }
+            else
+            {
+                _geometryStorageType = CoreGeometryStorageType.Bytea; // Default fallback
+            }
+
+            return _geometryStorageType.Value;
+        }
+        finally
+        {
+            _geometryStorageInitLock.Release();
+        }
     }
 
     public async Task<bool> IsLayerCatalogAvailableAsync(CancellationToken cancellationToken)
@@ -186,11 +214,24 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             return _hasLayerCatalog.Value;
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await _layerCatalogInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_hasLayerCatalog.HasValue)
+            {
+                return _hasLayerCatalog.Value;
+            }
 
-        return await IsLayerCatalogAvailableAsync(connection, cancellationToken).ConfigureAwait(false);
+            await using var connection = (NpgsqlConnection)await _connectionProvider
+                .OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return await IsLayerCatalogAvailableInternalAsync(connection, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _layerCatalogInitLock.Release();
+        }
     }
 
     private async Task<bool> IsLayerCatalogAvailableAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
@@ -200,6 +241,24 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             return _hasLayerCatalog.Value;
         }
 
+        await _layerCatalogInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_hasLayerCatalog.HasValue)
+            {
+                return _hasLayerCatalog.Value;
+            }
+
+            return await IsLayerCatalogAvailableInternalAsync(connection, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _layerCatalogInitLock.Release();
+        }
+    }
+
+    private async Task<bool> IsLayerCatalogAvailableInternalAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
         try
         {
             const string sql = """
@@ -267,18 +326,19 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             }
         }
 
-        // Remove oldest entries if cache is too large
+        // Remove oldest entries if cache is too large (best-effort, snapshot-based)
         var overflow = _layerSridCache.Count - MaxLayerSridCacheEntries;
         if (overflow > 0)
         {
-            var oldestEntries = _layerSridCache
+            var entriesToRemove = _layerSridCache
                 .OrderBy(kvp => kvp.Value.CreatedAt)
                 .Take(overflow)
+                .Select(kvp => kvp.Key)
                 .ToArray();
 
-            foreach (var kvp in oldestEntries)
+            foreach (var key in entriesToRemove)
             {
-                _layerSridCache.TryRemove(kvp.Key, out _);
+                _layerSridCache.TryRemove(key, out _);
             }
         }
     }

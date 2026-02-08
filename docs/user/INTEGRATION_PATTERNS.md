@@ -10,7 +10,7 @@ This guide helps you choose a sensible integration approach for Honua Server and
 |---------|----------|------------|---------------|----------|
 | **Direct API** | Simple CRUD and queries | Low | OGC API Features | Standards-compliant, simple |
 | **SDK Wrapper** | App integration | Medium | Multiple protocols | Type safety, shared errors |
-| **ETL Pipeline** | Batch sync and backfills | Medium | OData v4 + FeatureServer | Scheduled processing |
+| **ETL Pipeline** | Batch sync and backfills | Medium | OData v4 + FeatureServer (writes) + MapServer (optional) | Scheduled processing |
 | **Event-Driven** | Real-time updates | High | Webhooks + API | Reactive, scalable |
 | **Microservice** | Service architecture | High | All protocols | Decoupled, fault-tolerant |
 
@@ -35,7 +35,7 @@ graph TD
 
 **Best for**: Simple apps, prototypes, direct client access
 **Complexity**: Low
-**Protocols**: OGC API Features (recommended), FeatureServer REST
+**Protocols**: OGC API Features (recommended), FeatureServer REST, MapServer REST (maps)
 
 ### **Frontend Web Application (OGC API Features)**
 
@@ -58,7 +58,8 @@ export async function fetchFeatures(collectionId, { bbox, limit = 100, filter })
 
 ### **GIS Clients (ArcGIS/QGIS)**
 
-- **ArcGIS Pro**: `http://<host>/rest/services/{id}/FeatureServer`
+- **ArcGIS Pro (data)**: `http://<host>/rest/services/{id}/FeatureServer`
+- **ArcGIS Pro (maps)**: `http://<host>/rest/services/{id}/MapServer`
 - **QGIS (OGC API Features)**: `http://<host>/ogc/features`
 
 ---
@@ -67,7 +68,7 @@ export async function fetchFeatures(collectionId, { bbox, limit = 100, filter })
 
 **Best for**: Shared client code across web, mobile, and server apps
 **Complexity**: Medium
-**Protocols**: OGC API Features + FeatureServer (optional)
+**Protocols**: OGC API Features + FeatureServer (optional) + MapServer (optional)
 
 ### **Minimal TypeScript Client**
 
@@ -106,7 +107,7 @@ export class HonuaClient {
 
 **Best for**: Scheduled syncs, batch imports, backfills
 **Complexity**: Medium
-**Protocols**: OData v4 (read), FeatureServer (write), Admin API (management)
+**Protocols**: OData v4 (read), FeatureServer (write), MapServer (optional rendering), Admin API (management)
 
 ### **Minimal ETL Loop (Python)**
 

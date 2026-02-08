@@ -16,7 +16,7 @@ Honua is the antidote: GIS democratized. We bring broad compatibility, cloud-nat
 
 ## The Honua antidote
 
-- Broad compatibility: Esri FeatureServer + OGC API Features + OData.
+- Broad compatibility: Esri FeatureServer + MapServer + OGC API Features + OData.
 - Minimal switching cost: Esri import and drop-in interoperability.
 - Cloud-native by design: efficient infra with optional serverless paths.
 - Ops-friendly: observability, predictable upgrades, reliable rollouts.

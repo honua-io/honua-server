@@ -1,24 +1,24 @@
 {
   "Version": "1.0",
-  "Created": "2026-01-01",
+  "Created": "2026-02-07",
   "Description": "BenchmarkDotNet baseline for query benchmarks (CI)",
   "Environment": {
-    "Runtime": ".NET 10.0.1 (10.0.1, 10.0.125.57005)",
+    "Runtime": ".NET 10.0.2 (10.0.2, 10.0.225.61305)",
     "OS": "Linux Ubuntu 24.04.3 LTS (Noble Numbat)",
-    "Hardware": "AMD EPYC 7763 (2C/4T)"
+    "Hardware": "Intel Xeon Platinum 8370C CPU 2.80GHz (2C/4T)"
   },
   "Benchmarks": [
     {
       "Method": "SimpleWhereQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 3191296.8619791665,
-        "StandardError": 21174.674651592075,
-        "Percentile95": 3218664.146875,
-        "Percentile99": 3220016.698125
+        "Mean": 3430372.653846154,
+        "StandardError": 6336.143972433711,
+        "Percentile95": 3462136.3390625,
+        "Percentile99": 3464720.8053125
       },
       "Memory": {
-        "AllocatedBytes": 226970,
+        "AllocatedBytes": 213286,
         "Gen0Collections": 1,
         "Gen1Collections": 0,
         "Gen2Collections": 0
@@ -28,14 +28,14 @@
       "Method": "SpatialBboxQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 2784677.2096354165,
-        "StandardError": 6310.911539108208,
-        "Percentile95": 2794728.488671875,
-        "Percentile99": 2795679.453984375
+        "Mean": 3008128.710677083,
+        "StandardError": 3308.8550732087974,
+        "Percentile95": 3029515.296875,
+        "Percentile99": 3031745.978125
       },
       "Memory": {
-        "AllocatedBytes": 226940,
-        "Gen0Collections": 3,
+        "AllocatedBytes": 202244,
+        "Gen0Collections": 2,
         "Gen1Collections": 0,
         "Gen2Collections": 0
       }
@@ -44,14 +44,14 @@
       "Method": "CombinedWhereAndSpatialQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 2315844.5924479165,
-        "StandardError": 4639.19658062007,
-        "Percentile95": 2323430.3921875,
-        "Percentile99": 2324209.4784375
+        "Mean": 2498581.25,
+        "StandardError": 3596.635042604995,
+        "Percentile95": 2517689.3390625,
+        "Percentile99": 2523165.1678125
       },
       "Memory": {
-        "AllocatedBytes": 228528,
-        "Gen0Collections": 3,
+        "AllocatedBytes": 215503,
+        "Gen0Collections": 2,
         "Gen1Collections": 0,
         "Gen2Collections": 0
       }
@@ -60,13 +60,13 @@
       "Method": "PaginatedQuery",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 3373129.3098958335,
-        "StandardError": 14825.3683731482,
-        "Percentile95": 3398455.5226562503,
-        "Percentile99": 3401844.15453125
+        "Mean": 3620610.7916666665,
+        "StandardError": 7452.4740806881055,
+        "Percentile95": 3661677.01953125,
+        "Percentile99": 3662510.52265625
       },
       "Memory": {
-        "AllocatedBytes": 228075,
+        "AllocatedBytes": 214361,
         "Gen0Collections": 1,
         "Gen1Collections": 0,
         "Gen2Collections": 0
@@ -76,15 +76,15 @@
       "Method": "LargeResultSet",
       "Type": "QueryBenchmarks",
       "Statistics": {
-        "Mean": 7290796.145833333,
-        "StandardError": 33916.49077731198,
-        "Percentile95": 7348684.1546875,
-        "Percentile99": 7356564.2059375
+        "Mean": 8728217.921875,
+        "StandardError": 18025.531758988807,
+        "Percentile95": 8809842.796875,
+        "Percentile99": 8810319.084375
       },
       "Memory": {
-        "AllocatedBytes": 2213492,
-        "Gen0Collections": 8,
-        "Gen1Collections": 7,
+        "AllocatedBytes": 1955854,
+        "Gen0Collections": 4,
+        "Gen1Collections": 3,
         "Gen2Collections": 0
       }
     }

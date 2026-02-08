@@ -9,6 +9,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | Protocol | Best For | Endpoint | Example Client |
 |----------|----------|----------|----------------|
 | **FeatureServer REST** | ArcGIS compatibility | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri SDKs |
+| **MapServer REST** | Map rendering | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs |
 | **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
@@ -16,6 +17,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 ## Table of Contents
 
 - [FeatureServer REST](#geoservices-rest-api)
+- [MapServer REST](#mapserver-rest)
 - [OGC API Features](#ogc-api-features)
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
@@ -59,6 +61,33 @@ curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=populati
 curl -X POST "http://localhost:8080/rest/services/1/FeatureServer/0/addFeatures" \
   -H "Content-Type: application/json" \
   -d '{"features":[{"geometry":{"x":-122.42,"y":37.77},"attributes":{"name":"New Place"}}]}'
+```
+
+---
+
+## **MapServer REST**
+
+### **Export a Map Image**
+
+```bash
+curl "http://localhost:8080/rest/services/1/MapServer/export?bbox=-122.5,37.7,-122.3,37.8&size=800,600&format=png&f=image" --output map.png
+```
+
+**Export metadata (JSON + base64 image):**
+```bash
+curl "http://localhost:8080/rest/services/1/MapServer/export?bbox=-122.5,37.7,-122.3,37.8&size=800,600&format=png&f=json"
+```
+
+### **Identify Features**
+
+```bash
+curl "http://localhost:8080/rest/services/1/MapServer/identify?geometry=-122.41,37.78&geometryType=esriGeometryPoint&sr=4326&mapExtent=-122.5,37.7,-122.3,37.8&imageDisplay=800,600,96&f=json"
+```
+
+### **Legend**
+
+```bash
+curl "http://localhost:8080/rest/services/1/MapServer/legend?f=json"
 ```
 
 ---

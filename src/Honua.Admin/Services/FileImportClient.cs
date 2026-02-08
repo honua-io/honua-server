@@ -41,7 +41,7 @@ internal sealed class FileImportClient : IFileImportClient
 
         content.Add(fileContent, "file", file.Name);
 
-        var response = await _httpClient.PostAsync("import/preview", content, cancellationToken);
+        using var response = await _httpClient.PostAsync("import/preview", content, cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<FilePreviewResponse>(response, cancellationToken);
     }
 
@@ -75,7 +75,7 @@ internal sealed class FileImportClient : IFileImportClient
 
         content.Add(new StringContent(overwriteExisting ? "true" : "false"), "OverwriteExisting");
 
-        var response = await _httpClient.PostAsync("import/upload", content, cancellationToken);
+        using var response = await _httpClient.PostAsync("import/upload", content, cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<FileImportResult>(response, cancellationToken);
     }
 

@@ -76,7 +76,7 @@ internal static class HealthEndpoints
     /// PERFORMANCE OPTIMIZATION: Endpoint to expose performance metrics
     /// Provides insights into query performance and system health
     /// </summary>
-    private static IResult HandlePerformanceMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider)
+    private static IResult HandlePerformanceMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider, ILoggerFactory loggerFactory)
     {
         try
         {
@@ -112,8 +112,10 @@ internal static class HealthEndpoints
 
             return Results.Json(response, HealthJsonContext.Default.HealthPerformanceMetricsResponse);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            loggerFactory.CreateLogger("Honua.HealthCheck").LogError(ex, "Failed to retrieve performance metrics");
+
             var response = new HealthPerformanceErrorResponse
             {
                 Status = "error",
@@ -162,7 +164,7 @@ internal static class HealthEndpoints
         }
         catch
         {
-            return 85.0; // Default decent score if calculation fails
+            return 0;
         }
     }
 

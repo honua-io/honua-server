@@ -31,6 +31,6 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ConnectionTestResult))]
 [JsonSerializable(typeof(EncryptionValidationResult))]
 [JsonSerializable(typeof(KeyRotationResult))]
-internal partial class SecureConnectionJsonContext : JsonSerializerContext
+internal sealed partial class SecureConnectionJsonContext : JsonSerializerContext
 {
 }

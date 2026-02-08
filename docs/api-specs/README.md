@@ -53,15 +53,15 @@ Honua Server provides comprehensive OpenAPI specifications for all supported pro
 {% swagger src="admin-api.json" %}
 {% endswagger %}
 
-## 🚀 **GeoServices REST FeatureServer**
+## 🚀 **GeoServices REST FeatureServer + MapServer**
 
 **Protocol**: Esri-compatible REST API
 **Base URL**: `/rest/services`
 **Compatibility**: 100% ArcGIS compatibility
 
-> **Note**: FeatureServer endpoints follow Esri's REST specification and provide self-describing metadata.
+> **Note**: FeatureServer and MapServer endpoints follow Esri's REST specification and provide self-describing metadata.
 >
-> For detailed endpoint reference, see the [FeatureServer Coverage Matrix](../user/feature-server-matrix.md).
+> For detailed endpoint reference, see the [FeatureServer Coverage Matrix](../user/feature-server-matrix.md) and the [MapServer Coverage Matrix](../user/map-server-matrix.md).
 
 ## ⚡ **Vector Tiles (MVT)**
 

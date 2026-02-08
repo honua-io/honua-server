@@ -13,14 +13,18 @@ internal sealed partial class FeatureDataAccess
         var parameterIndex = 0;
         AddParameterValue(command, ref parameterIndex, layerId);
 
-        if (query.SpatialFilter.HasValue &&
-            query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor &&
-            query.SpatialFilter.Value.ReturnDistance)
-        {
-            var filter = query.SpatialFilter.Value;
+        var isKnnQuery = query.SpatialFilter.HasValue &&
+                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
 
-            // Distance geometry is used in SELECT before WHERE, so add it first.
-            AddParameterValue(command, ref parameterIndex, filter.Geometry);
+        if (isKnnQuery)
+        {
+            var filter = query.SpatialFilter!.Value;
+
+            if (filter.ReturnDistance)
+            {
+                // Distance geometry is used in SELECT before WHERE, so add it first.
+                AddParameterValue(command, ref parameterIndex, filter.Geometry);
+            }
 
             AddWhereParameters(command, whereParameters, ref parameterIndex);
 

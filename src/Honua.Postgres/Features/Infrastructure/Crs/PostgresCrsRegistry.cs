@@ -99,8 +99,6 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
                 {
                     return cached.Definition;
                 }
-
-                _sridCache.TryRemove(srid, out _);
             }
 
             _sridCache.TryRemove(srid, out _);
@@ -166,18 +164,14 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             return;
         }
 
-        var removed = 0;
-        foreach (var key in cache.Keys)
+        var entriesToRemove = cache
+            .OrderBy(kvp => kvp.Value.CreatedAt)
+            .Take(overflow)
+            .Select(kvp => kvp.Key)
+            .ToArray();
+        foreach (var key in entriesToRemove)
         {
-            if (removed >= overflow)
-            {
-                break;
-            }
-
-            if (cache.TryRemove(key, out _))
-            {
-                removed++;
-            }
+            cache.TryRemove(key, out _);
         }
     }
 
@@ -272,22 +266,28 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
     {
         if (!string.IsNullOrWhiteSpace(wkt))
         {
+            // Check for projected CRS keywords first (takes precedence)
             if (wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) ||
                 wkt.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("PROJECTEDCRS", StringComparison.OrdinalIgnoreCase))
+                wkt.Contains("PROJECTEDCRS", StringComparison.OrdinalIgnoreCase) ||
+                wkt.Contains("+proj=", StringComparison.OrdinalIgnoreCase) &&
+                !wkt.Contains("+proj=longlat", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
 
+            // Check for geographic CRS keywords (WKT and proj4 formats)
             if (wkt.Contains("GEOGCS", StringComparison.OrdinalIgnoreCase) ||
                 wkt.Contains("GEOGCRS", StringComparison.OrdinalIgnoreCase) ||
                 wkt.Contains("GEODCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("GEODETIC", StringComparison.OrdinalIgnoreCase))
+                wkt.Contains("GEODETIC", StringComparison.OrdinalIgnoreCase) ||
+                wkt.Contains("+proj=longlat", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
         }
 
+        // SRID-based fallback: common geographic CRS ranges
         return srid switch
         {
             4326 => true,

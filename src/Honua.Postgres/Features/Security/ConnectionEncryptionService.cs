@@ -27,7 +27,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
     private readonly ILogger<ConnectionEncryptionService> _logger;
     private readonly byte[] _masterKey;
     private readonly object _lockObject = new();
-    private int _currentKeyVersion = 1;
+    private volatile int _currentKeyVersion = 1;
     private bool _disposed;
 
     // Logger message delegates for performance

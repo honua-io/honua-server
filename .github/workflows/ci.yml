@@ -319,6 +319,12 @@ jobs:
               created_at TIMESTAMPTZ DEFAULT NOW()
           );
 
+          ALTER TABLE IF EXISTS honua.services
+              ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+          ALTER TABLE IF EXISTS honua.layers
+              ADD COLUMN IF NOT EXISTS metadata JSONB;
+
           CREATE TABLE IF NOT EXISTS honua.service_layers (
               service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
               layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
@@ -421,6 +427,10 @@ jobs:
               service_extent = EXCLUDED.service_extent,
               updated_at = NOW();
 
+          UPDATE honua.services
+          SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+          WHERE service_name = 'test_service';
+
           INSERT INTO honua.layers (
               layer_id,
               layer_name,
@@ -449,6 +459,10 @@ jobs:
               srid = EXCLUDED.srid,
               extent = EXCLUDED.extent,
               default_visibility = EXCLUDED.default_visibility;
+
+          UPDATE honua.layers
+          SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+          WHERE layer_id = 0;
 
           INSERT INTO honua.layer_fields (
               layer_id,

@@ -31,6 +31,7 @@ Key points:
 The server is organized by vertical slices under `src/Honua.Server/Features/`.
 
 - **FeatureServer**: GeoServices REST query/edit/attachments/related records.
+- **MapServer**: GeoServices REST map rendering (export/identify/legend) + layer query.
 - **OGC Features**: collections/items with transactions.
 - **OGC Tiles**: tilesets metadata and vector tiles.
 - **OData**: CRUD + query options ($filter, $select, $orderby, $top, $skip, $count, $search, $apply, $batch).
@@ -139,7 +140,7 @@ graph TB
 #### **Redis Cache (Optional but Recommended)**
 - **Purpose**: Response caching, tile caching, hot data storage
 - **Usage**:
-  - Caches OGC Feature Collections, FeatureServer responses
+  - Caches OGC Feature Collections, FeatureServer responses, MapServer responses
   - Stores pre-generated vector tiles for frequently accessed areas
   - Session data for admin UI (when using distributed deployments)
 - **Configuration**: `CacheOptions__*` environment variables
@@ -281,7 +282,7 @@ graph TB
 - Redis: 1-8GB depending on cache strategy
 
 #### **Network Topology**
-- **Public Endpoints**: Standards APIs (FeatureServer, OGC, OData, Tiles)
+- **Public Endpoints**: Standards APIs (FeatureServer, MapServer, OGC, OData, Tiles)
 - **Private Endpoints**: Admin API (typically behind VPN/private network)
 - **Database Access**: Private network only (never public)
 - **Cache Access**: Private network, shared across instances

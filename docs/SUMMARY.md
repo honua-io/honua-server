@@ -13,6 +13,7 @@
 * [🔗 Integration Patterns](user/INTEGRATION_PATTERNS.md)
 * [📋 Protocol Coverage Index](user/specifications/protocol-coverage.md)
 * [🎯 FeatureServer Coverage Matrix](user/feature-server-matrix.md)
+* [🗺️ MapServer Coverage Matrix](user/map-server-matrix.md)
 
 ### Server Management API
 * [⚙️ Admin API Reference](user/CONTROL_PLANE_API.md)

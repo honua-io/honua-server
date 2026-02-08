@@ -4,17 +4,17 @@
 name: Performance Benchmarks
 
 on:
-  # Run on PRs to main branch
+  # Run on PRs to trunk branch
   pull_request:
-    branches: [ main ]
+    branches: [ trunk ]
     paths:
       - 'src/**'
       - 'benchmarks/**'
       - '.github/workflows/performance-benchmarks.yml'
 
-  # Run on pushes to main (to update baseline)
+  # Run on pushes to trunk (to update baseline)
   push:
-    branches: [ main ]
+    branches: [ trunk ]
     paths:
       - 'src/**'
       - 'benchmarks/**'
@@ -184,7 +184,7 @@ jobs:
     - name: Run Load Test Benchmarks (Full)
       if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.benchmark_filter, 'Load'))
       run: |
-        # Full load test for main branch
+        # Full load test for trunk branch
         dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
           --filter "*LoadTestConcurrency*" \
           --memory \
@@ -222,10 +222,10 @@ jobs:
 
     - name: Update Performance Baseline
       if: |
-        (github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.analyze_results.outputs.analysis_exit_code == '0') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/trunk' && steps.analyze_results.outputs.analysis_exit_code == '0') ||
         (github.event_name == 'workflow_dispatch' && github.event.inputs.update_baseline == 'true')
       run: |
-        UPDATE_REASON="${{ github.event.inputs.update_reason || 'Automated baseline update after main branch merge' }}"
+        UPDATE_REASON="${{ github.event.inputs.update_reason || 'Automated baseline update after trunk branch merge' }}"
 
         dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
           --update-baseline "$UPDATE_REASON" \
@@ -295,7 +295,7 @@ jobs:
   # Separate job for performance comparison across different environments
   cross-platform-benchmarks:
     name: Cross-Platform Performance Comparison
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/trunk'
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]

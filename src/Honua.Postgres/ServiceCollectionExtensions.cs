@@ -80,6 +80,7 @@ internal static class ServiceCollectionExtensions
 
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
+        services.AddScoped<IServiceMetadataUpdater, PostgresServiceMetadataUpdater>();
 
         // Register metadata resource store (ADR-0023)
         services.AddScoped<IMetadataResourceStore>(serviceProvider =>
@@ -135,7 +136,9 @@ internal static class ServiceCollectionExtensions
 
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
-            new CrsDetectionService(serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
+            new CrsDetectionService(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddHostedService<PostgresCrsWarmupService>();
 

@@ -7,6 +7,7 @@ This index groups the protocol coverage pages that document which operations and
 - [OGC API Features coverage](ogc-api-features-coverage.md)
 - [OData v4 coverage](odata-v4-coverage.md)
 - [GeoServices FeatureServer coverage (Esri REST)](../feature-server-matrix.md)
+- [GeoServices MapServer coverage (Esri REST)](../map-server-matrix.md)
 
 ## Related specification notes
 
@@ -18,3 +19,8 @@ This index groups the protocol coverage pages that document which operations and
 
 Honua's GeoServices FeatureServer coverage is tracked in the matrix above and is aligned to the Esri REST Feature Service specification:
 - Esri REST Feature Service spec: https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/
+
+## Esri REST Map Service coverage
+
+Honua's GeoServices MapServer coverage is tracked in the matrix above and is aligned to the Esri REST Map Service specification:
+- Esri REST Map Service spec: https://developers.arcgis.com/rest/services-reference/enterprise/map-service/

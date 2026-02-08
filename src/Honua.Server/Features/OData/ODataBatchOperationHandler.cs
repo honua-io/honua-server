@@ -285,7 +285,7 @@ internal sealed partial class ODataBatchOperationHandler(
         [LoggerMessage(EventId = 3011, Level = LogLevel.Warning, Message = "OData batch request parse failed.")]
         public static partial void BatchParseFailed(ILogger logger, Exception exception);
 
-        [LoggerMessage(EventId = 3012, Level = LogLevel.Error, Message = "OData batch request failed.")]
+        [LoggerMessage(EventId = 3022, Level = LogLevel.Error, Message = "OData batch request failed.")]
         public static partial void BatchFailed(ILogger logger, Exception exception);
     }
 }

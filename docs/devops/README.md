@@ -46,6 +46,7 @@ This section is for installing, configuring, operating, and upgrading Honua in p
 ## 🔐 **Security**
 
 - [**Security Configuration**](SECURITY_CONFIGURATION.md) — authentication, authorization, and security settings
+- [**Rate Limiting**](RATE_LIMITING.md) — edge rate limiting templates (nginx, AWS WAF, Azure, GCP, Kubernetes)
 - [**Authorization Matrix**](AUTHORIZATION_MATRIX.md) — endpoint access requirements
 - [**Container Security**](CONTAINER_SECURITY.md) — container hardening and best practices
 - [**CSP Enhancement**](CSP_ENHANCEMENT.md) — Content Security Policy configuration

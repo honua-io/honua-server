@@ -75,7 +75,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
         request.Headers.TryAddWithoutValidation("X-Amz-Target", SecretsManagerTarget);
 
-        var response = await SendSignedRequestAsync(request, endpoint, region, credentials, cancellationToken)
+        using var response = await SendSignedRequestAsync(request, endpoint, region, credentials, cancellationToken)
             .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -447,7 +447,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_metadataTimeout);
 
-        var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
+        using var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -471,7 +471,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_metadataTimeout);
 
-        var listResponse = await _metadataClient.SendAsync(listRequest, timeout.Token).ConfigureAwait(false);
+        using var listResponse = await _metadataClient.SendAsync(listRequest, timeout.Token).ConfigureAwait(false);
         if (!listResponse.IsSuccessStatusCode)
         {
             return null;
@@ -486,7 +486,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         using var credsRequest = new HttpRequestMessage(HttpMethod.Get, $"http://169.254.169.254/latest/meta-data/iam/security-credentials/{roleName}");
         credsRequest.Headers.TryAddWithoutValidation("X-aws-ec2-metadata-token", token);
 
-        var credsResponse = await _metadataClient.SendAsync(credsRequest, timeout.Token).ConfigureAwait(false);
+        using var credsResponse = await _metadataClient.SendAsync(credsRequest, timeout.Token).ConfigureAwait(false);
         if (!credsResponse.IsSuccessStatusCode)
         {
             return null;
@@ -506,7 +506,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
         try
         {
-            var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            using var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
