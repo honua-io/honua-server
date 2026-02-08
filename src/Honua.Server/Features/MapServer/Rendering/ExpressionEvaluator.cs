@@ -83,9 +83,9 @@ internal static class ExpressionEvaluator
         return values.Length > 0;
     }
 
-    private static object? EvaluateArrayExpression(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateArrayExpression(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.Count == 0)
+        if (array.Length == 0)
         {
             return null;
         }
@@ -104,7 +104,7 @@ internal static class ExpressionEvaluator
             "match" => EvaluateMatch(array, properties),
             "step" => EvaluateStep(array, properties),
             "interpolate" => EvaluateInterpolate(array, properties),
-            "literal" => array.Count > 1 ? Evaluate(array[1], properties) : null,
+            "literal" => array.Length > 1 ? Evaluate(array[1], properties) : null,
             "to-string" => EvaluateToString(array, properties),
             "to-number" => EvaluateToNumber(array, properties),
             "concat" => EvaluateConcat(array, properties),
@@ -125,9 +125,9 @@ internal static class ExpressionEvaluator
         };
     }
 
-    private static object? EvaluateGet(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateGet(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.Count < 2)
+        if (array.Length < 2)
         {
             return null;
         }
@@ -140,9 +140,9 @@ internal static class ExpressionEvaluator
         return properties.TryGetValue(key, out var value) ? value : null;
     }
 
-    private static bool EvaluateHas(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateHas(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.Count < 2)
+        if (array.Length < 2)
         {
             return false;
         }
@@ -155,9 +155,9 @@ internal static class ExpressionEvaluator
         return properties.ContainsKey(key);
     }
 
-    private static bool EvaluateNot(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateNot(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.Count < 2)
+        if (array.Length < 2)
         {
             return true;
         }
@@ -166,9 +166,9 @@ internal static class ExpressionEvaluator
         return !IsTruthy(result);
     }
 
-    private static object? EvaluateCase(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateCase(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         // case, condition1, output1, condition2, output2, ..., fallback
         for (int i = 1; i < length - 1; i += 2)
         {
@@ -183,9 +183,9 @@ internal static class ExpressionEvaluator
         return length > 1 ? Evaluate(array[length - 1], properties) : null;
     }
 
-    private static object? EvaluateMatch(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateMatch(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         if (length < 4)
         {
             return null;
@@ -262,9 +262,9 @@ internal static class ExpressionEvaluator
         }
     }
 
-    private static object? EvaluateStep(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateStep(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         if (length < 4)
         {
             return null;
@@ -291,9 +291,9 @@ internal static class ExpressionEvaluator
         return result;
     }
 
-    private static object? EvaluateInterpolate(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateInterpolate(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         if (length < 5)
         {
             return null;
@@ -335,9 +335,9 @@ internal static class ExpressionEvaluator
         return (double)(fromF + (toF - fromF) * t);
     }
 
-    private static string EvaluateToString(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateToString(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.Count < 2)
+        if (array.Length < 2)
         {
             return "";
         }
@@ -345,9 +345,9 @@ internal static class ExpressionEvaluator
         return Evaluate(array[1], properties)?.ToString() ?? "";
     }
 
-    private static object? EvaluateToNumber(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateToNumber(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.Count < 2)
+        if (array.Length < 2)
         {
             return 0.0;
         }
@@ -356,9 +356,9 @@ internal static class ExpressionEvaluator
         return (double)ConvertToFloat(val, 0f);
     }
 
-    private static string EvaluateConcat(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateConcat(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         var parts = new string[length - 1];
         for (int i = 1; i < length; i++)
         {
@@ -369,11 +369,11 @@ internal static class ExpressionEvaluator
     }
 
     private static bool EvaluateComparison(
-        IReadOnlyList<MapLibreExpression> array,
+        MapLibreExpression[] array,
         ImmutableDictionary<string, object?> properties,
         Func<object?, object?, bool> comparator)
     {
-        if (array.Count < 3)
+        if (array.Length < 3)
         {
             return false;
         }
@@ -383,9 +383,9 @@ internal static class ExpressionEvaluator
         return comparator(left, right);
     }
 
-    private static bool EvaluateAll(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateAll(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         for (int i = 1; i < length; i++)
         {
             if (!IsTruthy(Evaluate(array[i], properties)))
@@ -397,9 +397,9 @@ internal static class ExpressionEvaluator
         return true;
     }
 
-    private static bool EvaluateAny(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateAny(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         for (int i = 1; i < length; i++)
         {
             if (IsTruthy(Evaluate(array[i], properties)))
@@ -411,9 +411,9 @@ internal static class ExpressionEvaluator
         return false;
     }
 
-    private static object? EvaluateCoalesce(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateCoalesce(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.Count;
+        var length = array.Length;
         for (int i = 1; i < length; i++)
         {
             var val = Evaluate(array[i], properties);
@@ -427,11 +427,11 @@ internal static class ExpressionEvaluator
     }
 
     private static double EvaluateArithmetic(
-        IReadOnlyList<MapLibreExpression> array,
+        MapLibreExpression[] array,
         ImmutableDictionary<string, object?> properties,
         Func<double, double, double> op)
     {
-        if (array.Count < 3)
+        if (array.Length < 3)
         {
             return 0.0;
         }

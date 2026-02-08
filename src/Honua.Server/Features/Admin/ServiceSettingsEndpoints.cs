@@ -18,7 +18,7 @@ internal static class ServiceSettingsEndpoints
     /// <summary>
     /// Log category for service settings endpoints.
     /// </summary>
-    private sealed class ServiceSettingsEndpointsLog;
+    internal sealed class ServiceSettingsEndpointsLog;
 
     public static void MapServiceSettingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
