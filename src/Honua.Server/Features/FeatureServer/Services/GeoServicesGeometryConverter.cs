@@ -618,7 +618,7 @@ internal static class GeoServicesGeometryConverter
 
     private static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        return GeometryService.DetectZMFromGeometry(geometry);
+        return Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
     private static bool IsEmptyGeometry(GeoServicesGeometry geometry)

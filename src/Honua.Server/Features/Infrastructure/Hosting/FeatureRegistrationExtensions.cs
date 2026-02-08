@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.GeometryService;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.OData;
@@ -27,6 +28,7 @@ internal static class FeatureRegistrationExtensions
         services.AddFeatureServer();
         services.AddOgcFeatures();
         services.AddOData();
+        services.AddGeometryService();
         services.AddObservability(configuration);
 
         return services;
@@ -46,6 +48,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapODataEndpoints();
+        endpoints.MapGeometryServiceEndpoints();
 
         return endpoints;
     }

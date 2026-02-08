@@ -152,7 +152,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
                     $"Geometry has {ringCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
             }
 
-            var (hasZ, hasM) = GeometryService.DetectZMFromGeometry(geometry);
+            var (hasZ, hasM) = Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
             var stats = new GeometryStats
             {
                 GeometryType = geometry.GeometryType,

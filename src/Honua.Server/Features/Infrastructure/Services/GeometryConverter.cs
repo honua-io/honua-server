@@ -99,6 +99,24 @@ internal sealed class GeometryConverter : IGeometryConverter
     }
 
     /// <summary>
+    /// Converts Well-Known Binary (WKB) geometry to a GeoServices JSON element
+    /// </summary>
+    /// <param name="wkbGeometry">Geometry in WKB format</param>
+    /// <param name="srid">Spatial reference ID to include in the output</param>
+    /// <returns>Geometry as a JsonElement in GeoServices format</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    public JsonElement ConvertWkbToGeoServicesGeometry(byte[] wkbGeometry, int srid)
+    {
+        ArgumentNullException.ThrowIfNull(wkbGeometry);
+
+        var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(wkbGeometry, srid)
+            ?? throw new ArgumentException("Failed to convert WKB to GeoServices geometry.");
+
+        var json = JsonSerializer.Serialize(geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
+        return JsonDocument.Parse(json).RootElement.Clone();
+    }
+
+    /// <summary>
     /// Converts geometry to WKB using pooled memory for efficient processing
     /// </summary>
     /// <param name="geometry">NetTopologySuite geometry to convert</param>

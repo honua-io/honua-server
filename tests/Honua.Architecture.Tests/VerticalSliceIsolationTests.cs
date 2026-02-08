@@ -25,6 +25,7 @@ public sealed class VerticalSliceIsolationTests
         "OgcTiles",
         "Tiles",
         "OData",
+        "GeometryService",
         "Import",
         "FileStorage",
         "HealthCheck",
