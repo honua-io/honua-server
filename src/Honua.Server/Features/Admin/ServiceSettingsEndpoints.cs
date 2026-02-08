@@ -7,6 +7,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -47,7 +48,7 @@ internal static class ServiceSettingsEndpoints
 
     private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, BadRequest<ApiResponse<object>>>>
         HandleListServices(
-            ILayerCatalog catalog,
+            [FromServices] ILayerCatalog catalog,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -72,7 +73,7 @@ internal static class ServiceSettingsEndpoints
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
         HandleGetSettings(
             string serviceName,
-            ILayerCatalog catalog,
+            [FromServices] ILayerCatalog catalog,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -98,8 +99,8 @@ internal static class ServiceSettingsEndpoints
         HandleUpdateProtocols(
             string serviceName,
             UpdateProtocolsRequest request,
-            ILayerCatalog catalog,
-            IServiceMetadataUpdater metadataUpdater,
+            [FromServices] ILayerCatalog catalog,
+            [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -142,8 +143,8 @@ internal static class ServiceSettingsEndpoints
         HandleUpdateMapServerSettings(
             string serviceName,
             UpdateMapServerSettingsRequest request,
-            ILayerCatalog catalog,
-            IServiceMetadataUpdater metadataUpdater,
+            [FromServices] ILayerCatalog catalog,
+            [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {

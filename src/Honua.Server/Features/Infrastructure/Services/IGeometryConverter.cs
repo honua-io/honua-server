@@ -31,4 +31,13 @@ internal interface IGeometryConverter
     /// <returns>Geometry in GeoJSON format as a JSON object</returns>
     /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
     object? ConvertWkbToGeoJson(Memory<byte> wkbGeometry);
+
+    /// <summary>
+    /// Converts Well-Known Binary (WKB) geometry to a GeoServices JSON element
+    /// </summary>
+    /// <param name="wkbGeometry">Geometry in WKB format</param>
+    /// <param name="srid">Spatial reference ID to include in the output</param>
+    /// <returns>Geometry as a JsonElement in GeoServices format</returns>
+    /// <exception cref="ArgumentException">Thrown when WKB format is invalid</exception>
+    System.Text.Json.JsonElement ConvertWkbToGeoServicesGeometry(byte[] wkbGeometry, int srid);
 }

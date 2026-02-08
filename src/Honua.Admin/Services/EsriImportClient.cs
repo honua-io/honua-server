@@ -6,6 +6,9 @@ using Honua.Admin.Models;
 
 namespace Honua.Admin.Services;
 
+/// <summary>
+/// Client for triggering and monitoring Esri feature service imports.
+/// </summary>
 public interface IEsriImportClient
 {
     Task<ApiResult<EsriDiscoverResponse>> DiscoverAsync(EsriDiscoverRequest request, CancellationToken cancellationToken = default);

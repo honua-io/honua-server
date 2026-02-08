@@ -6,6 +6,9 @@ using Honua.Admin.Models;
 
 namespace Honua.Admin.Services;
 
+/// <summary>
+/// Client for publishing and managing layer definitions.
+/// </summary>
 public interface ILayerPublishingClient
 {
     Task<ApiResult<TableDiscoveryResponse>> GetTablesAsync(Guid connectionId, CancellationToken cancellationToken = default);

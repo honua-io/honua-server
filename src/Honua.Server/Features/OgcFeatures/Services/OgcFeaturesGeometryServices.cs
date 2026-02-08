@@ -265,7 +265,7 @@ internal sealed partial class OgcFeaturesGeometryServices
     /// </summary>
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        return GeometryService.DetectZMFromGeometry(geometry);
+        return Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
     /// <summary>

@@ -11,6 +11,9 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.MapServer.Rendering;
 
+/// <summary>
+/// Tests for SkiaSharp-based map image rendering.
+/// </summary>
 [Trait("Component", "MapServer")]
 public class SkiaMapRendererTests
 {

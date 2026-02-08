@@ -6,6 +6,9 @@ using Honua.Admin.Models;
 
 namespace Honua.Admin.Services;
 
+/// <summary>
+/// Client for managing layer styles.
+/// </summary>
 public interface ILayerStyleClient
 {
     Task<ApiResult<LayerStyleResponse>> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default);

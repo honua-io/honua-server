@@ -9,6 +9,9 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.MapServer.Rendering;
 
+/// <summary>
+/// Tests for MapLibre expression evaluation.
+/// </summary>
 [Trait("Component", "MapServer")]
 public class ExpressionEvaluatorTests
 {

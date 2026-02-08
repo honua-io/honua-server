@@ -6,6 +6,9 @@ using Honua.Admin.Models;
 
 namespace Honua.Admin.Services;
 
+/// <summary>
+/// Client for managing secure database connections.
+/// </summary>
 public interface ISecureConnectionsClient
 {
     Task<ApiResult<IReadOnlyList<SecureConnectionSummary>>> GetConnectionsAsync(CancellationToken cancellationToken = default);

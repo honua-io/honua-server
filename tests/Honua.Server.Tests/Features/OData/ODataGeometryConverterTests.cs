@@ -4,7 +4,6 @@
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.Extensions.Options;
@@ -14,7 +13,7 @@ namespace Honua.Server.Tests.Features.OData;
 
 public sealed class ODataGeometryConverterTests
 {
-    private readonly GeometryService _geometryService = new(Options.Create(new LimitsOptions()));
+    private readonly Honua.Server.Features.Infrastructure.Services.GeometryService _geometryService = new(Options.Create(new LimitsOptions()));
 
     [Fact]
     public void ConvertGeometryToWkb_WithNorthEastAxisOrder_PreservesCoordinateOrder()
