@@ -262,7 +262,14 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
         // Token replay protection validation
         if (tokenValidation.EnableTokenReplayProtection)
         {
-            ValidateTimeSpan(tokenValidation.TokenReplayCacheDuration, TimeSpan.Zero, TimeSpan.FromHours(24), "TokenValidation.TokenReplayCacheDuration", failures);
+            if (tokenValidation.TokenReplayCacheDuration < TimeSpan.Zero)
+            {
+                failures.Add("TokenValidation.TokenReplayCacheDuration must be positive");
+            }
+            else if (tokenValidation.TokenReplayCacheDuration > TimeSpan.FromHours(24))
+            {
+                failures.Add("TokenValidation.TokenReplayCacheDuration must be between 0 seconds and 24 hours");
+            }
         }
     }
 

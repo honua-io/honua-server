@@ -100,6 +100,12 @@ internal sealed class ApiKeyAuthenticationHandler(
             return _authOptions.IsDevelopmentMode || _authOptions.IsTestMode;
         }
 
+        if (_authOptions.IsDevelopmentMode && string.IsNullOrWhiteSpace(_authOptions.AdminPassword))
+        {
+            AuthenticationLog.DevelopmentEnvironmentAuthBypass(Logger);
+            return true;
+        }
+
         return false;
     }
 
