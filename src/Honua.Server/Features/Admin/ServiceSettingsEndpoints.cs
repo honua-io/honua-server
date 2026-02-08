@@ -48,7 +48,7 @@ internal static class ServiceSettingsEndpoints
 
     private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, BadRequest<ApiResponse<object>>>>
         HandleListServices(
-            ILayerCatalog catalog,
+            [FromServices] ILayerCatalog catalog,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -73,7 +73,7 @@ internal static class ServiceSettingsEndpoints
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
         HandleGetSettings(
             string serviceName,
-            ILayerCatalog catalog,
+            [FromServices] ILayerCatalog catalog,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -99,7 +99,7 @@ internal static class ServiceSettingsEndpoints
         HandleUpdateProtocols(
             string serviceName,
             UpdateProtocolsRequest request,
-            ILayerCatalog catalog,
+            [FromServices] ILayerCatalog catalog,
             [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
@@ -143,7 +143,7 @@ internal static class ServiceSettingsEndpoints
         HandleUpdateMapServerSettings(
             string serviceName,
             UpdateMapServerSettingsRequest request,
-            ILayerCatalog catalog,
+            [FromServices] ILayerCatalog catalog,
             [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
