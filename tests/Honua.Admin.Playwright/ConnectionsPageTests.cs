@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Honua.Admin.Playwright;
@@ -586,11 +587,11 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
             // Test invalid port numbers
             await page.GetByLabel("Port").FillAsync("-1");
             var portValue = await page.GetByLabel("Port").InputValueAsync();
-            Assert.True(string.IsNullOrEmpty(portValue) || int.Parse(portValue) >= 1);
+            Assert.True(string.IsNullOrEmpty(portValue) || int.Parse(portValue, CultureInfo.InvariantCulture) >= 1);
 
             await page.GetByLabel("Port").FillAsync("99999");
             portValue = await page.GetByLabel("Port").InputValueAsync();
-            Assert.True(string.IsNullOrEmpty(portValue) || int.Parse(portValue) <= 65535);
+            Assert.True(string.IsNullOrEmpty(portValue) || int.Parse(portValue, CultureInfo.InvariantCulture) <= 65535);
         });
     }
 
@@ -613,7 +614,7 @@ public sealed class ConnectionsPageTests : IClassFixture<PlaywrightFixture>
             {
                 if (route.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
                 {
-                    requestBody = await route.Request.PostDataAsync() ?? "";
+                    requestBody = route.Request.PostData ?? "";
                     await FulfillJsonAsync(route, new
                     {
                         success = false,

@@ -47,14 +47,14 @@ public sealed class AccessibilityAndMobileTests : IClassFixture<PlaywrightFixtur
             await page.Keyboard.PressAsync("Enter");
 
             // Should navigate to dashboard
-            Assert.Contains("/", await page.UrlAsync());
+            Assert.Contains("/", page.Url);
 
             // Test connections navigation
             var connectionsNav = page.GetByTestId("nav-connections");
             await connectionsNav.FocusAsync();
             await page.Keyboard.PressAsync("Enter");
 
-            Assert.Contains("/connections", await page.UrlAsync());
+            Assert.Contains("/connections", page.Url);
         });
     }
 
@@ -73,7 +73,7 @@ public sealed class AccessibilityAndMobileTests : IClassFixture<PlaywrightFixtur
             var now = DateTimeOffset.UtcNow;
 
             // Set mobile viewport
-            await page.SetViewportSizeAsync(new ViewportSize { Width = 375, Height = 667 });
+            await page.SetViewportSizeAsync(375, 667);
 
             await StubConnectionsWithDataAsync(page, now);
 
@@ -89,8 +89,6 @@ public sealed class AccessibilityAndMobileTests : IClassFixture<PlaywrightFixtur
 
             // On mobile, the table should either scroll horizontally or stack columns
             var tableWidth = await table.BoundingBoxAsync();
-            var viewportWidth = 375;
-
             // The table should fit within the viewport or have horizontal scroll
             Assert.True(tableWidth != null);
 
@@ -194,7 +192,7 @@ public sealed class AccessibilityAndMobileTests : IClassFixture<PlaywrightFixtur
             var page = ctx.Page;
 
             // Set tablet viewport
-            await page.SetViewportSizeAsync(new ViewportSize { Width = 768, Height = 1024 });
+            await page.SetViewportSizeAsync(768, 1024);
 
             await page.RouteAsync("**/import/esri/jobs", async route =>
             {
@@ -240,7 +238,7 @@ public sealed class AccessibilityAndMobileTests : IClassFixture<PlaywrightFixtur
             var page = ctx.Page;
 
             // Set mobile viewport to enable touch events
-            await page.SetViewportSizeAsync(new ViewportSize { Width = 375, Height = 667 });
+            await page.SetViewportSizeAsync(375, 667);
 
             await page.GotoAsync($"{baseUrl.TrimEnd('/')}/preview");
             if (await AuthTestHelpers.IsUnauthorizedAsync(page))

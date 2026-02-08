@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Honua.Admin.Playwright;
@@ -8,6 +9,8 @@ namespace Honua.Admin.Playwright;
 public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly string[] _defaultProtocols = { "FeatureServer", "MapServer", "OgcFeatures", "OData" };
+    private static readonly string[] _updatedProtocols = { "FeatureServer", "OgcFeatures" };
     private readonly PlaywrightFixture _fixture;
 
     public MapServerSettingsTests(PlaywrightFixture fixture)
@@ -79,7 +82,7 @@ public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
                 {
                     protocolsUpdated = true;
                     var updatedSettings = CreateDefaultSettings();
-                    updatedSettings.enabledProtocols = new[] { "FeatureServer", "OgcFeatures" };
+                    updatedSettings.enabledProtocols = _updatedProtocols;
 
                     await FulfillJsonAsync(route, new
                     {
@@ -211,8 +214,8 @@ public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
             var heightValue = await page.GetByLabel("Max image height").InputValueAsync();
 
             // Values should be clamped to max allowed (16384)
-            Assert.True(int.Parse(widthValue) <= 16384);
-            Assert.True(int.Parse(heightValue) <= 16384);
+            Assert.True(int.Parse(widthValue, CultureInfo.InvariantCulture) <= 16384);
+            Assert.True(int.Parse(heightValue, CultureInfo.InvariantCulture) <= 16384);
         });
     }
 
@@ -412,7 +415,7 @@ public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
     private static dynamic CreateDefaultSettings() => new
     {
         serviceName = "TestService1",
-        enabledProtocols = new[] { "FeatureServer", "MapServer", "OgcFeatures", "OData" },
+        enabledProtocols = _defaultProtocols,
         mapServer = new
         {
             maxImageWidth = 1024,

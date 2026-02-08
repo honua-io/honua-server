@@ -137,7 +137,8 @@ internal static class ServiceCollectionExtensions
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
             new CrsDetectionService(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddHostedService<PostgresCrsWarmupService>();
 
