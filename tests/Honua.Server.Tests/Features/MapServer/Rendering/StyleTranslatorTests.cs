@@ -10,6 +10,9 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.MapServer.Rendering;
 
+/// <summary>
+/// Tests for MapLibre style to Skia paint translation.
+/// </summary>
 [Trait("Component", "MapServer")]
 public class StyleTranslatorTests
 {

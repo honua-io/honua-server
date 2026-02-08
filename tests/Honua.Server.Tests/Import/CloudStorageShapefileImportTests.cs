@@ -27,6 +27,9 @@ using NetTopologySuite.IO.Esri;
 
 namespace Honua.Server.Tests.Import;
 
+/// <summary>
+/// Tests for shapefile import from AWS S3 cloud storage.
+/// </summary>
 [Collection("Emulators")]
 [Protocol(Protocols.Admin)]
 [Operation(Operations.Import)]
@@ -139,6 +142,9 @@ public sealed class AwsS3ShapefileImportTests : IAsyncLifetime
     }
 }
 
+/// <summary>
+/// Tests for shapefile import from Azure Blob storage.
+/// </summary>
 [Collection("Emulators")]
 [Protocol(Protocols.Admin)]
 [Operation(Operations.Import)]

@@ -8,6 +8,9 @@ using Microsoft.AspNetCore.Components.Forms;
 
 namespace Honua.Admin.Services;
 
+/// <summary>
+/// Client for uploading and importing geospatial files.
+/// </summary>
 public interface IFileImportClient
 {
     Task<ApiResult<FilePreviewResponse>> PreviewAsync(IBrowserFile file, CancellationToken cancellationToken = default);
