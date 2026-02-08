@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using SkiaSharp;
@@ -44,7 +43,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// <param name="backgroundColor">Background color (when not transparent)</param>
     /// <param name="geometryType">Geometry type of the layer</param>
     /// <returns>PNG image bytes</returns>
-    public byte[] RenderMap(
+    internal byte[] RenderMap(
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         RenderExtent extent,
@@ -93,7 +92,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// <summary>
     /// Renders a single legend swatch for a style layer.
     /// </summary>
-    public static byte[] RenderLegendSwatch(
+    internal static byte[] RenderLegendSwatch(
         MapLibreStyleLayer styleLayer,
         GeometryType geometryType,
         int width = 20,
@@ -242,7 +241,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 }
 
                 // Check filter
-                if (styleLayer.Filter.HasValue && !EvaluateFilter(styleLayer.Filter.Value, feature.Attributes))
+                if (styleLayer.Filter is { } filter && !EvaluateFilter(filter, feature.Attributes))
                 {
                     continue;
                 }
@@ -408,7 +407,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         result.Path?.Dispose();
     }
 
-    private static bool EvaluateFilter(JsonElement filter, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateFilter(MapLibreExpression filter, ImmutableDictionary<string, object?> properties)
     {
         var result = ExpressionEvaluator.Evaluate(filter, properties);
         return result switch

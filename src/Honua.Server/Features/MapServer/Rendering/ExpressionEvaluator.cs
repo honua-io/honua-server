@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text.Json;
 using SkiaSharp;
 
 namespace Honua.Server.Features.MapServer.Rendering;
@@ -17,7 +16,7 @@ internal static class ExpressionEvaluator
     /// <summary>
     /// Evaluates a MapLibre expression to a color value.
     /// </summary>
-    public static SKColor EvaluateColor(JsonElement expression, ImmutableDictionary<string, object?> properties)
+    public static SKColor EvaluateColor(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
     {
         var result = Evaluate(expression, properties);
         return ParseColor(result);
@@ -26,7 +25,7 @@ internal static class ExpressionEvaluator
     /// <summary>
     /// Evaluates a MapLibre expression to a float value.
     /// </summary>
-    public static float EvaluateFloat(JsonElement expression, ImmutableDictionary<string, object?> properties, float defaultValue = 0f)
+    public static float EvaluateFloat(MapLibreExpression expression, ImmutableDictionary<string, object?> properties, float defaultValue = 0f)
     {
         var result = Evaluate(expression, properties);
         return ConvertToFloat(result, defaultValue);
@@ -35,7 +34,7 @@ internal static class ExpressionEvaluator
     /// <summary>
     /// Evaluates a MapLibre expression to a string value.
     /// </summary>
-    public static string? EvaluateString(JsonElement expression, ImmutableDictionary<string, object?> properties)
+    public static string? EvaluateString(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
     {
         var result = Evaluate(expression, properties);
         return result?.ToString();
@@ -44,28 +43,58 @@ internal static class ExpressionEvaluator
     /// <summary>
     /// Core expression evaluator.
     /// </summary>
-    public static object? Evaluate(JsonElement expression, ImmutableDictionary<string, object?> properties)
+    public static object? Evaluate(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
     {
-        return expression.ValueKind switch
+        return expression.Kind switch
         {
-            JsonValueKind.String => expression.GetString(),
-            JsonValueKind.Number => expression.GetDouble(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Array => EvaluateArrayExpression(expression, properties),
+            MapLibreExpressionKind.String => expression.StringValue,
+            MapLibreExpressionKind.Number => expression.NumberValue,
+            MapLibreExpressionKind.Boolean => expression.BoolValue,
+            MapLibreExpressionKind.Null => null,
+            MapLibreExpressionKind.Array => expression.Items is { Length: > 0 }
+                ? EvaluateArrayExpression(expression.Items, properties)
+                : null,
             _ => null
         };
     }
 
-    private static object? EvaluateArrayExpression(JsonElement array, ImmutableDictionary<string, object?> properties)
+    internal static bool TryGetNumberArray(MapLibreExpression expression, out float[] values)
     {
-        if (array.GetArrayLength() == 0)
+        values = [];
+        if (expression.Kind != MapLibreExpressionKind.Array || expression.Items is not { Length: > 0 })
+        {
+            return false;
+        }
+
+        var items = expression.Items;
+        var list = new List<float>(items.Length);
+        foreach (var item in items)
+        {
+            if (item.Kind != MapLibreExpressionKind.Number)
+            {
+                values = [];
+                return false;
+            }
+
+            list.Add((float)item.NumberValue);
+        }
+
+        values = list.Count > 0 ? [.. list] : [];
+        return values.Length > 0;
+    }
+
+    private static object? EvaluateArrayExpression(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
+    {
+        if (array.Count == 0)
         {
             return null;
         }
 
-        var op = array[0].GetString();
+        if (!TryGetString(array[0], out var op) || op == null)
+        {
+            return null;
+        }
+
         return op switch
         {
             "get" => EvaluateGet(array, properties),
@@ -75,7 +104,7 @@ internal static class ExpressionEvaluator
             "match" => EvaluateMatch(array, properties),
             "step" => EvaluateStep(array, properties),
             "interpolate" => EvaluateInterpolate(array, properties),
-            "literal" => array.GetArrayLength() > 1 ? Evaluate(array[1], properties) : null,
+            "literal" => array.Count > 1 ? Evaluate(array[1], properties) : null,
             "to-string" => EvaluateToString(array, properties),
             "to-number" => EvaluateToNumber(array, properties),
             "concat" => EvaluateConcat(array, properties),
@@ -96,15 +125,14 @@ internal static class ExpressionEvaluator
         };
     }
 
-    private static object? EvaluateGet(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateGet(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.GetArrayLength() < 2)
+        if (array.Count < 2)
         {
             return null;
         }
 
-        var key = array[1].GetString();
-        if (key == null)
+        if (!TryGetString(array[1], out var key) || key == null)
         {
             return null;
         }
@@ -112,20 +140,24 @@ internal static class ExpressionEvaluator
         return properties.TryGetValue(key, out var value) ? value : null;
     }
 
-    private static bool EvaluateHas(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateHas(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.GetArrayLength() < 2)
+        if (array.Count < 2)
         {
             return false;
         }
 
-        var key = array[1].GetString();
-        return key != null && properties.ContainsKey(key);
+        if (!TryGetString(array[1], out var key) || key == null)
+        {
+            return false;
+        }
+
+        return properties.ContainsKey(key);
     }
 
-    private static bool EvaluateNot(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateNot(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.GetArrayLength() < 2)
+        if (array.Count < 2)
         {
             return true;
         }
@@ -134,9 +166,9 @@ internal static class ExpressionEvaluator
         return !IsTruthy(result);
     }
 
-    private static object? EvaluateCase(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateCase(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         // case, condition1, output1, condition2, output2, ..., fallback
         for (int i = 1; i < length - 1; i += 2)
         {
@@ -151,9 +183,9 @@ internal static class ExpressionEvaluator
         return length > 1 ? Evaluate(array[length - 1], properties) : null;
     }
 
-    private static object? EvaluateMatch(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateMatch(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         if (length < 4)
         {
             return null;
@@ -166,10 +198,9 @@ internal static class ExpressionEvaluator
         for (int i = 2; i < length - 1; i += 2)
         {
             var label = array[i];
-            if (label.ValueKind == JsonValueKind.Array)
+            if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
             {
-                // Array of labels
-                foreach (var item in label.EnumerateArray())
+                foreach (var item in label.Items)
                 {
                     if (MatchesLabel(inputStr, input, item))
                     {
@@ -187,28 +218,53 @@ internal static class ExpressionEvaluator
         return Evaluate(array[length - 1], properties);
     }
 
-    private static bool MatchesLabel(string? inputStr, object? inputObj, JsonElement label)
+    private static bool MatchesLabel(string? inputStr, object? inputObj, MapLibreExpression label)
     {
-        var labelStr = label.ValueKind == JsonValueKind.Number
-            ? label.GetDouble().ToString(CultureInfo.InvariantCulture)
-            : label.GetString();
-
-        if (inputStr != null && string.Equals(inputStr, labelStr, StringComparison.Ordinal))
+        if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
         {
-            return true;
+            foreach (var item in label.Items)
+            {
+                if (MatchesLabel(inputStr, inputObj, item))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
-        if (inputObj is double inputNum && label.ValueKind == JsonValueKind.Number)
+        switch (label.Kind)
         {
-            return Math.Abs(inputNum - label.GetDouble()) < 0.0001;
+            case MapLibreExpressionKind.String:
+                return inputStr != null && string.Equals(inputStr, label.StringValue, StringComparison.Ordinal);
+            case MapLibreExpressionKind.Number:
+                var labelValue = label.NumberValue;
+                return inputObj switch
+                {
+                    double d => Math.Abs(d - labelValue) < 0.0001,
+                    float f => Math.Abs(f - labelValue) < 0.0001,
+                    int i => Math.Abs(i - labelValue) < 0.0001,
+                    long l => Math.Abs(l - labelValue) < 0.0001,
+                    _ => inputStr != null &&
+                         double.TryParse(inputStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+                         Math.Abs(parsed - labelValue) < 0.0001
+                };
+            case MapLibreExpressionKind.Boolean:
+                return inputObj switch
+                {
+                    bool b => b == label.BoolValue,
+                    _ => inputStr != null && bool.TryParse(inputStr, out var parsedBool) && parsedBool == label.BoolValue
+                };
+            case MapLibreExpressionKind.Null:
+                return inputObj is null;
+            default:
+                return false;
         }
-
-        return false;
     }
 
-    private static object? EvaluateStep(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateStep(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         if (length < 4)
         {
             return null;
@@ -235,9 +291,9 @@ internal static class ExpressionEvaluator
         return result;
     }
 
-    private static object? EvaluateInterpolate(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateInterpolate(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         if (length < 5)
         {
             return null;
@@ -279,9 +335,9 @@ internal static class ExpressionEvaluator
         return (double)(fromF + (toF - fromF) * t);
     }
 
-    private static string EvaluateToString(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateToString(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.GetArrayLength() < 2)
+        if (array.Count < 2)
         {
             return "";
         }
@@ -289,9 +345,9 @@ internal static class ExpressionEvaluator
         return Evaluate(array[1], properties)?.ToString() ?? "";
     }
 
-    private static object? EvaluateToNumber(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateToNumber(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        if (array.GetArrayLength() < 2)
+        if (array.Count < 2)
         {
             return 0.0;
         }
@@ -300,9 +356,9 @@ internal static class ExpressionEvaluator
         return (double)ConvertToFloat(val, 0f);
     }
 
-    private static string EvaluateConcat(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateConcat(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         var parts = new string[length - 1];
         for (int i = 1; i < length; i++)
         {
@@ -313,11 +369,11 @@ internal static class ExpressionEvaluator
     }
 
     private static bool EvaluateComparison(
-        JsonElement array,
+        IReadOnlyList<MapLibreExpression> array,
         ImmutableDictionary<string, object?> properties,
         Func<object?, object?, bool> comparator)
     {
-        if (array.GetArrayLength() < 3)
+        if (array.Count < 3)
         {
             return false;
         }
@@ -327,9 +383,9 @@ internal static class ExpressionEvaluator
         return comparator(left, right);
     }
 
-    private static bool EvaluateAll(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateAll(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         for (int i = 1; i < length; i++)
         {
             if (!IsTruthy(Evaluate(array[i], properties)))
@@ -341,9 +397,9 @@ internal static class ExpressionEvaluator
         return true;
     }
 
-    private static bool EvaluateAny(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateAny(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         for (int i = 1; i < length; i++)
         {
             if (IsTruthy(Evaluate(array[i], properties)))
@@ -355,9 +411,9 @@ internal static class ExpressionEvaluator
         return false;
     }
 
-    private static object? EvaluateCoalesce(JsonElement array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateCoalesce(IReadOnlyList<MapLibreExpression> array, ImmutableDictionary<string, object?> properties)
     {
-        var length = array.GetArrayLength();
+        var length = array.Count;
         for (int i = 1; i < length; i++)
         {
             var val = Evaluate(array[i], properties);
@@ -371,11 +427,11 @@ internal static class ExpressionEvaluator
     }
 
     private static double EvaluateArithmetic(
-        JsonElement array,
+        IReadOnlyList<MapLibreExpression> array,
         ImmutableDictionary<string, object?> properties,
         Func<double, double, double> op)
     {
-        if (array.GetArrayLength() < 3)
+        if (array.Count < 3)
         {
             return 0.0;
         }
@@ -413,6 +469,18 @@ internal static class ExpressionEvaluator
             string s => s.Length > 0,
             _ => true
         };
+    }
+
+    private static bool TryGetString(MapLibreExpression expression, out string? value)
+    {
+        if (expression.Kind == MapLibreExpressionKind.String)
+        {
+            value = expression.StringValue;
+            return true;
+        }
+
+        value = null;
+        return false;
     }
 
     /// <summary>
@@ -588,8 +656,8 @@ internal static class ExpressionEvaluator
             float f => f,
             int i => i,
             long lng => lng,
+            decimal dec => (float)dec,
             string s when float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            JsonElement { ValueKind: JsonValueKind.Number } je => (float)je.GetDouble(),
             _ => defaultValue
         };
     }

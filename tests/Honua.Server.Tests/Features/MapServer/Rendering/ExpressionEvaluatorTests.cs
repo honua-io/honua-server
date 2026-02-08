@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.MapServer.Rendering;
 using Honua.TestKit.Attributes;
@@ -22,7 +21,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_GetExpression_ReturnsPropertyValue()
     {
-        var expr = JsonDocument.Parse("""["get", "name"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["get", "name"]""");
         var props = Props(("name", "Test"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -33,7 +32,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_GetExpression_MissingProperty_ReturnsNull()
     {
-        var expr = JsonDocument.Parse("""["get", "missing"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["get", "missing"]""");
 
         var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
@@ -43,7 +42,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_HasExpression_ReturnsTrueWhenPresent()
     {
-        var expr = JsonDocument.Parse("""["has", "name"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["has", "name"]""");
         var props = Props(("name", "Test"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -54,7 +53,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_HasExpression_ReturnsFalseWhenMissing()
     {
-        var expr = JsonDocument.Parse("""["has", "missing"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["has", "missing"]""");
 
         var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
@@ -64,7 +63,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_NotExpression_InvertsTruthiness()
     {
-        var expr = JsonDocument.Parse("""["!", ["has", "name"]]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["!", ["has", "name"]]""");
 
         var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
@@ -74,7 +73,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_EqualityComparison_ReturnsTrue()
     {
-        var expr = JsonDocument.Parse("""["==", ["get", "type"], "road"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["==", ["get", "type"], "road"]""");
         var props = Props(("type", "road"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -85,7 +84,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_EqualityComparison_ReturnsFalse()
     {
-        var expr = JsonDocument.Parse("""["==", ["get", "type"], "road"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["==", ["get", "type"], "road"]""");
         var props = Props(("type", "building"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -96,7 +95,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_LessThan_ReturnsCorrectResult()
     {
-        var expr = JsonDocument.Parse("""["<", ["get", "population"], 1000]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["<", ["get", "population"], 1000]""");
         var props = Props(("population", 500));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -107,7 +106,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_GreaterThan_ReturnsCorrectResult()
     {
-        var expr = JsonDocument.Parse(""" [">", ["get", "population"], 1000]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse(""" [">", ["get", "population"], 1000]""");
         var props = Props(("population", 500));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -118,7 +117,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_AllExpression_ReturnsTrueWhenAllTrue()
     {
-        var expr = JsonDocument.Parse("""["all", ["has", "name"], ["has", "type"]]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["all", ["has", "name"], ["has", "type"]]""");
         var props = Props(("name", "test"), ("type", "road"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -129,7 +128,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_AllExpression_ReturnsFalseWhenAnyFalse()
     {
-        var expr = JsonDocument.Parse("""["all", ["has", "name"], ["has", "missing"]]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["all", ["has", "name"], ["has", "missing"]]""");
         var props = Props(("name", "test"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -140,7 +139,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_AnyExpression_ReturnsTrueWhenAnyTrue()
     {
-        var expr = JsonDocument.Parse("""["any", ["has", "missing"], ["has", "name"]]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["any", ["has", "missing"], ["has", "name"]]""");
         var props = Props(("name", "test"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -151,7 +150,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_MatchExpression_ReturnsMatchedValue()
     {
-        var expr = JsonDocument.Parse("""["match", ["get", "type"], "road", "blue", "building", "red", "gray"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["match", ["get", "type"], "road", "blue", "building", "red", "gray"]""");
         var props = Props(("type", "road"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -162,7 +161,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_MatchExpression_ReturnsFallback()
     {
-        var expr = JsonDocument.Parse("""["match", ["get", "type"], "road", "blue", "building", "red", "gray"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["match", ["get", "type"], "road", "blue", "building", "red", "gray"]""");
         var props = Props(("type", "park"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -173,7 +172,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_CaseExpression_ReturnsFirstMatchingBranch()
     {
-        var expr = JsonDocument.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""");
         var props = Props(("type", "road"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -184,7 +183,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_CaseExpression_ReturnsFallback()
     {
-        var expr = JsonDocument.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""");
         var props = Props(("type", "park"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -195,7 +194,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_ArithmeticAdd_ReturnsSum()
     {
-        var expr = JsonDocument.Parse("""["+", 10, 20]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["+", 10, 20]""");
 
         var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
 
@@ -205,7 +204,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void Evaluate_CoalesceExpression_ReturnsFirstNonNull()
     {
-        var expr = JsonDocument.Parse("""["coalesce", ["get", "missing"], ["get", "name"]]""").RootElement;
+        var expr = MapLibreExpressionParser.Parse("""["coalesce", ["get", "missing"], ["get", "name"]]""");
         var props = Props(("name", "test"));
 
         var result = ExpressionEvaluator.Evaluate(expr, props);
@@ -275,7 +274,7 @@ public class ExpressionEvaluatorTests
     [UnitTest]
     public void EvaluateFloat_NumberValue_ReturnsFloat()
     {
-        var expr = JsonDocument.Parse("5.0").RootElement;
+        var expr = MapLibreExpressionParser.Parse("5.0");
 
         var result = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, 0f);
 

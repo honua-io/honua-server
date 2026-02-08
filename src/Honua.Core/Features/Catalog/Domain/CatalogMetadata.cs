@@ -33,6 +33,9 @@ public sealed record CatalogMetadata
 /// <summary>
 /// Per-service MapServer rendering configuration.
 /// </summary>
+/// <remarks>
+/// Stored with service metadata and surfaced via admin APIs as part of the public domain model.
+/// </remarks>
 public sealed record MapServerConfig
 {
     /// <summary>

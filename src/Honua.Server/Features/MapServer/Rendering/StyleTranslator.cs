@@ -22,75 +22,37 @@ internal static class StyleTranslator
             return [];
         }
 
+        var trimmed = mapLibreStyleJson.TrimStart();
+        if (trimmed.Length == 0)
+        {
+            return [];
+        }
+
         try
         {
-            using var doc = JsonDocument.Parse(mapLibreStyleJson);
-            var root = doc.RootElement;
-
-            // Style can be a full document or just an array of layers
-            if (root.ValueKind == JsonValueKind.Array)
+            if (trimmed[0] == '[')
             {
-                return ParseLayersArray(root);
+                return JsonSerializer.Deserialize(mapLibreStyleJson, MapLibreStyleJsonContext.Default.MapLibreStyleLayerArray) ?? [];
             }
 
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("layers", out var layers))
+            if (trimmed[0] == '{')
             {
-                return ParseLayersArray(layers);
-            }
+                var document = JsonSerializer.Deserialize(mapLibreStyleJson, MapLibreStyleJsonContext.Default.MapLibreStyleDocument);
+                if (document?.Layers is { Length: > 0 })
+                {
+                    return document.Layers;
+                }
 
-            // Single layer object
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("type", out _))
-            {
-                var layer = ParseSingleLayer(root);
+                var layer = JsonSerializer.Deserialize(mapLibreStyleJson, MapLibreStyleJsonContext.Default.MapLibreStyleLayer);
                 return layer != null ? [layer] : [];
             }
-
-            return [];
         }
         catch (JsonException)
         {
             return [];
         }
-    }
 
-    private static MapLibreStyleLayer[] ParseLayersArray(JsonElement layersElement)
-    {
-        if (layersElement.ValueKind != JsonValueKind.Array)
-        {
-            return [];
-        }
-
-        var layers = new List<MapLibreStyleLayer>();
-        foreach (var element in layersElement.EnumerateArray())
-        {
-            var layer = ParseSingleLayer(element);
-            if (layer != null)
-            {
-                layers.Add(layer);
-            }
-        }
-
-        return [.. layers];
-    }
-
-    private static MapLibreStyleLayer? ParseSingleLayer(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        return new MapLibreStyleLayer
-        {
-            Id = element.TryGetProperty("id", out var id) ? id.GetString() : null,
-            Type = element.TryGetProperty("type", out var type) ? type.GetString() : null,
-            SourceLayer = element.TryGetProperty("source-layer", out var sl) ? sl.GetString() : null,
-            MinZoom = element.TryGetProperty("minzoom", out var minz) && minz.ValueKind == JsonValueKind.Number ? minz.GetDouble() : null,
-            MaxZoom = element.TryGetProperty("maxzoom", out var maxz) && maxz.ValueKind == JsonValueKind.Number ? maxz.GetDouble() : null,
-            Filter = element.TryGetProperty("filter", out var filter) ? filter.Clone() : null,
-            Paint = element.TryGetProperty("paint", out var paint) ? paint.Clone() : null,
-            Layout = element.TryGetProperty("layout", out var layout) ? layout.Clone() : null
-        };
+        return [];
     }
 
     /// <summary>
@@ -101,7 +63,7 @@ internal static class StyleTranslator
         ImmutableDictionary<string, object?> properties)
     {
         var paint = layer.Paint;
-        if (paint == null || paint.Value.ValueKind != JsonValueKind.Object)
+        if (paint == null || paint.Count == 0)
         {
             return new ResolvedFillStyle
             {
@@ -110,10 +72,10 @@ internal static class StyleTranslator
             };
         }
 
-        var fillColor = ResolveColor(paint.Value, "fill-color", properties, new SKColor(0, 0, 0));
-        var fillOpacity = ResolveFloat(paint.Value, "fill-opacity", properties, 1f);
-        var outlineColor = ResolveOptionalColor(paint.Value, "fill-outline-color", properties);
-        var antialias = ResolveBool(paint.Value, "fill-antialias", true);
+        var fillColor = ResolveColor(paint, "fill-color", properties, new SKColor(0, 0, 0));
+        var fillOpacity = ResolveFloat(paint, "fill-opacity", properties, 1f);
+        var outlineColor = ResolveOptionalColor(paint, "fill-outline-color", properties);
+        var antialias = ResolveBool(paint, "fill-antialias", properties, true);
 
         fillColor = fillColor.WithAlpha((byte)Math.Clamp(fillOpacity * 255f, 0f, 255f));
 
@@ -134,7 +96,7 @@ internal static class StyleTranslator
         ImmutableDictionary<string, object?> properties)
     {
         var paint = layer.Paint;
-        if (paint == null || paint.Value.ValueKind != JsonValueKind.Object)
+        if (paint == null || paint.Count == 0)
         {
             return new ResolvedLineStyle
             {
@@ -143,26 +105,22 @@ internal static class StyleTranslator
             };
         }
 
-        var lineColor = ResolveColor(paint.Value, "line-color", properties, SKColors.Black);
-        var lineWidth = ResolveFloat(paint.Value, "line-width", properties, 1f);
-        var lineOpacity = ResolveFloat(paint.Value, "line-opacity", properties, 1f);
+        var lineColor = ResolveColor(paint, "line-color", properties, SKColors.Black);
+        var lineWidth = ResolveFloat(paint, "line-width", properties, 1f);
+        var lineOpacity = ResolveFloat(paint, "line-opacity", properties, 1f);
 
-        float[]? dashArray = null;
-        if (paint.Value.TryGetProperty("line-dasharray", out var dashElement) &&
-            dashElement.ValueKind == JsonValueKind.Array)
-        {
-            dashArray = ParseFloatArray(dashElement);
-        }
+        float[]? dashArray = ResolveFloatArray(paint, "line-dasharray");
 
         var lineCap = SKStrokeCap.Butt;
         var lineJoin = SKStrokeJoin.Miter;
 
-        if (layer.Layout.HasValue && layer.Layout.Value.ValueKind == JsonValueKind.Object)
+        var layout = layer.Layout;
+        if (layout != null && layout.Count > 0)
         {
-            var layoutObj = layer.Layout.Value;
-            if (layoutObj.TryGetProperty("line-cap", out var cap))
+            var cap = ResolveString(layout, "line-cap", properties);
+            if (cap != null)
             {
-                lineCap = cap.GetString() switch
+                lineCap = cap switch
                 {
                     "round" => SKStrokeCap.Round,
                     "square" => SKStrokeCap.Square,
@@ -170,9 +128,10 @@ internal static class StyleTranslator
                 };
             }
 
-            if (layoutObj.TryGetProperty("line-join", out var join))
+            var join = ResolveString(layout, "line-join", properties);
+            if (join != null)
             {
-                lineJoin = join.GetString() switch
+                lineJoin = join switch
                 {
                     "round" => SKStrokeJoin.Round,
                     "bevel" => SKStrokeJoin.Bevel,
@@ -202,7 +161,7 @@ internal static class StyleTranslator
         ImmutableDictionary<string, object?> properties)
     {
         var paint = layer.Paint;
-        if (paint == null || paint.Value.ValueKind != JsonValueKind.Object)
+        if (paint == null || paint.Count == 0)
         {
             return new ResolvedCircleStyle
             {
@@ -211,11 +170,11 @@ internal static class StyleTranslator
             };
         }
 
-        var radius = ResolveFloat(paint.Value, "circle-radius", properties, 5f);
-        var fillColor = ResolveColor(paint.Value, "circle-color", properties, SKColors.Black);
-        var fillOpacity = ResolveFloat(paint.Value, "circle-opacity", properties, 1f);
-        var strokeColor = ResolveOptionalColor(paint.Value, "circle-stroke-color", properties);
-        var strokeWidth = ResolveFloat(paint.Value, "circle-stroke-width", properties, 0f);
+        var radius = ResolveFloat(paint, "circle-radius", properties, 5f);
+        var fillColor = ResolveColor(paint, "circle-color", properties, SKColors.Black);
+        var fillOpacity = ResolveFloat(paint, "circle-opacity", properties, 1f);
+        var strokeColor = ResolveOptionalColor(paint, "circle-stroke-color", properties);
+        var strokeWidth = ResolveFloat(paint, "circle-stroke-width", properties, 0f);
 
         fillColor = fillColor.WithAlpha((byte)Math.Clamp(fillOpacity * 255f, 0f, 255f));
 
@@ -278,107 +237,122 @@ internal static class StyleTranslator
     }
 
     private static SKColor ResolveColor(
-        JsonElement paint,
+        Dictionary<string, MapLibreExpression> paint,
         string property,
         ImmutableDictionary<string, object?> properties,
         SKColor defaultColor)
     {
-        if (!paint.TryGetProperty(property, out var element))
+        if (!TryGetExpression(paint, property, out var expression))
         {
             return defaultColor;
         }
 
-        if (element.ValueKind == JsonValueKind.String)
+        return expression.Kind switch
         {
-            return ExpressionEvaluator.ParseColor(element.GetString());
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            return ExpressionEvaluator.EvaluateColor(element, properties);
-        }
-
-        return defaultColor;
+            MapLibreExpressionKind.String => ExpressionEvaluator.ParseColor(expression.StringValue),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties),
+            _ => defaultColor
+        };
     }
 
     private static SKColor? ResolveOptionalColor(
-        JsonElement paint,
+        Dictionary<string, MapLibreExpression> paint,
         string property,
         ImmutableDictionary<string, object?> properties)
     {
-        if (!paint.TryGetProperty(property, out var element))
+        if (!TryGetExpression(paint, property, out var expression))
         {
             return null;
         }
 
-        if (element.ValueKind == JsonValueKind.String)
+        return expression.Kind switch
         {
-            return ExpressionEvaluator.ParseColor(element.GetString());
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            return ExpressionEvaluator.EvaluateColor(element, properties);
-        }
-
-        return null;
+            MapLibreExpressionKind.String => ExpressionEvaluator.ParseColor(expression.StringValue),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties),
+            _ => null
+        };
     }
 
     private static float ResolveFloat(
-        JsonElement paint,
+        Dictionary<string, MapLibreExpression> paint,
         string property,
         ImmutableDictionary<string, object?> properties,
         float defaultValue)
     {
-        if (!paint.TryGetProperty(property, out var element))
+        if (!TryGetExpression(paint, property, out var expression))
         {
             return defaultValue;
         }
 
-        if (element.ValueKind == JsonValueKind.Number)
+        return expression.Kind switch
         {
-            return (float)element.GetDouble();
-        }
-
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            return ExpressionEvaluator.EvaluateFloat(element, properties, defaultValue);
-        }
-
-        return defaultValue;
-    }
-
-    private static bool ResolveBool(JsonElement paint, string property, bool defaultValue)
-    {
-        if (!paint.TryGetProperty(property, out var element))
-        {
-            return defaultValue;
-        }
-
-        return element.ValueKind switch
-        {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
+            MapLibreExpressionKind.Number => (float)expression.NumberValue,
+            MapLibreExpressionKind.String => ExpressionEvaluator.ConvertToFloat(expression.StringValue, defaultValue),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateFloat(expression, properties, defaultValue),
             _ => defaultValue
         };
     }
 
-    private static float[]? ParseFloatArray(JsonElement element)
+    private static bool ResolveBool(
+        Dictionary<string, MapLibreExpression> paint,
+        string property,
+        ImmutableDictionary<string, object?> properties,
+        bool defaultValue)
     {
-        if (element.ValueKind != JsonValueKind.Array)
+        if (!TryGetExpression(paint, property, out var expression))
+        {
+            return defaultValue;
+        }
+
+        return expression.Kind switch
+        {
+            MapLibreExpressionKind.Boolean => expression.BoolValue,
+            MapLibreExpressionKind.Array => ExpressionEvaluator.Evaluate(expression, properties) is bool b ? b : defaultValue,
+            _ => defaultValue
+        };
+    }
+
+    private static string? ResolveString(
+        Dictionary<string, MapLibreExpression> values,
+        string property,
+        ImmutableDictionary<string, object?> properties)
+    {
+        if (!TryGetExpression(values, property, out var expression))
         {
             return null;
         }
 
-        var values = new List<float>();
-        foreach (var item in element.EnumerateArray())
+        return expression.Kind switch
         {
-            if (item.ValueKind == JsonValueKind.Number)
-            {
-                values.Add((float)item.GetDouble());
-            }
+            MapLibreExpressionKind.String => expression.StringValue,
+            MapLibreExpressionKind.Array => ExpressionEvaluator.Evaluate(expression, properties)?.ToString(),
+            _ => null
+        };
+    }
+
+    private static float[]? ResolveFloatArray(
+        Dictionary<string, MapLibreExpression> paint,
+        string property)
+    {
+        if (!TryGetExpression(paint, property, out var expression))
+        {
+            return null;
         }
 
-        return values.Count > 0 ? [.. values] : null;
+        return ExpressionEvaluator.TryGetNumberArray(expression, out var values) ? values : null;
+    }
+
+    private static bool TryGetExpression(
+        Dictionary<string, MapLibreExpression> values,
+        string property,
+        out MapLibreExpression expression)
+    {
+        if (values.TryGetValue(property, out expression))
+        {
+            return true;
+        }
+
+        expression = default;
+        return false;
     }
 }

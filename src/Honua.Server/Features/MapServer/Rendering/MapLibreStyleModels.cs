@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.MapServer.Rendering;
@@ -45,19 +44,19 @@ internal sealed class MapLibreStyleLayer
     /// Filter expression.
     /// </summary>
     [JsonPropertyName("filter")]
-    public JsonElement? Filter { get; init; }
+    public MapLibreExpression? Filter { get; init; }
 
     /// <summary>
     /// Paint properties.
     /// </summary>
     [JsonPropertyName("paint")]
-    public JsonElement? Paint { get; init; }
+    public Dictionary<string, MapLibreExpression>? Paint { get; init; }
 
     /// <summary>
     /// Layout properties.
     /// </summary>
     [JsonPropertyName("layout")]
-    public JsonElement? Layout { get; init; }
+    public Dictionary<string, MapLibreExpression>? Layout { get; init; }
 }
 
 /// <summary>

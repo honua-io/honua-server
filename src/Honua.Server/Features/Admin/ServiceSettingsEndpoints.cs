@@ -7,7 +7,6 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -16,7 +15,10 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class ServiceSettingsEndpoints
 {
-    internal sealed class ServiceSettingsEndpointsLog;
+    /// <summary>
+    /// Log category for service settings endpoints.
+    /// </summary>
+    private sealed class ServiceSettingsEndpointsLog;
 
     public static void MapServiceSettingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -45,8 +47,8 @@ internal static class ServiceSettingsEndpoints
 
     private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, BadRequest<ApiResponse<object>>>>
         HandleListServices(
-            [FromServices] ILayerCatalog catalog,
-            [FromServices] ILogger<ServiceSettingsEndpointsLog> logger,
+            ILayerCatalog catalog,
+            ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
         try
@@ -70,8 +72,8 @@ internal static class ServiceSettingsEndpoints
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
         HandleGetSettings(
             string serviceName,
-            [FromServices] ILayerCatalog catalog,
-            [FromServices] ILogger<ServiceSettingsEndpointsLog> logger,
+            ILayerCatalog catalog,
+            ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
         try
@@ -96,9 +98,9 @@ internal static class ServiceSettingsEndpoints
         HandleUpdateProtocols(
             string serviceName,
             UpdateProtocolsRequest request,
-            [FromServices] ILayerCatalog catalog,
-            [FromServices] IServiceMetadataUpdater metadataUpdater,
-            [FromServices] ILogger<ServiceSettingsEndpointsLog> logger,
+            ILayerCatalog catalog,
+            IServiceMetadataUpdater metadataUpdater,
+            ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
         try
@@ -140,9 +142,9 @@ internal static class ServiceSettingsEndpoints
         HandleUpdateMapServerSettings(
             string serviceName,
             UpdateMapServerSettingsRequest request,
-            [FromServices] ILayerCatalog catalog,
-            [FromServices] IServiceMetadataUpdater metadataUpdater,
-            [FromServices] ILogger<ServiceSettingsEndpointsLog> logger,
+            ILayerCatalog catalog,
+            IServiceMetadataUpdater metadataUpdater,
+            ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
         try

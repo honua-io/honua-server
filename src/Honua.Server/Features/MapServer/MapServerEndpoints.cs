@@ -13,7 +13,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapMapServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/rest/services/{serviceId}/MapServer", (Delegate)HandleGetServiceMetadata)
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer", HandleGetServiceMetadata)
             .WithDisplayName("Get MapServer Service Metadata")
             .WithName("GetMapServerMetadata")
             .WithSummary("Get MapServer service metadata")
@@ -21,21 +21,21 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("ServiceMetadata");
 
-        endpoints.MapGet("/rest/services/{serviceId}/MapServer/export", (Delegate)HandleExport)
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/export", HandleExport)
             .WithDisplayName("Export Map Image")
             .WithName("MapServerExport")
             .WithSummary("Export a map image")
             .WithDescription("Generates a raster map image from layer features with MapLibre styling")
             .WithTags("MapServer");
 
-        endpoints.MapGet("/rest/services/{serviceId}/MapServer/identify", (Delegate)HandleIdentify)
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/identify", HandleIdentify)
             .WithDisplayName("Identify Features")
             .WithName("MapServerIdentify")
             .WithSummary("Identify features at a location")
             .WithDescription("Identifies features at a given point on the map")
             .WithTags("MapServer");
 
-        endpoints.MapGet("/rest/services/{serviceId}/MapServer/legend", (Delegate)HandleLegend)
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/legend", HandleLegend)
             .WithDisplayName("Get Map Legend")
             .WithName("MapServerLegend")
             .WithSummary("Get map legend")

@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -12,6 +14,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.MapServer.Models;
 using Honua.Server.Features.MapServer.Rendering;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.MapServer;
 
@@ -59,6 +62,12 @@ internal static partial class MapServerEndpoints
         MapServerLog.IdentifyRequested(logger, serviceId,
             pointX.ToString(CultureInfo.InvariantCulture),
             pointY.ToString(CultureInfo.InvariantCulture));
+
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.MapServerIdentify, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "identify");
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
@@ -147,6 +156,7 @@ internal static partial class MapServerEndpoints
         }
 
         MapServerLog.IdentifyCompleted(logger, serviceId, results.Count);
+        HonuaTelemetry.SetSuccess(activity, results.Count);
 
         var response = new IdentifyResponse { Results = [.. results] };
         return Results.Json(response, MapServerJsonContext.Default.IdentifyResponse, contentType: "application/json");
@@ -172,23 +182,73 @@ internal static partial class MapServerEndpoints
         }
 
         // Try JSON point format: {"x":..., "y":...}
-        try
+        if (TryParseIdentifyPointJson(geometry, out x, out y))
         {
-            using var doc = JsonDocument.Parse(geometry);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("x", out var xElem) && root.TryGetProperty("y", out var yElem))
-            {
-                x = xElem.GetDouble();
-                y = yElem.GetDouble();
-                return true;
-            }
-        }
-        catch (JsonException)
-        {
-            // Not valid JSON, already tried comma-separated
+            return true;
         }
 
         return false;
+    }
+
+    private static bool TryParseIdentifyPointJson(string geometry, out double x, out double y)
+    {
+        x = 0;
+        y = 0;
+
+        try
+        {
+            var utf8 = Encoding.UTF8.GetBytes(geometry);
+            var reader = new Utf8JsonReader(utf8, isFinalBlock: true, state: default);
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            {
+                return false;
+            }
+
+            bool foundX = false;
+            bool foundY = false;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                {
+                    break;
+                }
+
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                {
+                    continue;
+                }
+
+                var name = reader.GetString();
+                if (!reader.Read())
+                {
+                    break;
+                }
+
+                if (string.Equals(name, "x", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var parsedX))
+                    {
+                        x = parsedX;
+                        foundX = true;
+                    }
+                }
+                else if (string.Equals(name, "y", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var parsedY))
+                    {
+                        y = parsedY;
+                        foundY = true;
+                    }
+                }
+            }
+
+            return foundX && foundY;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static LayerDefinition[] ResolveIdentifyLayers(
