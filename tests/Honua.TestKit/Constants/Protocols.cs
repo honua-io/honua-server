@@ -50,6 +50,11 @@ public static class Protocols
     public const string Infrastructure = "Infrastructure";
 
     /// <summary>
+    /// Geometry Service utility operations.
+    /// </summary>
+    public const string GeometryService = "GeometryService";
+
+    /// <summary>
     /// Comprehensive end-to-end coverage suites.
     /// </summary>
     public const string Comprehensive = "Comprehensive";

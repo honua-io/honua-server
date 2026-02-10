@@ -273,14 +273,18 @@ internal sealed class GeometryService : IGeometryService
                 yield return lineString.CoordinateSequence;
                 yield break;
             case Polygon polygon:
-                if (polygon.ExteriorRing != null)
+                if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
                 {
                     yield return polygon.ExteriorRing.CoordinateSequence;
                 }
 
                 for (var i = 0; i < polygon.NumInteriorRings; i++)
                 {
-                    yield return polygon.GetInteriorRingN(i).CoordinateSequence;
+                    var interiorRing = polygon.GetInteriorRingN(i);
+                    if (interiorRing != null && !interiorRing.IsEmpty)
+                    {
+                        yield return interiorRing.CoordinateSequence;
+                    }
                 }
 
                 yield break;

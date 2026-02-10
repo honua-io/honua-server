@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,6 +15,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -41,6 +44,7 @@ internal sealed class FeatureServerEditsHandler(
         Honua.Core.Configuration.EditLimits editLimits,
         CancellationToken cancellationToken = default)
     {
+        Activity? activity = null;
         try
         {
             var httpContext = _httpContextAccessor.HttpContext!;
@@ -79,6 +83,13 @@ internal sealed class FeatureServerEditsHandler(
                 return rbacError;
             }
 
+            activity = HonuaTelemetry.StartFeatureActivity(
+                "applyEdits",
+                HonuaTelemetry.Protocols.FeatureServer,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                httpContext.TraceIdentifier);
+            activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
             // Validate edit limits
             var limitsValidationResult = ValidateEditLimits(request, editLimits, httpContext);
             if (limitsValidationResult != null)
@@ -113,6 +124,8 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Build and return final response
+            var featureCount = editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount;
+            HonuaTelemetry.SetSuccess(activity, featureCount);
             return CreateFinalResponse(editContext, editResult, serviceId, layerId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -122,8 +135,13 @@ internal sealed class FeatureServerEditsHandler(
         catch (Exception ex)
         {
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(activity, ex);
             var httpContext = _httpContextAccessor.HttpContext!;
             return StandardErrorHelpers.CreateInternalServerError(httpContext, "Apply edits failed");
+        }
+        finally
+        {
+            activity?.Dispose();
         }
     }
 

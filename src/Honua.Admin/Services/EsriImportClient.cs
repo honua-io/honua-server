@@ -6,6 +6,9 @@ using Honua.Admin.Models;
 
 namespace Honua.Admin.Services;
 
+/// <summary>
+/// Client for triggering and monitoring Esri feature service imports.
+/// </summary>
 public interface IEsriImportClient
 {
     Task<ApiResult<EsriDiscoverResponse>> DiscoverAsync(EsriDiscoverRequest request, CancellationToken cancellationToken = default);
@@ -27,31 +30,31 @@ internal sealed class EsriImportClient : IEsriImportClient
 
     public async Task<ApiResult<EsriDiscoverResponse>> DiscoverAsync(EsriDiscoverRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("import/esri/discover", request, cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync("import/esri/discover", request, cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<EsriDiscoverResponse>(response, cancellationToken);
     }
 
     public async Task<ApiResult<EsriImportJobResponse>> StartImportAsync(EsriStartImportRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("import/esri/start", request, cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync("import/esri/start", request, cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<EsriImportJobResponse>(response, cancellationToken);
     }
 
     public async Task<ApiResult<EsriImportProgress>> GetJobStatusAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.GetAsync($"import/esri/jobs/{Uri.EscapeDataString(jobId)}", cancellationToken);
+        using var response = await _httpClient.GetAsync($"import/esri/jobs/{Uri.EscapeDataString(jobId)}", cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<EsriImportProgress>(response, cancellationToken);
     }
 
     public async Task<ApiResult<EsriImportJobsResponse>> ListJobsAsync(CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.GetAsync("import/esri/jobs", cancellationToken);
+        using var response = await _httpClient.GetAsync("import/esri/jobs", cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<EsriImportJobsResponse>(response, cancellationToken);
     }
 
     public async Task<ApiResult<EsriImportCancelResponse>> CancelJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsync($"import/esri/jobs/{Uri.EscapeDataString(jobId)}/cancel", null, cancellationToken);
+        using var response = await _httpClient.PostAsync($"import/esri/jobs/{Uri.EscapeDataString(jobId)}/cancel", null, cancellationToken);
         return await ApiResponseReader.ReadUnwrappedAsync<EsriImportCancelResponse>(response, cancellationToken);
     }
 }

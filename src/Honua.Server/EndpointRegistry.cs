@@ -152,6 +152,10 @@ public static class EndpointRegistry
         new("GET", "/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}"),
         new("GET", "/ogc/tiles/tileMatrixSets"),
         new("GET", "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}"),
+
+        new("POST", "/rest/services/geometry/buffer"),
+        new("POST", "/rest/services/geometry/simplify"),
+        new("POST", "/rest/services/geometry/project"),
     ];
 }
 

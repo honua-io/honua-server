@@ -17,11 +17,6 @@ using Honua.Server.Features.OData.Models;
 namespace Honua.Server.Features.OData.Services;
 
 /// <summary>
-/// Log category for OData search operations.
-/// </summary>
-internal sealed class ODataSearchLog;
-
-/// <summary>
 /// Service for handling OData search and aggregation operations.
 /// Supports $search full-text search and $apply aggregation transformations.
 /// </summary>

@@ -12,6 +12,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 [JsonSerializable(typeof(CatalogMetadata))]
 [JsonSerializable(typeof(AccessPolicy))]
 [JsonSerializable(typeof(LayerTimeInfo))]
+[JsonSerializable(typeof(MapServerConfig))]
 public sealed partial class CatalogJsonContext : JsonSerializerContext
 {
 }

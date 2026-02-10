@@ -7,75 +7,28 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-Honua Server is a modern, cloud-native, open GIS server designed for interoperability, performance, and long-term flexibility.
+**Cloud-native geospatial feature server.** Publish, query, and edit spatial data through industry-standard protocols — GeoServices REST (FeatureServer + MapServer), OGC API, OData v4, and vector tiles — backed by PostGIS.
 
-Modern GIS infrastructure for the cloud era:
-- **Modernize without rip-and-replace** — import existing services, keep legacy clients running, and move to open standards incrementally.
-- **Open standards everywhere** — GeoServices REST (FeatureServer), OGC API Features/Tiles, OData v4, and vector tiles (MVT).
-- **Enterprise data access** — OData v4 for Excel/Power BI with spatial queries.
-- **Cloud-native by default** — containers, Helm/Terraform templates, and serverless-friendly images.
+## Why Honua
 
-Protocols:
-- **GeoServices REST FeatureServer** — GeoServices REST compatible queries + full editing (applyEdits, attachments, related records).
-- **OGC API Features** — Modern REST/JSON for GIS apps with transaction support.
-- **OData v4** — Full CRUD access for Excel/Power BI with spatial queries.
-- **Vector Tiles (MVT)** — PostGIS-native tile generation.
-
-Includes **file import** APIs (GeoJSON, Shapefile, GeoPackage, CSV, KML) and **Esri service import endpoints** for migration. Deployment templates (Helm + AWS/Azure Terraform) are available under `infrastructure/`, including serverless options (Lambda + Functions). The Admin UI is available at `/admin` when enabled (`HONUA_SERVE_ADMIN_UI=true`).
-
-## Entrypoints
-
-- `/healthz/live`
-- `/healthz/ready`
-- `/api/v1/admin`
-- `/rest/services/{service}/FeatureServer`
-- `/ogc/features`
-- `/ogc/tiles`
-- `/odata`
-- `/tiles/{layerId}/{z}/{x}/{y}.mvt`
-- `/tiles/{layerId}/tile.json`
-- `/api/styles/{layerId}.json`
-- `/openapi.json`
+- **Multi-protocol** — one server speaks GeoServices REST (Esri-compatible FeatureServer + MapServer), OGC API Features/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, Power BI, and Excel to the same data.
+- **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
+- **No GDAL dependency** — import GeoJSON, Shapefile, GeoPackage, CSV, KML/KMZ, and WKT directly. Import from live Esri REST services for migration.
+- **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
 
 ## Quick Start
 
-You need **Docker** and **Docker Compose v2+**. Nothing else.
+**Docker Compose** (requires Docker and Compose v2+):
 
 ```bash
-git clone https://github.com/honua-io/honua-server.git
-cd honua-server
-
-# Start PostGIS + Honua Server
+git clone https://github.com/honua-io/honua-server.git && cd honua-server
 docker compose up -d
-
-# Wait for healthy, then verify
 curl http://localhost:8080/healthz/ready
 ```
 
-The root `docker-compose.yml` starts PostGIS and builds the server from source. Migrations run automatically on first boot. Once ready, the server is available at `http://localhost:8080`.
+PostGIS starts automatically. Migrations run on first boot. The server is at `http://localhost:8080`.
 
-Optional services (add as needed):
-```bash
-# Redis (caching)
-HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
-
-# MinIO (S3-compatible file storage for imports)
-HONUA_STORAGE_PROVIDER=AwsS3 HONUA_S3_BUCKET=honua-dev \
-  HONUA_S3_SERVICE_URL=http://minio:9000 \
-  HONUA_S3_ACCESS_KEY_ID=minioadmin HONUA_S3_SECRET_ACCESS_KEY=minioadmin \
-  docker compose --profile minio up -d
-```
-
-For manual .NET development (without Docker), see the [Getting Started guide](docs/contributor/development/getting-started.md).
-
-### .NET Aspire (alternative)
-
-If you have the .NET Aspire workload installed, you can use the AppHost for local orchestration with a dashboard (traces, logs, metrics):
-```bash
-dotnet run --project src/Honua.AppHost
-```
-
-### Run a pre-built image
+**Pre-built image** (bring your own PostGIS):
 
 ```bash
 docker run -p 8080:8080 \
@@ -84,30 +37,61 @@ docker run -p 8080:8080 \
   honuaio/honua-server:latest
 ```
 
-This requires an existing PostGIS database. For image tags and registries, see [Container Images](docs/devops/CONTAINER_IMAGES.md).
+**Kubernetes**:
+
+```bash
+helm dependency update infrastructure/helm/honua
+helm install honua infrastructure/helm/honua \
+  --set secret.env.ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=honua;Password=honua" \
+  --set secret.env.HONUA_ADMIN_PASSWORD="change-me"
+```
+
+**.NET Aspire** (local dev with dashboard for traces, logs, metrics):
+
+```bash
+dotnet run --project src/Honua.AppHost
+```
+
+## Protocols
+
+| Protocol | Endpoint | Clients |
+|---|---|---|
+| GeoServices REST FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` and `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs, ArcGIS Online |
+| OGC API Features | `/ogc/features` | QGIS, MapLibre, any OGC client |
+| OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre |
+| OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
+| Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet, Mapbox GL |
+| TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
+| MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
+| Admin API | `/api/v1/admin` | Admin UI, automation scripts |
+| OpenAPI | `/openapi.json` | Any HTTP client |
+| Health | `/healthz/live`, `/healthz/ready` | Load balancers, orchestrators |
 
 ## Capabilities
 
-- PostGIS-only data source.
-- FeatureServer: query, applyEdits, attachments, related records.
-- OGC API Features: collections/items, filters, bbox/geometry, POST/PUT/DELETE transactions.
-- OGC API Tiles: tilesets metadata + vector tiles.
-- OData v4: CRUD with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch`.
-- Vector tiles (MVT): PostGIS `ST_AsMVT` via `/tiles/{layerId}/{z}/{x}/{y}.mvt`.
-- TileJSON metadata: `/tiles/{layerId}/tile.json` with MapLibre style discovery.
-- Public MapLibre styles: `/api/styles/{layerId}.json`.
-- File import: GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ — no GDAL required.
-- CRS support: PostGIS-based reprojection, EPSG via `spatial_ref_sys`, auto-detect from source files.
-- Admin APIs: connections, services/layers/relationships/styles, import jobs, operations progress.
-- Admin UI (Blazor WASM) served at `/admin` when enabled.
-- OIDC authentication (server-side plumbing) and optional Redis metadata cache.
-- .NET Aspire local dev orchestration with dashboard (traces, logs, metrics, health).
+**Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions.
+
+**Map rendering** — MapServer export, identify, and legend endpoints for Esri map clients.
+
+**Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
+
+**File import** — GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ, and WKT. CRS auto-detection and PostGIS-based reprojection.
+
+**Service import** — Migrate existing Esri feature and map services, preserving structure and metadata.
+
+**Admin** — REST API and Blazor WASM UI (`/admin`) for managing connections, services, layers, relationships, styles, and import jobs.
+
+**Caching** — Multi-layer: output cache, Redis, in-memory fallback.
+
+**Auth** — API key authentication, OIDC (server-side plumbing), and optional Redis metadata cache.
+
+**Observability** — OpenTelemetry traces and metrics, structured logging, health endpoints.
 
 ## Configuration
 
-Every setting is controlled via environment variables. Copy `.env.example` for a full reference.
+All settings use environment variables. Copy [`.env.example`](.env.example) for a full reference.
 
-**Required** (all deployments):
+**Required:**
 ```bash
 ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres"
 HONUA_ADMIN_PASSWORD="change-me"
@@ -115,42 +99,47 @@ HONUA_ADMIN_PASSWORD="change-me"
 
 **Common options:**
 ```bash
-# Feature flags
-HONUA_ADMIN_UI=true                       # Enable web admin UI at /admin
-HONUA_OBSERVABILITY=true                  # Enable metrics endpoints
-HONUA_SKIP_MIGRATIONS=false               # Skip auto-migrations (set true for serverless)
-
-# Cache (Redis)
-ConnectionStrings__Redis="localhost:6379"  # Or use HONUA_REDIS_URL in Docker Compose
-
-# Query limits (shared across all protocols)
-Limits__Query__MaxRecordCount=2000
-Limits__Query__DefaultRecordCount=1000
-Limits__Query__QueryTimeout=00:00:30
-
-# CORS
-Cors__AllowedOrigins__0="https://myapp.example.com"
+HONUA_ADMIN_UI=true                       # Web admin UI at /admin
+HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
+HONUA_OPENTELEMETRY=true                  # Distributed tracing
+ConnectionStrings__Redis="localhost:6379"  # Redis cache
+Cors__AllowedOrigins__0="https://app.example.com"
 ```
 
-Invalid configuration causes a startup failure with a detailed error message. See [`.env.example`](.env.example) for every available variable and [`docs/contributor/adr/0008-env-var-configuration.md`](docs/contributor/adr/0008-env-var-configuration.md) for design rationale.
+Invalid configuration causes a startup failure with a detailed error message.
+
+## Project Structure
+
+```
+src/
+  Honua.Core/         Domain models and abstractions
+  Honua.Postgres/     PostGIS implementation
+  Honua.Server/       HTTP host (Minimal APIs, vertical slices)
+  Honua.Admin/        Blazor WASM admin UI
+  Honua.AppHost/      .NET Aspire orchestration
+  Honua.ServiceDefaults/  Shared service configuration
+
+infrastructure/
+  docker-compose/     Compose reference configs
+  helm/               Helm chart with PostGIS subchart
+  terraform/          Modules for AWS ECS, AWS Lambda, Azure Container Apps, Azure Functions
+```
 
 ## Documentation
 
-**Getting started:**
-- **[Developer Setup](docs/contributor/development/getting-started.md)** - Full development environment guide
-- **[Deploying to Production](infrastructure/README.md)** - Docker Compose, Helm, Terraform, and serverless options
+| I want to... | Go to |
+|---|---|
+| Set up a dev environment | [Getting Started](docs/contributor/development/getting-started.md) |
+| Deploy to production | [Infrastructure](infrastructure/README.md) |
+| Call the API | [Standards APIs](docs/user/STANDARDS_APIS.md) / [API Examples](docs/user/API_EXAMPLES.md) |
+| Manage services and layers | [Control Plane API](docs/user/CONTROL_PLANE_API.md) |
+| Understand the architecture | [Architecture](docs/contributor/ARCHITECTURE.md) / [ADRs](docs/contributor/adr/README.md) |
+| Configure security | [Security Configuration](docs/devops/SECURITY_CONFIGURATION.md) |
+| Troubleshoot issues | [Troubleshooting](docs/devops/TROUBLESHOOTING.md) / [Runbooks](docs/devops/runbooks/README.md) |
+| Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 
-**API reference:**
-- **[Standards APIs](docs/user/STANDARDS_APIS.md)** - FeatureServer, OGC, OData, MVT
-- **[Control Plane API](docs/user/CONTROL_PLANE_API.md)** - Admin and automation endpoints
-- **[API Examples](docs/user/API_EXAMPLES.md)** - Request/response examples for all protocols
+Full documentation index: [`docs/README.md`](docs/README.md)
 
-**Architecture and contributing:**
-- **[Architecture](docs/contributor/ARCHITECTURE.md)** - System design and component interaction
-- **[ADRs](docs/contributor/adr/README.md)** - Architecture Decision Records
-- **[Contributing](docs/contributor/development/contributing.md)** - Code style, testing, and PR process
+## License
 
-**Operations:**
-- **[Security Configuration](docs/devops/SECURITY_CONFIGURATION.md)** - OIDC, secrets, and proxy hardening
-- **[Troubleshooting](docs/devops/TROUBLESHOOTING.md)** - Common issues and debugging
-- **[Runbooks](docs/devops/runbooks/README.md)** - Operational playbooks
+[Elastic License 2.0 (ELv2)](LICENSE) — free to use, deploy, and modify.

@@ -153,10 +153,10 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         try
         {
             var connections = await _registry.GetActiveConnectionsAsync(cancellationToken);
-            var connectionNames = connections.Select(c => c.Name).ToList();
+            var connectionNames = connections.Select(c => c.Name).ToArray();
 
-            _logAvailableConnectionsRetrieved(_logger, connectionNames.Count, null);
-            return connectionNames.AsReadOnly();
+            _logAvailableConnectionsRetrieved(_logger, connectionNames.Length, null);
+            return connectionNames;
         }
         catch (Exception ex)
         {

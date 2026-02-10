@@ -80,6 +80,12 @@ public static class HonuaTelemetry
         /// <summary>Cache operation activity.</summary>
         public const string CacheOperation = "honua.cache.operation";
 
+        /// <summary>MapServer export (image rendering) activity.</summary>
+        public const string MapServerExport = "honua.mapserver.export";
+
+        /// <summary>MapServer identify (spatial query) activity.</summary>
+        public const string MapServerIdentify = "honua.mapserver.identify";
+
         /// <summary>Business intelligence calculation activity.</summary>
         public const string BusinessIntelligence = "honua.bi.calculation";
 
@@ -184,6 +190,9 @@ public static class HonuaTelemetry
 
         /// <summary>OGC API Maps.</summary>
         public const string OgcMaps = "OGC-Maps";
+
+        /// <summary>Esri MapServer REST API.</summary>
+        public const string MapServer = "MapServer";
 
         /// <summary>Esri Image Server REST API.</summary>
         public const string ImageServer = "ImageServer";

@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.GeometryService;
 using Honua.Server.Features.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.MapServer;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcMaps;
@@ -28,9 +30,11 @@ internal static class FeatureRegistrationExtensions
 
         services.AddFeatureServer();
         services.AddImageServer();
+        services.AddMapServer();
         services.AddOgcFeatures();
         services.AddOgcMaps();
         services.AddOData();
+        services.AddGeometryService();
         services.AddObservability(configuration);
 
         return services;
@@ -45,6 +49,7 @@ internal static class FeatureRegistrationExtensions
 
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapImageServerEndpoints();
+        endpoints.MapMapServerEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapStyleEndpoints();
@@ -52,6 +57,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapODataEndpoints();
+        endpoints.MapGeometryServiceEndpoints();
 
         return endpoints;
     }

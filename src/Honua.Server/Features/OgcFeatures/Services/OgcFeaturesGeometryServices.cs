@@ -16,13 +16,17 @@ namespace Honua.Server.Features.OgcFeatures.Services;
 /// <summary>
 /// Provides geometry processing, conversion, and validation services for OGC Features.
 /// </summary>
-internal sealed class OgcFeaturesGeometryServices
+internal sealed partial class OgcFeaturesGeometryServices
 {
     private readonly GeometryLimits _geometryLimits;
+    private readonly ILogger<OgcFeaturesGeometryServices> _logger;
 
-    public OgcFeaturesGeometryServices(IOptions<LimitsOptions> limitsOptions)
+    public OgcFeaturesGeometryServices(
+        IOptions<LimitsOptions> limitsOptions,
+        ILogger<OgcFeaturesGeometryServices> logger)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _logger = logger;
     }
 
     /// <summary>
@@ -179,7 +183,7 @@ internal sealed class OgcFeaturesGeometryServices
     /// <summary>
     /// Simplifies geometry if it exceeds complexity thresholds.
     /// </summary>
-    public static Geometry? SimplifyIfNeeded(Geometry? geometry, double tolerance = 0.0001)
+    public Geometry? SimplifyIfNeeded(Geometry? geometry, double tolerance = 0.0001)
     {
         if (geometry == null)
         {
@@ -198,9 +202,9 @@ internal sealed class OgcFeaturesGeometryServices
             var simplified = NetTopologySuite.Simplify.TopologyPreservingSimplifier.Simplify(geometry, tolerance);
             return simplified ?? geometry;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // If simplification fails, return original geometry
+            Log.GeometrySimplificationFailed(_logger, tolerance, ex);
             return geometry;
         }
     }
@@ -208,7 +212,7 @@ internal sealed class OgcFeaturesGeometryServices
     /// <summary>
     /// Validates that geometry is topologically valid.
     /// </summary>
-    public static bool ValidateTopology(Geometry geometry)
+    public bool ValidateTopology(Geometry geometry)
     {
         if (geometry == null)
         {
@@ -219,8 +223,9 @@ internal sealed class OgcFeaturesGeometryServices
         {
             return geometry.IsValid;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.TopologyValidationFailed(_logger, ex);
             return false;
         }
     }
@@ -228,7 +233,7 @@ internal sealed class OgcFeaturesGeometryServices
     /// <summary>
     /// Repairs invalid geometry if possible.
     /// </summary>
-    public static Geometry? RepairGeometry(Geometry geometry)
+    public Geometry? RepairGeometry(Geometry geometry)
     {
         if (geometry == null || geometry.IsValid)
         {
@@ -248,8 +253,9 @@ internal sealed class OgcFeaturesGeometryServices
             var convexHull = geometry.ConvexHull();
             return convexHull?.IsValid == true ? convexHull : null;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.GeometryRepairFailed(_logger, ex);
             return null;
         }
     }
@@ -259,7 +265,7 @@ internal sealed class OgcFeaturesGeometryServices
     /// </summary>
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        return GeometryService.DetectZMFromGeometry(geometry);
+        return Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
     /// <summary>
@@ -285,12 +291,24 @@ internal sealed class OgcFeaturesGeometryServices
 
     private static int CountPolygonVertices(Polygon polygon)
     {
-        var count = polygon.ExteriorRing.NumPoints;
+        var count = polygon.ExteriorRing?.NumPoints ?? 0;
         for (int i = 0; i < polygon.NumInteriorRings; i++)
         {
             count += polygon.GetInteriorRingN(i).NumPoints;
         }
         return count;
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 5460, Level = LogLevel.Debug, Message = "Geometry simplification failed with tolerance {Tolerance}, returning original geometry")]
+        public static partial void GeometrySimplificationFailed(ILogger logger, double tolerance, Exception exception);
+
+        [LoggerMessage(EventId = 5461, Level = LogLevel.Debug, Message = "Topology validation failed, treating geometry as invalid")]
+        public static partial void TopologyValidationFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 5462, Level = LogLevel.Debug, Message = "Geometry repair failed, returning null")]
+        public static partial void GeometryRepairFailed(ILogger logger, Exception exception);
     }
 
     /// <summary>

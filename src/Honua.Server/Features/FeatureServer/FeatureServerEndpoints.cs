@@ -11,10 +11,6 @@ namespace Honua.Server.Features.FeatureServer;
 /// </summary>
 internal static partial class FeatureServerEndpoints
 {
-    internal sealed class FeatureServerEndpointsLog
-    {
-    }
-
     /// <summary>
     /// Maps FeatureServer REST API endpoints for layer metadata using AOT-compatible routing
     /// </summary>

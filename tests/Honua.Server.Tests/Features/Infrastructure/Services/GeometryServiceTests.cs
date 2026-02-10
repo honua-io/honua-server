@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -12,7 +11,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
 public sealed class GeometryServiceTests
 {
-    private readonly GeometryService _service = new(Options.Create(new LimitsOptions()));
+    private readonly Honua.Server.Features.Infrastructure.Services.GeometryService _service = new(Options.Create(new LimitsOptions()));
 
     [Fact]
     public void DetectZM_WhenZPresentInLaterCoordinate_ReturnsHasZ()

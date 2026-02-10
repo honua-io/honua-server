@@ -246,14 +246,19 @@ internal static class ExceptionMapper
             return "Invalid bbox parameter format.";
         }
 
+        if (message.Contains("$orderby", StringComparison.OrdinalIgnoreCase))
+        {
+            var trimmed = message.Trim();
+            if (trimmed.Length > 200)
+            {
+                trimmed = trimmed[..200] + "...";
+            }
+            return trimmed;
+        }
+
         if (message.Contains("orderby", StringComparison.OrdinalIgnoreCase))
         {
-            if (message.Length > 200)
-            {
-                return message[..200] + "...";
-            }
-
-            return message;
+            return "Invalid orderBy parameter.";
         }
 
         if (message.Contains("datetime", StringComparison.OrdinalIgnoreCase))

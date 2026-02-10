@@ -301,11 +301,11 @@ var result = await operation.ShouldCompleteWithin(
 - Enhance security tests with new attack vectors
 - Expand chaos engineering scenarios
 
-## 📖 Additional Resources
+## Additional Resources
 
-- [Architecture Decision Records (ADRs)](./adrs/) - Testing decisions and rationale
-- [Performance Testing Guide](./PERFORMANCE_TESTING.md) - Detailed benchmarking
-- [Security Testing Guide](./SECURITY_TESTING.md) - Threat model and mitigations
+- [Architecture Decision Records (ADRs)](adr/README.md) - Testing decisions and rationale
+- [Performance Testing Guide](../devops/performance-testing.md) - Load and benchmarking guidance
+- [Security Configuration](../devops/SECURITY_CONFIGURATION.md) - Authentication and hardening
 
 ---
 

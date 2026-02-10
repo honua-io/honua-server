@@ -31,6 +31,14 @@ namespace Honua.Admin.Models;
 [JsonSerializable(typeof(RecentErrorEntry))]
 [JsonSerializable(typeof(RecentErrorsResponse))]
 [JsonSerializable(typeof(ObservabilityStatusResponse))]
+[JsonSerializable(typeof(ApiResponse<ServiceSettingsResponse>), TypeInfoPropertyName = "ApiResponseServiceSettingsResponse")]
+[JsonSerializable(typeof(ApiResponse<ServiceSummary[]>), TypeInfoPropertyName = "ApiResponseServiceSummaryArray")]
+[JsonSerializable(typeof(ServiceSettingsResponse))]
+[JsonSerializable(typeof(MapServerSettingsResponse))]
+[JsonSerializable(typeof(UpdateProtocolsRequest))]
+[JsonSerializable(typeof(UpdateMapServerSettingsRequest))]
+[JsonSerializable(typeof(ServiceSummary))]
+[JsonSerializable(typeof(ServiceSummary[]))]
 internal sealed partial class AdminJsonContext : JsonSerializerContext
 {
 }

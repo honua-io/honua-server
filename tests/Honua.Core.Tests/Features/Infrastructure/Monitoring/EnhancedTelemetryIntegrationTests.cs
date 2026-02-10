@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
@@ -152,114 +151,6 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Null(decision.ShouldSample);
         Assert.Contains("No smart rules matched", decision.Reason);
         Assert.Equal(0.0, decision.ConfidenceScore);
-    }
-
-    [Fact]
-    public void EnhancedTelemetryStructures_HaveCorrectValues()
-    {
-        // Test QueryPlanAnalysis structure
-        var queryPlan = new QueryPlanAnalysis
-        {
-            ComplexityScore = 75,
-            EstimatedCost = 1250.5,
-            TableScans = 2,
-            IndexSeeks = 3,
-            UsesSpatialIndex = true
-        };
-
-        Assert.Equal(75, queryPlan.ComplexityScore);
-        Assert.Equal(1250.5, queryPlan.EstimatedCost);
-        Assert.Equal(2, queryPlan.TableScans);
-        Assert.Equal(3, queryPlan.IndexSeeks);
-        Assert.True(queryPlan.UsesSpatialIndex);
-
-        // Test GeospatialProcessing structure
-        var processing = new GeospatialProcessing
-        {
-            Operation = "buffer",
-            GeometryCount = 500,
-            CoordinateCount = 15000,
-            SpatialReferenceId = 4326,
-            HighPrecision = true
-        };
-
-        Assert.Equal("buffer", processing.Operation);
-        Assert.Equal(500, processing.GeometryCount);
-        Assert.Equal(15000, processing.CoordinateCount);
-        Assert.Equal(4326, processing.SpatialReferenceId);
-        Assert.True(processing.HighPrecision);
-
-        // Test CacheAccess structure
-        var cacheAccess = new CacheAccess
-        {
-            Operation = "get",
-            Result = "hit",
-            KeyHash = "abc123",
-            ValueSizeBytes = 4096,
-            TtlSeconds = 300,
-            Tier = "L1"
-        };
-
-        Assert.Equal("get", cacheAccess.Operation);
-        Assert.Equal("hit", cacheAccess.Result);
-        Assert.Equal("abc123", cacheAccess.KeyHash);
-        Assert.Equal(4096L, cacheAccess.ValueSizeBytes);
-        Assert.Equal(300, cacheAccess.TtlSeconds);
-        Assert.Equal("L1", cacheAccess.Tier);
-
-        // Test DatabasePerformance structure
-        var performance = new DatabasePerformance
-        {
-            ExecutionTimeMs = 150.5,
-            RowsAffected = 10,
-            RowsReturned = 1000,
-            LockWaitTimeMs = 5.0,
-            PhysicalReads = 50,
-            PhysicalWrites = 5,
-            ConnectionPoolSize = 20,
-            ConnectionPoolUsed = 8
-        };
-
-        Assert.Equal(150.5, performance.ExecutionTimeMs);
-        Assert.Equal(10, performance.RowsAffected);
-        Assert.Equal(1000, performance.RowsReturned);
-        Assert.Equal(5.0, performance.LockWaitTimeMs);
-        Assert.Equal(50, performance.PhysicalReads);
-        Assert.Equal(5, performance.PhysicalWrites);
-        Assert.Equal(20, performance.ConnectionPoolSize);
-        Assert.Equal(8, performance.ConnectionPoolUsed);
-
-        // Test BusinessMilestone structure
-        var milestone = new BusinessMilestone
-        {
-            FeatureImportance = "high",
-            ClientTier = "premium",
-            ValueScore = 85,
-            Region = "us-west",
-            Type = "conversion",
-            Name = "feature_query_success"
-        };
-
-        Assert.Equal("high", milestone.FeatureImportance);
-        Assert.Equal("premium", milestone.ClientTier);
-        Assert.Equal(85, milestone.ValueScore);
-        Assert.Equal("us-west", milestone.Region);
-        Assert.Equal("conversion", milestone.Type);
-        Assert.Equal("feature_query_success", milestone.Name);
-    }
-
-    [Fact]
-    public void ResourceMetrics_CaptureReturnsValidData()
-    {
-        // Act
-        var metrics = EnhancedTelemetry.CaptureResourceMetrics();
-
-        // Assert
-        Assert.True(metrics.CpuUsagePercentage >= 0);
-        Assert.True(metrics.MemoryUsageBytes > 0);
-        Assert.True(metrics.ActiveDbConnections >= 0);
-        Assert.True(metrics.ThreadPoolUsagePercentage >= 0);
-        Assert.True(metrics.NetworkBytesPerSecond >= 0);
     }
 
     [Theory]

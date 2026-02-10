@@ -56,8 +56,31 @@ internal static class SeedRunner
 {
     private static readonly Regex _identifierRegex = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
     private static readonly Regex _typeRegex = new("^[A-Za-z0-9_(),\\s\\[\\]]+$", RegexOptions.CultureInvariant);
+    private const int MaxConcurrencyRetryAttempts = 3;
 
     public static async Task ApplyAsync(
+        NpgsqlDataSource dataSource,
+        string seedPath,
+        string? schemaName,
+        string? profileName)
+    {
+        var attempt = 0;
+        while (true)
+        {
+            attempt++;
+            try
+            {
+                await ApplyOnceAsync(dataSource, seedPath, schemaName, profileName).ConfigureAwait(false);
+                return;
+            }
+            catch (PostgresException ex) when (IsConcurrencyFailure(ex) && attempt < MaxConcurrencyRetryAttempts)
+            {
+                await Task.Delay(GetRetryDelay(attempt)).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task ApplyOnceAsync(
         NpgsqlDataSource dataSource,
         string seedPath,
         string? schemaName,
@@ -116,6 +139,12 @@ internal static class SeedRunner
 
         await transaction.CommitAsync().ConfigureAwait(false);
     }
+
+    private static bool IsConcurrencyFailure(PostgresException ex)
+        => ex.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected;
+
+    private static TimeSpan GetRetryDelay(int attempt)
+        => TimeSpan.FromMilliseconds(50 * Math.Pow(2, attempt - 1));
 
     private static SeedDefinition LoadSeed(string seedPath)
     {

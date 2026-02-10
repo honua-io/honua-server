@@ -316,8 +316,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 stopwatch.Elapsed);
             return result;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
             errorMessage = "Import failed.";
             result = ImportResult.CreateFailure(
                 request.TableName,
@@ -563,8 +564,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     await command.ExecuteNonQueryAsync(cancellationToken);
                     imported++;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    ImportLog.FeatureInsertFailed(_logger, ex, tableName);
                     failed++;
                     if (!_limits.ContinueOnError)
                     {
@@ -792,6 +794,25 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             string errorMessage,
             double durationMs,
             long? bytesRead);
+
+        [LoggerMessage(
+            EventId = 7407,
+            Level = LogLevel.Warning,
+            Message = "Import failed with exception {JobId} table={TableName}")]
+        public static partial void ImportFailedWithException(
+            ILogger logger,
+            Exception exception,
+            string jobId,
+            string tableName);
+
+        [LoggerMessage(
+            EventId = 7408,
+            Level = LogLevel.Debug,
+            Message = "Feature insert failed table={TableName}")]
+        public static partial void FeatureInsertFailed(
+            ILogger logger,
+            Exception exception,
+            string tableName);
     }
 
     private static partial class ShapefileLog

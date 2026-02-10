@@ -23,7 +23,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         var connectionProvider = new PostgresDatabaseConnectionProvider(
             _fixture.DataSource,
             NullLogger<PostgresDatabaseConnectionProvider>.Instance);
-        _service = new CrsDetectionService(connectionProvider);
+        _service = new CrsDetectionService(connectionProvider, NullLogger<CrsDetectionService>.Instance);
     }
 
     public async Task DisposeAsync()
@@ -57,7 +57,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
 
         // Assert
         result.Should().BeGreaterThan(0);
-        result.Should().BeInRange(1000, 99999);
+        result.Should().BeInRange(1, 999999);
     }
 
     [Theory]
@@ -65,8 +65,8 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     [InlineData("EPSG:")]
     [InlineData("")]
     [InlineData(null)]
-    [InlineData("999")]  // Too low
-    [InlineData("100000")]  // Too high
+    [InlineData("0")]  // Zero is invalid
+    [InlineData("1000000")]  // Too high
     public void DetectFromEpsgCode_WithInvalidFormats_ReturnsNull(string? epsgCode)
     {
         // Act

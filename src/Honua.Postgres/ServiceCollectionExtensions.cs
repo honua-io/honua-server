@@ -5,6 +5,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -20,6 +21,7 @@ using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.Geometry;
+using Honua.Postgres.Features.GeometryService;
 using Honua.Postgres.Features.HealthCheck;
 using Honua.Postgres.Features.Import;
 using Honua.Postgres.Features.Infrastructure;
@@ -84,6 +86,7 @@ internal static class ServiceCollectionExtensions
 
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
+        services.AddScoped<IServiceMetadataUpdater, PostgresServiceMetadataUpdater>();
 
         // Register metadata resource store (ADR-0023)
         services.AddScoped<IMetadataResourceStore>(serviceProvider =>
@@ -109,6 +112,9 @@ internal static class ServiceCollectionExtensions
 
         // Register topology validator for geometry operations
         services.AddScoped<IGeometryTopologyValidator, PostgresGeometryTopologyValidator>();
+
+        // Register geometry operation service for buffer/simplify/project
+        services.AddScoped<IGeometryOperationService, PostgresGeometryOperationService>();
 
         // Register SQL filter translator
         services.AddScoped<ISqlFilterTranslator>(_ => new PostgresSqlFilterTranslator(
@@ -139,7 +145,9 @@ internal static class ServiceCollectionExtensions
 
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
-            new CrsDetectionService(serviceProvider.GetRequiredService<IDatabaseConnectionProvider>()));
+            new CrsDetectionService(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddHostedService<PostgresCrsWarmupService>();
 

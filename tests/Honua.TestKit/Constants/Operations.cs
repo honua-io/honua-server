@@ -26,6 +26,11 @@ public static class Operations
     public const string BufferQuery = "BufferQuery";
     public const string NearestQuery = "NearestQuery";
 
+    // Geometry Service Operations
+    public const string Buffer = "Buffer";
+    public const string Simplify = "Simplify";
+    public const string Project = "Project";
+
     // Metadata Operations
     public const string GetMetadata = "GetMetadata";
     public const string GetLayerInfo = "GetLayerInfo";

@@ -11,11 +11,6 @@ using Honua.Server.Features.Infrastructure.Validation;
 namespace Honua.Server.Features.OData.Services;
 
 /// <summary>
-/// Log category for OData query operations.
-/// </summary>
-internal sealed class ODataQueryLog;
-
-/// <summary>
 /// Service for handling OData query operations including filtering, ordering, pagination, and field selection.
 /// Converts OData query parameters to SQL fragments and handles query result processing.
 /// </summary>

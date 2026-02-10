@@ -28,45 +28,45 @@ For Honua Server's multi-protocol geospatial API, we have distinct feature conce
 
 ```
 src/Honua.Server/Features/
-├── FeatureServer/              # GeoServices REST API
-│   ├── FeatureServerEndpoints.cs      # HTTP endpoints
-│   ├── FeatureServerHandler.cs        # Business logic
-│   ├── FeatureServerLog.cs            # Feature-specific logging
-│   ├── AttachmentEndpoints.cs         # Sub-feature: attachments
-│   ├── AttachmentHandler.cs           # Attachment business logic
-│   ├── Models/                        # FeatureServer-specific DTOs
-│   │   └── FeatureServerModels.cs
-│   └── Services/                      # FeatureServer-specific services
-│       ├── QueryFormatters.cs
-│       ├── FeatureQueryValidator.cs
-│       └── GeoServicesGeometryConverter.cs
-├── OgcFeatures/                # OGC API Features
-│   ├── OgcFeaturesEndpoints.cs        # HTTP endpoints
-│   ├── OgcJsonContext.cs              # JSON serialization
-│   └── Models/                        # OGC-specific DTOs
-│       └── OgcModels.cs
-├── OData/                      # OData v4 API
-│   ├── ODataEndpoints.cs              # HTTP endpoints
-│   ├── Models/                        # OData-specific DTOs
-│   └── Services/                      # OData-specific services
-│       ├── ODataBatchHandler.cs
-│       └── ODataAggregationHandler.cs
-├── Admin/                      # Administrative interface
-│   ├── AdminEndpoints.cs              # Admin HTTP endpoints
-│   └── Models/                        # Admin-specific DTOs
-├── Import/                     # File import feature
-│   ├── ImportEndpoints.cs
-│   └── ImportJsonContext.cs
-├── HealthCheck/                # System health monitoring
-│   ├── HealthEndpoints.cs
-│   ├── ReadinessCheckService.cs
-│   └── IReadinessCheckService.cs
-└── Infrastructure/             # Shared technical concerns
-    ├── Middleware/             # Cross-cutting middleware
-    ├── Authentication/         # Auth infrastructure
-    ├── Security/              # Security utilities
-    ├── Caching/               # Caching infrastructure
-    └── Services/              # Shared technical services
+|-- FeatureServer/              # GeoServices REST API
+|   |-- FeatureServerEndpoints.cs      # HTTP endpoints
+|   |-- FeatureServerHandler.cs        # Business logic
+|   |-- FeatureServerLog.cs            # Feature-specific logging
+|   |-- AttachmentEndpoints.cs         # Sub-feature: attachments
+|   |-- AttachmentHandler.cs           # Attachment business logic
+|   |-- Models/                        # FeatureServer-specific DTOs
+|   |   |-- FeatureServerModels.cs
+|   |-- Services/                      # FeatureServer-specific services
+|       |-- QueryFormatters.cs
+|       |-- FeatureQueryValidator.cs
+|       |-- GeoServicesGeometryConverter.cs
+|-- OgcFeatures/                # OGC API Features
+|   |-- OgcFeaturesEndpoints.cs        # HTTP endpoints
+|   |-- OgcJsonContext.cs              # JSON serialization
+|   |-- Models/                        # OGC-specific DTOs
+|       |-- OgcModels.cs
+|-- OData/                      # OData v4 API
+|   |-- ODataEndpoints.cs              # HTTP endpoints
+|   |-- Models/                        # OData-specific DTOs
+|   |-- Services/                      # OData-specific services
+|       |-- ODataBatchHandler.cs
+|       |-- ODataAggregationHandler.cs
+|-- Admin/                      # Administrative interface
+|   |-- AdminEndpoints.cs              # Admin HTTP endpoints
+|   |-- Models/                        # Admin-specific DTOs
+|-- Import/                     # File import feature
+|   |-- ImportEndpoints.cs
+|   |-- ImportJsonContext.cs
+|-- HealthCheck/                # System health monitoring
+|   |-- HealthEndpoints.cs
+|   |-- ReadinessCheckService.cs
+|   |-- IReadinessCheckService.cs
+|-- Infrastructure/             # Shared technical concerns
+    |-- Middleware/             # Cross-cutting middleware
+    |-- Authentication/         # Auth infrastructure
+    |-- Security/              # Security utilities
+    |-- Caching/               # Caching infrastructure
+    |-- Services/              # Shared technical services
 ```
 
 ### Key Principles
@@ -76,11 +76,11 @@ src/Honua.Server/Features/
 ```csharp
 // Everything for FeatureServer query operations in one place
 Features/FeatureServer/
-├── FeatureServerEndpoints.cs     # HTTP layer: MapGet/MapPost
-├── FeatureServerHandler.cs       # Business logic: validation, transformation
-├── FeatureServerLog.cs           # Observability: structured logging
-├── Models/FeatureServerModels.cs # DTOs: request/response objects
-└── Services/QueryFormatters.cs   # Services: response formatting
+|-- FeatureServerEndpoints.cs     # HTTP layer: MapGet/MapPost
+|-- FeatureServerHandler.cs       # Business logic: validation, transformation
+|-- FeatureServerLog.cs           # Observability: structured logging
+|-- Models/FeatureServerModels.cs # DTOs: request/response objects
+|-- Services/QueryFormatters.cs   # Services: response formatting
 ```
 
 #### 2. Protocol Independence
@@ -88,9 +88,9 @@ Features/FeatureServer/
 ```csharp
 // OGC Features completely independent of FeatureServer
 Features/OgcFeatures/
-├── OgcFeaturesEndpoints.cs       # OGC-specific HTTP endpoints
-├── OgcJsonContext.cs             # OGC-specific JSON serialization
-└── Models/OgcModels.cs           # OGC-specific DTOs
+|-- OgcFeaturesEndpoints.cs       # OGC-specific HTTP endpoints
+|-- OgcJsonContext.cs             # OGC-specific JSON serialization
+|-- Models/OgcModels.cs           # OGC-specific DTOs
 
 // No dependencies between protocol slices
 // Both protocols use shared Core abstractions
@@ -100,10 +100,10 @@ Features/OgcFeatures/
 **Common technical concerns remain shared:**
 ```csharp
 Features/Infrastructure/
-├── Middleware/                   # Used by all features
-├── Authentication/               # Used by secured features
-├── Security/                     # Used by all features
-└── Services/GeometryConverter.cs # Used by spatial features
+|-- Middleware/                   # Used by all features
+|-- Authentication/               # Used by secured features
+|-- Security/                     # Used by all features
+|-- Services/GeometryConverter.cs # Used by spatial features
 ```
 
 ## Implementation Patterns
@@ -286,14 +286,14 @@ git status
 **Add/remove/modify protocols independently:**
 
 ```csharp
-// Adding new WFS protocol doesn't affect existing protocols
-Features/Wfs/
-├── WfsEndpoints.cs
-├── WfsServices.cs
-└── Models/WfsModels.cs
+// Example: adding a new protocol slice without touching existing ones
+Features/CustomProtocol/
+|-- CustomProtocolEndpoints.cs
+|-- CustomProtocolServices.cs
+|-- Models/CustomProtocolModels.cs
 
 // Register new protocol
-app.MapWfsEndpoints();  // No impact on existing endpoints
+app.MapCustomProtocolEndpoints();  // No impact on existing endpoints
 ```
 
 ### 4. Feature Toggling
@@ -322,33 +322,33 @@ if (builder.Configuration.GetValue<bool>("Features:AdminEnabled"))
 
 ```
 tests/Honua.Server.Tests/Features/
-├── FeatureServer/
-│   ├── QueryEndpointTests.cs
-│   ├── ApplyEditsEndpointTests.cs
-│   └── AttachmentEndpointTests.cs
-├── OgcFeatures/
-│   ├── CollectionsEndpointTests.cs
-│   └── ItemsEndpointTests.cs
-└── Admin/
-    ├── LayerManagementTests.cs
-    └── UserManagementTests.cs
+|-- FeatureServer/
+|   |-- QueryEndpointTests.cs
+|   |-- ApplyEditsEndpointTests.cs
+|   |-- AttachmentEndpointTests.cs
+|-- OgcFeatures/
+|   |-- CollectionsEndpointTests.cs
+|   |-- ItemsEndpointTests.cs
+|-- Admin/
+    |-- LayerManagementTests.cs
+    |-- UserManagementTests.cs
 ```
 
 **Test failures clearly indicate which feature/protocol needs attention**
 
 ## Anti-Patterns to Avoid
 
-### ❌ Cross-Slice Dependencies
+###  Cross-Slice Dependencies
 ```csharp
 // WRONG: FeatureServer depending on OGC-specific code
 Features/FeatureServer/FeatureServerHandler.cs:
-using Honua.Server.Features.OgcFeatures.Models;  // ❌ Cross-slice dependency
+using Honua.Server.Features.OgcFeatures.Models;  //  Cross-slice dependency
 
 // CORRECT: Both slices depend on shared Core abstractions
-using Honua.Core.Features.Models;  // ✅ Shared domain model
+using Honua.Core.Features.Models;  //  Shared domain model
 ```
 
-### ❌ Shared Mutable State
+###  Shared Mutable State
 ```csharp
 // WRONG: Shared static state between features
 public static class GlobalFeatureState
@@ -364,7 +364,7 @@ public class FeatureServerCache
 }
 ```
 
-### ❌ Feature Leakage in Infrastructure
+###  Feature Leakage in Infrastructure
 ```csharp
 // WRONG: Infrastructure knowing about specific features
 public class GlobalExceptionMiddleware

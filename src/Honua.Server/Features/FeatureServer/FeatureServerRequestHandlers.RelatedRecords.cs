@@ -98,8 +98,20 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        if (resultOffset.HasValue && resultOffset.Value < 0)
+        {
+            errorMessage = "resultOffset cannot be negative";
+            return false;
+        }
+
         if (!TryParseIntValue(values, "resultRecordCount", out var resultRecordCount, out errorMessage))
         {
+            return false;
+        }
+
+        if (resultRecordCount.HasValue && resultRecordCount.Value < 0)
+        {
+            errorMessage = "resultRecordCount cannot be negative";
             return false;
         }
 

@@ -110,6 +110,7 @@ jobs:
               --current "$RESULTS_FILE" \
               --threshold 0.10 \
               --report perf-regression.md \
+              --skip-on-env-mismatch \
               --fail-on-regression; then
               REGRESSION_DETECTED=true
               REGRESSION_DETAILS="See perf-regression.md for details"

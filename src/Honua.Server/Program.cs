@@ -283,6 +283,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.EsriImportApiJsonContext.Default,
@@ -294,7 +295,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default);
+        Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
+        Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
@@ -474,6 +476,9 @@ app.MapAdminObservabilityEndpoints();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();
+
+// Configure service settings endpoints (protocol toggles + MapServer config)
+app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();

@@ -256,43 +256,4 @@ internal static class SecurityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Validates that secure connection services are properly configured.
-    /// </summary>
-    /// <param name="serviceProvider">Service provider to validate</param>
-    /// <returns>True if configuration is valid, false otherwise</returns>
-    /// <remarks>
-    /// This method can be called during application startup to verify
-    /// that all security components are properly configured and functional.
-    /// </remarks>
-    public static async Task<bool> ValidateSecureConnectionConfiguration(IServiceProvider serviceProvider)
-    {
-        try
-        {
-            // Test encryption service
-            var encryptionService = serviceProvider.GetRequiredService<IConnectionEncryptionService>();
-            if (!await encryptionService.ValidateEncryptionAsync())
-            {
-                return false;
-            }
-
-            // Test secret resolver registration
-            var secretResolver = serviceProvider.GetRequiredService<IConnectionSecretResolver>();
-            var supportedProviders = secretResolver.GetSupportedProviders();
-            if (supportedProviders.Length == 0)
-            {
-                return false;
-            }
-
-            // Test registry access (basic connection test)
-            var registry = serviceProvider.GetRequiredService<ISecureConnectionRegistry>();
-            _ = await registry.GetActiveConnectionsAsync();
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }

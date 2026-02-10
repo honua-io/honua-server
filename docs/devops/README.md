@@ -2,36 +2,55 @@
 
 This section is for installing, configuring, operating, and upgrading Honua in production.
 
-## Deployments
-- `../../infrastructure/README.md`
-- `serverless-deployments.md`
-- `CONTAINER_IMAGES.md`
-- `ADMIN_UI.md`
+## 🚀 **Deployment**
 
-## Operations
-- `OPERATIONAL_EXCELLENCE.md`
-- `TROUBLESHOOTING.md`
-- `runbooks/README.md`
-- `backup-restore.md`
-- `zero-downtime-migrations.md`
-- `credential-rotation.md`
+**Deployment Scenarios:**
+- [**Deployment Scenarios**](DEPLOYMENT_SCENARIOS.md) — specific deployment patterns for different use cases
+- **Infrastructure Templates** - Docker Compose, Helm, and Terraform are in `infrastructure/`
+- [**Serverless Deployments**](serverless-deployments.md) — AWS Lambda and Azure Functions
+- [**Container Images**](CONTAINER_IMAGES.md) — registries, tags, and publishing
 
-## Monitoring & Performance
-- `performance-monitoring.md`
-- `performance-testing.md`
-- `load-soak-testing.md`
-- `query-optimization.md`
-- `connection-pool-sizing.md`
-- `MEMORY_OPTIMIZATIONS_REPORT.md`
-- `CACHING_STRATEGY.md`
-- `CACHING_QUICK_REFERENCE.md`
-- `DATABASE_QUERY_CACHING.md`
+**Configuration:**
+- [**Admin UI Setup**](ADMIN_UI.md) — web interface deployment
+- [**Security Configuration**](SECURITY_CONFIGURATION.md) — OIDC, secrets, and proxy settings
 
-## Security
-- `SECURITY_CONFIGURATION.md`
-- `AUTHORIZATION_MATRIX.md`
-- `CONTAINER_SECURITY.md`
-- `CSP_ENHANCEMENT.md`
+## 🔧 **Operations**
 
-## Architecture Diagrams
-- `../contributor/ARCHITECTURE_DIAGRAMS.md`
+**Daily Operations:**
+- [**Operational Excellence**](OPERATIONAL_EXCELLENCE.md) — current operational tooling and practices
+- [**Troubleshooting**](TROUBLESHOOTING.md) — common issues and solutions
+- [**Runbooks**](runbooks/README.md) — incident response playbooks
+
+**Maintenance:**
+- [**Backup and Restore**](backup-restore.md) — data protection strategies
+- [**Zero Downtime Migrations**](zero-downtime-migrations.md) — database migration strategies
+- [**Credential Rotation**](credential-rotation.md) — security credential management
+
+## 📊 **Monitoring & Performance**
+
+**Performance Monitoring:**
+- [**Performance Monitoring**](performance-monitoring.md) — observability setup and metrics
+- [**Performance Testing**](performance-testing.md) — load testing strategies
+- [**Load & Soak Testing**](load-soak-testing.md) — comprehensive performance validation
+
+**Optimization:**
+- [**Query Optimization**](query-optimization.md) — database and spatial query performance
+- [**Connection Pool Sizing**](connection-pool-sizing.md) — database connection optimization
+- [**Memory Optimizations Report**](MEMORY_OPTIMIZATIONS_REPORT.md) — memory usage analysis
+
+**Caching:**
+- [**Caching Strategy**](CACHING_STRATEGY.md) — comprehensive caching approach
+- [**Caching Quick Reference**](CACHING_QUICK_REFERENCE.md) — configuration examples
+- [**Database Query Caching**](DATABASE_QUERY_CACHING.md) — query result caching
+
+## 🔐 **Security**
+
+- [**Security Configuration**](SECURITY_CONFIGURATION.md) — authentication, authorization, and security settings
+- [**Rate Limiting**](RATE_LIMITING.md) — edge rate limiting templates (nginx, AWS WAF, Azure, GCP, Kubernetes)
+- [**Authorization Matrix**](AUTHORIZATION_MATRIX.md) — endpoint access requirements
+- [**Container Security**](CONTAINER_SECURITY.md) — container hardening and best practices
+- [**CSP Enhancement**](CSP_ENHANCEMENT.md) — Content Security Policy configuration
+
+## 🏗️ **Architecture**
+
+- [**Architecture Diagrams**](../contributor/ARCHITECTURE_DIAGRAMS.md) — visual system design documentation

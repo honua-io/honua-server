@@ -33,7 +33,7 @@ Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.
 
 | Parameter | Status | Notes |
 | --- | --- | --- |
-| `f` | Implemented | `geojson`, `json`, `gml`, `html` for feature content. |
+| `f` | Implemented | `geojson`, `json`, `gml`, `html` for feature content. GML output is supported but not claimed as a conformance class. |
 | `limit` | Implemented | Validated and normalized by server limits. |
 | `offset` | Implemented | Standard offset paging. |
 | `bbox` | Implemented | 4 or 6 comma-separated values; anti-meridian supported for geographic CRS. |

@@ -37,7 +37,7 @@ public static class ValidationServiceExtensions
         services.AddScoped<IResourceValidator, ResourceValidator>();
 
         // Register unified geometry service for consistent format conversion and Z/M detection
-        services.AddSingleton<IGeometryService, GeometryService>();
+        services.AddSingleton<IGeometryService, Services.GeometryService>();
 
         return services;
     }

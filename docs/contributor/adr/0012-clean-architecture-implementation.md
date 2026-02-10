@@ -276,8 +276,8 @@ builder.Services.AddScoped<IFeatureQueryValidator, FeatureQueryValidator>();
 - **Pair Programming**: Knowledge sharing during implementation
 
 ## Related ADRs
-- [ADR-0002](0002-minimal-apis-vs-controllers.md): Minimal APIs implementation aligns with Clean Architecture
-- [ADR-0004](0004-vertical-slice-architecture.md): Vertical slices organize features within Clean Architecture layers
+- [ADR-0013](0013-minimal-apis-vs-controllers.md): Minimal APIs implementation aligns with Clean Architecture
+- [ADR-0015](0015-vertical-slice-architecture.md): Vertical slices organize features within Clean Architecture layers
 - [ADR-0009](0009-shared-filter-ast.md): Shared filtering demonstrates protocol-agnostic domain logic
 
 ## Implementation Status
