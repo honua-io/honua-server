@@ -78,7 +78,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var formatName = GetGdalRasterFormat(query.OutputFormat);
+        var formatName = query.OutputFormat.ToGdalDriverName();
 
         // Build raster expression with chained transformations
         var rasterExpr = "raster";
@@ -150,7 +150,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             return new RasterResult
             {
                 Data = Array.Empty<byte>(),
-                ContentType = GetContentType(query.OutputFormat),
+                ContentType = query.OutputFormat.ToContentType(),
                 Width = 0,
                 Height = 0
             };
@@ -169,7 +169,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         return new RasterResult
         {
             Data = data,
-            ContentType = GetContentType(query.OutputFormat),
+            ContentType = query.OutputFormat.ToContentType(),
             Width = width,
             Height = height,
             Srid = srid,
@@ -262,7 +262,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // Dynamic tile generation via PostGIS
-        var formatName = GetGdalRasterFormat(format);
+        var formatName = format.ToGdalDriverName();
         await using var dynCommand = connection.CreateCommand();
         dynCommand.CommandText = $"""
             WITH tile_bounds AS (
@@ -295,7 +295,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         return new RasterResult
         {
             Data = data,
-            ContentType = GetContentType(format),
+            ContentType = format.ToContentType(),
             Width = 256,
             Height = 256,
             Srid = 3857
@@ -503,22 +503,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             ModifiedAt = reader.IsDBNull(modifiedOrd) ? null : reader.GetDateTime(modifiedOrd)
         };
     }
-
-    private static string GetGdalRasterFormat(RasterFormat format) => format switch
-    {
-        RasterFormat.PNG => "PNG",
-        RasterFormat.JPEG => "JPEG",
-        RasterFormat.TIFF => "GTiff",
-        _ => "PNG"
-    };
-
-    private static string GetContentType(RasterFormat format) => format switch
-    {
-        RasterFormat.PNG => "image/png",
-        RasterFormat.JPEG => "image/jpeg",
-        RasterFormat.TIFF => "image/tiff",
-        _ => "application/octet-stream"
-    };
 
     private static void AddParameter(DbCommand command, string name, object value)
         => command.AddParameter(name, value);

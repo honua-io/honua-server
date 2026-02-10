@@ -162,6 +162,35 @@ public enum RasterFormat
 }
 
 /// <summary>
+/// Extension methods for <see cref="RasterFormat"/> providing consistent
+/// GDAL driver names and MIME content types across all layers.
+/// </summary>
+public static class RasterFormatExtensions
+{
+    /// <summary>
+    /// Gets the GDAL driver name for the format (e.g., "PNG", "JPEG", "GTiff").
+    /// </summary>
+    public static string ToGdalDriverName(this RasterFormat format) => format switch
+    {
+        RasterFormat.PNG => "PNG",
+        RasterFormat.JPEG => "JPEG",
+        RasterFormat.TIFF => "GTiff",
+        _ => "PNG"
+    };
+
+    /// <summary>
+    /// Gets the MIME content type for the format (e.g., "image/png").
+    /// </summary>
+    public static string ToContentType(this RasterFormat format) => format switch
+    {
+        RasterFormat.PNG => "image/png",
+        RasterFormat.JPEG => "image/jpeg",
+        RasterFormat.TIFF => "image/tiff",
+        _ => "application/octet-stream"
+    };
+}
+
+/// <summary>
 /// TIFF compression options.
 /// </summary>
 public enum TiffCompression

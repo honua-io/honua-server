@@ -56,21 +56,8 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var formatName = request.Format switch
-        {
-            RasterFormat.PNG => "PNG",
-            RasterFormat.JPEG => "JPEG",
-            RasterFormat.TIFF => "GTiff",
-            _ => "PNG"
-        };
-
-        var contentType = request.Format switch
-        {
-            RasterFormat.PNG => "image/png",
-            RasterFormat.JPEG => "image/jpeg",
-            RasterFormat.TIFF => "image/tiff",
-            _ => "image/png"
-        };
+        var formatName = request.Format.ToGdalDriverName();
+        var contentType = request.Format.ToContentType();
 
         var outputSrid = request.Crs ?? 4326;
         var bboxSrid = request.BoundingBoxCrs ?? outputSrid;
