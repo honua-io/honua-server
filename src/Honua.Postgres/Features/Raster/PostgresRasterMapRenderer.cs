@@ -34,13 +34,13 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
     /// <inheritdoc />
     public async Task<RasterResult> RenderCollectionMapAsync(int layerId, MapRenderRequest request, CancellationToken cancellationToken = default)
     {
-        return await RenderMapAsync(new[] { layerId }, request, cancellationToken);
+        return await RenderMapAsync(new[] { layerId }, request, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<RasterResult> RenderDatasetMapAsync(int[] layerIds, MapRenderRequest request, CancellationToken cancellationToken = default)
     {
-        return await RenderMapAsync(layerIds, request, cancellationToken);
+        return await RenderMapAsync(layerIds, request, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -49,12 +49,12 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         // Style application is not yet supported for raster layers; render without styling
         PostgresRasterLog.RasterOperationWarning(_logger, "RenderStyledMapAsync",
             $"Style '{styleId}' ignored for raster layer {layerId} - rendering unstyled");
-        return await RenderMapAsync(new[] { layerId }, request, cancellationToken);
+        return await RenderMapAsync(new[] { layerId }, request, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<RasterResult> RenderMapAsync(int[] layerIds, MapRenderRequest request, CancellationToken cancellationToken)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = request.Format switch
         {
@@ -120,7 +120,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             AddParameter(command, name, value);
         }
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         var data = result as byte[] ?? Array.Empty<byte>();
 
         return new RasterResult

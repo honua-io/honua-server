@@ -11,6 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.MapServer.Models;
 using Honua.Server.Features.MapServer.Rendering;
 using Honua.ServiceDefaults;
@@ -435,21 +436,7 @@ internal static partial class MapServerEndpoints
     private static bool TryParseBbox(string? bbox, out SkiaMapRenderer.RenderExtent extent)
     {
         extent = default;
-        if (string.IsNullOrWhiteSpace(bbox))
-        {
-            return false;
-        }
-
-        var parts = bbox.Split(',');
-        if (parts.Length != 4)
-        {
-            return false;
-        }
-
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minY) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
+        if (bbox is null || !RasterParsingHelpers.TryParseBoundingBox(bbox, out var minX, out var minY, out var maxX, out var maxY))
         {
             return false;
         }
@@ -479,19 +466,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static int? TryParseSrid(string? sr)
-    {
-        if (string.IsNullOrWhiteSpace(sr))
-        {
-            return null;
-        }
-
-        if (int.TryParse(sr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
-        {
-            return srid;
-        }
-
-        return null;
-    }
+        => SpatialReferenceHelpers.TryParseSrid(sr);
 
     private static LayerDefinition[] ResolveVisibleLayers(
         ServiceDefinition service,

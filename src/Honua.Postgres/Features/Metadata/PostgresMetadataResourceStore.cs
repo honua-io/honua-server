@@ -34,12 +34,10 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
         _connectionProvider = connectionProvider;
         _cacheService = cacheService;
 
-        var quotedSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(
-            string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName);
-        _resourceTable = $"{quotedSchema}.metadata_resources";
-        _historyTable = $"{quotedSchema}.metadata_history";
-        _compiledTable = $"{quotedSchema}.metadata_compiled";
-        _indexesTable = $"{quotedSchema}.metadata_indexes";
+        _resourceTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_resources", schemaName);
+        _historyTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_history", schemaName);
+        _compiledTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_compiled", schemaName);
+        _indexesTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_indexes", schemaName);
     }
 
     public async Task<MetadataResource?> GetAsync(

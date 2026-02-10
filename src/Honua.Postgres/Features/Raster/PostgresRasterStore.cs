@@ -38,7 +38,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<RasterInfo?> GetRasterInfoAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -61,8 +61,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterId", rasterId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
             return null;
@@ -76,7 +76,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = GetGdalRasterFormat(query.OutputFormat);
 
@@ -143,8 +143,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
             return new RasterResult
@@ -180,7 +180,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var pointSrid = srid ?? 4326;
 
@@ -204,8 +204,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var band = reader.GetInt32(0);
             var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
@@ -231,7 +231,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<RasterResult?> GetImageTileAsync(int layerId, long rasterId, int level, int row, int col, RasterFormat format = RasterFormat.PNG, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Check pre-computed tiles first
         await using var tileCommand = connection.CreateCommand();
@@ -245,8 +245,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(tileCommand, "@col", col);
         AddParameter(tileCommand, "@row", row);
 
-        await using var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken);
-        if (await tileReader.ReadAsync(cancellationToken))
+        await using var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (await tileReader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var tileData = (byte[])tileReader["tile_data"];
             var contentType = tileReader.GetString(1);
@@ -285,7 +285,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(dynCommand, "@col", col);
         AddParameter(dynCommand, "@row", row);
 
-        var result = await dynCommand.ExecuteScalarAsync(cancellationToken);
+        var result = await dynCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         if (result is not byte[] data || data.Length == 0)
         {
             return null;
@@ -305,7 +305,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<RasterStatistics[]> GetStatisticsAsync(int layerId, long rasterId, int[]? bands = null, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Try cached statistics first
         await using var cachedCommand = connection.CreateCommand();
@@ -319,8 +319,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(cachedCommand, "@rasterId", rasterId);
 
         var stats = new List<RasterStatistics>();
-        await using var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken);
-        while (await cachedReader.ReadAsync(cancellationToken))
+        await using var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await cachedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             stats.Add(new RasterStatistics
             {
@@ -365,8 +365,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(computeCommand, "@layerId", layerId);
         AddParameter(computeCommand, "@rasterId", rasterId);
 
-        await using var computeReader = await computeCommand.ExecuteReaderAsync(cancellationToken);
-        while (await computeReader.ReadAsync(cancellationToken))
+        await using var computeReader = await computeCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await computeReader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             stats.Add(new RasterStatistics
             {
@@ -392,7 +392,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -407,8 +407,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterId", rasterId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -426,7 +426,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// <inheritdoc />
     public async Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -450,8 +450,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
 
         var rasters = new List<RasterInfo>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             rasters.Add(ReadRasterInfo(reader));
         }
