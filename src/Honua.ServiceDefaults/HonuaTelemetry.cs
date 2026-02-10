@@ -182,6 +182,12 @@ public static class HonuaTelemetry
         /// <summary>OGC API Tiles.</summary>
         public const string OgcTiles = "OGC-Tiles";
 
+        /// <summary>OGC API Maps.</summary>
+        public const string OgcMaps = "OGC-Maps";
+
+        /// <summary>Esri Image Server REST API.</summary>
+        public const string ImageServer = "ImageServer";
+
         /// <summary>OData v4 protocol.</summary>
         public const string OData = "OData";
 

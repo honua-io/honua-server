@@ -20,8 +20,10 @@ public sealed class VerticalSliceIsolationTests
     {
         "Admin",
         "FeatureServer",
+        "ImageServer",
         "Ogc",
         "OgcFeatures",
+        "OgcMaps",
         "OgcTiles",
         "Tiles",
         "OData",

@@ -65,6 +65,11 @@ public static class Operations
     public const string GetTile = "GetTile";
     public const string GetTileMetadata = "GetTileMetadata";
 
+    // Image / Map Operations
+    public const string Export = "Export";
+    public const string Identify = "Identify";
+    public const string Render = "Render";
+
     // Filter Operations
     public const string WhereClause = "WhereClause";
     public const string CqlFilter = "CqlFilter";

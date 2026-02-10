@@ -29,6 +29,7 @@ using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Styling;
 using Honua.Postgres.Features.Metadata;
+using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
@@ -64,6 +65,9 @@ internal static class ServiceCollectionExtensions
 
         // Register refactored feature store implementation
         services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
+
+        // Register raster store implementation
+        services.AddPostgresRasterStore();
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
