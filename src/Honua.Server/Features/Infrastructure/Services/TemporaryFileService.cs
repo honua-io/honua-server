@@ -135,8 +135,16 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             // Parse file ID from path if needed
             var actualFileId = Path.GetFileNameWithoutExtension(fileId);
 
-            // Prevent path traversal attacks
-            if (actualFileId.Contains("..") || actualFileId.Contains(Path.DirectorySeparatorChar) || actualFileId.Contains(Path.AltDirectorySeparatorChar))
+            // Validate file ID is a hex GUID (strict format from StoreTemporaryFileAsync)
+            if (actualFileId.Length != 32 || !actualFileId.All(c => char.IsAsciiHexDigit(c)))
+            {
+                return null;
+            }
+
+            // Defense-in-depth: verify resolved path stays within storage directory
+            var resolvedBase = Path.GetFullPath(_options.StorageDirectory);
+            var resolvedMeta = Path.GetFullPath(Path.Combine(_options.StorageDirectory, $"{actualFileId}.meta"));
+            if (!resolvedMeta.StartsWith(resolvedBase, StringComparison.Ordinal))
             {
                 return null;
             }

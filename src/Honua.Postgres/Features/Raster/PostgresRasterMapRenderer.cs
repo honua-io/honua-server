@@ -28,9 +28,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        var quotedSchema = SchemaSearchPath.ValidateAndQuote(
-            string.IsNullOrEmpty(schemaName) ? "honua" : schemaName);
-        _rasterDataTable = $"{quotedSchema}.raster_data";
+        _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
     }
 
     /// <inheritdoc />
@@ -136,10 +134,5 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
     }
 
     private static void AddParameter(DbCommand command, string name, object value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = value;
-        command.Parameters.Add(parameter);
-    }
+        => command.AddParameter(name, value);
 }

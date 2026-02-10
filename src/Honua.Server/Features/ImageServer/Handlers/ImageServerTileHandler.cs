@@ -55,10 +55,12 @@ internal sealed class ImageServerTileHandler
                 return Results.NotFound();
             }
 
-            // Validate tile coordinates
-            if (level < 0 || row < 0 || col < 0)
+            // Validate tile coordinates (Web Mercator supports zoom levels 0-28)
+            const int maxZoomLevel = 28;
+            if (level < 0 || level > maxZoomLevel || row < 0 || col < 0 ||
+                row >= (1 << level) || col >= (1 << level))
             {
-                return Results.BadRequest("Tile coordinates (level, row, col) must be non-negative");
+                return Results.BadRequest("Invalid tile coordinates");
             }
 
             // Start telemetry activity with tile-specific tags
