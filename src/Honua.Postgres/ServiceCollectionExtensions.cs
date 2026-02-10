@@ -69,7 +69,7 @@ internal static class ServiceCollectionExtensions
         services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
 
         // Register raster store implementation
-        services.AddPostgresRasterStore();
+        services.AddPostgresRasterStore(configuration["Database:Schema"]);
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();

@@ -1,8 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.Raster;
@@ -10,76 +13,520 @@ namespace Honua.Postgres.Features.Raster;
 /// <summary>
 /// PostgreSQL-based raster store implementation using PostGIS raster functions.
 /// Provides GDAL-free raster operations leveraging SQL-based PostGIS capabilities.
-/// TODO: Complete implementation - currently minimal stub for compilation.
 /// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
+    private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
+    private readonly string _rasterDataTable;
+    private readonly string _rasterStatisticsTable;
+    private readonly string _rasterTilesTable;
 
-    public PostgresRasterStore(ILogger<PostgresRasterStore> logger)
+    public PostgresRasterStore(
+        IDatabaseConnectionProvider connectionProvider,
+        ILogger<PostgresRasterStore> logger,
+        string? schemaName = null)
     {
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        var quotedSchema = SchemaSearchPath.ValidateAndQuote(
+            string.IsNullOrEmpty(schemaName) ? "honua" : schemaName);
+        _rasterDataTable = $"{quotedSchema}.raster_data";
+        _rasterStatisticsTable = $"{quotedSchema}.raster_statistics";
+        _rasterTilesTable = $"{quotedSchema}.raster_tiles";
     }
 
-    public Task<RasterInfo?> GetRasterInfoAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<RasterInfo?> GetRasterInfoAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
-        PostgresRasterLog.RasterOperationWarning(_logger, "GetRasterInfoAsync", "Not fully implemented - returning null");
-        return Task.FromResult<RasterInfo?>(null);
-    }
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
 
-    public Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
-    {
-        PostgresRasterLog.RasterOperationWarning(_logger, "ExportImageAsync", "Not fully implemented - returning placeholder");
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                   ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   ST_UpperLeftX(raster) AS upper_left_x,
+                   ST_ScaleX(raster) AS scale_x,
+                   ST_SkewX(raster) AS skew_x,
+                   ST_UpperLeftY(raster) AS upper_left_y,
+                   ST_SkewY(raster) AS skew_y,
+                   ST_ScaleY(raster) AS scale_y,
+                   ST_XMin(ST_Envelope(raster)) AS xmin,
+                   ST_YMin(ST_Envelope(raster)) AS ymin,
+                   ST_XMax(ST_Envelope(raster)) AS xmax,
+                   ST_YMax(ST_Envelope(raster)) AS ymax,
+                   created_at, modified_at
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
 
-        var result = new RasterResult
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
         {
-            Data = Array.Empty<byte>(),
-            ContentType = "image/png",
-            Width = 256,
-            Height = 256,
-            Srid = 4326
-        };
+            PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
+            return null;
+        }
 
-        return Task.FromResult(result);
+        var info = ReadRasterInfo(reader);
+        PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, rasterId, info.Width, info.Height);
+        return info;
     }
 
-    public Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
     {
-        PostgresRasterLog.RasterOperationWarning(_logger, "IdentifyAsync", "Not fully implemented - returning placeholder");
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
 
-        var result = new PixelValueResult
+        var formatName = GetGdalRasterFormat(query.OutputFormat);
+
+        // Build raster expression with chained transformations
+        var rasterExpr = "raster";
+        var extraParams = new List<(string Name, object Value)>();
+
+        // 1. Clip to region if specified
+        if (query.ClipRegion is { } clip)
+        {
+            if (clip.Srid.HasValue && clip.Srid.Value > 0)
+            {
+                rasterExpr = $"ST_Clip({rasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID(raster)))";
+                extraParams.Add(("@clipSrid", clip.Srid.Value));
+            }
+            else
+            {
+                rasterExpr = $"ST_Clip({rasterExpr}, ST_GeomFromWKB(@clipGeom, ST_SRID(raster)))";
+            }
+
+            extraParams.Add(("@clipGeom", clip.Geometry));
+        }
+
+        // 2. Resize to output dimensions if specified
+        if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
+        {
+            rasterExpr = $"ST_Resize({rasterExpr}, @outputWidth, @outputHeight)";
+            extraParams.Add(("@outputWidth", query.OutputWidth.Value));
+            extraParams.Add(("@outputHeight", query.OutputHeight.Value));
+        }
+        else if (query.PixelSize is { } pixelSize)
+        {
+            var algorithm = query.ResamplingAlgorithm switch
+            {
+                ResamplingAlgorithm.NearestNeighbor => "NearestNeighbor",
+                ResamplingAlgorithm.Bilinear => "Bilinear",
+                ResamplingAlgorithm.Bicubic => "Cubic",
+                ResamplingAlgorithm.Lanczos => "Lanczos",
+                _ => "NearestNeighbor"
+            };
+            rasterExpr = $"ST_Rescale({rasterExpr}, @pixelW, @pixelH, '{algorithm}')";
+            extraParams.Add(("@pixelW", pixelSize.Width));
+            extraParams.Add(("@pixelH", pixelSize.Height));
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH transformed AS (
+                SELECT {rasterExpr} AS rast, ST_SRID(raster) AS srid, ST_NumBands(raster) AS band_count
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+            )
+            SELECT ST_AsGDALRaster(rast, '{formatName}') AS data,
+                   ST_Width(rast) AS width,
+                   ST_Height(rast) AS height,
+                   srid,
+                   band_count
+            FROM transformed
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+        foreach (var (name, value) in extraParams)
+        {
+            AddParameter(command, name, value);
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = GetContentType(query.OutputFormat),
+                Width = 0,
+                Height = 0
+            };
+        }
+
+        var data = reader.IsDBNull(reader.GetOrdinal("data"))
+            ? Array.Empty<byte>()
+            : (byte[])reader["data"];
+        var width = reader.GetInt32(reader.GetOrdinal("width"));
+        var height = reader.GetInt32(reader.GetOrdinal("height"));
+        var srid = reader.GetInt32(reader.GetOrdinal("srid"));
+        var bandCount = reader.GetInt32(reader.GetOrdinal("band_count"));
+
+        PostgresRasterLog.ImageExported(_logger, layerId, rasterId, width, height, data.Length);
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = GetContentType(query.OutputFormat),
+            Width = width,
+            Height = height,
+            Srid = srid,
+            BandCount = bandCount
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+
+        var pointSrid = srid ?? 4326;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT band, val
+            FROM {_rasterDataTable},
+                 LATERAL generate_series(1, ST_NumBands(raster)) AS band,
+                 LATERAL ST_Value(raster, band,
+                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(raster))
+                 ) AS val
+            WHERE layer_id = @layerId AND id = @rasterId
+            ORDER BY band
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+        AddParameter(command, "@x", x);
+        AddParameter(command, "@y", y);
+        AddParameter(command, "@pointSrid", pointSrid);
+
+        var bandValues = new Dictionary<int, object?>();
+        var hasData = false;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var band = reader.GetInt32(0);
+            var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
+            bandValues[band] = val;
+            if (val != null)
+            {
+                hasData = true;
+            }
+        }
+
+        PostgresRasterLog.PixelValueIdentified(_logger, layerId, rasterId, x, y, hasData, bandValues.Count);
+
+        return new PixelValueResult
         {
             X = x,
             Y = y,
             Srid = srid,
-            BandValues = new Dictionary<int, object?>(),
-            HasData = false
+            BandValues = bandValues,
+            HasData = hasData
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterResult?> GetImageTileAsync(int layerId, long rasterId, int level, int row, int col, RasterFormat format = RasterFormat.PNG, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+
+        // Check pre-computed tiles first
+        await using var tileCommand = connection.CreateCommand();
+        tileCommand.CommandText = $"""
+            SELECT tile_data, content_type
+            FROM {_rasterTilesTable}
+            WHERE raster_data_id = @rasterId AND zoom_level = @level AND tile_x = @col AND tile_y = @row
+            """;
+        AddParameter(tileCommand, "@rasterId", rasterId);
+        AddParameter(tileCommand, "@level", level);
+        AddParameter(tileCommand, "@col", col);
+        AddParameter(tileCommand, "@row", row);
+
+        await using var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken);
+        if (await tileReader.ReadAsync(cancellationToken))
+        {
+            var tileData = (byte[])tileReader["tile_data"];
+            var contentType = tileReader.GetString(1);
+            PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, tileData.Length);
+            return new RasterResult
+            {
+                Data = tileData,
+                ContentType = contentType,
+                Width = 256,
+                Height = 256,
+                Srid = 3857
+            };
+        }
+
+        // Dynamic tile generation via PostGIS
+        var formatName = GetGdalRasterFormat(format);
+        await using var dynCommand = connection.CreateCommand();
+        dynCommand.CommandText = $"""
+            WITH tile_bounds AS (
+                SELECT ST_TileEnvelope(@level, @col, @row) AS geom
+            )
+            SELECT ST_AsGDALRaster(
+                ST_Resize(
+                    ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster))),
+                    256, 256
+                ),
+                '{formatName}'
+            ) AS data
+            FROM {_rasterDataTable}, tile_bounds tb
+            WHERE layer_id = @layerId AND id = @rasterId
+              AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            """;
+        AddParameter(dynCommand, "@layerId", layerId);
+        AddParameter(dynCommand, "@rasterId", rasterId);
+        AddParameter(dynCommand, "@level", level);
+        AddParameter(dynCommand, "@col", col);
+        AddParameter(dynCommand, "@row", row);
+
+        var result = await dynCommand.ExecuteScalarAsync(cancellationToken);
+        if (result is not byte[] data || data.Length == 0)
+        {
+            return null;
+        }
+
+        PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, data.Length);
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = GetContentType(format),
+            Width = 256,
+            Height = 256,
+            Srid = 3857
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterStatistics[]> GetStatisticsAsync(int layerId, long rasterId, int[]? bands = null, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+
+        // Try cached statistics first
+        await using var cachedCommand = connection.CreateCommand();
+        cachedCommand.CommandText = $"""
+            SELECT band_number, min_value, max_value, mean_value, std_dev,
+                   valid_pixel_count, nodata_pixel_count
+            FROM {_rasterStatisticsTable}
+            WHERE raster_data_id = @rasterId
+            ORDER BY band_number
+            """;
+        AddParameter(cachedCommand, "@rasterId", rasterId);
+
+        var stats = new List<RasterStatistics>();
+        await using var cachedReader = await cachedCommand.ExecuteReaderAsync(cancellationToken);
+        while (await cachedReader.ReadAsync(cancellationToken))
+        {
+            stats.Add(new RasterStatistics
+            {
+                Band = cachedReader.GetInt32(0),
+                MinValue = cachedReader.IsDBNull(1) ? 0 : cachedReader.GetDouble(1),
+                MaxValue = cachedReader.IsDBNull(2) ? 0 : cachedReader.GetDouble(2),
+                MeanValue = cachedReader.IsDBNull(3) ? 0 : cachedReader.GetDouble(3),
+                StandardDeviation = cachedReader.IsDBNull(4) ? 0 : cachedReader.GetDouble(4),
+                ValidPixelCount = cachedReader.IsDBNull(5) ? 0 : cachedReader.GetInt64(5),
+                NoDataPixelCount = cachedReader.IsDBNull(6) ? 0 : cachedReader.GetInt64(6)
+            });
+        }
+
+        if (stats.Count > 0)
+        {
+            if (bands != null)
+            {
+                stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+            }
+
+            PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, stats.Count);
+            return stats.ToArray();
+        }
+
+        // Compute statistics dynamically via PostGIS ST_SummaryStats
+        await using var computeCommand = connection.CreateCommand();
+        computeCommand.CommandText = $"""
+            SELECT band,
+                   (stats).min AS min_value,
+                   (stats).max AS max_value,
+                   (stats).mean AS mean_value,
+                   (stats).stddev AS std_dev,
+                   (stats).count AS valid_count
+            FROM (
+                SELECT generate_series(1, ST_NumBands(raster)) AS band,
+                       ST_SummaryStats(raster, generate_series(1, ST_NumBands(raster))) AS stats
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+            ) sub
+            ORDER BY band
+            """;
+        AddParameter(computeCommand, "@layerId", layerId);
+        AddParameter(computeCommand, "@rasterId", rasterId);
+
+        await using var computeReader = await computeCommand.ExecuteReaderAsync(cancellationToken);
+        while (await computeReader.ReadAsync(cancellationToken))
+        {
+            stats.Add(new RasterStatistics
+            {
+                Band = computeReader.GetInt32(0),
+                MinValue = computeReader.IsDBNull(1) ? 0 : computeReader.GetDouble(1),
+                MaxValue = computeReader.IsDBNull(2) ? 0 : computeReader.GetDouble(2),
+                MeanValue = computeReader.IsDBNull(3) ? 0 : computeReader.GetDouble(3),
+                StandardDeviation = computeReader.IsDBNull(4) ? 0 : computeReader.GetDouble(4),
+                ValidPixelCount = computeReader.IsDBNull(5) ? 0 : computeReader.GetInt64(5),
+                NoDataPixelCount = 0
+            });
+        }
+
+        if (bands != null)
+        {
+            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+        }
+
+        PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, stats.Count);
+        return stats.ToArray();
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT ST_XMin(ST_Envelope(raster)) AS xmin,
+                   ST_YMin(ST_Envelope(raster)) AS ymin,
+                   ST_XMax(ST_Envelope(raster)) AS xmax,
+                   ST_YMax(ST_Envelope(raster)) AS ymax,
+                   ST_SRID(raster) AS srid
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id = @rasterId
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new RasterExtent
+        {
+            XMin = reader.GetDouble(0),
+            YMin = reader.GetDouble(1),
+            XMax = reader.GetDouble(2),
+            YMax = reader.GetDouble(3),
+            Srid = reader.GetInt32(4)
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                   ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   ST_UpperLeftX(raster) AS upper_left_x,
+                   ST_ScaleX(raster) AS scale_x,
+                   ST_SkewX(raster) AS skew_x,
+                   ST_UpperLeftY(raster) AS upper_left_y,
+                   ST_SkewY(raster) AS skew_y,
+                   ST_ScaleY(raster) AS scale_y,
+                   ST_XMin(ST_Envelope(raster)) AS xmin,
+                   ST_YMin(ST_Envelope(raster)) AS ymin,
+                   ST_XMax(ST_Envelope(raster)) AS xmax,
+                   ST_YMax(ST_Envelope(raster)) AS ymax,
+                   created_at, modified_at
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId
+            ORDER BY created_at DESC
+            """;
+        AddParameter(command, "@layerId", layerId);
+
+        var rasters = new List<RasterInfo>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rasters.Add(ReadRasterInfo(reader));
+        }
+
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Count);
+        return rasters.ToArray();
+    }
+
+    // =============================================================================
+    // Private helpers
+    // =============================================================================
+
+    private static RasterInfo ReadRasterInfo(DbDataReader reader)
+    {
+        var geoTransform = new[]
+        {
+            reader.GetDouble(reader.GetOrdinal("upper_left_x")),
+            reader.GetDouble(reader.GetOrdinal("scale_x")),
+            reader.GetDouble(reader.GetOrdinal("skew_x")),
+            reader.GetDouble(reader.GetOrdinal("upper_left_y")),
+            reader.GetDouble(reader.GetOrdinal("skew_y")),
+            reader.GetDouble(reader.GetOrdinal("scale_y"))
         };
 
-        return Task.FromResult(result);
+        var noDataOrd = reader.GetOrdinal("nodata_value");
+        var modifiedOrd = reader.GetOrdinal("modified_at");
+
+        return new RasterInfo
+        {
+            Id = reader.GetInt64(reader.GetOrdinal("id")),
+            LayerId = reader.GetInt32(reader.GetOrdinal("layer_id")),
+            Name = reader.GetString(reader.GetOrdinal("name")),
+            Width = reader.GetInt32(reader.GetOrdinal("width")),
+            Height = reader.GetInt32(reader.GetOrdinal("height")),
+            BandCount = reader.GetInt32(reader.GetOrdinal("band_count")),
+            PixelType = reader.GetString(reader.GetOrdinal("pixel_type")),
+            Srid = reader.GetInt32(reader.GetOrdinal("srid")),
+            NoDataValue = reader.IsDBNull(noDataOrd) ? null : reader.GetDouble(noDataOrd),
+            GeoTransform = geoTransform,
+            Extent = new RasterExtent
+            {
+                XMin = reader.GetDouble(reader.GetOrdinal("xmin")),
+                YMin = reader.GetDouble(reader.GetOrdinal("ymin")),
+                XMax = reader.GetDouble(reader.GetOrdinal("xmax")),
+                YMax = reader.GetDouble(reader.GetOrdinal("ymax")),
+                Srid = reader.GetInt32(reader.GetOrdinal("srid"))
+            },
+            CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+            ModifiedAt = reader.IsDBNull(modifiedOrd) ? null : reader.GetDateTime(modifiedOrd)
+        };
     }
 
-    public Task<RasterResult?> GetImageTileAsync(int layerId, long rasterId, int level, int row, int col, RasterFormat format = RasterFormat.PNG, CancellationToken cancellationToken = default)
+    private static string GetGdalRasterFormat(RasterFormat format) => format switch
     {
-        PostgresRasterLog.RasterOperationWarning(_logger, "GetImageTileAsync", "Not fully implemented - returning null");
-        return Task.FromResult<RasterResult?>(null);
-    }
+        RasterFormat.PNG => "PNG",
+        RasterFormat.JPEG => "JPEG",
+        RasterFormat.TIFF => "GTiff",
+        _ => "PNG"
+    };
 
-    public Task<RasterStatistics[]> GetStatisticsAsync(int layerId, long rasterId, int[]? bands = null, CancellationToken cancellationToken = default)
+    private static string GetContentType(RasterFormat format) => format switch
     {
-        PostgresRasterLog.RasterOperationWarning(_logger, "GetStatisticsAsync", "Not fully implemented - returning empty array");
-        return Task.FromResult(Array.Empty<RasterStatistics>());
-    }
+        RasterFormat.PNG => "image/png",
+        RasterFormat.JPEG => "image/jpeg",
+        RasterFormat.TIFF => "image/tiff",
+        _ => "application/octet-stream"
+    };
 
-    public Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
+    private static void AddParameter(DbCommand command, string name, object value)
     {
-        PostgresRasterLog.RasterOperationWarning(_logger, "GetExtentAsync", "Not fully implemented - returning null");
-        return Task.FromResult<RasterExtent?>(null);
-    }
-
-    public Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
-    {
-        PostgresRasterLog.RasterOperationWarning(_logger, "ListRastersAsync", "Not fully implemented - returning empty array");
-        return Task.FromResult(Array.Empty<RasterInfo>());
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 }

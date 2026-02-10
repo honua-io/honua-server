@@ -133,7 +133,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
             activity?.SetTag("db.transaction.id", transaction.GetHashCode().ToString(CultureInfo.InvariantCulture));
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            PostgresLog.TransactionStarted(_logger, isolationLevel.ToString());
+            PostgresLog.TransactionStarted(_logger, isolationLevel);
 
             return (connection, transaction);
         }
@@ -226,5 +226,5 @@ internal static partial class PostgresLog
         EventId = 6003,
         Level = LogLevel.Debug,
         Message = "Started transaction with isolation level {IsolationLevel}")]
-    public static partial void TransactionStarted(ILogger logger, string isolationLevel);
+    public static partial void TransactionStarted(ILogger logger, IsolationLevel isolationLevel);
 }

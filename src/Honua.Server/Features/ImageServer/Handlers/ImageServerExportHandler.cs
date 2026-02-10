@@ -84,12 +84,13 @@ internal sealed class ImageServerExportHandler
                 return Results.BadRequest("Invalid export parameters");
             }
 
-            // Determine output dimensions
+            // Determine output dimensions and propagate to query
             var (width, height) = CalculateOutputDimensions(request, primaryRaster);
-            ImageServerLog.ExportImageStarted(_logger, layerId, width, height, query.Value.OutputFormat.ToString());
+            var exportQuery = query.Value with { OutputWidth = width, OutputHeight = height };
+            ImageServerLog.ExportImageStarted(_logger, layerId, width, height, exportQuery.OutputFormat.ToString());
 
             // Export the image
-            var result = await _rasterStore.ExportImageAsync(layerId, primaryRaster.Id, query.Value, cancellationToken);
+            var result = await _rasterStore.ExportImageAsync(layerId, primaryRaster.Id, exportQuery, cancellationToken);
 
             // Store the image temporarily and get the public URL
             var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(

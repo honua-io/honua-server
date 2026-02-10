@@ -49,6 +49,18 @@ public readonly record struct RasterQuery
     public TiffCompression? TiffCompression { get; init; }
 
     /// <summary>
+    /// Desired output width in pixels for image export.
+    /// When set, the raster will be resized to this width.
+    /// </summary>
+    public int? OutputWidth { get; init; }
+
+    /// <summary>
+    /// Desired output height in pixels for image export.
+    /// When set, the raster will be resized to this height.
+    /// </summary>
+    public int? OutputHeight { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the RasterQuery struct.
     /// </summary>
     public RasterQuery()
