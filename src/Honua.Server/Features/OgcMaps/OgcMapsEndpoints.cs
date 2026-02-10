@@ -26,7 +26,8 @@ public static class OgcMapsEndpoints
             .WithName("GetMapsConformance")
             .WithSummary("Get OGC API - Maps conformance classes")
             .WithDescription("Returns the conformance classes that the server implements from OGC API - Maps standards")
-            .Produces<OgcMapsConformance>();
+            .Produces<OgcMapsConformance>()
+            .CacheOutput("OgcMapsConformance");
 
         // Collection maps - single collection rendering
         group.MapGet("/collections/{collectionId}/map", GetCollectionMap)
@@ -34,7 +35,6 @@ public static class OgcMapsEndpoints
             .WithName("GetCollectionMap")
             .WithSummary("Render map from a single collection")
             .WithDescription("Returns a rendered map image from the specified collection with optional styling and spatial subsetting")
-            .Produces<IResult>()
             .Produces<MapResponse>()
             .Produces(400)
             .Produces(404);
@@ -45,9 +45,9 @@ public static class OgcMapsEndpoints
             .WithName("GetDatasetMap")
             .WithSummary("Render map from multiple collections")
             .WithDescription("Returns a rendered map image from multiple collections specified in the collections parameter")
-            .Produces<IResult>()
             .Produces<MapResponse>()
-            .Produces(400);
+            .Produces(400)
+            .Produces(404);
 
         // Styled maps - collection with specific style
         group.MapGet("/collections/{collectionId}/styles/{styleId}/map", GetStyledMap)
@@ -55,7 +55,6 @@ public static class OgcMapsEndpoints
             .WithName("GetStyledMap")
             .WithSummary("Render styled map from a collection")
             .WithDescription("Returns a rendered map image from the specified collection using a specific style definition")
-            .Produces<IResult>()
             .Produces<MapResponse>()
             .Produces(400)
             .Produces(404);

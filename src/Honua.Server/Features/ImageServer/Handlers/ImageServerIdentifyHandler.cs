@@ -132,55 +132,48 @@ internal sealed class ImageServerIdentifyHandler
 
     private static (double? x, double? y, int? srid) ParseGeometry(IdentifyRequest request)
     {
-        try
+        // Handle point geometry string (e.g., "x,y" or JSON format)
+        if (request.Geometry.Contains(','))
         {
-            // Handle point geometry string (e.g., "x,y" or JSON format)
-            if (request.Geometry.Contains(','))
+            var coords = request.Geometry.Split(',');
+            if (coords.Length >= 2 &&
+                double.TryParse(coords[0], out var x) &&
+                double.TryParse(coords[1], out var y))
             {
-                var coords = request.Geometry.Split(',');
-                if (coords.Length >= 2 &&
-                    double.TryParse(coords[0], out var x) &&
-                    double.TryParse(coords[1], out var y))
-                {
-                    var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
-                    return (x, y, srid);
-                }
+                var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
+                return (x, y, srid);
+            }
+        }
+
+        // Handle JSON geometry format
+        if (request.Geometry.StartsWith('{'))
+        {
+            // Limit JSON size to prevent DoS
+            if (request.Geometry.Length > 1000)
+            {
+                return (null, null, null);
             }
 
-            // Handle JSON geometry format
-            if (request.Geometry.StartsWith('{'))
+            try
             {
-                // Limit JSON size to prevent DoS
-                if (request.Geometry.Length > 1000)
+                using var geometryDoc = JsonDocument.Parse(request.Geometry);
+                if (geometryDoc.RootElement.TryGetProperty("x", out var xElement) &&
+                    geometryDoc.RootElement.TryGetProperty("y", out var yElement))
                 {
-                    return (null, null, null);
-                }
-
-                try
-                {
-                    using var geometryDoc = JsonDocument.Parse(request.Geometry);
-                    if (geometryDoc.RootElement.TryGetProperty("x", out var xElement) &&
-                        geometryDoc.RootElement.TryGetProperty("y", out var yElement))
+                    if (xElement.TryGetDouble(out var x) && yElement.TryGetDouble(out var y))
                     {
-                        if (xElement.TryGetDouble(out var x) && yElement.TryGetDouble(out var y))
-                        {
-                            var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
-                            return (x, y, srid);
-                        }
+                        var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
+                        return (x, y, srid);
                     }
                 }
-                catch (JsonException)
-                {
-                    return (null, null, null);
-                }
             }
+            catch (JsonException)
+            {
+                return (null, null, null);
+            }
+        }
 
-            return (null, null, null);
-        }
-        catch (Exception)
-        {
-            return (null, null, null);
-        }
+        return (null, null, null);
     }
 
     private static string FormatPixelValues(Dictionary<int, object?> bandValues)

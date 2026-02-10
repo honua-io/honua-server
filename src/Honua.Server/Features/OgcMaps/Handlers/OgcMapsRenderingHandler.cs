@@ -266,9 +266,13 @@ internal sealed class OgcMapsRenderingHandler
             // Parse format
             var format = RasterParsingHelpers.ParseRasterFormat(request.F ?? "png");
 
-            // Parse dimensions
+            // Parse and validate dimensions (prevent DoS via oversized images)
             var width = request.Width ?? 256;
             var height = request.Height ?? 256;
+            if (width < 1 || width > 4096 || height < 1 || height > 4096)
+            {
+                return null;
+            }
 
             // Parse datetime
             DateTimeOffset? datetime = null;

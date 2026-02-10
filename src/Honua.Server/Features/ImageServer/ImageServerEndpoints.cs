@@ -27,7 +27,8 @@ public static class ImageServerEndpoints
             .WithSummary("Get Image Server service metadata")
             .WithDescription("Returns comprehensive metadata about the image service including extent, capabilities, and raster properties")
             .Produces<ImageServerServiceInfo>()
-            .Produces(404);
+            .Produces(404)
+            .CacheOutput("ImageServerMetadata");
 
         // Export image endpoint - core rendering capability
         group.MapGet("/exportImage", ExportImage)
