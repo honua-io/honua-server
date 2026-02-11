@@ -114,7 +114,7 @@ internal sealed class ImageServerExportHandler
                     YMin = extent?.YMin ?? 0,
                     XMax = extent?.XMax ?? 1,
                     YMax = extent?.YMax ?? 1,
-                    SpatialReference = new SpatialReference { Wkid = result.Srid ?? 4326 }
+                    SpatialReference = new SpatialReference { Wkid = result.Srid ?? 4326, LatestWkid = result.Srid ?? 4326 }
                 }
             };
 
