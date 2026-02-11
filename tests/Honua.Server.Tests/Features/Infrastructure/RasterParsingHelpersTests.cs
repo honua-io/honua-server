@@ -446,5 +446,49 @@ public class RasterParsingHelpersTests
         result.Should().BeNull();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_LowercaseCrs84_Returns4326()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("http://www.opengis.net/def/crs/OGC/1.3/crs84");
+        result.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_MixedCaseCrs84_Returns4326()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("http://www.opengis.net/def/crs/OGC/1.3/Crs84");
+        result.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_BareCrs84_Returns4326()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("CRS84");
+        result.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_EpsgPrefixNoNumber_ReturnsNull()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("EPSG:");
+        result.Should().BeNull();
+    }
+
+    #endregion
+
+    #region ParseRasterFormat Additional Cases
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void ParseRasterFormat_NullInput_ReturnsPng()
+    {
+        var result = RasterParsingHelpers.ParseRasterFormat(null);
+        result.Should().Be(RasterFormat.PNG);
+    }
+
     #endregion
 }

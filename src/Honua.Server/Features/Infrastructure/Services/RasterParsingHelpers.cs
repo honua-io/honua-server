@@ -76,8 +76,11 @@ internal static class RasterParsingHelpers
     /// <summary>
     /// Parses a format string to the corresponding <see cref="RasterFormat"/> enum value.
     /// </summary>
-    public static RasterFormat ParseRasterFormat(string format)
+    public static RasterFormat ParseRasterFormat(string? format)
     {
+        if (string.IsNullOrEmpty(format))
+            return RasterFormat.PNG;
+
         return format.ToLowerInvariant() switch
         {
             "png" => RasterFormat.PNG,
