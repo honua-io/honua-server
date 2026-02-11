@@ -69,6 +69,15 @@ internal interface IFeatureDataAccess
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes an aggregate statistics query and returns rows of field-value pairs
+    /// </summary>
+    Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Generates MVT tile data
     /// </summary>
     Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken);

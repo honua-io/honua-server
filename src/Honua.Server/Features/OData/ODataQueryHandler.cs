@@ -52,6 +52,7 @@ internal sealed partial class ODataQueryHandler(
         [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$top")] string? top = null,
         [FromQuery(Name = "$skip")] string? skip = null,
+        [FromQuery(Name = "$skiptoken")] string? skiptoken = null,
         [FromQuery(Name = "$count")] string? count = null,
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
@@ -78,11 +79,13 @@ internal sealed partial class ODataQueryHandler(
                 _validationService,
                 top,
                 skip,
+                skiptoken,
                 count,
                 out var pagination,
                 out _,
                 out _,
-                out var countValue);
+                out var countValue,
+                out _);
             if (pagingError != null)
             {
                 return pagingError;
@@ -132,7 +135,7 @@ internal sealed partial class ODataQueryHandler(
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(response, ODataJsonContext.Default.ODataResponse,
-                contentType: ODataUtilityService.GetODataContentType());
+                contentType: ODataUtilityService.GetODataContentType(context.Request, format));
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -209,7 +212,7 @@ internal sealed partial class ODataQueryHandler(
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(payload, ODataJsonContext.Default.DictionaryStringObject,
-                contentType: ODataUtilityService.GetODataContentType());
+                contentType: ODataUtilityService.GetODataContentType(context.Request, format));
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -305,6 +308,9 @@ internal sealed partial class ODataQueryHandler(
         [FromQuery(Name = "$skip")] int? skip = null,
         [FromQuery(Name = "$count")] bool? count = null,
         [FromQuery(Name = "$expand")] string? expand = null,
+        bool useSkipToken = false,
+        [FromQuery(Name = "$compute")] string? compute = null,
+        [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -317,6 +323,14 @@ internal sealed partial class ODataQueryHandler(
             if (queryValidation != null)
             {
                 return queryValidation;
+            }
+
+            if (!ODataComputeService.TryParse(compute, out var computeExpressions, out var computeError))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    computeError ?? "Invalid $compute expression.");
             }
 
             var paginationResult = _validationService.ValidateAndNormalizePagination(skip, top);
@@ -360,7 +374,8 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions) &&
-                           string.IsNullOrWhiteSpace(expand);
+                           string.IsNullOrWhiteSpace(expand) &&
+                           !AcceptRequestsNonDefaultMetadata(context.Request, format);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)
             {
@@ -416,6 +431,7 @@ internal sealed partial class ODataQueryHandler(
                     }
                 }
 
+                ODataComputeService.ApplyCompute(dict, computeExpressions);
                 return dict;
             }).ToArray();
 
@@ -432,7 +448,7 @@ internal sealed partial class ODataQueryHandler(
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = ODataUtilityService.GenerateNextLink(context.Request, nextSkip, pagination.Limit,
-                    filter, select, orderby, count, expand);
+                    filter, select, orderby, count, expand, useSkipToken, compute);
             }
 
             var response = new ODataResponse
@@ -444,9 +460,9 @@ internal sealed partial class ODataQueryHandler(
             };
 
             ODataUtilityService.SetODataHeaders(context);
+            var contentType = ODataUtilityService.GetODataContentType(context.Request, format);
             if (canCache && cacheKey != null)
             {
-                var contentType = ODataUtilityService.GetODataContentType();
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, ODataJsonContext.Default.ODataResponse);
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
                 await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, effectiveToken);
@@ -456,7 +472,7 @@ internal sealed partial class ODataQueryHandler(
 
             HonuaTelemetry.SetSuccess(featureActivity, result.Length);
             return Results.Json(response, ODataJsonContext.Default.ODataResponse,
-                contentType: ODataUtilityService.GetODataContentType());
+                contentType: contentType);
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -486,6 +502,21 @@ internal sealed partial class ODataQueryHandler(
     private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)
     {
         return ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken);
+    }
+
+    private static bool AcceptRequestsNonDefaultMetadata(HttpRequest request, string? format)
+    {
+        if (!string.IsNullOrWhiteSpace(format) &&
+            format.Contains("odata.metadata", StringComparison.OrdinalIgnoreCase) &&
+            !format.Contains("minimal", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var accept = request.Headers.Accept.ToString();
+        return !string.IsNullOrWhiteSpace(accept) &&
+               accept.Contains("odata.metadata", StringComparison.OrdinalIgnoreCase) &&
+               !accept.Contains("odata.metadata=minimal", StringComparison.OrdinalIgnoreCase);
     }
 
 

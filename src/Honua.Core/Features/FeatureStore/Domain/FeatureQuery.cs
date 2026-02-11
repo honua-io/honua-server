@@ -74,6 +74,21 @@ public readonly record struct FeatureQuery
     public ImmutableArray<OrderByClause>? OrderBy { get; init; }
 
     /// <summary>
+    /// Whether to return only distinct rows (SQL DISTINCT)
+    /// </summary>
+    public bool Distinct { get; init; }
+
+    /// <summary>
+    /// Aggregate statistic definitions for statistics queries (outStatistics)
+    /// </summary>
+    public ImmutableArray<StatisticDefinition>? OutStatistics { get; init; }
+
+    /// <summary>
+    /// Fields to group by for statistics queries (groupByFieldsForStatistics)
+    /// </summary>
+    public ImmutableArray<string>? GroupByFields { get; init; }
+
+    /// <summary>
     /// Creates a simple WHERE clause query
     /// </summary>
     /// <param name="where">WHERE clause expression</param>

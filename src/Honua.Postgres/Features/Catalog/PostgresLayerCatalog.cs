@@ -27,13 +27,11 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
-        string quotedSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(
-            string.IsNullOrEmpty(schemaName) ? "honua" : schemaName);
-        _layersTable = $"{quotedSchema}.layers";
-        _fieldsTable = $"{quotedSchema}.layer_fields";
-        _servicesTable = $"{quotedSchema}.services";
-        _serviceLayersTable = $"{quotedSchema}.service_layers";
-        _relationshipsTable = $"{quotedSchema}.relationships";
+        _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);
+        _fieldsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_fields", schemaName);
+        _servicesTable = Infrastructure.SchemaSearchPath.QualifyTable("services", schemaName);
+        _serviceLayersTable = Infrastructure.SchemaSearchPath.QualifyTable("service_layers", schemaName);
+        _relationshipsTable = Infrastructure.SchemaSearchPath.QualifyTable("relationships", schemaName);
     }
 
     /// <inheritdoc />

@@ -48,7 +48,7 @@ internal sealed class ODataMetadataHandler(
 
         ODataUtilityService.SetODataHeaders(context);
         return Results.Json(serviceDocument, ODataJsonContext.Default.ServiceDocument,
-            contentType: ODataUtilityService.GetODataContentType());
+            contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
     }
 
     /// <summary>

@@ -39,11 +39,13 @@ public static class CspViolationReportEndpoint
         [FromServices] ILogger<CspViolationReport> logger,
         HttpContext context)
     {
+        var clientInfo = GetClientInfo(context);
+
         try
         {
             if (request.ContentLength == 0)
             {
-                CspViolationReportLog.EmptyViolationReport(logger, GetClientInfo(context));
+                CspViolationReportLog.EmptyViolationReport(logger, clientInfo);
                 return Results.NoContent();
             }
 
@@ -55,7 +57,6 @@ public static class CspViolationReportEndpoint
 
             if (violationReport?.CspReport != null)
             {
-                var clientInfo = GetClientInfo(context);
                 var violation = violationReport.CspReport;
 
                 // Log the violation with structured data
@@ -87,20 +88,20 @@ public static class CspViolationReportEndpoint
             }
             else if (violationReport == null)
             {
-                CspViolationReportLog.EmptyViolationReport(logger, GetClientInfo(context));
+                CspViolationReportLog.EmptyViolationReport(logger, clientInfo);
             }
             else
             {
-                CspViolationReportLog.InvalidViolationReport(logger, "<unavailable>", GetClientInfo(context));
+                CspViolationReportLog.InvalidViolationReport(logger, "<unavailable>", clientInfo);
             }
         }
         catch (JsonException ex)
         {
-            CspViolationReportLog.ViolationReportParsingError(logger, ex.Message, GetClientInfo(context));
+            CspViolationReportLog.ViolationReportParsingError(logger, ex.Message, clientInfo);
         }
         catch (Exception ex)
         {
-            CspViolationReportLog.ViolationReportProcessingError(logger, ex.Message, GetClientInfo(context));
+            CspViolationReportLog.ViolationReportProcessingError(logger, ex.Message, clientInfo);
         }
 
         // Always return 204 No Content to acknowledge receipt

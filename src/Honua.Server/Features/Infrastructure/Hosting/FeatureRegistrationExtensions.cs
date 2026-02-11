@@ -1,13 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.EsriCatalog;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.GeometryService;
+using Honua.Server.Features.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.MapServer;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
+using Honua.Server.Features.OgcMaps;
 using Honua.Server.Features.OgcTiles;
 using Honua.Server.Features.Tiles;
 
@@ -27,8 +30,10 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddFeatureServer();
+        services.AddImageServer();
         services.AddMapServer();
         services.AddOgcFeatures();
+        services.AddOgcMaps();
         services.AddOData();
         services.AddGeometryService();
         services.AddObservability(configuration);
@@ -44,11 +49,14 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapFeatureServerEndpoints();
+        endpoints.MapEsriCatalogEndpoints();
+        endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
+        endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapODataEndpoints();
         endpoints.MapGeometryServiceEndpoints();

@@ -81,6 +81,33 @@ public class CoordinateTransformerTests
     }
 
     [UnitTest]
+    public void TransformPoint_WebMercatorAliasTo4326_TransformsCorrectly()
+    {
+        var (x, y) = CoordinateTransformer.TransformPoint(0.0, 6_711_455.0, 102100, 4326);
+
+        x.Should().BeApproximately(0.0, 0.001);
+        y.Should().BeApproximately(51.5, 0.1);
+    }
+
+    [UnitTest]
+    public void TransformPoint_4326ToWebMercatorAlias_TransformsCorrectly()
+    {
+        var (x, y) = CoordinateTransformer.TransformPoint(0.0, 51.5, 4326, 102100);
+
+        x.Should().BeApproximately(0.0, 1.0);
+        y.Should().BeApproximately(6_711_455.0, 10_000.0);
+    }
+
+    [UnitTest]
+    public void TransformPoint_GeographicSridAliasTo4326_ReturnsOriginalCoordinates()
+    {
+        var (x, y) = CoordinateTransformer.TransformPoint(-122.5, 37.5, 4269, 4326);
+
+        x.Should().Be(-122.5);
+        y.Should().Be(37.5);
+    }
+
+    [UnitTest]
     public void CalculateScaleDenominator_ValidInput_ReturnsPositive()
     {
         var extent = new SkiaMapRenderer.RenderExtent(-1, -1, 1, 1);

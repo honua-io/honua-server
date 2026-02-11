@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -47,6 +48,18 @@ public interface IFeatureReader
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Spatial extent of the features, null if no features found</returns>
     Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes an aggregate statistics query with optional grouping
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including OutStatistics and GroupByFields</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Array of rows, each containing statistic field names mapped to computed values</returns>
+    Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the temporal extent (min/max) for a temporal field.

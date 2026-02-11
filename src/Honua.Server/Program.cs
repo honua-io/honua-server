@@ -23,6 +23,7 @@ using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Extensions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Infrastructure.Middleware;
@@ -199,6 +200,13 @@ builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeomet
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 
+// Configure temporary file service for image exports
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions.SectionName));
+builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
+    Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
+builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.TemporaryFileCleanupService>();
+
 // Register shared validation services
 builder.Services.AddValidationServices();
 
@@ -268,8 +276,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
         Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
+        Honua.Server.Features.ImageServer.Models.ImageServerJsonContext.Default,
         Honua.Server.Features.OData.Models.ODataJsonContext.Default,
         Honua.Server.Features.OgcFeatures.OgcJsonContext.Default,
+        Honua.Server.Features.OgcMaps.Models.OgcMapsJsonContext.Default,
         Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
@@ -450,8 +460,9 @@ app.UseSerilogRequestLogging(options =>
 });
 
 // Log application startup
+var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
 Honua.Server.Features.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
-    typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
+    appVersion,
     app.Environment.EnvironmentName);
 
 // Run database migrations on startup
@@ -493,6 +504,9 @@ app.MapImportEndpoints();
 
 // Configure Esri service import endpoints
 app.MapEsriImportEndpoints();
+
+// Configure temporary file serving endpoints
+app.MapTemporaryFileEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();

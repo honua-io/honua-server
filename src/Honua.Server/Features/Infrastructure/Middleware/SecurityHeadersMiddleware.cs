@@ -49,7 +49,9 @@ internal sealed class SecurityHeadersMiddleware
         // Log security headers application for debugging in development
         if (_logger.IsEnabled(LogLevel.Debug))
         {
-            SecurityHeadersLog.SecurityHeadersApplied(_logger, context.Request.Path, context.Request.Method);
+            var requestPath = context.Request.Path.Value ?? "/";
+            var requestMethod = context.Request.Method;
+            SecurityHeadersLog.SecurityHeadersApplied(_logger, requestPath, requestMethod);
         }
 
         // Continue to next middleware

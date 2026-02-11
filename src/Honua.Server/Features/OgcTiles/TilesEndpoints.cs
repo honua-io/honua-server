@@ -725,6 +725,13 @@ internal static class TilesEndpoints
                 return (null, AccessPolicyHelpers.RequireAnyLayerAccess(context, layers));
             }
 
+            if (accessibleLayers.Length > 1)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "The collections parameter is required when multiple collections are available."));
+            }
+
             return (accessibleLayers[0], null);
         }
 

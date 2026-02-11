@@ -42,6 +42,17 @@ internal static partial class SchemaSearchPath
         return $"\"{sanitized}\"";
     }
 
+    /// <summary>
+    /// Builds a fully qualified table name with schema validation.
+    /// Defaults to "honua" schema if none is specified.
+    /// </summary>
+    public static string QualifyTable(string tableName, string? schemaName = null)
+    {
+        var quotedSchema = ValidateAndQuote(
+            string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName);
+        return $"{quotedSchema}.{tableName}";
+    }
+
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex SchemaNamePattern();
 }

@@ -25,8 +25,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
     [InlineData("returnExceededLimitFeatures=true", "returnExceededLimitFeatures")]
     [InlineData("resultType=tile", "resultType")]
-    [InlineData("outStatistics=1", "outStatistics")]
-    [InlineData("groupByFieldsForStatistics=category", "groupByFieldsForStatistics")]
     [InlineData("having=1=1", "having")]
     [InlineData("sqlFormat=standard", "sqlFormat")]
     [InlineData("gdbVersion=sde.DEFAULT", "gdbVersion")]
@@ -61,7 +59,48 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
             .Select(element => element.GetString())
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .ToList();
-        details.Should().Contain("Output format 'pbf' is not supported");
+        details.Should().Contain(detail => detail!.Contains("Output format 'pbf' is not supported"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithUnsupportedFormat_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=xml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var details = document.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+        details.Should().Contain(detail => detail!.Contains("Output format 'xml' is not supported"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task QueryPost_WithUnsupportedBodyParameter_ReturnsBadRequest()
+    {
+        var payload = """
+            {
+              "where": "1=1",
+              "outStatistics": [{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"count"}],
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query",
+            new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("outStatistics");
     }
 
     [IntegrationTest]

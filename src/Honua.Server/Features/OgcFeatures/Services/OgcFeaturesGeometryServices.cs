@@ -311,21 +311,22 @@ internal sealed partial class OgcFeaturesGeometryServices
         public static partial void GeometryRepairFailed(ILogger logger, Exception exception);
     }
 
-    /// <summary>
-    /// Coordinate sequence filter that swaps X and Y coordinates for axis order conversion.
-    /// </summary>
-    private sealed class AxisSwapFilter : ICoordinateSequenceFilter
+}
+
+/// <summary>
+/// Coordinate sequence filter that swaps X and Y coordinates for axis order conversion.
+/// </summary>
+internal sealed class AxisSwapFilter : ICoordinateSequenceFilter
+{
+    public bool Done => false;
+
+    public bool GeometryChanged => true;
+
+    public void Filter(CoordinateSequence seq, int i)
     {
-        public bool Done => false;
-
-        public bool GeometryChanged => true;
-
-        public void Filter(CoordinateSequence seq, int i)
-        {
-            var x = seq.GetX(i);
-            var y = seq.GetY(i);
-            seq.SetX(i, y);
-            seq.SetY(i, x);
-        }
+        var x = seq.GetX(i);
+        var y = seq.GetY(i);
+        seq.SetX(i, y);
+        seq.SetY(i, x);
     }
 }

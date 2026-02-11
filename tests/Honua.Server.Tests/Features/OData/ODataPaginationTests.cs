@@ -131,6 +131,19 @@ public sealed class ODataPaginationTests : IAsyncLifetime
         features.Should().BeEmpty();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$skiptoken=10")]
+    public async Task SkipToken_PartialOffset_ReturnsRemainingResults()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skiptoken=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var (features, _) = await ParseResponseAsync(response);
+        features.Should().HaveCount(5);
+        features.First().GetProperty("ObjectId").GetInt64().Should().Be(11);
+    }
+
     #endregion
 
     #region $top and $skip Combination Tests
@@ -467,6 +480,24 @@ public sealed class ODataPaginationTests : IAsyncLifetime
         var nextLink = nextLinkElement.GetString();
         nextLink.Should().Contain("$orderby");
         nextLink.Should().Contain("population");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$top=3&$skiptoken=0")]
+    public async Task NextLink_WithSkipToken_UsesSkipTokenInNextLink()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=3&$skiptoken=0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
+        var nextLink = nextLinkElement.GetString();
+        nextLink.Should().Contain("$skiptoken=3");
+        nextLink.Should().NotContain("$skip=");
     }
 
     #endregion

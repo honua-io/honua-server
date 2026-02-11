@@ -188,8 +188,14 @@ public static class HonuaTelemetry
         /// <summary>OGC API Tiles.</summary>
         public const string OgcTiles = "OGC-Tiles";
 
+        /// <summary>OGC API Maps.</summary>
+        public const string OgcMaps = "OGC-Maps";
+
         /// <summary>Esri MapServer REST API.</summary>
         public const string MapServer = "MapServer";
+
+        /// <summary>Esri Image Server REST API.</summary>
+        public const string ImageServer = "ImageServer";
 
         /// <summary>OData v4 protocol.</summary>
         public const string OData = "OData";
@@ -414,5 +420,88 @@ public static class HonuaTelemetry
         };
 
         activity.SetTag(Tags.MemoryCategory, category);
+    }
+}
+
+/// <summary>
+/// Encapsulates the lifecycle of a telemetry feature activity.
+/// </summary>
+public sealed class HonuaTelemetryScope : IDisposable
+{
+    private readonly Activity? _activity;
+    private bool _disposed;
+
+    private HonuaTelemetryScope(Activity? activity)
+    {
+        _activity = activity;
+    }
+
+    /// <summary>
+    /// Starts a scope for a feature operation.
+    /// </summary>
+    /// <param name="operation">Operation name (query, edit, export, etc.).</param>
+    /// <param name="protocol">Protocol name from <see cref="HonuaTelemetry.Protocols"/>.</param>
+    /// <param name="layerId">Layer identifier value.</param>
+    /// <param name="correlationId">Optional correlation identifier.</param>
+    /// <returns>A telemetry scope that should be disposed when operation completes.</returns>
+    public static HonuaTelemetryScope StartFeature(
+        string operation,
+        string protocol,
+        string layerId,
+        string? correlationId = null)
+    {
+        var activity = HonuaTelemetry.StartFeatureActivity(operation, protocol, layerId, correlationId);
+        return new HonuaTelemetryScope(activity);
+    }
+
+    /// <summary>
+    /// Adds a tag to the underlying activity.
+    /// </summary>
+    /// <param name="key">Tag key.</param>
+    /// <param name="value">Tag value.</param>
+    /// <returns>The current scope instance.</returns>
+    public HonuaTelemetryScope WithTag(string key, object? value)
+    {
+        _activity?.SetTag(key, value);
+        return this;
+    }
+
+    /// <summary>
+    /// Marks operation success with optional feature count.
+    /// </summary>
+    /// <param name="featureCount">Optional feature count.</param>
+    public void SetSuccess(int featureCount = 0)
+    {
+        HonuaTelemetry.SetSuccess(_activity, featureCount);
+    }
+
+    /// <summary>
+    /// Records an exception on the underlying activity.
+    /// </summary>
+    /// <param name="exception">Exception to record.</param>
+    public void RecordException(Exception exception)
+    {
+        HonuaTelemetry.RecordException(_activity, exception);
+    }
+
+    /// <summary>
+    /// Categorizes latency on the underlying activity.
+    /// </summary>
+    /// <param name="durationMs">Duration in milliseconds.</param>
+    public void CategorizeLatency(double durationMs)
+    {
+        HonuaTelemetry.CategorizeLatency(_activity, durationMs);
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _activity?.Dispose();
+        _disposed = true;
     }
 }

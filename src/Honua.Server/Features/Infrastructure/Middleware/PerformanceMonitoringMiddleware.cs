@@ -85,10 +85,12 @@ internal sealed partial class PerformanceMonitoringMiddleware
             }
 
             // Log performance impact of exceptions
+            var requestPath = context.Request.Path.Value ?? string.Empty;
+            var exceptionType = ex.GetType().Name;
             PerformanceMonitoringLog.RequestExceptionOccurred(_logger,
                 context.Request.Method,
-                context.Request.Path,
-                ex.GetType().Name,
+                requestPath,
+                exceptionType,
                 stopwatch.Elapsed.TotalMilliseconds);
             throw;
         }
@@ -113,9 +115,10 @@ internal sealed partial class PerformanceMonitoringMiddleware
             // Log slow requests
             if (stopwatch.Elapsed > _options.SlowRequestThreshold)
             {
+                var requestPath = context.Request.Path.Value ?? string.Empty;
                 PerformanceMonitoringLog.SlowRequestDetected(_logger,
                     context.Request.Method,
-                    context.Request.Path,
+                    requestPath,
                     stopwatch.Elapsed.TotalMilliseconds,
                     _options.SlowRequestThreshold.TotalMilliseconds);
             }

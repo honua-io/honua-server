@@ -196,7 +196,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
                     var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
                     var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
-                    var streamLinks = BuildItemsLinks(request, streamBasePath, outputFormat, effectiveLimit, effectiveOffset, hasMoreResults);
+                    var streamLinks = BuildItemsLinks(
+                        request,
+                        collectionId,
+                        streamBasePath,
+                        outputFormat,
+                        effectiveLimit,
+                        effectiveOffset,
+                        hasMoreResults);
 
                     if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
                     {
@@ -204,7 +211,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             _streamingFeatureStore,
                             layer,
                             query,
-                            filterResult.CrsDefinition.Uri);
+                            filterResult.CrsDefinition.Uri,
+                            cancellationToken);
                     }
 
                     return new StreamingItemsResult(
@@ -217,7 +225,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         outputFormat,
                         streamLinks,
                         totalCount,
-                        filterResult.CrsDefinition.Uri);
+                        filterResult.CrsDefinition.Uri,
+                        cancellationToken);
                 }
             }
 
@@ -240,7 +249,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
 
-            var links = BuildItemsLinks(request, basePath, outputFormat, effectiveLimit, effectiveOffset, result.HasMoreResults);
+            var links = BuildItemsLinks(
+                request,
+                collectionId,
+                basePath,
+                outputFormat,
+                effectiveLimit,
+                effectiveOffset,
+                result.HasMoreResults);
 
             var response = new FeatureCollection
             {
@@ -457,6 +473,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static ImmutableArray<Link> BuildItemsLinks(
         HttpRequest request,
+        string collectionId,
         string basePath,
         string outputFormat,
         int limit,
@@ -489,6 +506,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 type: outputFormat,
                 title: "Next page"));
         }
+
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionId}/queryables",
+            rel: RelationTypes.Queryables,
+            type: MediaTypes.SchemaJson,
+            title: "Queryables schema"));
 
         return links.ToImmutable();
     }
@@ -680,6 +704,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly long _numberMatched;
         private readonly string _crsUri;
         private readonly OgcFeaturesGeometryServices _geometryServices;
+        private readonly CancellationToken _requestCancellationToken;
 
         public StreamingItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
@@ -691,7 +716,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
             string outputFormat,
             ImmutableArray<Link> links,
             long numberMatched,
-            string crsUri)
+            string crsUri,
+            CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
             _layer = layer;
@@ -703,6 +729,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _links = links;
             _numberMatched = numberMatched;
             _crsUri = crsUri;
+            _requestCancellationToken = requestCancellationToken;
         }
 
         public async Task ExecuteAsync(HttpContext httpContext)
@@ -711,10 +738,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
             EnableChunkedEncodingIfHttp1(httpContext);
 
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                httpContext.RequestAborted,
+                _requestCancellationToken);
+            var cancellationToken = linkedCts.Token;
+
             var stream = _streamingFeatureStore.StreamFeaturesAsync(
                 _layer.Id,
                 _query,
-                httpContext.RequestAborted);
+                cancellationToken);
 
             await StreamFeatureCollectionAsync(
                 httpContext,
@@ -725,7 +757,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _outputFormat,
                 _links,
                 _numberMatched,
-                httpContext.RequestAborted);
+                cancellationToken);
         }
     }
 
@@ -735,17 +767,20 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly LayerDefinition _layer;
         private readonly FeatureQuery _query;
         private readonly string _crsUri;
+        private readonly CancellationToken _requestCancellationToken;
 
         public StreamingGmlItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
             LayerDefinition layer,
             FeatureQuery query,
-            string crsUri)
+            string crsUri,
+            CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
             _layer = layer;
             _query = query;
             _crsUri = crsUri;
+            _requestCancellationToken = requestCancellationToken;
         }
 
         public async Task ExecuteAsync(HttpContext httpContext)
@@ -754,15 +789,20 @@ internal sealed partial class OgcFeaturesQueryHandler(
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
             EnableChunkedEncodingIfHttp1(httpContext);
 
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                httpContext.RequestAborted,
+                _requestCancellationToken);
+            var cancellationToken = linkedCts.Token;
+
             var stream = _streamingFeatureStore.StreamGmlFeaturesAsync(
                 _layer.Id,
                 _query,
-                httpContext.RequestAborted);
+                cancellationToken);
 
             await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
                 stream,
                 httpContext.Response.BodyWriter,
-                httpContext.RequestAborted);
+                cancellationToken);
 
             await httpContext.Response.BodyWriter.CompleteAsync();
         }

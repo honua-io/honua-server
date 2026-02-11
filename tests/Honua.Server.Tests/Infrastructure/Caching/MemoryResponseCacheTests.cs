@@ -136,6 +136,23 @@ public class MemoryResponseCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task RemoveByPatternAsync_ComplexWildcardPattern_RemovesMatchingKeys()
+    {
+        // Arrange
+        await _cache.SetAsync("layer:definition:1", "layer1", TimeSpan.FromMinutes(5));
+        await _cache.SetAsync("layer:metadata:1", "metadata1", TimeSpan.FromMinutes(5));
+        await _cache.SetAsync("layer:definition:2", "layer2", TimeSpan.FromMinutes(5));
+
+        // Act
+        await _cache.RemoveByPatternAsync("layer:*:1");
+
+        // Assert
+        Assert.Null(await _cache.GetAsync<string>("layer:definition:1"));
+        Assert.Null(await _cache.GetAsync<string>("layer:metadata:1"));
+        Assert.NotNull(await _cache.GetAsync<string>("layer:definition:2"));
+    }
+
+    [Fact]
     public async Task SetAsync_ComplexObject_StoresAndRetrievesCorrectly()
     {
         // Arrange

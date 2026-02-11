@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -312,6 +313,146 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         createStatus.Should().Be(424);
         var finalCount = await CountFeaturesAsync();
         finalCount.Should().Be(initialCount);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithNamedKeyRequestForLayerZero_ReturnsFeature()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "named-keys",
+                Method = "GET",
+                Url = "Features(LayerId=0,ObjectId=1)"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+
+        var batchResponses = document.RootElement.GetProperty("responses");
+        batchResponses.GetArrayLength().Should().Be(1);
+        batchResponses[0].GetProperty("status").GetInt32().Should().Be(200);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithCollectionGetRequest_ReturnsCollectionPayload()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "collection",
+                Method = "GET",
+                Url = "Layers(0)/Features?$top=2&$count=true"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+
+        var batchResponses = document.RootElement.GetProperty("responses");
+        batchResponses.GetArrayLength().Should().Be(1);
+
+        var item = batchResponses[0];
+        item.GetProperty("status").GetInt32().Should().Be(200);
+        var body = item.GetProperty("body");
+        body.GetProperty("value").GetArrayLength().Should().BeLessThanOrEqualTo(2);
+        body.TryGetProperty("@odata.count", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithFailedDependency_ReturnsDependencyFailed()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(
+                new ODataBatchRequestItem
+                {
+                    Id = "bad",
+                    Method = "GET",
+                    Url = "BadUrl"
+                },
+                new ODataBatchRequestItem
+                {
+                    Id = "dependent",
+                    Method = "GET",
+                    Url = "Features(0,1)",
+                    DependsOn = ["bad"]
+                })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+
+        var statuses = document.RootElement.GetProperty("responses")
+            .EnumerateArray()
+            .ToDictionary(
+                item => item.GetProperty("id").GetString()!,
+                item => item.GetProperty("status").GetInt32(),
+                StringComparer.Ordinal);
+
+        statuses["bad"].Should().Be(400);
+        statuses["dependent"].Should().Be(424);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithMultipartRequest_ReturnsMultipartResponse()
+    {
+        const string boundary = "batch_123";
+        var payload = string.Join("\r\n",
+        [
+            $"--{boundary}",
+            "Content-Type: application/http",
+            "Content-Transfer-Encoding: binary",
+            string.Empty,
+            "GET /odata/Features(0,1) HTTP/1.1",
+            "Accept: application/json",
+            string.Empty,
+            $"--{boundary}--",
+            string.Empty
+        ]);
+
+        var content = new StringContent(payload, Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
+
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("multipart/mixed");
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "boundary");
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        responseBody.Should().Contain("HTTP/1.1 200");
+        responseBody.Should().Contain("OData-Version: 4.0");
     }
 
     private async Task<long> CountFeaturesAsync()
@@ -705,6 +846,45 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     #endregion
 
+    #region Compute Tests
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$compute")]
+    public async Task Features_WithCompute_ReturnsComputedProperty()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=1&$compute=population div 1000 as PopulationThousands");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var feature = document.RootElement.GetProperty("value")[0];
+        feature.TryGetProperty("PopulationThousands", out var computed).Should().BeTrue();
+        computed.ValueKind.Should().Be(JsonValueKind.Number);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$compute with $select")]
+    public async Task Features_WithComputeAndSelect_ReturnsComputedAlias()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=1&$select=ObjectId,PopulationThousands&$compute=population div 1000 as PopulationThousands");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var feature = document.RootElement.GetProperty("value")[0];
+        feature.TryGetProperty("ObjectId", out _).Should().BeTrue();
+        feature.TryGetProperty("PopulationThousands", out _).Should().BeTrue();
+        feature.TryGetProperty("population", out _).Should().BeFalse();
+    }
+
+    #endregion
+
     #region Expand Tests
 
     [IntegrationTest]
@@ -771,6 +951,24 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var values = document.RootElement.GetProperty("value");
         values.GetArrayLength().Should().BeLessThanOrEqualTo(5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataExpand)]
+    [Endpoint("GET /odata/Features({layerId})?$expand with options")]
+    public async Task Features_WithExpandOptions_ReturnsExpandedResults()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$expand=Landmarks($select=name)&$filter=ObjectId eq 1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var feature = document.RootElement.GetProperty("value")[0];
+        feature.TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
+        landmarks.ValueKind.Should().Be(JsonValueKind.Array);
+        landmarks.GetArrayLength().Should().BeGreaterThan(0);
     }
 
     #endregion

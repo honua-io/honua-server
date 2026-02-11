@@ -122,6 +122,14 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("ogc-tiles", "metadata");
             });
 
+            // OGC API Maps conformance caching policy
+            options.AddPolicy("OgcMapsConformance", policy =>
+            {
+                policy.Expire(TimeSpan.FromHours(1));
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-maps", "metadata");
+            });
+
             // OGC API Tiles OpenAPI caching policy
             options.AddPolicy("OgcTilesOpenApi", policy =>
             {

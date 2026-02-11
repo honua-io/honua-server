@@ -35,6 +35,25 @@ internal static class FeatureServerTemporalQueryBuilder
     }
 
     /// <summary>
+    /// Builds a temporal filter expression from raw time values.
+    /// </summary>
+    internal static FilterExpression? BuildTemporalExpression(string? time, string? timeRelation, LayerDefinition layer)
+    {
+        if (string.IsNullOrWhiteSpace(time))
+        {
+            return null;
+        }
+
+        var queryParams = new QueryParameters
+        {
+            Time = time,
+            TimeRelation = timeRelation
+        };
+
+        return BuildTemporalExpression(queryParams, layer);
+    }
+
+    /// <summary>
     /// Builds a temporal filter expression for FeatureServer time queries.
     /// </summary>
     internal static FilterExpression? BuildTemporalExpression(QueryParameters queryParams, LayerDefinition layer)

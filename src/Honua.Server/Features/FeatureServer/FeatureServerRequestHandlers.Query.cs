@@ -64,6 +64,13 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.Query, out error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
         if (!TryParseQueryParameters(values, out var queryParams, out var parseError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -80,7 +87,7 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
-    private static bool TryParseQueryParameters(
+    internal static bool TryParseQueryParameters(
         IReadOnlyDictionary<string, StringValues> values,
         out QueryParameters parameters,
         out string? error)

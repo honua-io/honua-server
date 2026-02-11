@@ -29,16 +29,48 @@ public sealed class ApplyEditsRequest
     public object[]? Deletes { get; set; }
 
     /// <summary>
-    /// Whether to rollback all changes on failure
+    /// Whether to rollback all changes on failure.
+    /// Default is false for applyEdits, true for standalone endpoints (addFeatures, updateFeatures, deleteFeatures).
     /// </summary>
     [JsonPropertyName("rollbackOnFailure")]
-    public bool RollbackOnFailure { get; set; } = false; // GeoServices default is partial success
+    public bool RollbackOnFailure { get; set; } = false;
+
+    /// <summary>
+    /// Tracks whether rollbackOnFailure was explicitly provided in the request.
+    /// Used by standalone endpoints to apply the correct default.
+    /// </summary>
+    [JsonIgnore]
+    public bool RollbackOnFailureExplicitlySet { get; set; }
 
     /// <summary>
     /// Whether to use global IDs
     /// </summary>
     [JsonPropertyName("useGlobalIds")]
     public bool UseGlobalIds { get; set; } = false;
+
+    /// <summary>
+    /// Requested response format.
+    /// </summary>
+    [JsonPropertyName("f")]
+    public string? F { get; set; }
+
+    /// <summary>
+    /// Geodatabase version name.
+    /// </summary>
+    [JsonPropertyName("gdbVersion")]
+    public string? GdbVersion { get; set; }
+
+    /// <summary>
+    /// Whether to include server edit timestamp metadata in response.
+    /// </summary>
+    [JsonPropertyName("returnEditMoment")]
+    public bool ReturnEditMoment { get; set; }
+
+    /// <summary>
+    /// Optional attachment edits payload (not yet implemented).
+    /// </summary>
+    [JsonPropertyName("attachments")]
+    public object[]? Attachments { get; set; }
 }
 
 /// <summary>
