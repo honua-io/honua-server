@@ -91,7 +91,7 @@ public static class ImageServerEndpoints
     {
         if (request.F != "json")
         {
-            return Results.BadRequest("Only JSON format is supported");
+            return Results.BadRequest("Only JSON format is supported. Use f=json");
         }
 
         return await handler.ExportImageAsync(id, request, cancellationToken);
@@ -108,7 +108,7 @@ public static class ImageServerEndpoints
     {
         if (request.F != "json")
         {
-            return Results.BadRequest("Only JSON format is supported");
+            return Results.BadRequest("Only JSON format is supported. Use f=json");
         }
 
         return await handler.IdentifyAsync(id, request, cancellationToken);

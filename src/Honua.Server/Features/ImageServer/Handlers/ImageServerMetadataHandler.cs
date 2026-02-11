@@ -76,7 +76,7 @@ internal sealed class ImageServerMetadataHandler
             if (extent == null)
             {
                 ImageServerLog.ExtentNotAvailable(_logger, layerId);
-                return Results.BadRequest("Unable to determine raster extent");
+                return Results.Problem("Unable to determine raster extent.", statusCode: 500);
             }
 
             // Build service info response
