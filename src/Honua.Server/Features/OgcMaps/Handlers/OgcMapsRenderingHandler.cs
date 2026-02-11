@@ -23,7 +23,7 @@ internal sealed class OgcMapsRenderingHandler
 {
     private const int DefaultImageDimension = 256;
     private const int MaxImageDimension = 4096;
-    private static readonly Regex BackgroundColorPattern = new("^0x[0-9A-Fa-f]{6}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex _backgroundColorPattern = new("^0x[0-9A-Fa-f]{6}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterMapRenderer _mapRenderer;
@@ -353,7 +353,7 @@ internal sealed class OgcMapsRenderingHandler
                 return null;
             }
 
-            if (!string.IsNullOrEmpty(request.BackgroundColor) && !BackgroundColorPattern.IsMatch(request.BackgroundColor))
+            if (!string.IsNullOrEmpty(request.BackgroundColor) && !_backgroundColorPattern.IsMatch(request.BackgroundColor))
             {
                 return null;
             }
