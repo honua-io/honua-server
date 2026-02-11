@@ -1,0 +1,62 @@
+groups:
+  - name: honua-core
+    rules:
+      - alert: HonuaInstanceDown
+        expr: up{job=~"honua|honua-server|honua-servers"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Honua target is down"
+          description: "Prometheus has not scraped {{ $labels.instance }} for 2 minutes."
+          runbook: "docs/devops/runbooks/server-down.md"
+
+      - alert: HonuaHigh5xxRate
+        expr: |
+          sum(rate(honua_http_request_total{status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(honua_http_request_total[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Honua 5xx rate is high"
+          description: "5xx ratio is above 5% for 5 minutes."
+          runbook: "docs/devops/runbooks/high-error-rate.md"
+
+      - alert: HonuaHighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(honua_http_request_duration_ms_bucket[5m])) by (le)
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Honua p95 latency is high"
+          description: "p95 latency is above 2000ms for 5 minutes."
+          runbook: "docs/devops/runbooks/high-response-time.md"
+
+      - alert: HonuaHighActiveRequests
+        expr: sum(honua_http_active_requests) > 200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Honua active requests are elevated"
+          description: "Active requests exceeded 200 for 10 minutes."
+          runbook: "docs/devops/runbooks/high-cpu-usage.md"
+
+      - alert: HonuaDatabaseLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)
+          ) > 250
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Honua database latency is high"
+          description: "p95 database query latency is above 250ms for 10 minutes."
+          runbook: "docs/devops/runbooks/database-issues.md"

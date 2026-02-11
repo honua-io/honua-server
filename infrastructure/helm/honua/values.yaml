@@ -79,9 +79,22 @@ startupProbe:
 autoscaling:
   enabled: false
   minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
 
 nodeSelector: {}
 

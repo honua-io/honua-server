@@ -1,0 +1,10 @@
+exporters:
+  prometheusremotewrite:
+    endpoint: "https://monitoring.googleapis.com/v1/projects/${GCP_PROJECT_ID}/location/global/prometheus/api/v1/write"
+
+processors:
+  resource:
+    attributes:
+      - key: cloud.provider
+        value: gcp
+        action: upsert

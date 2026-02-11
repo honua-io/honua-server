@@ -57,6 +57,8 @@
 
 ### Operations
 * [📊 Performance Testing](devops/performance-testing.md)
+* [🚨 Cloud-Native Alerting](alerting/README.md)
+* [📈 Optional Prometheus + Grafana Stack](devops/optional-observability-stack.md)
 * [🔗 Connection Pool Sizing](devops/connection-pool-sizing.md)
 * [🗄️ Query Optimization](devops/query-optimization.md)
 * [💾 Backup and Restore](devops/backup-restore.md)

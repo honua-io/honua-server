@@ -97,6 +97,11 @@ public async Task<LayerDefinition> Get(int id) { }  // Unclear method name
 public ValidationResult ValidateQuery(FeatureQuery query) { }
 ```
 
+XML documentation enforcement is being rolled out in phases:
+- `Honua.Core`: CS1591 is enabled (warning-level) to baseline and improve public API docs.
+- Other assemblies: CS1591 remains suppressed temporarily while legacy public surfaces are documented.
+- New public APIs should include XML documentation regardless of project so phase-in can move to full enforcement.
+
 #### Architecture Patterns
 
 **✅ Follow These Patterns:**
