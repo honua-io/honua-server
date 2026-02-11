@@ -308,6 +308,23 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task GetServiceMetadata_WithUnsupportedFormat_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer?f=html");
+
+        response.Be400BadRequest();
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var details = document.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        details.Should().Contain(detail => detail!.Contains("Output format 'html' is not supported"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithValidLayerId_ReturnsLayerInfo()
     {
@@ -351,6 +368,23 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // Should have at least an object ID field
         layerResponse.Fields.Should().Contain(f =>
             f.Name.Equals(layerResponse.ObjectIdField, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task GetLayerMetadata_WithUnsupportedFormat_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=html");
+
+        response.Be400BadRequest();
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var details = document.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        details.Should().Contain(detail => detail!.Contains("Output format 'html' is not supported"));
     }
 
     [IntegrationTest]
@@ -1703,26 +1737,25 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Tests that invalid format parameter defaults to GeoServices REST JSON
+    /// Tests that invalid format parameter returns 400 with validation details
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task QueryFeatures_WithInvalidFormat_DefaultsToGeoServicesJson()
+    public async Task QueryFeatures_WithInvalidFormat_Returns400()
     {
         // Act
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=invalid");
 
         // Assert
-        response.BeSuccessful();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-
+        response.Be400BadRequest();
         var content = await response.Content.ReadAsStringAsync();
-        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
-            content, FeatureServerJsonContext.Default.QueryResponse);
-
-        queryResponse.Should().NotBeNull();
-        queryResponse!.ObjectIdFieldName.Should().NotBeNullOrEmpty();
+        using var document = JsonDocument.Parse(content);
+        var details = document.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        details.Should().Contain(detail => detail!.Contains("Output format 'invalid' is not supported"));
     }
 
     /// <summary>
@@ -2265,6 +2298,201 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         applyEditsResponse!.UpdateResults.Should().HaveCount(1);
         applyEditsResponse.UpdateResults![0].Success.Should().BeFalse();
         applyEditsResponse.UpdateResults[0].Error.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithUseGlobalIdsEnabled_ReturnsBadRequest()
+    {
+        var payload = """
+            {
+              "adds": [
+                {
+                  "attributes": { "name": "Global id test" }
+                }
+              ]
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits?useGlobalIds=true",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("useGlobalIds is not supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithUnsupportedFormat_ReturnsBadRequest()
+    {
+        var payload = """
+            {
+              "adds": [
+                {
+                  "attributes": { "name": "Unsupported format test" }
+                }
+              ]
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits?f=xml",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var details = document.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        details.Should().Contain(detail => detail!.Contains("Output format 'xml' is not supported"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
+    public async Task AddFeatures_WithFeaturePayload_ReturnsAddResults()
+    {
+        var payload = """
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "name": "Added via addFeatures",
+                    "description": "Bulk create endpoint"
+                  },
+                  "geometry": {
+                    "x": -122.35,
+                    "y": 37.77
+                  }
+                }
+              ],
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.AddResults.Should().HaveCount(1);
+        result.AddResults![0].Success.Should().BeTrue();
+        result.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkUpdate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    public async Task UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults()
+    {
+        var addPayload = """
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "name": "Update target",
+                    "description": "Before update"
+                  }
+                }
+              ]
+            }
+            """;
+
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+        addResponse.Be200Ok();
+
+        var addContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        var updatePayload = $$"""
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "objectid": {{objectId}},
+                    "name": "Updated via updateFeatures",
+                    "description": "After update"
+                  }
+                }
+              ],
+              "rollbackOnFailure": true
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateFeatures",
+            new StringContent(updatePayload, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.UpdateResults.Should().HaveCount(1);
+        result.UpdateResults![0].Success.Should().BeTrue();
+        result.UpdateResults[0].ObjectId.Should().Be(objectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkDelete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    public async Task DeleteFeatures_WithObjectIdsPayload_ReturnsDeleteResults()
+    {
+        var addPayload = """
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "name": "Delete target",
+                    "description": "Before delete"
+                  }
+                }
+              ]
+            }
+            """;
+
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+        addResponse.Be200Ok();
+
+        var addContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        var deletePayload = $$"""
+            {
+              "objectIds": [{{objectId}}],
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
+            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.DeleteResults.Should().HaveCount(1);
+        result.DeleteResults![0].Success.Should().BeTrue();
+        result.DeleteResults[0].ObjectId.Should().Be(objectId);
     }
 
     private static long ReadObjectIdValue(object? value)

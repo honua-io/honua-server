@@ -12,6 +12,7 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -81,8 +82,16 @@ internal static partial class FeatureServerEndpoints
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly FrozenSet<string> ApplyEdits =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        public static readonly FrozenSet<string> ApplyEdits = new[]
+            {
+                "f",
+                "rollbackOnFailure",
+                "useGlobalIds",
+                "gdbVersion",
+                "returnEditMoment",
+                "attachments"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> QueryRelatedRecords = new[]
             {
@@ -94,6 +103,15 @@ internal static partial class FeatureServerEndpoints
                 "returnGeometry",
                 "resultOffset",
                 "resultRecordCount",
+                "outSR",
+                "returnZ",
+                "returnM",
+                "geometryPrecision",
+                "maxAllowableOffset",
+                "gdbVersion",
+                "sqlFormat",
+                "returnTrueCurves",
+                "historicMoment",
                 "f"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -102,10 +120,23 @@ internal static partial class FeatureServerEndpoints
             new[] { "where" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    internal static FrozenSet<string> FeatureServerQueryAllowedParameters => AllowedQueryParameters.Query;
+    internal static FrozenSet<string> FeatureServerQueryFormats => SupportedFormats.Query;
+    internal static FrozenSet<string> JsonOnlyFormats => SupportedFormats.JsonOnly;
+
+    private static class SupportedFormats
+    {
+        public static readonly FrozenSet<string> Query =
+            new[] { "json", "pjson", "geojson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> JsonOnly =
+            new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Gets timeout-aware cancellation token
     /// </summary>
-    private static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
+    internal static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
     {
         const string tokenKey = "FeatureServerQueryTimeoutToken";
 
@@ -145,6 +176,9 @@ internal static partial class FeatureServerEndpoints
     private static FeatureServerResponse MapServiceToResponse(ServiceDefinition service, QueryLimits queryLimits)
     {
         var objectIdField = ResolveServiceObjectIdField(service);
+        var supportsStatistics = false;
+        var supportsAdvancedQueries = service.SupportsAdvancedQueries;
+        var hasGeometry = service.Layers.Any(layer => layer.HasGeometry);
 
         return new FeatureServerResponse
         {
@@ -155,10 +189,13 @@ internal static partial class FeatureServerEndpoints
             InitialExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             FullExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             MaxRecordCount = queryLimits.MaxRecordCount,
-            SupportedQueryFormats = service.SupportedFormats,
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
             Capabilities = string.Join(",", service.Capabilities),
             Fields = [.. service.AllFields.Select(MapFieldInfo)],
-            ObjectIdField = objectIdField
+            ObjectIdField = objectIdField,
+            SupportsAdvancedQueries = supportsAdvancedQueries,
+            SupportsStatistics = supportsStatistics,
+            HasGeometryProperties = hasGeometry
         };
     }
 
@@ -177,12 +214,16 @@ internal static partial class FeatureServerEndpoints
     /// Maps layer definition to layer response
     /// </summary>
     private static LayerResponse MapLayerToResponse(
+        ServiceDefinition service,
         LayerDefinition layer,
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
         JsonElement? drawingInfo)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var supportsStatistics = false;
+        var supportsAdvancedQueries = service.SupportsAdvancedQueries;
+        var supportsRelated = layer.HasRelationships;
 
         return new LayerResponse
         {
@@ -197,7 +238,22 @@ internal static partial class FeatureServerEndpoints
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
-            DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null
+            DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
+            Capabilities = BuildLayerCapabilities(service, layer),
+            SupportsAdvancedQueries = supportsAdvancedQueries,
+            SupportsStatistics = supportsStatistics,
+            SupportsCountDistinct = supportsStatistics,
+            SupportsOrderBy = true,
+            SupportsDistinct = true,
+            SupportsPagination = true,
+            SupportsTrueCurve = false,
+            SupportsRollbackOnFailureParameter = service.SupportsEditing,
+            SupportsApplyEditsWithGlobalIds = false,
+            HasAttachments = layer.SupportsAttachments,
+            SupportsQueryRelated = supportsRelated,
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
+            SupportsCoordinatesQuantization = false,
+            Relationships = BuildRelationshipResponse(layer)
         };
     }
 
@@ -288,7 +344,7 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Validates allowed parameters
     /// </summary>
-    private static bool TryValidateAllowedParameters(
+    internal static bool TryValidateAllowedParameters(
         IQueryCollection query,
         ICommonQueryValidator queryValidator,
         FrozenSet<string> allowedParameters,
@@ -299,5 +355,104 @@ internal static partial class FeatureServerEndpoints
             query.Keys.ToArray(),
             allowedParameters);
         return error == null;
+    }
+
+    internal static bool TryValidateAllowedParameters(
+        IReadOnlyDictionary<string, StringValues> values,
+        ICommonQueryValidator queryValidator,
+        FrozenSet<string> allowedParameters,
+        out string? error)
+    {
+        error = QueryParameterValidationHelpers.GetValidationError(
+            queryValidator,
+            values.Keys.ToArray(),
+            allowedParameters);
+        return error == null;
+    }
+
+    private static string[] NormalizeSupportedQueryFormats(string[]? formats)
+    {
+        if (formats == null || formats.Length == 0)
+        {
+            return ["JSON"];
+        }
+
+        return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static string BuildLayerCapabilities(ServiceDefinition service, LayerDefinition layer)
+    {
+        var capabilities = new List<string>();
+        if (service.Capabilities.Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Query");
+        }
+
+        if (service.SupportsEditing)
+        {
+            capabilities.Add("Create");
+            capabilities.Add("Update");
+            capabilities.Add("Delete");
+            capabilities.Add("Editing");
+        }
+
+        if (service.Capabilities.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Extract");
+        }
+
+        if (layer.SupportsAttachments)
+        {
+            capabilities.Add("Uploads");
+        }
+
+        return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static LayerRelationshipInfo[] BuildRelationshipResponse(LayerDefinition layer)
+    {
+        if (!layer.HasRelationships)
+        {
+            return [];
+        }
+
+        return
+        [
+            ..layer.LayerRelationships.Select(relationship => new LayerRelationshipInfo
+            {
+                Id = relationship.RelationshipId,
+                Name = relationship.Name,
+                RelatedTableId = relationship.RelatedLayerId,
+                Role = relationship.RelationshipType,
+                KeyField = relationship.DestinationForeignKeyField
+            })
+        ];
+    }
+
+    internal static bool TryValidateOutputFormat(
+        string? format,
+        FrozenSet<string> supportedFormats,
+        out string normalizedFormat,
+        out string? error)
+    {
+        error = null;
+        normalizedFormat = "json";
+
+        if (string.IsNullOrWhiteSpace(format))
+        {
+            return true;
+        }
+
+        var trimmed = format.Trim();
+        if (!supportedFormats.Contains(trimmed))
+        {
+            error = $"Output format '{trimmed}' is not supported. Supported formats: {string.Join(", ", supportedFormats)}.";
+            return false;
+        }
+
+        normalizedFormat = string.Equals(trimmed, "pjson", StringComparison.OrdinalIgnoreCase)
+            ? "json"
+            : trimmed.ToLowerInvariant();
+        return true;
     }
 }

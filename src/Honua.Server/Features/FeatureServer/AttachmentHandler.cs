@@ -27,31 +27,69 @@ internal static partial class AttachmentHandler
         ILogger<AttachmentOperations> logger,
         HttpContext context,
         CancellationToken cancellationToken)
+        => await QueryAttachmentsAsync(
+            layerId,
+            [featureId],
+            returnUrl: false,
+            attachmentStore,
+            logger,
+            context,
+            cancellationToken);
+
+    /// <summary>
+    /// Queries attachments for one or more features.
+    /// </summary>
+    public static async Task<IResult> QueryAttachmentsAsync(
+        int layerId,
+        IReadOnlyList<long> featureIds,
+        bool returnUrl,
+        IAttachmentStore attachmentStore,
+        ILogger<AttachmentOperations> logger,
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         try
         {
-            LogQueryAttachments(logger, layerId, featureId);
+            var uniqueFeatureIds = featureIds
+                .Distinct()
+                .ToArray();
 
-            var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
-
-            var attachmentInfos = attachments.Select(a => new AttachmentInfo
+            var groups = new List<AttachmentGroup>(uniqueFeatureIds.Length);
+            foreach (var featureId in uniqueFeatureIds)
             {
-                Id = a.Id,
-                Name = a.Filename,
-                ContentType = a.ContentType,
-                Size = a.Size,
-                Keywords = a.Keywords
-            }).ToArray();
+                LogQueryAttachments(logger, layerId, featureId);
+
+                var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+                var infos = attachments.Select(a => new AttachmentInfo
+                {
+                    Id = a.Id,
+                    Name = a.Filename,
+                    ContentType = a.ContentType,
+                    Size = a.Size,
+                    Keywords = a.Keywords,
+                    Url = returnUrl
+                        ? BuildAttachmentUrl(context, layerId, featureId, a.Id)
+                        : null
+                }).ToArray();
+
+                groups.Add(new AttachmentGroup
+                {
+                    ParentObjectId = featureId,
+                    AttachmentInfos = infos
+                });
+            }
 
             var response = new AttachmentQueryResponse
             {
-                AttachmentInfos = attachmentInfos
+                AttachmentGroups = groups.ToArray(),
+                AttachmentInfos = groups.Count == 1 ? groups[0].AttachmentInfos : null
             };
 
             return Results.Ok(response);
         }
         catch (Exception ex)
         {
+            var featureId = featureIds.Count > 0 ? featureIds[0] : 0;
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to query attachments");
         }
@@ -145,7 +183,7 @@ internal static partial class AttachmentHandler
             {
                 AddAttachmentResult = new AddAttachmentResult
                 {
-                    ObjectId = featureId,
+                    ObjectId = attachment.Id,
                     Success = true
                 }
             };
@@ -204,7 +242,7 @@ internal static partial class AttachmentHandler
             {
                 UpdateAttachmentResult = new UpdateAttachmentResult
                 {
-                    ObjectId = featureId,
+                    ObjectId = attachmentId,
                     Success = true
                 }
             };
@@ -248,7 +286,7 @@ internal static partial class AttachmentHandler
                 var success = await attachmentStore.DeleteAsync(layerId, featureId, attachmentId, cancellationToken);
                 deleteResults.Add(new DeleteAttachmentResult
                 {
-                    ObjectId = featureId,
+                    ObjectId = attachmentId,
                     Success = success
                 });
             }
@@ -342,6 +380,30 @@ internal static partial class AttachmentHandler
         }
 
         return false;
+    }
+
+    private static string? BuildAttachmentUrl(HttpContext context, int layerId, long featureId, long attachmentId)
+    {
+        if (!context.Request.RouteValues.TryGetValue("serviceId", out var serviceIdObj))
+        {
+            return null;
+        }
+
+        var serviceId = serviceIdObj?.ToString();
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return null;
+        }
+
+        var builder = new UriBuilder
+        {
+            Scheme = context.Request.Scheme,
+            Host = context.Request.Host.Host,
+            Port = context.Request.Host.Port ?? -1,
+            Path = $"{context.Request.PathBase}/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
+        };
+
+        return builder.Uri.ToString();
     }
 
     #region Logging

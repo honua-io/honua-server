@@ -4,6 +4,8 @@
 using System.Text.RegularExpressions;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcMaps;
 
@@ -36,27 +38,9 @@ public static partial class OgcMapsEndpoints
             .WithName("GetCollectionMap")
             .WithSummary("Render map from a single collection")
             .WithDescription("Returns a rendered map image from the specified collection with optional styling and spatial subsetting")
-            .Produces<MapResponse>()
-            .Produces(400)
-            .Produces(404);
-
-        // Dataset-wide maps - multiple collections
-        group.MapGet("/map", GetDatasetMap)
-            .WithDisplayName("Get Dataset Map")
-            .WithName("GetDatasetMap")
-            .WithSummary("Render map from multiple collections")
-            .WithDescription("Returns a rendered map image from multiple collections specified in the collections parameter")
-            .Produces<MapResponse>()
-            .Produces(400)
-            .Produces(404);
-
-        // Styled maps - collection with specific style
-        group.MapGet("/collections/{collectionId}/styles/{styleId}/map", GetStyledMap)
-            .WithDisplayName("Get Styled Map")
-            .WithName("GetStyledMap")
-            .WithSummary("Render styled map from a collection")
-            .WithDescription("Returns a rendered map image from the specified collection using a specific style definition")
-            .Produces<MapResponse>()
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
             .Produces(400)
             .Produces(404);
 
@@ -67,6 +51,31 @@ public static partial class OgcMapsEndpoints
             .WithSummary("Get available map tile sets for a collection")
             .WithDescription("Returns the tile set metadata for maps generated from the specified collection")
             .Produces<TileSet[]>()
+            .Produces(404);
+
+        // Dataset-wide maps - multiple collections
+        group.MapGet("/map", GetDatasetMap)
+            .WithDisplayName("Get Dataset Map")
+            .WithName("GetDatasetMap")
+            .WithSummary("Render map from multiple collections")
+            .WithDescription("Returns a rendered map image from multiple collections specified in the collections parameter")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
+            .Produces(400)
+            .Produces(404);
+
+        // Styled maps - collection with specific style
+        group.MapGet("/collections/{collectionId}/styles/{styleId}/map", GetStyledMap)
+            .WithDisplayName("Get Styled Map")
+            .WithName("GetStyledMap")
+            .WithSummary("Render styled map from a collection")
+            .WithDescription("Returns a rendered map image from the specified collection using a specific style definition")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
+            .Produces(400)
+            .Produces(501)
             .Produces(404);
     }
 
@@ -87,6 +96,7 @@ public static partial class OgcMapsEndpoints
     private static async Task<IResult> GetCollectionMap(
         string collectionId,
         [AsParameters] OgcMapRequest request,
+        HttpContext context,
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
@@ -95,7 +105,7 @@ public static partial class OgcMapsEndpoints
             return Results.BadRequest("Collection ID must be a valid integer");
         }
 
-        return await handler.RenderCollectionMapAsync(layerId, request, cancellationToken);
+        return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -103,6 +113,7 @@ public static partial class OgcMapsEndpoints
     /// </summary>
     private static async Task<IResult> GetDatasetMap(
         [AsParameters] OgcMapRequest request,
+        HttpContext context,
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
@@ -111,19 +122,37 @@ public static partial class OgcMapsEndpoints
             return Results.BadRequest("Collections parameter is required for dataset maps");
         }
 
-        // Parse collection IDs
-        var collectionIds = request.Collections.Split(',')
-            .Select(id => int.TryParse(id.Trim(), out var layerId) ? layerId : (int?)null)
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            .ToArray();
-
-        if (collectionIds.Length == 0)
+        var collectionTokens = request.Collections.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (collectionTokens.Length == 0)
         {
             return Results.BadRequest("Valid collection IDs are required");
         }
 
-        return await handler.RenderDatasetMapAsync(collectionIds, request, cancellationToken);
+        var collectionIds = new List<int>(collectionTokens.Length);
+        var invalidCollections = new List<string>();
+        foreach (var token in collectionTokens)
+        {
+            if (int.TryParse(token, out var layerId))
+            {
+                collectionIds.Add(layerId);
+            }
+            else
+            {
+                invalidCollections.Add(token);
+            }
+        }
+
+        if (invalidCollections.Count > 0)
+        {
+            return Results.BadRequest($"Invalid collection IDs: {string.Join(", ", invalidCollections)}");
+        }
+
+        if (collectionIds.Count == 0)
+        {
+            return Results.BadRequest("Valid collection IDs are required");
+        }
+
+        return await handler.RenderDatasetMapAsync(collectionIds.Distinct().ToArray(), request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -133,6 +162,7 @@ public static partial class OgcMapsEndpoints
         string collectionId,
         string styleId,
         [AsParameters] OgcMapRequest request,
+        HttpContext context,
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
@@ -147,7 +177,7 @@ public static partial class OgcMapsEndpoints
             return Results.BadRequest("StyleId must contain only alphanumeric characters, dashes, and underscores");
         }
 
-        return await handler.RenderStyledMapAsync(layerId, styleId, request, cancellationToken);
+        return await handler.RenderStyledMapAsync(layerId, styleId, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -155,6 +185,7 @@ public static partial class OgcMapsEndpoints
     /// </summary>
     private static async Task<IResult> GetCollectionMapTileSets(
         string collectionId,
+        HttpContext context,
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
@@ -163,7 +194,7 @@ public static partial class OgcMapsEndpoints
             return Results.BadRequest("Collection ID must be a valid integer");
         }
 
-        return await handler.GetMapTileSetsAsync(layerId, cancellationToken);
+        return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);
     }
 
     [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]

@@ -5,7 +5,7 @@ namespace Honua.Server.Features.MapServer.Rendering;
 
 /// <summary>
 /// Handles coordinate transformations between common spatial reference systems.
-/// Supports EPSG:4326 (WGS84) and EPSG:3857 (Web Mercator) conversions.
+/// Supports common geographic CRS identifiers and Web Mercator aliases.
 /// </summary>
 internal static class CoordinateTransformer
 {
@@ -20,21 +20,23 @@ internal static class CoordinateTransformer
         int fromSrid,
         int toSrid)
     {
-        if (fromSrid == toSrid)
+        if (fromSrid == toSrid ||
+            (IsGeographicSrid(fromSrid) && IsGeographicSrid(toSrid)) ||
+            (IsWebMercatorSrid(fromSrid) && IsWebMercatorSrid(toSrid)))
         {
             return extent;
         }
 
-        // 4326 -> 3857
-        if (fromSrid == 4326 && toSrid == 3857)
+        // geographic -> web mercator
+        if (IsGeographicSrid(fromSrid) && IsWebMercatorSrid(toSrid))
         {
             var (minX, minY) = LonLatToWebMercator(extent.MinX, extent.MinY);
             var (maxX, maxY) = LonLatToWebMercator(extent.MaxX, extent.MaxY);
             return new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
         }
 
-        // 3857 -> 4326
-        if (fromSrid == 3857 && toSrid == 4326)
+        // web mercator -> geographic
+        if (IsWebMercatorSrid(fromSrid) && IsGeographicSrid(toSrid))
         {
             var (minLon, minLat) = WebMercatorToLonLat(extent.MinX, extent.MinY);
             var (maxLon, maxLat) = WebMercatorToLonLat(extent.MaxX, extent.MaxY);
@@ -42,7 +44,7 @@ internal static class CoordinateTransformer
         }
 
         throw new NotSupportedException(
-            $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported. Only EPSG:4326 and EPSG:3857 transforms are available.");
+            $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported.");
     }
 
     /// <summary>
@@ -50,24 +52,32 @@ internal static class CoordinateTransformer
     /// </summary>
     public static (double X, double Y) TransformPoint(double x, double y, int fromSrid, int toSrid)
     {
-        if (fromSrid == toSrid)
+        if (fromSrid == toSrid ||
+            (IsGeographicSrid(fromSrid) && IsGeographicSrid(toSrid)) ||
+            (IsWebMercatorSrid(fromSrid) && IsWebMercatorSrid(toSrid)))
         {
             return (x, y);
         }
 
-        if (fromSrid == 4326 && toSrid == 3857)
+        if (IsGeographicSrid(fromSrid) && IsWebMercatorSrid(toSrid))
         {
             return LonLatToWebMercator(x, y);
         }
 
-        if (fromSrid == 3857 && toSrid == 4326)
+        if (IsWebMercatorSrid(fromSrid) && IsGeographicSrid(toSrid))
         {
             return WebMercatorToLonLat(x, y);
         }
 
         throw new NotSupportedException(
-            $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported. Only EPSG:4326 and EPSG:3857 transforms are available.");
+            $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported.");
     }
+
+    private static bool IsWebMercatorSrid(int srid)
+        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+
+    private static bool IsGeographicSrid(int srid)
+        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
 
     /// <summary>
     /// Converts longitude/latitude (EPSG:4326) to Web Mercator (EPSG:3857).

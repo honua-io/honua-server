@@ -46,10 +46,9 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
     /// <inheritdoc />
     public async Task<RasterResult> RenderStyledMapAsync(int layerId, string styleId, MapRenderRequest request, CancellationToken cancellationToken = default)
     {
-        // Style application is not yet supported for raster layers; render without styling
         PostgresRasterLog.RasterOperationWarning(_logger, "RenderStyledMapAsync",
-            $"Style '{styleId}' ignored for raster layer {layerId} - rendering unstyled");
-        return await RenderMapAsync(new[] { layerId }, request, cancellationToken).ConfigureAwait(false);
+            $"Style '{styleId}' is not supported for raster layer {layerId}");
+        throw new NotSupportedException("Style-based rendering is not currently supported for raster map output.");
     }
 
     private async Task<RasterResult> RenderMapAsync(int[] layerIds, MapRenderRequest request, CancellationToken cancellationToken)
@@ -59,8 +58,8 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         var formatName = request.Format.ToGdalDriverName();
         var contentType = request.Format.ToContentType();
 
-        var outputSrid = request.Crs ?? 4326;
-        var bboxSrid = request.BoundingBoxCrs ?? outputSrid;
+        var requestedOutputSrid = request.Crs;
+        var bboxSrid = request.BoundingBoxCrs ?? requestedOutputSrid;
 
         // Build raster expression with optional bbox clip
         var rasterExpr = "raster";
@@ -68,12 +67,26 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         if (request.BoundingBox is { Length: 4 })
         {
-            rasterExpr = "ST_Clip(raster, ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(raster)))";
+            if (bboxSrid.HasValue)
+            {
+                rasterExpr = "ST_Clip(raster, ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(raster)))";
+                extraParams.Add(("@bboxSrid", bboxSrid.Value));
+            }
+            else
+            {
+                rasterExpr = "ST_Clip(raster, ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(raster)))";
+            }
+
             extraParams.Add(("@bboxMinX", request.BoundingBox[0]));
             extraParams.Add(("@bboxMinY", request.BoundingBox[1]));
             extraParams.Add(("@bboxMaxX", request.BoundingBox[2]));
             extraParams.Add(("@bboxMaxY", request.BoundingBox[3]));
-            extraParams.Add(("@bboxSrid", bboxSrid));
+        }
+
+        if (requestedOutputSrid.HasValue && requestedOutputSrid.Value > 0)
+        {
+            rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+            extraParams.Add(("@outputSrid", requestedOutputSrid.Value));
         }
 
         // Build parameterized layer_id IN clause
@@ -85,14 +98,24 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            WITH transformed AS (
-                SELECT ST_Resize({rasterExpr}, @width, @height) AS rast
+            WITH source AS (
+                SELECT {rasterExpr} AS rast
                 FROM {_rasterDataTable}
                 WHERE layer_id IN ({string.Join(", ", layerParams)})
-                LIMIT 1
+            ),
+            merged AS (
+                SELECT ST_Union(rast) AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            ),
+            resized AS (
+                SELECT ST_Resize(rast, @width, @height) AS rast
+                FROM merged
+                WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster(rast, '{formatName}') AS data
-            FROM transformed
+            SELECT ST_AsGDALRaster(rast, '{formatName}') AS data,
+                   ST_SRID(rast) AS srid
+            FROM resized
             """;
 
         for (int i = 0; i < layerIds.Length; i++)
@@ -107,8 +130,25 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             AddParameter(command, name, value);
         }
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        var data = result as byte[] ?? Array.Empty<byte>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = contentType,
+                Width = request.Width,
+                Height = request.Height,
+                Srid = requestedOutputSrid
+            };
+        }
+
+        var dataOrd = reader.GetOrdinal("data");
+        var sridOrd = reader.GetOrdinal("srid");
+        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var srid = reader.IsDBNull(sridOrd)
+            ? requestedOutputSrid
+            : reader.GetInt32(sridOrd);
 
         return new RasterResult
         {
@@ -116,7 +156,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             ContentType = contentType,
             Width = request.Width,
             Height = request.Height,
-            Srid = outputSrid
+            Srid = srid
         };
     }
 

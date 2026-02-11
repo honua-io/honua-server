@@ -451,6 +451,47 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithOutSrParameter_ReturnsRequestedSpatialReference()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outSR=4326");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
+            content, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
+
+        queryResponse.Should().NotBeNull();
+        var relatedRecords = queryResponse!.RelatedRecordGroups[0].RelatedRecords;
+        if (relatedRecords != null)
+        {
+            relatedRecords.SpatialReference.Should().NotBeNull();
+            relatedRecords.SpatialReference!.Wkid.Should().Be(4326);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithUnsupportedFormat_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&f=geojson");
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var details = jsonDoc.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty);
+        details.Should().Contain(detail => detail.Contains("Output format 'geojson' is not supported"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithNoRelatedFeatures_ReturnsEmptyGroups()
     {
         // Act - Request related records for an object ID that has no related features

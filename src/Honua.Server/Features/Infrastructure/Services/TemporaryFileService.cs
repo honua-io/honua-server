@@ -65,11 +65,12 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
     {
         "image/png",
         "image/jpeg",
+        "image/gif",
         "image/tiff",
         "application/octet-stream"
     };
 
-    private static readonly string[] _imageExtensions = [".png", ".jpg", ".jpeg", ".tiff", ".tif", ""];
+    private static readonly string[] _imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".tiff", ".tif", ""];
 
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
@@ -291,6 +292,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         {
             "image/png" => ".png",
             "image/jpeg" => ".jpg",
+            "image/gif" => ".gif",
             "image/tiff" => ".tif",
             _ => ""
         };

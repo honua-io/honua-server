@@ -46,6 +46,38 @@ public class Cql2JsonParserTests
     }
 
     [Fact]
+    public void Parse_SpatialPredicate_WithExplicitGeometryCrsObject_UsesExplicitSrid()
+    {
+        // Arrange
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"type":"Point","coordinates":[1,2],"crs":{"type":"name","properties":{"name":"EPSG:3857"}}}]}""";
+
+        // Act
+        var result = _parser.Parse(json);
+
+        // Assert
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        var geometry = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        geometry.Srid.Should().Be(3857);
+    }
+
+    [Fact]
+    public void Parse_SpatialPredicate_WithExplicitGeometryCrsUri_UsesExplicitSrid()
+    {
+        // Arrange
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"type":"Point","coordinates":[1,2],"crs":{"type":"name","properties":{"name":"http://www.opengis.net/def/crs/EPSG/0/26910"}}}]}""";
+
+        // Act
+        var result = _parser.Parse(json);
+
+        // Assert
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        var geometry = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        geometry.Srid.Should().Be(26910);
+    }
+
+    [Fact]
     public void Parse_SpatialDWithin_ReturnsSpatialDistancePredicate()
     {
         // Arrange

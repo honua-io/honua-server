@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -24,6 +25,37 @@ internal readonly record struct FormatOption(string QueryValue, string MediaType
 /// </summary>
 internal static class OgcCommonUtilities
 {
+    private static readonly IReadOnlyDictionary<string, string> _featureFormatParameters =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["json"] = MediaTypes.Json,
+            ["geojson"] = MediaTypes.GeoJson,
+            ["gml"] = MediaTypes.Gml,
+            ["xml"] = MediaTypes.Gml,
+            ["html"] = MediaTypes.Html
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> _metadataFormatParameters =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["json"] = MediaTypes.Json,
+            ["html"] = MediaTypes.Html
+        };
+
+    private static readonly string[] _featureSupportedMediaTypes =
+    [
+        MediaTypes.GeoJson,
+        MediaTypes.Json,
+        MediaTypes.Gml,
+        MediaTypes.Html
+    ];
+
+    private static readonly string[] _metadataSupportedMediaTypes =
+    [
+        MediaTypes.Json,
+        MediaTypes.Html
+    ];
+
     /// <summary>
     /// Supported metadata formats.
     /// </summary>
@@ -54,38 +86,52 @@ internal static class OgcCommonUtilities
         out string outputFormat,
         out IResult? error)
     {
-        outputFormat = isFeatureContent ? MediaTypes.GeoJson : MediaTypes.Json;
+        var parameterMap = isFeatureContent ? _featureFormatParameters : _metadataFormatParameters;
+        var supportedMediaTypes = isFeatureContent ? _featureSupportedMediaTypes : _metadataSupportedMediaTypes;
+        var defaultMediaType = isFeatureContent ? MediaTypes.GeoJson : MediaTypes.Json;
+
+        return TryGetOutputFormat(
+            formatParameter,
+            context,
+            parameterMap,
+            supportedMediaTypes,
+            defaultMediaType,
+            out outputFormat,
+            out error);
+    }
+
+    /// <summary>
+    /// Determines output format from request parameters and Accept negotiation.
+    /// </summary>
+    public static bool TryGetOutputFormat(
+        string? formatParameter,
+        HttpContext context,
+        IReadOnlyDictionary<string, string> formatParameterMap,
+        IReadOnlyList<string> supportedMediaTypes,
+        string defaultMediaType,
+        out string outputFormat,
+        out IResult? error)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(formatParameterMap);
+        ArgumentNullException.ThrowIfNull(supportedMediaTypes);
+        ArgumentException.ThrowIfNullOrWhiteSpace(defaultMediaType);
+
+        outputFormat = defaultMediaType;
         error = null;
 
         if (!string.IsNullOrWhiteSpace(formatParameter))
         {
             var normalized = formatParameter.Trim();
-            switch (normalized.ToLowerInvariant())
+            if (formatParameterMap.TryGetValue(normalized, out var mappedMediaType) &&
+                supportedMediaTypes.Any(mediaType => string.Equals(mediaType, mappedMediaType, StringComparison.OrdinalIgnoreCase)))
             {
-                case "json":
-                    outputFormat = MediaTypes.Json;
-                    return true;
-                case "geojson" when isFeatureContent:
-                    outputFormat = MediaTypes.GeoJson;
-                    return true;
-                case "geojson":
-                    error = TypedResults.BadRequest("GeoJSON format is only supported for feature content");
-                    return false;
-                case "gml" when isFeatureContent:
-                case "xml" when isFeatureContent:
-                    outputFormat = MediaTypes.Gml;
-                    return true;
-                case "gml":
-                case "xml":
-                    error = TypedResults.BadRequest("GML format is only supported for feature content");
-                    return false;
-                case "html":
-                    outputFormat = MediaTypes.Html;
-                    return true;
-                default:
-                    error = TypedResults.BadRequest($"Unsupported format '{formatParameter}'");
-                    return false;
+                outputFormat = mappedMediaType;
+                return true;
             }
+
+            error = TypedResults.BadRequest($"Unsupported format '{formatParameter}'");
+            return false;
         }
 
         var acceptHeader = context.Request.Headers.Accept.ToString();
@@ -94,58 +140,15 @@ internal static class OgcCommonUtilities
             return true;
         }
 
-        var acceptsGeoJson = acceptHeader.Contains("application/geo+json", StringComparison.OrdinalIgnoreCase);
-        var acceptsJson = acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase);
-        var acceptsJsonSuffix = acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase);
-        var acceptsHtml = acceptHeader.Contains("text/html", StringComparison.OrdinalIgnoreCase);
-        var acceptsGml = acceptHeader.Contains("application/gml+xml", StringComparison.OrdinalIgnoreCase) ||
-                         acceptHeader.Contains("application/xml", StringComparison.OrdinalIgnoreCase) ||
-                         acceptHeader.Contains("text/xml", StringComparison.OrdinalIgnoreCase) ||
-                         acceptHeader.Contains("+xml", StringComparison.OrdinalIgnoreCase);
-
-        if (isFeatureContent)
+        var acceptRanges = ParseAcceptHeader(acceptHeader);
+        if (acceptRanges.IsDefaultOrEmpty)
         {
-            if (acceptsGml)
-            {
-                outputFormat = MediaTypes.Gml;
-                return true;
-            }
-
-            if (acceptsGeoJson)
-            {
-                outputFormat = MediaTypes.GeoJson;
-                return true;
-            }
-
-            if (acceptsJson || acceptsJsonSuffix)
-            {
-                outputFormat = MediaTypes.Json;
-                return true;
-            }
-
-            if (acceptsHtml)
-            {
-                outputFormat = MediaTypes.Html;
-                return true;
-            }
-        }
-        else
-        {
-            if (acceptsJson || acceptsJsonSuffix)
-            {
-                outputFormat = MediaTypes.Json;
-                return true;
-            }
-
-            if (acceptsHtml)
-            {
-                outputFormat = MediaTypes.Html;
-                return true;
-            }
+            return true;
         }
 
-        if (acceptHeader.Contains("*/*", StringComparison.OrdinalIgnoreCase))
+        if (TrySelectBestMediaType(supportedMediaTypes, acceptRanges, out var selected))
         {
+            outputFormat = selected;
             return true;
         }
 
@@ -290,16 +293,243 @@ internal static class OgcCommonUtilities
         T payload,
         JsonTypeInfo<T> typeInfo,
         string outputFormat,
-        string title)
+        string title,
+        string? jsonContentType = null)
     {
-        if (outputFormat == MediaTypes.Html)
+        if (string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase))
         {
             var json = JsonSerializer.Serialize(payload, typeInfo);
             var html = BuildHtmlDocument(title, json);
             return Results.Text(html, MediaTypes.Html);
         }
 
-        return Results.Json(payload, typeInfo, contentType: MediaTypes.Json);
+        var contentType = string.IsNullOrWhiteSpace(jsonContentType)
+            ? (string.Equals(outputFormat, MediaTypes.SchemaJson, StringComparison.OrdinalIgnoreCase)
+                ? MediaTypes.SchemaJson
+                : MediaTypes.Json)
+            : jsonContentType;
+        return Results.Json(payload, typeInfo, contentType: contentType);
+    }
+
+    private static bool TrySelectBestMediaType(
+        IReadOnlyList<string> supportedMediaTypes,
+        ImmutableArray<AcceptMediaRange> acceptRanges,
+        out string selectedMediaType)
+    {
+        selectedMediaType = string.Empty;
+        var best = new AcceptSelection();
+        var hasMatch = false;
+
+        for (var i = 0; i < supportedMediaTypes.Count; i++)
+        {
+            var candidate = supportedMediaTypes[i];
+            if (!TryGetBestRangeMatch(candidate, acceptRanges, out var candidateSelection))
+            {
+                continue;
+            }
+
+            candidateSelection = candidateSelection with { SupportedOrder = i };
+            if (!hasMatch || candidateSelection.IsPreferredTo(best))
+            {
+                best = candidateSelection;
+                selectedMediaType = candidate;
+                hasMatch = true;
+            }
+        }
+
+        return hasMatch;
+    }
+
+    private static bool TryGetBestRangeMatch(
+        string candidateMediaType,
+        ImmutableArray<AcceptMediaRange> acceptRanges,
+        out AcceptSelection bestSelection)
+    {
+        bestSelection = default;
+        var hasMatch = false;
+
+        for (var i = 0; i < acceptRanges.Length; i++)
+        {
+            var range = acceptRanges[i];
+            if (!TryMatchMediaRange(range, candidateMediaType, out var specificity))
+            {
+                continue;
+            }
+
+            var selection = new AcceptSelection(range.Quality, specificity, range.Order, int.MaxValue);
+            if (!hasMatch || selection.IsPreferredTo(bestSelection))
+            {
+                bestSelection = selection;
+                hasMatch = true;
+            }
+        }
+
+        return hasMatch;
+    }
+
+    private static bool TryMatchMediaRange(
+        AcceptMediaRange range,
+        string candidateMediaType,
+        out int specificity)
+    {
+        specificity = -1;
+
+        if (!TryParseMediaType(candidateMediaType, out var candidateType, out var candidateSubtype))
+        {
+            return false;
+        }
+
+        // Compatibility: clients often request generic XML for GML representations.
+        if (string.Equals(range.Type, "text", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(range.Subtype, "xml", StringComparison.OrdinalIgnoreCase) &&
+            candidateSubtype.EndsWith("+xml", StringComparison.OrdinalIgnoreCase))
+        {
+            specificity = 0;
+            return true;
+        }
+
+        var typeMatches = range.Type == "*" || string.Equals(range.Type, candidateType, StringComparison.OrdinalIgnoreCase);
+        if (!typeMatches)
+        {
+            return false;
+        }
+
+        if (range.Subtype == "*")
+        {
+            specificity = range.Type == "*" ? 0 : 1;
+            return true;
+        }
+
+        if (range.Subtype.StartsWith("*+", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = range.Subtype[1..];
+            if (candidateSubtype.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                specificity = 1;
+                return true;
+            }
+
+            return false;
+        }
+
+        if (string.Equals(range.Subtype, candidateSubtype, StringComparison.OrdinalIgnoreCase))
+        {
+            specificity = 2;
+            return true;
+        }
+
+        if (string.Equals(range.Subtype, "xml", StringComparison.OrdinalIgnoreCase) &&
+            candidateSubtype.EndsWith("+xml", StringComparison.OrdinalIgnoreCase))
+        {
+            specificity = 1;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static ImmutableArray<AcceptMediaRange> ParseAcceptHeader(string acceptHeader)
+    {
+        var values = acceptHeader.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var builder = ImmutableArray.CreateBuilder<AcceptMediaRange>(values.Length);
+        var order = 0;
+
+        foreach (var value in values)
+        {
+            var trimmed = value.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                continue;
+            }
+
+            var segments = trimmed.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0)
+            {
+                continue;
+            }
+
+            if (!TryParseMediaType(segments[0], out var type, out var subtype))
+            {
+                continue;
+            }
+
+            var quality = 1.0;
+            for (var i = 1; i < segments.Length; i++)
+            {
+                var parameter = segments[i].Trim();
+                if (!parameter.StartsWith("q=", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var qValue = parameter[2..].Trim();
+                if (double.TryParse(qValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    quality = Math.Clamp(parsed, 0.0, 1.0);
+                }
+
+                break;
+            }
+
+            if (quality <= 0.0)
+            {
+                order++;
+                continue;
+            }
+
+            builder.Add(new AcceptMediaRange(type, subtype, quality, order));
+            order++;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool TryParseMediaType(string mediaType, out string type, out string subtype)
+    {
+        type = string.Empty;
+        subtype = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(mediaType))
+        {
+            return false;
+        }
+
+        var withoutParameters = mediaType.Split(';', 2, StringSplitOptions.TrimEntries)[0];
+        var separator = withoutParameters.IndexOf('/');
+        if (separator <= 0 || separator >= withoutParameters.Length - 1)
+        {
+            return false;
+        }
+
+        type = withoutParameters[..separator].Trim();
+        subtype = withoutParameters[(separator + 1)..].Trim();
+
+        return !(string.IsNullOrEmpty(type) || string.IsNullOrEmpty(subtype));
+    }
+
+    private readonly record struct AcceptMediaRange(string Type, string Subtype, double Quality, int Order);
+
+    private readonly record struct AcceptSelection(double Quality, int Specificity, int AcceptOrder, int SupportedOrder)
+    {
+        public bool IsPreferredTo(AcceptSelection other)
+        {
+            if (Quality != other.Quality)
+            {
+                return Quality > other.Quality;
+            }
+
+            if (Specificity != other.Specificity)
+            {
+                return Specificity > other.Specificity;
+            }
+
+            if (AcceptOrder != other.AcceptOrder)
+            {
+                return AcceptOrder < other.AcceptOrder;
+            }
+
+            return SupportedOrder < other.SupportedOrder;
+        }
     }
 
     private static string BuildHtmlDocument(string title, string json)

@@ -407,7 +407,7 @@ public sealed class ExportImageRequest
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
 
-    [RegularExpression(@"^(json|html)$", ErrorMessage = "Format parameter must be 'json' or 'html'")]
+    [RegularExpression(@"^(json|pjson|html)$", ErrorMessage = "Format parameter must be 'json', 'pjson', or 'html'")]
     public string? F { get; init; } = "json";
 }
 
@@ -442,6 +442,6 @@ public sealed class IdentifyRequest
 
     public bool? ReturnCatalogItems { get; init; } = false;
 
-    [RegularExpression(@"^(json|html)$", ErrorMessage = "Format parameter must be 'json' or 'html'")]
+    [RegularExpression(@"^(json|pjson|html)$", ErrorMessage = "Format parameter must be 'json', 'pjson', or 'html'")]
     public string? F { get; init; } = "json";
 }

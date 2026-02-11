@@ -97,6 +97,20 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_UnsupportedFormat_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var result = await _handler.GetImageTileAsync(1, 0, 0, 0, "bmp");
+
+        result.Should().BeOfType<BadRequest<string>>();
+        await _rasterStore.DidNotReceive()
+            .ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_NoRasters_ReturnsNotFound()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())

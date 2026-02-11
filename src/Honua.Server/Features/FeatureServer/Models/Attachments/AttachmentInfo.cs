@@ -32,4 +32,9 @@ public sealed class AttachmentInfo
     /// Optional keywords for the attachment
     /// </summary>
     public string? Keywords { get; init; }
+
+    /// <summary>
+    /// Optional absolute attachment download URL when requested.
+    /// </summary>
+    public string? Url { get; init; }
 }

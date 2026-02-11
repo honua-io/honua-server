@@ -67,6 +67,16 @@ internal static class ExpressionEvaluator
         }
 
         var items = expression.Items;
+        if (TryGetString(items[0], out var op) && string.Equals(op, "literal", StringComparison.OrdinalIgnoreCase))
+        {
+            if (items.Length < 2)
+            {
+                return false;
+            }
+
+            return TryGetNumberArray(items[1], out values);
+        }
+
         var list = new List<float>(items.Length);
         foreach (var item in items)
         {
@@ -104,7 +114,7 @@ internal static class ExpressionEvaluator
             "match" => EvaluateMatch(array, properties),
             "step" => EvaluateStep(array, properties),
             "interpolate" => EvaluateInterpolate(array, properties),
-            "literal" => array.Length > 1 ? Evaluate(array[1], properties) : null,
+            "literal" => array.Length > 1 ? EvaluateLiteral(array[1]) : null,
             "to-string" => EvaluateToString(array, properties),
             "to-number" => EvaluateToNumber(array, properties),
             "concat" => EvaluateConcat(array, properties),
@@ -121,6 +131,21 @@ internal static class ExpressionEvaluator
             "-" => EvaluateArithmetic(array, properties, (a, b) => a - b),
             "*" => EvaluateArithmetic(array, properties, (a, b) => a * b),
             "/" => EvaluateArithmetic(array, properties, (a, b) => b != 0 ? a / b : 0),
+            _ => null
+        };
+    }
+
+    private static object? EvaluateLiteral(MapLibreExpression expression)
+    {
+        return expression.Kind switch
+        {
+            MapLibreExpressionKind.String => expression.StringValue,
+            MapLibreExpressionKind.Number => expression.NumberValue,
+            MapLibreExpressionKind.Boolean => expression.BoolValue,
+            MapLibreExpressionKind.Null => null,
+            MapLibreExpressionKind.Array => expression.Items is { Length: > 0 }
+                ? expression.Items.Select(EvaluateLiteral).ToArray()
+                : Array.Empty<object?>(),
             _ => null
         };
     }

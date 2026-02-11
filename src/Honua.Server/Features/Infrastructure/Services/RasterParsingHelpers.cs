@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Raster.Domain;
+using System.Globalization;
 
 namespace Honua.Server.Features.Infrastructure.Services;
 
@@ -44,10 +45,10 @@ internal static class RasterParsingHelpers
             return false;
         }
 
-        if (!double.TryParse(parts[0].Trim(), out minX) ||
-            !double.TryParse(parts[1].Trim(), out minY) ||
-            !double.TryParse(parts[2].Trim(), out maxX) ||
-            !double.TryParse(parts[3].Trim(), out maxY))
+        if (!double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out minX) ||
+            !double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out minY) ||
+            !double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out maxX) ||
+            !double.TryParse(parts[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out maxY))
         {
             return false;
         }
@@ -78,16 +79,42 @@ internal static class RasterParsingHelpers
     /// </summary>
     public static RasterFormat ParseRasterFormat(string? format)
     {
-        if (string.IsNullOrEmpty(format))
-            return RasterFormat.PNG;
+        return TryParseRasterFormat(format, out var rasterFormat)
+            ? rasterFormat
+            : RasterFormat.PNG;
+    }
 
-        return format.ToLowerInvariant() switch
+    /// <summary>
+    /// Tries to parse a raster format string.
+    /// </summary>
+    /// <param name="format">Requested format value.</param>
+    /// <param name="rasterFormat">Parsed output format when successful.</param>
+    /// <returns>True when the format is explicitly supported, otherwise false.</returns>
+    public static bool TryParseRasterFormat(string? format, out RasterFormat rasterFormat)
+    {
+        if (string.IsNullOrEmpty(format))
         {
-            "png" => RasterFormat.PNG,
-            "jpeg" or "jpg" => RasterFormat.JPEG,
-            "tiff" or "tif" => RasterFormat.TIFF,
-            _ => RasterFormat.PNG
-        };
+            rasterFormat = RasterFormat.PNG;
+            return true;
+        }
+
+        switch (format.ToLowerInvariant())
+        {
+            case "png":
+                rasterFormat = RasterFormat.PNG;
+                return true;
+            case "jpeg":
+            case "jpg":
+                rasterFormat = RasterFormat.JPEG;
+                return true;
+            case "tiff":
+            case "tif":
+                rasterFormat = RasterFormat.TIFF;
+                return true;
+            default:
+                rasterFormat = RasterFormat.PNG;
+                return false;
+        }
     }
 
 }

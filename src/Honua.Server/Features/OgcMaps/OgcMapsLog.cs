@@ -98,7 +98,7 @@ internal static partial class OgcMapsLog
     [LoggerMessage(
         EventId = 5914,
         Level = LogLevel.Warning,
-        Message = "Unsupported CRS requested: {Crs}. Falling back to default.")]
+        Message = "Unsupported CRS requested: {Crs}.")]
     public static partial void UnsupportedCrs(ILogger logger, string crs);
 
     [LoggerMessage(
@@ -112,5 +112,17 @@ internal static partial class OgcMapsLog
         Level = LogLevel.Debug,
         Message = "Using default bounding box for layer {LayerId}: [{XMin}, {YMin}, {XMax}, {YMax}]")]
     public static partial void UsingDefaultBounds(ILogger logger, int layerId, double xMin, double yMin, double xMax, double yMax);
+
+    [LoggerMessage(
+        EventId = 5917,
+        Level = LogLevel.Debug,
+        Message = "No map raster data found for layer {LayerId}")]
+    public static partial void NoMapDataFound(ILogger logger, int layerId);
+
+    [LoggerMessage(
+        EventId = 5918,
+        Level = LogLevel.Debug,
+        Message = "No map raster data found for dataset request with {LayerCount} layers")]
+    public static partial void NoDatasetMapDataFound(ILogger logger, int layerCount);
 
 }

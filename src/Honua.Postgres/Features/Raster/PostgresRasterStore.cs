@@ -122,18 +122,29 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
 
+        // 3. Reproject output if requested
+        if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
+        {
+            rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+            extraParams.Add(("@outputSrid", query.OutputSrid.Value));
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH transformed AS (
-                SELECT {rasterExpr} AS rast, ST_SRID(raster) AS srid, ST_NumBands(raster) AS band_count
+                SELECT {rasterExpr} AS rast
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id = @rasterId
             )
             SELECT ST_AsGDALRaster(rast, '{formatName}') AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
-                   srid,
-                   band_count
+                   ST_SRID(rast) AS srid,
+                   ST_NumBands(rast) AS band_count,
+                   ST_XMin(ST_Envelope(rast)) AS xmin,
+                   ST_YMin(ST_Envelope(rast)) AS ymin,
+                   ST_XMax(ST_Envelope(rast)) AS xmax,
+                   ST_YMax(ST_Envelope(rast)) AS ymax
             FROM transformed
             """;
         AddParameter(command, "@layerId", layerId);
@@ -161,12 +172,24 @@ internal sealed class PostgresRasterStore : IRasterStore
         var heightOrd = reader.GetOrdinal("height");
         var sridOrd = reader.GetOrdinal("srid");
         var bandCountOrd = reader.GetOrdinal("band_count");
+        var xminOrd = reader.GetOrdinal("xmin");
+        var yminOrd = reader.GetOrdinal("ymin");
+        var xmaxOrd = reader.GetOrdinal("xmax");
+        var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
         var width = reader.GetInt32(widthOrd);
         var height = reader.GetInt32(heightOrd);
         var srid = reader.GetInt32(sridOrd);
         var bandCount = reader.GetInt32(bandCountOrd);
+        var extent = new RasterExtent
+        {
+            XMin = reader.GetDouble(xminOrd),
+            YMin = reader.GetDouble(yminOrd),
+            XMax = reader.GetDouble(xmaxOrd),
+            YMax = reader.GetDouble(ymaxOrd),
+            Srid = srid
+        };
 
         PostgresRasterLog.ImageExported(_logger, layerId, rasterId, width, height, data.Length);
 
@@ -177,7 +200,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             Width = width,
             Height = height,
             Srid = srid,
-            BandCount = bandCount
+            BandCount = bandCount,
+            Extent = extent
         };
     }
 

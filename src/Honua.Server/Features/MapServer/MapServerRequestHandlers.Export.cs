@@ -2,12 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Data.Common;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
+using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -41,192 +47,370 @@ internal static partial class MapServerEndpoints
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
 
-        // Parse export parameters from query string
-        var query = context.Request.Query;
-        var parameters = new ExportParameters
+        try
         {
-            Bbox = query["bbox"].FirstOrDefault(),
-            Size = query["size"].FirstOrDefault(),
-            Dpi = int.TryParse(query["dpi"].FirstOrDefault(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var dpi) ? dpi : DefaultDpi,
-            Format = query["format"].FirstOrDefault() ?? "png",
-            Transparent = !string.Equals(query["transparent"].FirstOrDefault(), "false", StringComparison.OrdinalIgnoreCase),
-            Layers = query["layers"].FirstOrDefault(),
-            BboxSr = query["bboxSR"].FirstOrDefault(),
-            ImageSr = query["imageSR"].FirstOrDefault(),
-            F = query["f"].FirstOrDefault() ?? "image",
-            BackgroundColor = query["backgroundColor"].FirstOrDefault()
-        };
+            var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
+            if (values == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+            }
 
-        // Parse bounding box
-        if (!TryParseBbox(parameters.Bbox, out var extent))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
-        }
+            var responseFormat = GetValue(values, "f") ?? "image";
+            if (!IsSupportedExportResponseFormat(responseFormat))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    $"Output format '{responseFormat}' is not supported.");
+            }
 
-        // Parse image size
-        if (!TryParseSize(parameters.Size, out var imageWidth, out var imageHeight))
-        {
-            imageWidth = DefaultImageWidth;
-            imageHeight = DefaultImageHeight;
-        }
+            var bboxValue = GetValue(values, "bbox");
+            if (!TryParseBbox(bboxValue, out var extent))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
+            }
 
-        MapServerLog.ExportRequested(logger, serviceId, imageWidth, imageHeight);
-        var stopwatch = Stopwatch.StartNew();
-        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
-            HonuaTelemetry.Activities.MapServerExport, ActivityKind.Internal);
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
-        activity?.SetTag(HonuaTelemetry.Tags.Operation, "export");
-        activity?.SetTag("honua.mapserver.width", imageWidth);
-        activity?.SetTag("honua.mapserver.height", imageHeight);
-        activity?.SetTag("honua.mapserver.format", parameters.Format);
+            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            if (!serviceResult.IsValid)
+            {
+                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
+                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+                }
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
-        if (!serviceResult.IsValid)
-        {
-            var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
-        }
+                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            }
 
-        var service = serviceResult.Resource!;
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-        if (protocolError is not null)
-        {
-            return protocolError;
-        }
+            var service = serviceResult.Resource!;
+            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+            if (protocolError is not null)
+            {
+                return protocolError;
+            }
 
-        // Apply per-service MapServer config if present
-        var mapConfig = service.Metadata?.MapServer;
-        var maxDimension = mapConfig?.MaxImageWidth ?? MaxImageDimension;
-        var maxDimensionH = mapConfig?.MaxImageHeight ?? MaxImageDimension;
-        var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
-        imageWidth = Math.Clamp(imageWidth, 1, maxDimension);
-        imageHeight = Math.Clamp(imageHeight, 1, maxDimensionH);
+            var mapConfig = service.Metadata?.MapServer;
+            var maxDimensionW = mapConfig?.MaxImageWidth ?? MaxImageDimension;
+            var maxDimensionH = mapConfig?.MaxImageHeight ?? MaxImageDimension;
+            var defaultWidth = mapConfig?.DefaultImageWidth ?? DefaultImageWidth;
+            var defaultHeight = mapConfig?.DefaultImageHeight ?? DefaultImageHeight;
+            var defaultDpi = mapConfig?.DefaultDpi ?? DefaultDpi;
+            var defaultFormat = mapConfig?.DefaultFormat ?? "png";
+            var defaultTransparent = mapConfig?.DefaultTransparent ?? true;
+            var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
-        if (accessError != null)
-        {
-            return accessError;
-        }
+            if (!TryParseSize(GetValue(values, "size"), defaultWidth, defaultHeight, out var imageWidth, out var imageHeight, out var sizeError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, sizeError ?? "Invalid size parameter.");
+            }
 
-        // Determine visible layers
-        var visibleLayers = ResolveVisibleLayers(service, parameters.Layers, context);
-        if (visibleLayers.Length == 0)
-        {
-            // Return empty image
-            using var renderer = new SkiaMapRenderer();
-            var emptyImage = renderer.RenderMap(
-                [],
-                [],
+            if (!TryParseDpi(GetValue(values, "dpi"), defaultDpi, out var dpi, out var dpiError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, dpiError ?? "Invalid dpi parameter.");
+            }
+
+            if (!TryParseTransparent(GetValue(values, "transparent"), defaultTransparent, out var transparent, out var transparentError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, transparentError ?? "Invalid transparent parameter.");
+            }
+
+            var formatRaw = GetValue(values, "format");
+            if (string.IsNullOrWhiteSpace(formatRaw))
+            {
+                formatRaw = defaultFormat;
+            }
+
+            if (!TryNormalizeImageFormat(formatRaw, out var imageFormat, out var formatError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Invalid format parameter.");
+            }
+
+            var bboxSrRaw = GetValue(values, "bboxSR");
+            var imageSrRaw = GetValue(values, "imageSR");
+            var bboxSrid = TryParseSrid(bboxSrRaw);
+            if (!string.IsNullOrWhiteSpace(bboxSrRaw) && !bboxSrid.HasValue)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid bboxSR parameter.");
+            }
+
+            var imageSrid = TryParseSrid(imageSrRaw);
+            if (!string.IsNullOrWhiteSpace(imageSrRaw) && !imageSrid.HasValue)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid imageSR parameter.");
+            }
+
+            var serviceSrid = service.SpatialReference.Srid;
+            bboxSrid ??= serviceSrid;
+            imageSrid ??= serviceSrid;
+
+            var transformResult = await TryTransformExtentAsync(
+                context,
                 extent,
-                imageWidth,
-                imageHeight,
-                parameters.Transparent,
-                ParseBackgroundColor(parameters.BackgroundColor),
-                GeometryType.None);
-
-            return ReturnImageResult(emptyImage, parameters, imageWidth, imageHeight, extent, context);
-        }
-
-        // Resolve SRID context
-        var serviceSrid = service.SpatialReference.Srid;
-        var bboxSrid = TryParseSrid(parameters.BboxSr) ?? serviceSrid;
-        var imageSrid = TryParseSrid(parameters.ImageSr) ?? serviceSrid;
-
-        // Transform bbox to service SRID for querying if needed
-        var queryExtent = CoordinateTransformer.TransformExtent(extent, bboxSrid, serviceSrid);
-
-        // Calculate scale for visibility filtering
-        var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, parameters.Dpi, bboxSrid);
-
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
-
-        var totalFeatureCount = 0;
-        using var renderer2 = new SkiaMapRenderer();
-
-        // Build the render extent in the output coordinate space
-        var renderExtent = CoordinateTransformer.TransformExtent(extent, bboxSrid, imageSrid);
-
-        // Create combined surface for all layers
-        using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
-        var canvas = surface.Canvas;
-
-        if (parameters.Transparent)
-        {
-            canvas.Clear(SKColors.Transparent);
-        }
-        else
-        {
-            canvas.Clear(ParseBackgroundColor(parameters.BackgroundColor) ?? SKColors.White);
-        }
-
-        var transform = SkiaMapRenderer.BuildTransform(renderExtent, imageWidth, imageHeight);
-
-        foreach (var layer in visibleLayers)
-        {
-            // Check scale visibility
-            if (!IsLayerVisibleAtScale(layer, scaleDenominator))
+                bboxSrid.Value,
+                imageSrid.Value,
+                context.RequestAborted);
+            if (!transformResult.IsSuccess)
             {
-                continue;
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    transformResult.Error ?? "Invalid spatial reference.");
+            }
+            var renderExtent = transformResult.Extent;
+
+            imageWidth = Math.Clamp(imageWidth, 1, maxDimensionW);
+            imageHeight = Math.Clamp(imageHeight, 1, maxDimensionH);
+
+            var backgroundColorValue = GetValue(values, "backgroundColor");
+            SKColor? backgroundColor = null;
+            if (!string.IsNullOrWhiteSpace(backgroundColorValue))
+            {
+                if (!TryParseRgbList(backgroundColorValue, out var parsedColor))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid backgroundColor parameter. Expected format: r,g,b or r,g,b,a");
+                }
+
+                backgroundColor = parsedColor;
             }
 
-            if (!layer.HasGeometry)
+            var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+            if (!TryParseLayerDefs(GetValue(values, "layerDefs"), queryValidator, out var layerDefs, out var layerDefsError))
             {
-                continue;
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    layerDefsError ?? "Invalid layerDefs parameter.");
             }
 
-            // Build spatial filter for bbox
-            var spatialFilter = CreateBboxSpatialFilter(queryExtent, serviceSrid);
-
-            var featureQuery = new FeatureQuery
+            if (!TryParseLayerTimeOptions(GetValue(values, "layerTimeOptions"), out var layerTimeOptions, out var layerTimeOptionsError))
             {
-                SpatialFilter = spatialFilter,
-                SpatialReferenceSrid = serviceSrid,
-                OutputSrid = imageSrid,
-                Limit = maxFeatures
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    layerTimeOptionsError ?? "Invalid layerTimeOptions parameter.");
+            }
+
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    dynamicLayersError ?? "Invalid dynamicLayers parameter.");
+            }
+
+            var gdbVersion = GetValue(values, "gdbVersion");
+            if (!string.IsNullOrWhiteSpace(gdbVersion))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Unsupported export parameters: gdbVersion.");
+            }
+
+            var timeValue = GetValue(values, "time");
+            var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
+
+            MapServerLog.ExportRequested(logger, serviceId, imageWidth, imageHeight);
+            var stopwatch = Stopwatch.StartNew();
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.MapServerExport, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
+            activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "export");
+            activity?.SetTag("honua.mapserver.width", imageWidth);
+            activity?.SetTag("honua.mapserver.height", imageHeight);
+            activity?.SetTag("honua.mapserver.format", imageFormat);
+
+            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
+            var parameters = new ExportParameters
+            {
+                Bbox = bboxValue,
+                Size = GetValue(values, "size"),
+                Dpi = dpi,
+                Format = imageFormat,
+                Transparent = transparent,
+                Layers = GetValue(values, "layers"),
+                BboxSr = bboxSrRaw,
+                ImageSr = imageSrRaw,
+                F = responseFormat,
+                BackgroundColor = backgroundColorValue
             };
 
-            var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
-
-            if (queryResult.Items.Length == 0)
+            var renderLayers = ResolveRenderLayers(service, parameters.Layers, dynamicLayers, context);
+            if (renderLayers.Length == 0)
             {
-                continue;
+                using var renderer = new SkiaMapRenderer();
+                var emptyImage = renderer.RenderMap(
+                    [],
+                    [],
+                    renderExtent,
+                    imageWidth,
+                    imageHeight,
+                    parameters.Transparent,
+                    backgroundColor,
+                    GeometryType.None);
+
+                stopwatch.Stop();
+                MapServerLog.ExportCompleted(logger, serviceId, 0, stopwatch.Elapsed.TotalMilliseconds);
+                HonuaTelemetry.SetSuccess(activity, 0);
+                HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
+                activity?.SetTag("honua.mapserver.layer_count", 0);
+
+                return await ReturnImageResultAsync(
+                    emptyImage,
+                    parameters,
+                    imageWidth,
+                    imageHeight,
+                    dpi,
+                    renderExtent,
+                    imageSrid.Value,
+                    context,
+                    context.RequestAborted);
             }
 
-            totalFeatureCount += queryResult.Items.Length;
+            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, bboxSrid.Value);
 
-            // Load style for layer
-            var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
-            var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
+            var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
-            // Render features directly to canvas
-            RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType);
+            var totalFeatureCount = 0;
+            var spatialFilter = CreateBboxSpatialFilter(extent, bboxSrid.Value);
+
+            using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+            var canvas = surface.Canvas;
+
+            if (parameters.Transparent)
+            {
+                canvas.Clear(SKColors.Transparent);
+            }
+            else
+            {
+                canvas.Clear(backgroundColor ?? SKColors.White);
+            }
+
+            var transform = SkiaMapRenderer.BuildTransform(renderExtent, imageWidth, imageHeight);
+
+            foreach (var renderLayer in renderLayers)
+            {
+                var layer = renderLayer.Layer;
+                if (!IsLayerVisibleAtScale(layer, scaleDenominator))
+                {
+                    continue;
+                }
+
+                if (!layer.HasGeometry)
+                {
+                    continue;
+                }
+
+                layerDefs.TryGetValue(layer.Id, out var layerDef);
+                var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
+
+                if (!TryGetEffectiveTimeParameters(
+                        timeValue,
+                        timeRelationValue,
+                        layer,
+                        layerTimeOptions,
+                        out var effectiveTime,
+                        out var effectiveTimeRelation,
+                        out var timeError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        timeError ?? "Invalid time parameter.");
+                }
+
+                if (!TryBuildLayerSqlFilter(
+                        filterExpressionService,
+                        layer,
+                        combinedDefinition,
+                        effectiveTime,
+                        effectiveTimeRelation,
+                        out var sqlFilter,
+                        out var filterError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        filterError ?? "Invalid filter parameter.");
+                }
+
+                var featureQuery = new FeatureQuery
+                {
+                    SpatialFilter = spatialFilter,
+                    SpatialReferenceSrid = serviceSrid,
+                    OutputSrid = imageSrid,
+                    Limit = maxFeatures,
+                    SqlFilter = sqlFilter
+                };
+
+                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+
+                if (queryResult.Items.Length == 0)
+                {
+                    continue;
+                }
+
+                totalFeatureCount += queryResult.Items.Length;
+
+                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
+                var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+
+                RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType);
+            }
+
+            stopwatch.Stop();
+            MapServerLog.ExportCompleted(logger, serviceId, totalFeatureCount, stopwatch.Elapsed.TotalMilliseconds);
+            HonuaTelemetry.SetSuccess(activity, totalFeatureCount);
+            HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
+            activity?.SetTag("honua.mapserver.layer_count", renderLayers.Length);
+
+            var imageBytes = SkiaMapRenderer.EncodeSurface(surface, parameters.Format);
+            return await ReturnImageResultAsync(
+                imageBytes,
+                parameters,
+                imageWidth,
+                imageHeight,
+                dpi,
+                renderExtent,
+                imageSrid.Value,
+                context,
+                context.RequestAborted);
         }
-
-        stopwatch.Stop();
-        MapServerLog.ExportCompleted(logger, serviceId, totalFeatureCount, stopwatch.Elapsed.TotalMilliseconds);
-        HonuaTelemetry.SetSuccess(activity, totalFeatureCount);
-        HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
-        activity?.SetTag("honua.mapserver.layer_count", visibleLayers.Length);
-
-        var imageBytes = SkiaMapRenderer.EncodeSurface(surface, parameters.Format);
-        return ReturnImageResult(imageBytes, parameters, imageWidth, imageHeight, extent, context);
+        catch (ArgumentException ex)
+        {
+            MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "MapServer export failed.");
+        }
     }
 
-    private static IResult ReturnImageResult(
+    private static async Task<IResult> ReturnImageResultAsync(
         byte[] imageBytes,
         ExportParameters parameters,
         int imageWidth,
         int imageHeight,
+        int dpi,
         SkiaMapRenderer.RenderExtent extent,
-        HttpContext context)
+        int imageSrid,
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
-        if (string.Equals(parameters.F, "json", StringComparison.OrdinalIgnoreCase))
+        var isJsonResponse = string.Equals(parameters.F, "json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parameters.F, "pjson", StringComparison.OrdinalIgnoreCase);
+        if (isJsonResponse)
         {
+            var imageContentType = SkiaMapRenderer.GetContentType(parameters.Format);
+            var temporaryFileService = context.RequestServices.GetRequiredService<ITemporaryFileService>();
+            var imageUrl = await temporaryFileService.StoreTemporaryFileAsync(
+                imageBytes,
+                imageContentType,
+                TimeSpan.FromHours(1),
+                cancellationToken);
+            var scale = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, imageSrid);
+
             var response = new ExportImageResponse
             {
+                Href = imageUrl,
                 Width = imageWidth,
                 Height = imageHeight,
                 Extent = new EsriExtent
@@ -237,19 +421,17 @@ internal static partial class MapServerEndpoints
                     Ymax = extent.MaxY,
                     SpatialReference = new EsriSpatialReference
                     {
-                        Wkid = TryParseSrid(parameters.BboxSr) ?? 4326
+                        Wkid = imageSrid
                     }
                 },
-                ImageData = Convert.ToBase64String(imageBytes),
-                ContentType = SkiaMapRenderer.GetContentType(parameters.Format)
+                Scale = scale
             };
 
             return Results.Json(response, MapServerJsonContext.Default.ExportImageResponse, contentType: "application/json");
         }
 
-        // Return raw image
-        var contentType = SkiaMapRenderer.GetContentType(parameters.Format);
-        return Results.Bytes(imageBytes, contentType);
+        var responseContentType = SkiaMapRenderer.GetContentType(parameters.Format);
+        return Results.Bytes(imageBytes, responseContentType);
     }
 
     private static void RenderLayerToCanvas(
@@ -271,6 +453,11 @@ internal static partial class MapServerEndpoints
                 foreach (var feature in features)
                 {
                     if (feature.Geometry == null || feature.Geometry.Length < 5)
+                    {
+                        continue;
+                    }
+
+                    if (styleLayer.Filter is { } filter && !EvaluateFilter(filter, feature.Attributes))
                     {
                         continue;
                     }
@@ -445,28 +632,1245 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
-    private static bool TryParseSize(string? size, out int width, out int height)
+    private static bool TryParseSize(
+        string? size,
+        int defaultWidth,
+        int defaultHeight,
+        out int width,
+        out int height,
+        out string? error)
     {
-        width = DefaultImageWidth;
-        height = DefaultImageHeight;
+        width = defaultWidth;
+        height = defaultHeight;
+        error = null;
 
         if (string.IsNullOrWhiteSpace(size))
         {
-            return false;
+            return true;
         }
 
-        var parts = size.Split(',');
+        var parts = size.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 2)
         {
+            error = "Invalid size parameter. Expected format: width,height";
             return false;
         }
 
-        return int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) &&
-               int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out height);
+        if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) || width <= 0)
+        {
+            error = "Invalid size width.";
+            return false;
+        }
+
+        if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out height) || height <= 0)
+        {
+            error = "Invalid size height.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseDpi(string? dpiValue, int defaultDpi, out int dpi, out string? error)
+    {
+        dpi = defaultDpi;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(dpiValue))
+        {
+            return true;
+        }
+
+        if (!int.TryParse(dpiValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out dpi) || dpi <= 0)
+        {
+            error = "Invalid dpi parameter.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseTransparent(string? transparentValue, bool defaultValue, out bool transparent, out string? error)
+    {
+        transparent = defaultValue;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(transparentValue))
+        {
+            return true;
+        }
+
+        if (bool.TryParse(transparentValue, out var parsed))
+        {
+            transparent = parsed;
+            return true;
+        }
+
+        if (int.TryParse(transparentValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
+        {
+            transparent = numeric != 0;
+            return true;
+        }
+
+        error = "Invalid transparent parameter.";
+        return false;
+    }
+
+    private static bool IsSupportedExportResponseFormat(string format)
+    {
+        return string.Equals(format, "image", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryNormalizeImageFormat(string? format, out string normalized, out string? error)
+    {
+        normalized = "png";
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(format))
+        {
+            return true;
+        }
+
+        var candidate = format.Trim().ToLowerInvariant();
+        switch (candidate)
+        {
+            case "png":
+            case "png8":
+            case "png24":
+            case "png32":
+            case "jpg":
+            case "jpeg":
+            case "gif":
+                normalized = candidate;
+                return true;
+            default:
+                error = $"Output format '{format}' is not supported.";
+                return false;
+        }
     }
 
     private static int? TryParseSrid(string? sr)
         => SpatialReferenceHelpers.TryParseSrid(sr);
+
+    private static async Task<ExtentTransformResult> TryTransformExtentAsync(
+        HttpContext context,
+        SkiaMapRenderer.RenderExtent extent,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ExtentTransformResult.Success(
+                CoordinateTransformer.TransformExtent(extent, fromSrid, toSrid));
+        }
+        catch (NotSupportedException ex)
+        {
+            var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
+            if (connectionProvider == null)
+            {
+                return ExtentTransformResult.Failure(ex.Message);
+            }
+
+            var transformed = await TryTransformExtentWithPostGisAsync(
+                connectionProvider,
+                extent,
+                fromSrid,
+                toSrid,
+                cancellationToken);
+            return transformed.HasValue
+                ? ExtentTransformResult.Success(transformed.Value)
+                : ExtentTransformResult.Failure(ex.Message);
+        }
+    }
+
+    private static async Task<SkiaMapRenderer.RenderExtent?> TryTransformExtentWithPostGisAsync(
+        IDatabaseConnectionProvider connectionProvider,
+        SkiaMapRenderer.RenderExtent extent,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = await connectionProvider
+                .OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH points AS (
+                    SELECT ST_SetSRID(ST_MakePoint(@minX, @minY), @fromSrid) AS geom
+                    UNION ALL
+                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @minY), @fromSrid) AS geom
+                    UNION ALL
+                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @maxY), @fromSrid) AS geom
+                    UNION ALL
+                    SELECT ST_SetSRID(ST_MakePoint(@minX, @maxY), @fromSrid) AS geom
+                ),
+                transformed AS (
+                    SELECT ST_Transform(geom, @toSrid) AS geom
+                    FROM points
+                )
+                SELECT MIN(ST_X(geom)) AS xmin,
+                       MIN(ST_Y(geom)) AS ymin,
+                       MAX(ST_X(geom)) AS xmax,
+                       MAX(ST_Y(geom)) AS ymax
+                FROM transformed
+                """;
+
+            AddParameter(command, "@minX", extent.MinX);
+            AddParameter(command, "@minY", extent.MinY);
+            AddParameter(command, "@maxX", extent.MaxX);
+            AddParameter(command, "@maxY", extent.MaxY);
+            AddParameter(command, "@fromSrid", fromSrid);
+            AddParameter(command, "@toSrid", toSrid);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
+            {
+                return null;
+            }
+
+            return new SkiaMapRenderer.RenderExtent(
+                reader.GetDouble(0),
+                reader.GetDouble(1),
+                reader.GetDouble(2),
+                reader.GetDouble(3));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    private readonly record struct ExtentTransformResult(
+        bool IsSuccess,
+        SkiaMapRenderer.RenderExtent Extent,
+        string? Error)
+    {
+        public static ExtentTransformResult Success(SkiaMapRenderer.RenderExtent extent)
+            => new(true, extent, null);
+
+        public static ExtentTransformResult Failure(string error)
+            => new(false, default, error);
+    }
+
+    private sealed record LayerTimeOptions(
+        bool? UseTime,
+        bool TimeDataCumulative,
+        double? TimeOffset,
+        string? TimeOffsetUnits,
+        string? Time,
+        string? TimeRelation);
+
+    private sealed record DynamicLayerDefinition(
+        int Id,
+        int MapLayerId,
+        string? DefinitionExpression);
+
+    private sealed record RenderLayer(
+        LayerDefinition Layer,
+        int Id,
+        string? DefinitionExpression);
+
+    private static bool TryParseLayerDefs(
+        string? layerDefsValue,
+        ICommonQueryValidator queryValidator,
+        out Dictionary<int, string?> layerDefs,
+        out string? error)
+    {
+        layerDefs = new Dictionary<int, string?>();
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(layerDefsValue))
+        {
+            return true;
+        }
+
+        var trimmed = layerDefsValue.Trim();
+        if (trimmed.StartsWith('{'))
+        {
+            return TryParseLayerDefsJson(trimmed, queryValidator, layerDefs, out error);
+        }
+
+        return TryParseLayerDefsPairs(trimmed, queryValidator, layerDefs, out error);
+    }
+
+    private static bool TryParseLayerDefsJson(
+        string layerDefsValue,
+        ICommonQueryValidator queryValidator,
+        Dictionary<int, string?> layerDefs,
+        out string? error)
+    {
+        error = null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(layerDefsValue);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                error = "layerDefs must be a JSON object.";
+                return false;
+            }
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!int.TryParse(property.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+                {
+                    error = $"Invalid layer id '{property.Name}' in layerDefs.";
+                    return false;
+                }
+
+                string? where;
+                if (property.Value.ValueKind == JsonValueKind.String)
+                {
+                    where = property.Value.GetString();
+                }
+                else if (property.Value.ValueKind == JsonValueKind.Null)
+                {
+                    where = null;
+                }
+                else
+                {
+                    error = $"Invalid layerDefs value for layer '{property.Name}'. Expected a string.";
+                    return false;
+                }
+
+                if (!string.IsNullOrWhiteSpace(where))
+                {
+                    var validation = queryValidator.ValidateWhereClause(where);
+                    if (!validation.IsValid)
+                    {
+                        error = validation.ErrorMessage ?? "Invalid layerDefs where clause.";
+                        return false;
+                    }
+                }
+
+                layerDefs[layerId] = string.IsNullOrWhiteSpace(where) ? null : where;
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static bool TryParseLayerDefsPairs(
+        string layerDefsValue,
+        ICommonQueryValidator queryValidator,
+        Dictionary<int, string?> layerDefs,
+        out string? error)
+    {
+        error = null;
+
+        var pairs = layerDefsValue.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var pair in pairs)
+        {
+            var separatorIndex = pair.IndexOf(':');
+            if (separatorIndex <= 0)
+            {
+                error = "layerDefs must use the format: layerId:where;layerId:where";
+                return false;
+            }
+
+            var idPart = pair[..separatorIndex].Trim();
+            var where = separatorIndex == pair.Length - 1
+                ? string.Empty
+                : pair[(separatorIndex + 1)..].Trim();
+
+            if (!int.TryParse(idPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            {
+                error = $"Invalid layer id '{idPart}' in layerDefs.";
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(where))
+            {
+                var validation = queryValidator.ValidateWhereClause(where);
+                if (!validation.IsValid)
+                {
+                    error = validation.ErrorMessage ?? "Invalid layerDefs where clause.";
+                    return false;
+                }
+            }
+
+            layerDefs[layerId] = string.IsNullOrWhiteSpace(where) ? null : where;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseLayerTimeOptions(
+        string? layerTimeOptionsValue,
+        out Dictionary<int, LayerTimeOptions> layerTimeOptions,
+        out string? error)
+    {
+        layerTimeOptions = new Dictionary<int, LayerTimeOptions>();
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(layerTimeOptionsValue))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(layerTimeOptionsValue);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                error = "layerTimeOptions must be a JSON object.";
+                return false;
+            }
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!int.TryParse(property.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+                {
+                    error = $"Invalid layer id '{property.Name}' in layerTimeOptions.";
+                    return false;
+                }
+
+                if (property.Value.ValueKind != JsonValueKind.Object)
+                {
+                    error = $"Invalid layerTimeOptions value for layer '{property.Name}'. Expected a JSON object.";
+                    return false;
+                }
+
+                bool? useTime = null;
+                var timeDataCumulative = false;
+                double? timeOffset = null;
+                string? timeOffsetUnits = null;
+                string? time = null;
+                string? timeRelation = null;
+
+                foreach (var option in property.Value.EnumerateObject())
+                {
+                    switch (option.Name.ToLowerInvariant())
+                    {
+                        case "usetime":
+                            if (option.Value.ValueKind == JsonValueKind.True ||
+                                option.Value.ValueKind == JsonValueKind.False)
+                            {
+                                useTime = option.Value.GetBoolean();
+                            }
+                            else if (option.Value.ValueKind != JsonValueKind.Null)
+                            {
+                                error = $"Invalid useTime value for layer '{property.Name}'. Expected a boolean.";
+                                return false;
+                            }
+
+                            break;
+                        case "timedatacumulative":
+                            if (option.Value.ValueKind == JsonValueKind.True ||
+                                option.Value.ValueKind == JsonValueKind.False)
+                            {
+                                timeDataCumulative = option.Value.GetBoolean();
+                            }
+                            else if (option.Value.ValueKind != JsonValueKind.Null)
+                            {
+                                error = $"Invalid timeDataCumulative value for layer '{property.Name}'. Expected a boolean.";
+                                return false;
+                            }
+
+                            break;
+                        case "timeoffset":
+                            if (option.Value.ValueKind == JsonValueKind.Number)
+                            {
+                                timeOffset = option.Value.GetDouble();
+                            }
+                            else if (option.Value.ValueKind == JsonValueKind.String &&
+                                double.TryParse(option.Value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedOffset))
+                            {
+                                timeOffset = parsedOffset;
+                            }
+                            else if (option.Value.ValueKind != JsonValueKind.Null)
+                            {
+                                error = $"Invalid timeOffset value for layer '{property.Name}'. Expected a number.";
+                                return false;
+                            }
+
+                            break;
+                        case "timeoffsetunits":
+                            if (option.Value.ValueKind == JsonValueKind.String)
+                            {
+                                timeOffsetUnits = option.Value.GetString();
+                            }
+                            else if (option.Value.ValueKind != JsonValueKind.Null)
+                            {
+                                error = $"Invalid timeOffsetUnits value for layer '{property.Name}'. Expected a string.";
+                                return false;
+                            }
+
+                            break;
+                        case "time":
+                            if (!TryReadJsonStringOrNumber(option.Value, out time))
+                            {
+                                error = $"Invalid time value for layer '{property.Name}'. Expected a string or number.";
+                                return false;
+                            }
+
+                            break;
+                        case "timerelation":
+                            if (option.Value.ValueKind == JsonValueKind.String)
+                            {
+                                timeRelation = option.Value.GetString();
+                            }
+                            else if (option.Value.ValueKind != JsonValueKind.Null)
+                            {
+                                error = $"Invalid timeRelation value for layer '{property.Name}'. Expected a string.";
+                                return false;
+                            }
+
+                            break;
+                    }
+                }
+
+                layerTimeOptions[layerId] = new LayerTimeOptions(
+                    useTime,
+                    timeDataCumulative,
+                    timeOffset,
+                    timeOffsetUnits,
+                    string.IsNullOrWhiteSpace(time) ? null : time,
+                    string.IsNullOrWhiteSpace(timeRelation) ? null : timeRelation);
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static bool TryParseDynamicLayers(
+        string? dynamicLayersValue,
+        ServiceDefinition service,
+        ICommonQueryValidator queryValidator,
+        out List<DynamicLayerDefinition> dynamicLayers,
+        out string? error)
+    {
+        dynamicLayers = new List<DynamicLayerDefinition>();
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(dynamicLayersValue))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(dynamicLayersValue);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                error = "dynamicLayers must be a JSON array.";
+                return false;
+            }
+
+            var knownLayers = service.Layers.ToDictionary(layer => layer.Id);
+            var seenIds = new HashSet<int>();
+
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    error = "dynamicLayers entries must be JSON objects.";
+                    return false;
+                }
+
+                if (!TryGetJsonInt(element, "id", out var id))
+                {
+                    error = "dynamicLayers entries must include an integer id.";
+                    return false;
+                }
+
+                if (!seenIds.Add(id))
+                {
+                    error = $"Duplicate dynamic layer id '{id}'.";
+                    return false;
+                }
+
+                if (!element.TryGetProperty("source", out var sourceElement) ||
+                    sourceElement.ValueKind != JsonValueKind.Object)
+                {
+                    error = $"dynamicLayers entry '{id}' must include a source object.";
+                    return false;
+                }
+
+                if (!TryGetJsonString(sourceElement, "type", out var sourceType) ||
+                    !string.Equals(sourceType, "mapLayer", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = $"dynamicLayers entry '{id}' must use a mapLayer source.";
+                    return false;
+                }
+
+                if (!TryGetJsonInt(sourceElement, "mapLayerId", out var mapLayerId))
+                {
+                    error = $"dynamicLayers entry '{id}' must include a mapLayerId.";
+                    return false;
+                }
+
+                if (!knownLayers.ContainsKey(mapLayerId))
+                {
+                    error = $"dynamicLayers entry '{id}' references unknown layer '{mapLayerId}'.";
+                    return false;
+                }
+
+                string? definitionExpression = null;
+                if (element.TryGetProperty("definitionExpression", out var definitionElement))
+                {
+                    if (!TryReadJsonStringOrNumber(definitionElement, out definitionExpression))
+                    {
+                        error = $"dynamicLayers entry '{id}' has an invalid definitionExpression.";
+                        return false;
+                    }
+                }
+
+                if (definitionExpression == null &&
+                    element.TryGetProperty("layerDefinition", out var layerDefinitionElement) &&
+                    layerDefinitionElement.ValueKind == JsonValueKind.Object &&
+                    layerDefinitionElement.TryGetProperty("definitionExpression", out var nestedDefinition))
+                {
+                    if (!TryReadJsonStringOrNumber(nestedDefinition, out definitionExpression))
+                    {
+                        error = $"dynamicLayers entry '{id}' has an invalid layerDefinition.definitionExpression.";
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(definitionExpression))
+                {
+                    var validation = queryValidator.ValidateWhereClause(definitionExpression);
+                    if (!validation.IsValid)
+                    {
+                        error = validation.ErrorMessage ?? $"Invalid definitionExpression for layer '{id}'.";
+                        return false;
+                    }
+                }
+
+                dynamicLayers.Add(new DynamicLayerDefinition(
+                    id,
+                    mapLayerId,
+                    string.IsNullOrWhiteSpace(definitionExpression) ? null : definitionExpression));
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static RenderLayer[] ResolveRenderLayers(
+        ServiceDefinition service,
+        string? layersParam,
+        IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
+        HttpContext context)
+    {
+        if (dynamicLayers.Count == 0)
+        {
+            return ResolveVisibleLayers(service, layersParam, context)
+                .Select(layer => new RenderLayer(layer, layer.Id, null))
+                .ToArray();
+        }
+
+        var layerLookup = service.Layers.ToDictionary(layer => layer.Id);
+        IEnumerable<DynamicLayerDefinition> selected = dynamicLayers;
+
+        if (!string.IsNullOrWhiteSpace(layersParam))
+        {
+            var spec = layersParam.Trim();
+            if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["show:".Length..]);
+                selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
+            }
+            else if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["hide:".Length..]);
+                selected = dynamicLayers.Where(layer => !ids.Contains(layer.Id));
+            }
+            else if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["include:".Length..]);
+                selected = dynamicLayers.Where(layer =>
+                {
+                    if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
+                    {
+                        return false;
+                    }
+
+                    return mapLayer.DefaultVisibility || ids.Contains(layer.Id);
+                });
+            }
+            else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["exclude:".Length..]);
+                selected = dynamicLayers.Where(layer =>
+                {
+                    if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
+                    {
+                        return false;
+                    }
+
+                    return mapLayer.DefaultVisibility && !ids.Contains(layer.Id);
+                });
+            }
+            else
+            {
+                var ids = ParseLayerIds(spec);
+                selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
+            }
+        }
+
+        var renderLayers = new List<RenderLayer>();
+        foreach (var dynamicLayer in selected)
+        {
+            if (!layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var layer))
+            {
+                continue;
+            }
+
+            if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+            {
+                continue;
+            }
+
+            renderLayers.Add(new RenderLayer(layer, dynamicLayer.Id, dynamicLayer.DefinitionExpression));
+        }
+
+        return renderLayers.ToArray();
+    }
+
+    private static string? NormalizeTimeRelation(string? timeRelation)
+    {
+        if (string.IsNullOrWhiteSpace(timeRelation))
+        {
+            return null;
+        }
+
+        var trimmed = timeRelation.Trim();
+        if (string.Equals(trimmed, "esriTimeRelationAfterStartOverlapsEnd", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriTimeRelationOverlapsEndWithinStart";
+        }
+
+        return trimmed;
+    }
+
+    private static bool TryGetEffectiveTimeParameters(
+        string? globalTime,
+        string? globalTimeRelation,
+        LayerDefinition layer,
+        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
+        out string? effectiveTime,
+        out string? effectiveTimeRelation,
+        out string? error)
+    {
+        effectiveTime = globalTime;
+        effectiveTimeRelation = globalTimeRelation;
+        error = null;
+
+        LayerTimeOptions? options = null;
+        if (layerTimeOptions.TryGetValue(layer.Id, out var resolvedOptions))
+        {
+            options = resolvedOptions;
+            if (options.UseTime is false)
+            {
+                effectiveTime = null;
+                effectiveTimeRelation = null;
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.Time))
+            {
+                effectiveTime = options.Time;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.TimeRelation))
+            {
+                effectiveTimeRelation = options.TimeRelation;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(effectiveTime))
+        {
+            effectiveTime = null;
+            effectiveTimeRelation = null;
+            return true;
+        }
+
+        if (!FeatureServerTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
+        {
+            error = $"Invalid time parameter: {effectiveTime}";
+            return false;
+        }
+
+        if (options?.TimeDataCumulative == true)
+        {
+            start = null;
+        }
+
+        if (options?.TimeOffset.HasValue == true)
+        {
+            if (!TryApplyTimeOffset(
+                    start,
+                    end,
+                    options.TimeOffset.Value,
+                    options.TimeOffsetUnits,
+                    out var adjustedStart,
+                    out var adjustedEnd,
+                    out var offsetError))
+            {
+                error = offsetError ?? "Invalid time offset.";
+                return false;
+            }
+
+            start = adjustedStart;
+            end = adjustedEnd;
+        }
+
+        effectiveTime = BuildTimeParameter(start, end);
+        effectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation);
+        return true;
+    }
+
+    private static string BuildTimeParameter(DateTimeOffset? start, DateTimeOffset? end)
+    {
+        if (start.HasValue && end.HasValue)
+        {
+            var startValue = start.Value.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+            var endValue = end.Value.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+            return $"{startValue},{endValue}";
+        }
+
+        if (start.HasValue)
+        {
+            return start.Value.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (end.HasValue)
+        {
+            var endValue = end.Value.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+            return $",{endValue}";
+        }
+
+        throw new ArgumentException("Time parameter requires a start or end time.");
+    }
+
+    private static bool TryApplyTimeOffset(
+        DateTimeOffset? start,
+        DateTimeOffset? end,
+        double offset,
+        string? units,
+        out DateTimeOffset? adjustedStart,
+        out DateTimeOffset? adjustedEnd,
+        out string? error)
+    {
+        adjustedStart = start;
+        adjustedEnd = end;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(units))
+        {
+            error = "timeOffsetUnits is required when timeOffset is specified.";
+            return false;
+        }
+
+        var normalizedUnits = units.Trim();
+        var signedOffset = -offset;
+
+        switch (normalizedUnits.ToLowerInvariant())
+        {
+            case "esritimeunitsyears":
+            case "years":
+            case "year":
+            {
+                if (!TryToIntegerOffset(offset, out var intOffset, out error))
+                {
+                    return false;
+                }
+
+                adjustedStart = start?.AddYears(-intOffset);
+                adjustedEnd = end?.AddYears(-intOffset);
+                return true;
+            }
+            case "esritimeunitsmonths":
+            case "months":
+            case "month":
+            {
+                if (!TryToIntegerOffset(offset, out var intOffset, out error))
+                {
+                    return false;
+                }
+
+                adjustedStart = start?.AddMonths(-intOffset);
+                adjustedEnd = end?.AddMonths(-intOffset);
+                return true;
+            }
+            case "esritimeunitsweeks":
+            case "weeks":
+            case "week":
+            {
+                var span = TimeSpan.FromDays(7 * signedOffset);
+                adjustedStart = start?.Add(span);
+                adjustedEnd = end?.Add(span);
+                return true;
+            }
+            case "esritimeunitsdays":
+            case "days":
+            case "day":
+            {
+                var span = TimeSpan.FromDays(signedOffset);
+                adjustedStart = start?.Add(span);
+                adjustedEnd = end?.Add(span);
+                return true;
+            }
+            case "esritimeunitshours":
+            case "hours":
+            case "hour":
+            {
+                var span = TimeSpan.FromHours(signedOffset);
+                adjustedStart = start?.Add(span);
+                adjustedEnd = end?.Add(span);
+                return true;
+            }
+            case "esritimeunitsminutes":
+            case "minutes":
+            case "minute":
+            {
+                var span = TimeSpan.FromMinutes(signedOffset);
+                adjustedStart = start?.Add(span);
+                adjustedEnd = end?.Add(span);
+                return true;
+            }
+            case "esritimeunitsseconds":
+            case "seconds":
+            case "second":
+            {
+                var span = TimeSpan.FromSeconds(signedOffset);
+                adjustedStart = start?.Add(span);
+                adjustedEnd = end?.Add(span);
+                return true;
+            }
+            case "esritimeunitsmilliseconds":
+            case "milliseconds":
+            case "millisecond":
+            {
+                var span = TimeSpan.FromMilliseconds(signedOffset);
+                adjustedStart = start?.Add(span);
+                adjustedEnd = end?.Add(span);
+                return true;
+            }
+            default:
+                error = $"Unsupported timeOffsetUnits value '{units}'.";
+                return false;
+        }
+    }
+
+    private static bool TryToIntegerOffset(double offset, out int value, out string? error)
+    {
+        error = null;
+        var rounded = Math.Round(offset, MidpointRounding.AwayFromZero);
+        if (Math.Abs(offset - rounded) > 0.000001)
+        {
+            value = 0;
+            error = "timeOffset for month/year units must be an integer.";
+            return false;
+        }
+
+        value = (int)rounded;
+        return true;
+    }
+
+    private static string? CombineDefinitionExpressions(string? first, string? second)
+    {
+        if (string.IsNullOrWhiteSpace(first))
+        {
+            return string.IsNullOrWhiteSpace(second) ? null : second;
+        }
+
+        if (string.IsNullOrWhiteSpace(second))
+        {
+            return first;
+        }
+
+        return $"({first}) AND ({second})";
+    }
+
+    private static bool TryResolveTemporalFieldSelection(
+        LayerDefinition layer,
+        out bool applyTemporalFilter,
+        out string? error)
+    {
+        applyTemporalFilter = false;
+        error = null;
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        FieldDefinition? startField = null;
+        FieldDefinition? endField = null;
+
+        if (timeInfo != null)
+        {
+            if (!string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            {
+                startField = FindTemporalField(layer, timeInfo.StartTimeField);
+                if (startField == null)
+                {
+                    error = $"Temporal field '{timeInfo.StartTimeField}' is not defined on layer '{layer.Name}'.";
+                    return false;
+                }
+            }
+            else
+            {
+                startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
+            }
+
+            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
+            {
+                endField = FindTemporalField(layer, timeInfo.EndTimeField);
+                if (endField == null)
+                {
+                    error = $"Temporal field '{timeInfo.EndTimeField}' is not defined on layer '{layer.Name}'.";
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
+        }
+
+        if (startField == null)
+        {
+            applyTemporalFilter = false;
+            return true;
+        }
+
+        if (endField != null && endField.Type != startField.Type)
+        {
+            error = "Start and end time fields must use the same temporal type.";
+            return false;
+        }
+
+        applyTemporalFilter = true;
+        return true;
+    }
+
+    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
+    {
+        return layer.AttributeFields.FirstOrDefault(field =>
+            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            field.Type is FieldType.DateTime or FieldType.Date);
+    }
+
+    private static bool TryBuildLayerSqlFilter(
+        IFilterExpressionService filterExpressionService,
+        LayerDefinition layer,
+        string? where,
+        string? time,
+        string? timeRelation,
+        out SqlFragment? sqlFilter,
+        out string? error)
+    {
+        sqlFilter = null;
+        error = null;
+
+        FilterExpression? filterExpression = null;
+        if (!string.IsNullOrWhiteSpace(where))
+        {
+            var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, where);
+            if (!parseResult.IsSuccess)
+            {
+                error = parseResult.ErrorMessage ?? "Invalid filter syntax.";
+                return false;
+            }
+
+            filterExpression = parseResult.Expression;
+            if (filterExpression != null && !IsBooleanFilterExpression(filterExpression))
+            {
+                error = "Invalid where clause.";
+                return false;
+            }
+        }
+
+        FilterExpression? temporalExpression = null;
+        if (!string.IsNullOrWhiteSpace(time))
+        {
+            if (!TryResolveTemporalFieldSelection(layer, out var applyTemporalFilter, out var temporalError))
+            {
+                error = temporalError ?? "Invalid temporal field configuration.";
+                return false;
+            }
+
+            if (applyTemporalFilter)
+            {
+                try
+                {
+                    var parameters = new QueryParameters
+                    {
+                        Time = time,
+                        TimeRelation = timeRelation
+                    };
+                    temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(parameters, layer);
+                }
+                catch (ArgumentException ex)
+                {
+                    error = $"Invalid time parameter: {ex.Message}";
+                    return false;
+                }
+            }
+        }
+
+        if (filterExpression != null && temporalExpression != null)
+        {
+            filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
+        }
+        else
+        {
+            filterExpression ??= temporalExpression;
+        }
+
+        if (filterExpression != null)
+        {
+            var translationResult = filterExpressionService.Translate(filterExpression, layer);
+            if (!translationResult.IsSuccess)
+            {
+                error = translationResult.ErrorMessage ?? "Invalid filter syntax.";
+                return false;
+            }
+
+            sqlFilter = translationResult.SqlFilter;
+        }
+
+        return true;
+    }
+
+    private static bool IsBooleanFilterExpression(FilterExpression expression)
+    {
+        return expression switch
+        {
+            BinaryExpression => true,
+            UnaryExpression => true,
+            SpatialPredicate => true,
+            SpatialDistancePredicate => true,
+            TemporalPredicate => true,
+            ArrayPredicate => true,
+            Literal literal => literal.Type == LiteralType.Boolean,
+            _ => false
+        };
+    }
+
+    private static bool TryReadJsonStringOrNumber(JsonElement element, out string? value)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                value = element.GetString();
+                return true;
+            case JsonValueKind.Number:
+                value = element.GetRawText();
+                return true;
+            case JsonValueKind.Null:
+                value = null;
+                return true;
+            default:
+                value = null;
+                return false;
+        }
+    }
+
+    private static bool TryGetJsonInt(JsonElement element, string propertyName, out int value)
+    {
+        value = default;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out value))
+        {
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetJsonString(JsonElement element, string propertyName, out string? value)
+    {
+        value = null;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.String)
+        {
+            value = property.GetString();
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.Null)
+        {
+            value = null;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseRgbList(string value, out SKColor color)
+    {
+        color = SKColors.White;
+
+        var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length is < 3 or > 4)
+        {
+            return false;
+        }
+
+        if (!byte.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var r) ||
+            !byte.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var g) ||
+            !byte.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var b))
+        {
+            return false;
+        }
+
+        byte a = 255;
+        if (parts.Length == 4 && !byte.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out a))
+        {
+            return false;
+        }
+
+        color = new SKColor(r, g, b, a);
+        return true;
+    }
 
     private static LayerDefinition[] ResolveVisibleLayers(
         ServiceDefinition service,
@@ -484,7 +1888,6 @@ internal static partial class MapServerEndpoints
 
         var spec = layersParam.Trim();
 
-        // Parse "show:0,1,2" or "hide:3" or just "0,1,2"
         if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
         {
             var ids = ParseLayerIds(spec["show:".Length..]);
@@ -497,7 +1900,22 @@ internal static partial class MapServerEndpoints
             return accessibleLayers.Where(l => !ids.Contains(l.Id)).ToArray();
         }
 
-        // Default: treat as show list
+        if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
+        {
+            var ids = ParseLayerIds(spec["include:".Length..]);
+            return accessibleLayers
+                .Where(l => l.DefaultVisibility || ids.Contains(l.Id))
+                .ToArray();
+        }
+
+        if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
+        {
+            var ids = ParseLayerIds(spec["exclude:".Length..]);
+            return accessibleLayers
+                .Where(l => l.DefaultVisibility && !ids.Contains(l.Id))
+                .ToArray();
+        }
+
         var showIds = ParseLayerIds(spec);
         return accessibleLayers.Where(l => showIds.Contains(l.Id)).ToArray();
     }
@@ -538,7 +1956,6 @@ internal static partial class MapServerEndpoints
 
     private static SpatialFilter CreateBboxSpatialFilter(SkiaMapRenderer.RenderExtent extent, int srid)
     {
-        // Create WKB polygon for the bounding box envelope
         var wkb = CreateEnvelopeWkb(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
         return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
     }
@@ -548,27 +1965,20 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
     {
-        // WKB Polygon with 1 ring and 5 points (closed ring)
-        // Byte order (1) + type (4) + num rings (4) + num points (4) + 5 * (x:8 + y:8) = 93 bytes
         var wkb = new byte[93];
         var offset = 0;
 
-        // Byte order: little-endian
         wkb[offset++] = 1;
 
-        // Geometry type: Polygon (3)
         BitConverter.TryWriteBytes(wkb.AsSpan(offset), 3);
         offset += 4;
 
-        // Number of rings: 1
         BitConverter.TryWriteBytes(wkb.AsSpan(offset), 1);
         offset += 4;
 
-        // Number of points: 5
         BitConverter.TryWriteBytes(wkb.AsSpan(offset), 5);
         offset += 4;
 
-        // Ring: minX,minY -> maxX,minY -> maxX,maxY -> minX,maxY -> minX,minY
         WritePoint(wkb, ref offset, minX, minY);
         WritePoint(wkb, ref offset, maxX, minY);
         WritePoint(wkb, ref offset, maxX, maxY);
@@ -586,13 +1996,9 @@ internal static partial class MapServerEndpoints
         offset += 8;
     }
 
-    private static SKColor? ParseBackgroundColor(string? color)
+    private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties)
     {
-        if (string.IsNullOrWhiteSpace(color))
-        {
-            return null;
-        }
-
-        return ExpressionEvaluator.ParseColor(color);
+        var result = ExpressionEvaluator.Evaluate(filter, properties);
+        return result is bool b ? b : true;
     }
 }

@@ -102,7 +102,8 @@ internal sealed class ImageServerExportHandler
                 TimeSpan.FromHours(1),
                 cancellationToken);
 
-            var extent = await _rasterStore.GetExtentAsync(layerId, primaryRaster.Id, cancellationToken);
+            var extent = result.Extent;
+            extent ??= await _rasterStore.GetExtentAsync(layerId, primaryRaster.Id, cancellationToken);
 
             var exportResponse = new ExportImageResponse
             {
@@ -115,7 +116,11 @@ internal sealed class ImageServerExportHandler
                     YMin = extent?.YMin ?? 0,
                     XMax = extent?.XMax ?? 1,
                     YMax = extent?.YMax ?? 1,
-                    SpatialReference = new SpatialReference { Wkid = result.Srid ?? 4326, LatestWkid = result.Srid ?? 4326 }
+                    SpatialReference = new SpatialReference
+                    {
+                        Wkid = extent?.Srid ?? result.Srid ?? 4326,
+                        LatestWkid = extent?.Srid ?? result.Srid ?? 4326
+                    }
                 }
             };
 
@@ -146,10 +151,23 @@ internal sealed class ImageServerExportHandler
     {
         try
         {
+            var outputSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr);
+            if (!string.IsNullOrWhiteSpace(request.ImageSr) && !outputSrid.HasValue)
+            {
+                return null;
+            }
+
+            var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.BboxSr);
+            if (!string.IsNullOrWhiteSpace(request.BboxSr) && !bboxSrid.HasValue)
+            {
+                return null;
+            }
+
             var query = new RasterQuery
             {
                 OutputFormat = RasterParsingHelpers.ParseRasterFormat(request.Format ?? "png"),
-                Quality = request.CompressionQuality
+                Quality = request.CompressionQuality,
+                OutputSrid = outputSrid
             };
 
             // Parse bounding box if provided
@@ -171,15 +189,10 @@ internal sealed class ImageServerExportHandler
                 {
                     ClipRegion = new RasterClipRegion
                     {
-                        Geometry = geometryBytes
+                        Geometry = geometryBytes,
+                        Srid = bboxSrid
                     }
                 };
-            }
-
-            // Parse output SRID
-            if (!string.IsNullOrEmpty(request.ImageSr) && int.TryParse(request.ImageSr, out var imageSrid))
-            {
-                query = query with { OutputSrid = imageSrid };
             }
 
             // Parse resampling method

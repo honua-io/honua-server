@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,7 @@ internal sealed class OgcMapsTileSetHandler
     /// </summary>
     public async Task<IResult> GetMapTileSetsAsync(
         int layerId,
+        HttpContext? context = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -44,6 +46,15 @@ internal sealed class OgcMapsTileSetHandler
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
                 return Results.NotFound();
+            }
+
+            if (context is not null)
+            {
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                if (accessError != null)
+                {
+                    return accessError;
+                }
             }
 
             // Start telemetry activity

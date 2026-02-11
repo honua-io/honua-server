@@ -12,6 +12,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
@@ -304,7 +305,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
         string featureId,
         string outputFormat)
     {
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
 
         var links = new List<Link>

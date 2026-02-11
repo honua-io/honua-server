@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.MapServer.Models;
@@ -11,6 +12,11 @@ namespace Honua.Server.Features.MapServer.Models;
 [JsonSerializable(typeof(MapServerResponse))]
 [JsonSerializable(typeof(MapServerLayerInfo))]
 [JsonSerializable(typeof(MapServerLayerInfo[]))]
+[JsonSerializable(typeof(MapServerTableInfo))]
+[JsonSerializable(typeof(MapServerTableInfo[]))]
+[JsonSerializable(typeof(MapServerLayerResponse))]
+[JsonSerializable(typeof(MapServerFieldInfo))]
+[JsonSerializable(typeof(MapServerFieldInfo[]))]
 [JsonSerializable(typeof(IdentifyResponse))]
 [JsonSerializable(typeof(IdentifyResult))]
 [JsonSerializable(typeof(IdentifyResult[]))]
@@ -22,7 +28,18 @@ namespace Honua.Server.Features.MapServer.Models;
 [JsonSerializable(typeof(ExportImageResponse))]
 [JsonSerializable(typeof(EsriSpatialReference))]
 [JsonSerializable(typeof(EsriExtent))]
+[JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(IReadOnlyList<object>))]
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

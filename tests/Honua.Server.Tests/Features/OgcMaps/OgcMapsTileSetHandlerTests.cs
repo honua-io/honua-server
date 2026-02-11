@@ -4,11 +4,15 @@
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -96,6 +100,48 @@ public class OgcMapsTileSetHandlerTests
             ts.Crs == "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
     }
 
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_AccessDenied_ReturnsUnauthorized()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateRestrictedLayer());
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
     private static LayerDefinition CreateTestLayer()
         => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+
+    private static LayerDefinition CreateRestrictedLayer()
+        => CreateTestLayer() with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymous = false
+                }
+            }
+        };
+
+    private static DefaultHttpContext CreateAnonymousOgcMapsContext()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity())
+        };
+        context.Request.Path = "/ogc/maps/collections/1/map/tiles";
+        return context;
+    }
 }

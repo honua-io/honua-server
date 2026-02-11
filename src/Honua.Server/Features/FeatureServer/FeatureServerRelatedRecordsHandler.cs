@@ -89,6 +89,23 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             }
 
             QueryRelatedRecordsParameters validatedParams = limitValidationResult.ValidatedParameters!;
+            if (!FeatureServerEndpoints.TryValidateOutputFormat(
+                validatedParams.F,
+                FeatureServerEndpoints.JsonOnlyFormats,
+                out _,
+                out var formatError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext,
+                    "Invalid query parameters",
+                    [formatError ?? "Output format is not supported."]);
+            }
+
+            if (!TryValidateUnsupportedRelatedRecordsParameters(validatedParams, out var unsupportedError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext,
+                    "Unsupported query parameters",
+                    [unsupportedError!]);
+            }
 
             // Get related layer information
             var relatedLayer = service.Layers.FirstOrDefault(l => l.Id == relationship.RelatedLayerId);
@@ -100,6 +117,15 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             }
 
             var objectIds = queryParams.ObjectIds;
+            var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext,
+                    "Invalid output spatial reference",
+                    [$"Unsupported outSR value: {validatedParams.OutSr}"]);
+            }
+
+            outputSrid ??= relatedLayer.SpatialReference.ToSrid();
 
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
@@ -144,7 +170,11 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 relationship,
                 objectIdFieldName,
                 validatedParams.ReturnGeometry,
-                relatedLayer.SpatialReference.ToSrid(),
+                outputSrid,
+                validatedParams.ReturnZ,
+                validatedParams.ReturnM,
+                validatedParams.GeometryPrecision,
+                validatedParams.MaxAllowableOffset,
                 relatedQuery.OutFields);
 
             // Build response
@@ -178,5 +208,41 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             var httpContext = _httpContextAccessor.HttpContext!;
             return StandardErrorHelpers.CreateInternalServerError(httpContext, "Related records query execution failed");
         }
+    }
+
+    private static bool TryValidateUnsupportedRelatedRecordsParameters(
+        QueryRelatedRecordsParameters queryParams,
+        out string? errorMessage)
+    {
+        var unsupported = new List<string>();
+
+        if (queryParams.ReturnTrueCurves)
+        {
+            unsupported.Add("returnTrueCurves");
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryParams.GdbVersion))
+        {
+            unsupported.Add("gdbVersion");
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryParams.SqlFormat))
+        {
+            unsupported.Add("sqlFormat");
+        }
+
+        if (queryParams.HistoricMoment.HasValue)
+        {
+            unsupported.Add("historicMoment");
+        }
+
+        if (unsupported.Count == 0)
+        {
+            errorMessage = null;
+            return true;
+        }
+
+        errorMessage = $"Unsupported query parameters: {string.Join(", ", unsupported)}.";
+        return false;
     }
 }

@@ -76,22 +76,16 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_UnknownFormat_FallsBackToPng()
+    public async Task GetCollectionMap_UnknownFormat_ReturnsBadRequest()
     {
-        // Arrange - "json" is not a valid OGC Maps format; the handler falls back to PNG
+        // Arrange - "json" is not a valid OGC Maps format
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=json";
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map{queryParams}");
 
         // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            // "json" is not recognized by ParseRasterFormat, so defaults to PNG
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -134,7 +128,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetStyledMap_WithValidStyle_ReturnsMapOrNotFound()
+    public async Task GetStyledMap_WithValidStyle_ReturnsNotImplemented()
     {
         // Arrange
         var styleId = "default";
@@ -144,14 +138,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/styles/{styleId}/map{queryParams}");
 
         // Assert
-        // Note: This test might fail until raster data is available in the test database
-        // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     [IntegrationTest]
@@ -162,7 +149,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map/tiles");
 
-        // Assert - 405 can occur due to route precedence with /map endpoint in some test configurations
+        // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
         if (response.StatusCode == HttpStatusCode.OK)

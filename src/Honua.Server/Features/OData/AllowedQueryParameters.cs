@@ -28,6 +28,12 @@ internal static class AllowedQueryParameters
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    public static readonly FrozenSet<string> FeatureValue = new[]
+        {
+            "$format"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     public static readonly FrozenSet<string> LayersCount = new[]
         {
             "$filter",
@@ -48,6 +54,7 @@ internal static class AllowedQueryParameters
             "$select",
             "$top",
             "$skip",
+            "$skiptoken",
             "$count",
             "$format"
         }
@@ -60,8 +67,10 @@ internal static class AllowedQueryParameters
             "$orderby",
             "$top",
             "$skip",
+            "$skiptoken",
             "$count",
             "$expand",
+            "$compute",
             "$apply",
             "$search",
             "$format"

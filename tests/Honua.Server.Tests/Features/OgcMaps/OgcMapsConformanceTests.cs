@@ -62,16 +62,13 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_IncludesCommonConformance()
+    public async Task GetConformance_DoesNotOverclaimCommonLandingAndOpenApiConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
-            "must declare OGC API - Common Core conformance");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json",
-            "must declare JSON conformance");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/oas30",
-            "must declare OpenAPI 3.0 conformance");
+        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landing-page");
+        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html");
+        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/oas30");
     }
 
     [IntegrationTest]
@@ -99,12 +96,12 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_IncludesStyledMapConformance()
+    public async Task GetConformance_DoesNotClaimStyledMapConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
-            "must declare Styled Map conformance");
+        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
+            "styled map rendering is not currently implemented");
     }
 
     [IntegrationTest]
@@ -144,8 +141,6 @@ public class OgcMapsConformanceTests : IAsyncLifetime
 
         classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling",
             "must declare Scaling conformance");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background",
-            "must declare Background conformance");
     }
 
     private async Task<string[]> GetConformanceClassesAsync()

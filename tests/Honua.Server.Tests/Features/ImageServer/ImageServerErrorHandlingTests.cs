@@ -79,6 +79,17 @@ public class ImageServerErrorHandlingTests : IAsyncLifetime
         content.Should().Contain("Only JSON format is supported");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task GetImageTile_InvalidFormat_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/tile/0/0/0?format=bmp");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     #endregion
 
     #region Non-Existent Layer

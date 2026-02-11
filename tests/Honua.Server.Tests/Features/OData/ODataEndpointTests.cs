@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
@@ -58,6 +59,22 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
         values.Should().Contain("4.0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata with Accept metadata preference")]
+    public async Task ServiceDocument_WithAcceptMetadataPreference_UsesRequestedMetadataLevel()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=none"));
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -221,6 +238,20 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$format=application/json;odata.metadata=full")]
+    public async Task Features_WithFormatMetadataFull_ReturnsRequestedContentType()
+    {
+        var format = Uri.EscapeDataString("application/json;odata.metadata=full");
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=1&$format={format}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "full", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
     public async Task LayerFeatures_ReturnsCollection()
     {
@@ -261,6 +292,38 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.GetProperty("ObjectId").GetInt64().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})/$ref")]
+    public async Task FeatureReferenceEndpoint_ReturnsCanonicalReference()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features(LayerId={TestLayerId},ObjectId=1)/$ref");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("@odata.id", out var id).Should().BeTrue();
+        id.GetString().Should().Contain($"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})/$value")]
+    public async Task FeatureValueEndpoint_ReturnsRawFeaturePayload()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features(LayerId={TestLayerId},ObjectId=1)/$value");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("ObjectId").GetInt64().Should().Be(1);
+        document.RootElement.GetProperty("LayerId").GetInt32().Should().Be(TestLayerId);
     }
 
     [IntegrationTest]

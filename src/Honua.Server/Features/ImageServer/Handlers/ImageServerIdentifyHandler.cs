@@ -134,13 +134,18 @@ internal sealed class ImageServerIdentifyHandler
 
     private static (double? x, double? y, int? srid) ParseGeometry(IdentifyRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Geometry))
+        {
+            return (null, null, null);
+        }
+
         // Handle point geometry string (e.g., "x,y" or JSON format)
         if (request.Geometry.Contains(','))
         {
             var coords = request.Geometry.Split(',');
             if (coords.Length >= 2 &&
-                double.TryParse(coords[0], out var x) &&
-                double.TryParse(coords[1], out var y))
+                double.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) &&
+                double.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
             {
                 var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
                 return (x, y, srid);

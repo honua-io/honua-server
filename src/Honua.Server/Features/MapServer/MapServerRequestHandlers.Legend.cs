@@ -19,6 +19,11 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleLegend(HttpContext context)
     {
+        if (!TryValidateMetadataFormat(context.Request.Query, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Output format is not supported.");
+        }
+
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -35,6 +40,11 @@ internal static partial class MapServerEndpoints
         if (!serviceResult.IsValid)
         {
             var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
+            if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+            }
+
             return StandardErrorHelpers.CreateNotFound(context, errorMessage);
         }
 

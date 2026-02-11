@@ -153,6 +153,36 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBboxSr_PassesClipRegionSridToRasterStore()
+    {
+        SetupSuccessfulExport();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+
+        var request = CreateRequest(
+            bbox: "-20037508,-20037508,20037508,20037508",
+            bboxSr: "3857");
+        var result = await _handler.ExportImageAsync(1, request);
+
+        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        var clipRegion = capturedQuery!.Value.ClipRegion;
+        clipRegion.HasValue.Should().BeTrue();
+        if (!clipRegion.HasValue)
+        {
+            throw new InvalidOperationException("Clip region should be set when bbox is provided.");
+        }
+
+        clipRegion.Value.Srid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_NullExtent_UsesDefaultExtent()
     {
         SetupLayerAndRasters();
@@ -194,6 +224,43 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_UsesExportedExtentWhenAvailable()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult() with
+            {
+                Srid = 3857,
+                Extent = new RasterExtent
+                {
+                    XMin = -1000,
+                    YMin = -500,
+                    XMax = 1000,
+                    YMax = 500,
+                    Srid = 3857
+                }
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+
+        var request = CreateRequest();
+        var result = await _handler.ExportImageAsync(1, request);
+
+        var okResult = result as Ok<ExportImageResponse>;
+        okResult.Should().NotBeNull();
+        okResult!.Value!.Extent.XMin.Should().Be(-1000);
+        okResult.Value.Extent.YMin.Should().Be(-500);
+        okResult.Value.Extent.XMax.Should().Be(1000);
+        okResult.Value.Extent.YMax.Should().Be(500);
+        okResult.Value.Extent.SpatialReference.Wkid.Should().Be(3857);
+
+        await _rasterStore.DidNotReceive()
+            .GetExtentAsync(1, 100, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_RasterStoreThrows_ReturnsProblem()
     {
         SetupLayerAndRasters();
@@ -231,13 +298,15 @@ public class ImageServerExportHandlerTests
         int? size = null,
         string? format = null,
         string? interpolation = null,
-        string? imageSr = null) => new()
+        string? imageSr = null,
+        string? bboxSr = null) => new()
         {
             Bbox = bbox,
             Size = size,
             Format = format ?? "png",
             Interpolation = interpolation,
-            ImageSr = imageSr
+            ImageSr = imageSr,
+            BboxSr = bboxSr
         };
 
     private static LayerDefinition CreateTestLayer()

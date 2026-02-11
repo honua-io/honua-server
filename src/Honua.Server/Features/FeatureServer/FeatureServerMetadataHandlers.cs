@@ -35,15 +35,22 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
-        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
-            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
-
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.ServiceMetadata, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [error ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
         }
 
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out string? serviceId);
@@ -125,15 +132,22 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleLayerMetadata(HttpContext context)
     {
-        if (!string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
-            return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
-
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.LayerMetadata, out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [error ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
         }
 
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out string? serviceId);
@@ -177,6 +191,7 @@ internal static partial class FeatureServerEndpoints
         return await FetchLayerMetadataAsync(
             context,
             serviceId,
+            service,
             layer,
             limitsOptions.Value.Query,
             logger,
@@ -189,6 +204,7 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> FetchLayerMetadataAsync(
         HttpContext context,
         string serviceId,
+        ServiceDefinition service,
         LayerDefinition layer,
         QueryLimits limits,
         ILogger logger,
@@ -207,7 +223,7 @@ internal static partial class FeatureServerEndpoints
                 drawingInfo = await styleService.GetDrawingInfoAsync(layer, cancellationToken).ConfigureAwait(false);
             }
 
-            LayerResponse response = MapLayerToResponse(layer, limits, timeInfo, drawingInfo);
+            LayerResponse response = MapLayerToResponse(service, layer, limits, timeInfo, drawingInfo);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layer.Id, layer.Name);
 

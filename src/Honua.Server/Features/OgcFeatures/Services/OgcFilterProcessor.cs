@@ -122,7 +122,17 @@ internal sealed partial class OgcFilterProcessor
                 return FilterProcessingResult.Failure("filter-crs requires a filter parameter.");
             }
 
-            var filterCrsDefinition = crsDefinition;
+            if (!OgcFeaturesUtilities.TryResolveCrs(
+                    OgcFeaturesUtilities.Crs84Uri,
+                    supportedCrs,
+                    out var defaultFilterCrsDefinition,
+                    out var defaultFilterCrsError))
+            {
+                return FilterProcessingResult.Failure(
+                    defaultFilterCrsError ?? "Unable to resolve default filter CRS.");
+            }
+
+            var filterCrsDefinition = defaultFilterCrsDefinition;
             if (!string.IsNullOrWhiteSpace(filterCrs))
             {
                 if (!OgcFeaturesUtilities.TryResolveCrs(filterCrs, supportedCrs, out filterCrsDefinition, out var filterCrsError))
@@ -131,7 +141,7 @@ internal sealed partial class OgcFilterProcessor
                 }
             }
 
-            var bboxCrsDefinition = crsDefinition;
+            var bboxCrsDefinition = defaultFilterCrsDefinition;
             if (!string.IsNullOrWhiteSpace(bboxCrs))
             {
                 if (!OgcFeaturesUtilities.TryResolveCrs(bboxCrs, supportedCrs, out bboxCrsDefinition, out var bboxCrsError))
@@ -398,7 +408,10 @@ internal sealed partial class OgcFilterProcessor
             return filterExpression;
         }
 
-        return SwapAxisOrder(filterExpression);
+        // Explicitly-tagged geometry literals (for example CQL2-JSON geometry objects with a "crs" member)
+        // define their own CRS semantics
+        // and should not be rewritten based on a request-level filter CRS axis order.
+        return SwapAxisOrder(filterExpression, preserveExplicitGeometryCrs: true);
     }
 
     private static FilterExpression ApplyFilterCrs(
@@ -480,49 +493,59 @@ internal sealed partial class OgcFilterProcessor
                geometry.OriginalFormat.Contains("\"crs\"", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static FilterExpression SwapAxisOrder(FilterExpression filterExpression)
+    private static FilterExpression SwapAxisOrder(
+        FilterExpression filterExpression,
+        bool preserveExplicitGeometryCrs)
     {
         return filterExpression switch
         {
-            GeometryLiteral geometry => SwapGeometryLiteral(geometry),
+            GeometryLiteral geometry => preserveExplicitGeometryCrs && HasExplicitCrs(geometry)
+                ? geometry
+                : SwapGeometryLiteral(geometry),
             BinaryExpression binary => binary with
             {
-                Left = SwapAxisOrder(binary.Left),
-                Right = SwapAxisOrder(binary.Right)
+                Left = SwapAxisOrder(binary.Left, preserveExplicitGeometryCrs),
+                Right = SwapAxisOrder(binary.Right, preserveExplicitGeometryCrs)
             },
-            UnaryExpression unary => unary with { Operand = SwapAxisOrder(unary.Operand) },
+            UnaryExpression unary => unary with { Operand = SwapAxisOrder(unary.Operand, preserveExplicitGeometryCrs) },
             SpatialPredicate spatial => spatial with
             {
-                Left = SwapAxisOrder(spatial.Left),
-                Right = SwapAxisOrder(spatial.Right)
+                Left = SwapAxisOrder(spatial.Left, preserveExplicitGeometryCrs),
+                Right = SwapAxisOrder(spatial.Right, preserveExplicitGeometryCrs)
             },
             SpatialDistancePredicate spatialDistance => spatialDistance with
             {
-                Left = SwapAxisOrder(spatialDistance.Left),
-                Right = SwapAxisOrder(spatialDistance.Right),
-                Distance = SwapAxisOrder(spatialDistance.Distance)
+                Left = SwapAxisOrder(spatialDistance.Left, preserveExplicitGeometryCrs),
+                Right = SwapAxisOrder(spatialDistance.Right, preserveExplicitGeometryCrs),
+                Distance = SwapAxisOrder(spatialDistance.Distance, preserveExplicitGeometryCrs)
             },
             TemporalPredicate temporal => temporal with
             {
-                Left = SwapAxisOrder(temporal.Left),
-                Right = SwapAxisOrder(temporal.Right)
+                Left = SwapAxisOrder(temporal.Left, preserveExplicitGeometryCrs),
+                Right = SwapAxisOrder(temporal.Right, preserveExplicitGeometryCrs)
             },
             ArrayPredicate array => array with
             {
-                Left = SwapAxisOrder(array.Left),
-                Right = SwapAxisOrder(array.Right)
+                Left = SwapAxisOrder(array.Left, preserveExplicitGeometryCrs),
+                Right = SwapAxisOrder(array.Right, preserveExplicitGeometryCrs)
             },
             FunctionCall functionCall => functionCall with
             {
-                Arguments = functionCall.Arguments.Select(SwapAxisOrder).ToArray()
+                Arguments = functionCall.Arguments
+                    .Select(argument => SwapAxisOrder(argument, preserveExplicitGeometryCrs))
+                    .ToArray()
             },
             ArrayLiteral arrayLiteral => arrayLiteral with
             {
-                Elements = arrayLiteral.Elements.Select(SwapAxisOrder).ToArray()
+                Elements = arrayLiteral.Elements
+                    .Select(element => SwapAxisOrder(element, preserveExplicitGeometryCrs))
+                    .ToArray()
             },
             ValueList valueList => valueList with
             {
-                Values = valueList.Values.Select(SwapAxisOrder).ToArray()
+                Values = valueList.Values
+                    .Select(value => SwapAxisOrder(value, preserveExplicitGeometryCrs))
+                    .ToArray()
             },
             _ => filterExpression
         };

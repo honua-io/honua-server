@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcMaps.Models;
 
@@ -51,7 +52,7 @@ public sealed class OgcMapRequest
     /// <summary>
     /// CRS for the bbox coordinates.
     /// </summary>
-    [JsonPropertyName("bbox-crs")]
+    [FromQuery(Name = "bbox-crs")]
     [StringLength(200, ErrorMessage = "BboxCrs parameter is too long")]
     public string? BboxCrs { get; init; }
 
@@ -70,7 +71,7 @@ public sealed class OgcMapRequest
     /// <summary>
     /// Output format of the map.
     /// </summary>
-    [RegularExpression(@"^(png|jpeg|jpg|tiff|tif|webp)$", ErrorMessage = "Format must be png, jpeg, jpg, tiff, tif, or webp")]
+    [RegularExpression(@"^(png|jpeg|jpg|tiff|tif)$", ErrorMessage = "Format must be png, jpeg, jpg, tiff, or tif")]
     public string? F { get; init; } = "png";
 
     /// <summary>
@@ -81,7 +82,7 @@ public sealed class OgcMapRequest
     /// <summary>
     /// Background color when not transparent.
     /// </summary>
-    [JsonPropertyName("bgcolor")]
+    [FromQuery(Name = "bgcolor")]
     [RegularExpression(@"^0x[0-9A-Fa-f]{6}$", ErrorMessage = "BackgroundColor must be in format 0xRRGGBB")]
     [StringLength(8, ErrorMessage = "BackgroundColor is too long")]
     public string? BackgroundColor { get; init; } = "0xFFFFFF";

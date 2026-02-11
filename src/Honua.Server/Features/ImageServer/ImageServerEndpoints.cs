@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.ImageServer.Handlers;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.ImageServer;
 
@@ -69,12 +70,22 @@ public static class ImageServerEndpoints
     private static async Task<IResult> GetServiceInfo(
         int id,
         string? f,
+        HttpContext context,
         ImageServerMetadataHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (f != "json")
+        if (!IsSupportedResponseFormat(f))
         {
-            return Results.BadRequest("Only JSON format is supported. Use f=json");
+            return CreateUnsupportedFormatResult();
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            id,
+            cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
         }
 
         return await handler.GetServiceInfoAsync(id, cancellationToken);
@@ -86,12 +97,22 @@ public static class ImageServerEndpoints
     private static async Task<IResult> ExportImage(
         int id,
         [AsParameters] ExportImageRequest request,
+        HttpContext context,
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (request.F != "json")
+        if (!IsSupportedResponseFormat(request.F))
         {
-            return Results.BadRequest("Only JSON format is supported. Use f=json");
+            return CreateUnsupportedFormatResult();
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            id,
+            cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
         }
 
         return await handler.ExportImageAsync(id, request, cancellationToken);
@@ -103,12 +124,22 @@ public static class ImageServerEndpoints
     private static async Task<IResult> Identify(
         int id,
         [AsParameters] IdentifyRequest request,
+        HttpContext context,
         ImageServerIdentifyHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (request.F != "json")
+        if (!IsSupportedResponseFormat(request.F))
         {
-            return Results.BadRequest("Only JSON format is supported. Use f=json");
+            return CreateUnsupportedFormatResult();
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            id,
+            cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
         }
 
         return await handler.IdentifyAsync(id, request, cancellationToken);
@@ -122,10 +153,28 @@ public static class ImageServerEndpoints
         int level,
         int row,
         int col,
+        HttpContext context,
         ImageServerTileHandler handler,
         string format = "png",
         CancellationToken cancellationToken = default)
     {
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            id,
+            cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
         return await handler.GetImageTileAsync(id, level, row, col, format, cancellationToken);
     }
+
+    private static bool IsSupportedResponseFormat(string? format)
+        => string.IsNullOrWhiteSpace(format) ||
+           string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
+
+    private static IResult CreateUnsupportedFormatResult()
+        => Results.BadRequest("Only JSON format is supported. Use f=json or f=pjson");
 }

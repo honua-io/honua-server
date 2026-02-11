@@ -114,20 +114,19 @@ internal static class CoreEndpoints
             return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
 
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var conformance = new ConformanceDeclaration
         {
             ConformsTo = ImmutableArray.Create(
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/core",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tileset",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tilesets-list",
-                "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/dataset-tilesets",
-                "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/geodata-tilesets",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30"
             ).AddRange(OgcConformanceUris.Common),
             Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
-                $"{context.Request.Scheme}://{context.Request.Host}/ogc/tiles/conformance",
+                $"{baseUrl}/ogc/tiles/conformance",
                 outputFormat,
                 OgcCommonUtilities.MetadataFormats,
                 "Conformance declaration")

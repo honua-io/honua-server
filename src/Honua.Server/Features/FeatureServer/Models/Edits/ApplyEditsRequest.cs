@@ -39,6 +39,30 @@ public sealed class ApplyEditsRequest
     /// </summary>
     [JsonPropertyName("useGlobalIds")]
     public bool UseGlobalIds { get; set; } = false;
+
+    /// <summary>
+    /// Requested response format.
+    /// </summary>
+    [JsonPropertyName("f")]
+    public string? F { get; set; }
+
+    /// <summary>
+    /// Geodatabase version name.
+    /// </summary>
+    [JsonPropertyName("gdbVersion")]
+    public string? GdbVersion { get; set; }
+
+    /// <summary>
+    /// Whether to include server edit timestamp metadata in response.
+    /// </summary>
+    [JsonPropertyName("returnEditMoment")]
+    public bool ReturnEditMoment { get; set; }
+
+    /// <summary>
+    /// Optional attachment edits payload (not yet implemented).
+    /// </summary>
+    [JsonPropertyName("attachments")]
+    public object[]? Attachments { get; set; }
 }
 
 /// <summary>

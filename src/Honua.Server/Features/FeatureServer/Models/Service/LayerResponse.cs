@@ -146,7 +146,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Relationships to other layers
     /// </summary>
-    public object[] Relationships { get; init; } = [];
+    public LayerRelationshipInfo[] Relationships { get; init; } = [];
 
     /// <summary>
     /// Whether the layer has static data

@@ -65,6 +65,28 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    public async Task GetServiceInfo_WithoutFormatParameter_DoesNotReturnBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    public async Task GetServiceInfo_PjsonFormat_DoesNotReturnBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer?f=pjson");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
     #endregion
 
     #region Export Image Parameters

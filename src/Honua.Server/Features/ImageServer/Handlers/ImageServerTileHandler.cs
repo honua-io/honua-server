@@ -63,6 +63,11 @@ internal sealed class ImageServerTileHandler
                 return Results.BadRequest("Invalid tile coordinates");
             }
 
+            if (!RasterParsingHelpers.TryParseRasterFormat(format, out var rasterFormat))
+            {
+                return Results.BadRequest("Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif.");
+            }
+
             // Start telemetry activity with tile-specific tags
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "tile",
@@ -85,9 +90,6 @@ internal sealed class ImageServerTileHandler
 
             // Use the first raster (could be enhanced for multi-raster scenarios)
             var primaryRaster = rasters[0];
-
-            // Parse format
-            var rasterFormat = RasterParsingHelpers.ParseRasterFormat(format);
 
             // Get the image tile
             var tileResult = await _rasterStore.GetImageTileAsync(

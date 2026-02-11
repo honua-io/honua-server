@@ -61,6 +61,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
+        result!.AttachmentGroups.Should().HaveCount(1);
+        result.AttachmentGroups[0].ParentObjectId.Should().Be(TestFeatureId);
+        result.AttachmentGroups[0].AttachmentInfos.Should().HaveCount(2);
         result!.AttachmentInfos.Should().HaveCount(2);
         result.AttachmentInfos.Should().Contain(a => a.Name == "test1.txt");
         result.AttachmentInfos.Should().Contain(a => a.Name == "test2.jpg");
@@ -82,6 +85,31 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
+    public async Task QueryAttachments_WithObjectIdsAndReturnUrl_ReturnsGroupedResponseWithUrls()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId},999&returnUrl=true");
+
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
+
+        result.Should().NotBeNull();
+        result!.AttachmentGroups.Should().HaveCount(2);
+        result.AttachmentInfos.Should().BeNull();
+
+        var seededGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == TestFeatureId);
+        seededGroup.AttachmentInfos.Should().NotBeEmpty();
+        seededGroup.AttachmentInfos.Should().OnlyContain(attachment => !string.IsNullOrWhiteSpace(attachment.Url));
+
+        var emptyGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == 999);
+        emptyGroup.AttachmentInfos.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -126,7 +154,35 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.AddAttachmentResult.Success.Should().BeTrue();
-        result.AddAttachmentResult.ObjectId.Should().Be(TestFeatureId);
+        result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WithCanonicalFeatureRoute_ReturnsSuccess()
+    {
+        var fileContent = "Canonical route file content"u8.ToArray();
+        var byteContent = new ByteArrayContent(fileContent);
+        byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent("test,canonical"), "keywords" },
+            { byteContent, "attachment", "canonical.pdf" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
+
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AddAttachmentResponse);
+
+        result.Should().NotBeNull();
+        result!.AddAttachmentResult.Success.Should().BeTrue();
+        result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -198,7 +254,32 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.UpdateAttachmentResult.Success.Should().BeTrue();
-        result.UpdateAttachmentResult.ObjectId.Should().Be(TestFeatureId);
+        result.UpdateAttachmentResult.ObjectId.Should().Be(attachmentId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.UpdateAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
+    public async Task UpdateAttachment_WithCanonicalFeatureRoute_ReturnsSuccess()
+    {
+        const long attachmentId = 1;
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent(attachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
+            { new StringContent("canonical,keywords"), "keywords" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment", form);
+
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.UpdateAttachmentResponse);
+
+        result.Should().NotBeNull();
+        result!.UpdateAttachmentResult.Success.Should().BeTrue();
+        result.UpdateAttachmentResult.ObjectId.Should().Be(attachmentId);
     }
 
     [IntegrationTest]
@@ -248,6 +329,32 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.DeleteAttachmentResults.Should().HaveCount(2);
         result.DeleteAttachmentResults.Should().OnlyContain(r => r.Success);
+        result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 1);
+        result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithCanonicalFeatureRoute_ReturnsSuccess()
+    {
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent("1"), "attachmentIds" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
+
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.DeleteAttachmentsResponse);
+
+        result.Should().NotBeNull();
+        result!.DeleteAttachmentResults.Should().HaveCount(1);
+        result.DeleteAttachmentResults[0].Success.Should().BeTrue();
+        result.DeleteAttachmentResults[0].ObjectId.Should().Be(1);
     }
 
     [IntegrationTest]

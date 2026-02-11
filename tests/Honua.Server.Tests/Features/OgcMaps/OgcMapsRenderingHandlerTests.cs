@@ -7,11 +7,15 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -25,7 +29,6 @@ public class OgcMapsRenderingHandlerTests
 {
     private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
     private readonly IRasterMapRenderer _mapRenderer = Substitute.For<IRasterMapRenderer>();
-    private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly OgcMapsRenderingHandler _handler;
 
     public OgcMapsRenderingHandlerTests()
@@ -33,7 +36,6 @@ public class OgcMapsRenderingHandlerTests
         _handler = new OgcMapsRenderingHandler(
             _layerCatalog,
             _mapRenderer,
-            _rasterStore,
             NullLogger<OgcMapsRenderingHandler>.Instance);
     }
 
@@ -61,6 +63,23 @@ public class OgcMapsRenderingHandlerTests
             .Returns(CreateTestLayer());
 
         var request = new OgcMapRequest { Bbox = "invalid" };
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_UnsupportedFormat_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "-180,-90,180,90",
+            F = "json"
+        };
         var result = await _handler.RenderCollectionMapAsync(1, request);
 
         result.Should().BeOfType<BadRequest<string>>();
@@ -127,6 +146,28 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_EmptyRasterResult_ReturnsNotFound()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _mapRenderer.RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var request = new OgcMapRequest { Bbox = "-180,-90,180,90" };
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<NotFound>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_NoBbox_UsesLayerExtent()
     {
         var tileData = new byte[] { 0x89 };
@@ -160,6 +201,25 @@ public class OgcMapsRenderingHandlerTests
         var result = await _handler.RenderCollectionMapAsync(1, request);
 
         result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_AccessDenied_ReturnsUnauthorized()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateRestrictedLayer());
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.RenderCollectionMapAsync(1, CreateDefaultRequest(), context: context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await _mapRenderer.DidNotReceive().RenderCollectionMapAsync(
+            Arg.Any<int>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
     }
 
     // =========================================================================
@@ -202,6 +262,29 @@ public class OgcMapsRenderingHandlerTests
         var result = await _handler.RenderDatasetMapAsync([1, 2], CreateDefaultRequest());
 
         result.Should().BeOfType<FileContentHttpResult>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_EmptyRasterResult_ReturnsNotFound()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _layerCatalog.GetLayerAsync(2, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer(2));
+        _mapRenderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var result = await _handler.RenderDatasetMapAsync([1, 2], CreateDefaultRequest());
+
+        result.Should().BeOfType<NotFound>();
     }
 
     // =========================================================================
@@ -249,6 +332,22 @@ public class OgcMapsRenderingHandlerTests
         result.Should().BeOfType<FileContentHttpResult>();
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderStyledMapAsync_UnsupportedRenderer_ReturnsNotImplemented()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _mapRenderer.RenderStyledMapAsync(1, "default", Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<RasterResult>(new NotSupportedException("Styles are not supported")));
+
+        var result = await _handler.RenderStyledMapAsync(1, "default", CreateDefaultRequest());
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
@@ -264,6 +363,18 @@ public class OgcMapsRenderingHandlerTests
     private static LayerDefinition CreateTestLayer(int id = 1)
         => LayerDefinition.CreateBasic(id, $"test-layer-{id}", GeometryType.Point);
 
+    private static LayerDefinition CreateRestrictedLayer(int id = 1)
+        => CreateTestLayer(id) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymous = false
+                }
+            }
+        };
+
     private static LayerDefinition CreateTestLayerWithExtent(int id = 1)
         => CreateTestLayer(id) with
         {
@@ -276,4 +387,19 @@ public class OgcMapsRenderingHandlerTests
                 SpatialReference = 4326
             }
         };
+
+    private static DefaultHttpContext CreateAnonymousOgcMapsContext()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity())
+        };
+        context.Request.Path = "/ogc/maps/collections/1/map";
+        return context;
+    }
 }

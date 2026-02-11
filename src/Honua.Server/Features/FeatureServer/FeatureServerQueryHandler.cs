@@ -124,10 +124,15 @@ internal sealed class FeatureServerQueryHandler(
                     [unsupportedError!]);
             }
 
-            var format = validatedParams.F ?? "json";
-            if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase))
+            if (!FeatureServerEndpoints.TryValidateOutputFormat(
+                validatedParams.F,
+                FeatureServerEndpoints.FeatureServerQueryFormats,
+                out var format,
+                out var formatError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "Output format 'pbf' is not supported");
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [formatError ?? "Output format is not supported."]);
             }
 
             var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
@@ -395,7 +400,7 @@ internal sealed class FeatureServerQueryHandler(
                 (object? formattedResponse, string? contentType) = _queryServices.FormatQueryResult(
                     result,
                     layer,
-                    validatedParams.F ?? "json",
+                    format,
                     validatedParams.ReturnGeometry,
                     outputSrid,
                     validatedParams.ReturnZ,

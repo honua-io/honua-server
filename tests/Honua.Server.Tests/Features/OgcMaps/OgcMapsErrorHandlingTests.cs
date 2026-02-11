@@ -77,6 +77,28 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_InvalidBboxCrs_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&bbox-crs=EPSG:notvalid&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_InvalidBackgroundColor_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&bgcolor=red&transparent=false&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
     public async Task GetMapTileSets_NonIntegerCollectionId_ReturnsBadRequest()
@@ -138,25 +160,20 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Valid collection IDs are required");
+        content.Should().Contain("Invalid collection IDs");
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
-    public async Task GetDatasetMap_MixedValidInvalidIds_ParsesValidOnesOnly()
+    public async Task GetDatasetMap_MixedValidInvalidIds_ReturnsBadRequest()
     {
-        // "abc" is filtered out, only valid IDs remain
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/map?collections=abc,{TestLayerId}&bbox=-180,-90,180,90&f=png");
 
-        // Should not be "Valid collection IDs are required" since we have one valid ID
-        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest,
-            "should parse valid ID from mixed input");
-
-        // Could be 200 or 404 depending on layer existence
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid collection IDs");
     }
 
     [IntegrationTest]

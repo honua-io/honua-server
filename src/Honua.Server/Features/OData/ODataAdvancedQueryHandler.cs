@@ -66,7 +66,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult,
-                contentType: ODataUtilityService.GetODataContentType());
+                contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -128,11 +128,13 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 _validationService,
                 top,
                 skip,
+                skiptoken: null,
                 count,
                 out var pagination,
                 out _,
                 out _,
-                out var countValue);
+                out var countValue,
+                out _);
             if (pagingError != null)
             {
                 return pagingError;
@@ -154,7 +156,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(result, ODataJsonContext.Default.ODataSearchResult,
-                contentType: ODataUtilityService.GetODataContentType());
+                contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)

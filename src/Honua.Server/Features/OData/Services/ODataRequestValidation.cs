@@ -10,7 +10,8 @@ internal sealed record ODataPagingParameters(
     int? Top,
     int? Skip,
     bool? Count,
-    PaginationValues Pagination);
+    PaginationValues Pagination,
+    bool UseSkipToken);
 
 internal static class ODataRequestValidation
 {
@@ -48,6 +49,7 @@ internal static class ODataRequestValidation
         ODataValidationService validationService,
         string? top,
         string? skip,
+        string? skiptoken,
         string? count,
         out ODataPagingParameters? paging,
         out IResult? error)
@@ -67,13 +69,29 @@ internal static class ODataRequestValidation
             return false;
         }
 
+        if (!ODataParsingUtilities.TryParseOptionalInt(skiptoken, "$skiptoken", out var skipTokenValue, out parseError))
+        {
+            error = ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
+            return false;
+        }
+
+        if (skipValue.HasValue && skipTokenValue.HasValue)
+        {
+            error = ODataUtilityService.CreateODataError(
+                context,
+                "InvalidQueryOption",
+                "$skip and $skiptoken cannot be used together.");
+            return false;
+        }
+
         if (!ODataParsingUtilities.TryParseOptionalBool(count, "$count", out var countValue, out parseError))
         {
             error = ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
             return false;
         }
 
-        var paginationResult = validationService.ValidateAndNormalizePagination(skipValue, topValue);
+        var resolvedSkip = skipTokenValue ?? skipValue;
+        var paginationResult = validationService.ValidateAndNormalizePagination(resolvedSkip, topValue);
         if (!paginationResult.IsValid)
         {
             error = ODataUtilityService.CreateODataError(
@@ -83,7 +101,12 @@ internal static class ODataRequestValidation
             return false;
         }
 
-        paging = new ODataPagingParameters(topValue, skipValue, countValue, paginationResult.Value!);
+        paging = new ODataPagingParameters(
+            topValue,
+            resolvedSkip,
+            countValue,
+            paginationResult.Value!,
+            skipTokenValue.HasValue && !skipValue.HasValue);
         return true;
     }
 
@@ -92,10 +115,11 @@ internal static class ODataRequestValidation
         ODataValidationService validationService,
         string? top,
         string? skip,
+        string? skiptoken,
         string? count,
         out ODataPagingParameters? paging)
     {
-        if (!TryParsePaging(context, validationService, top, skip, count, out paging, out var error))
+        if (!TryParsePaging(context, validationService, top, skip, skiptoken, count, out paging, out var error))
         {
             return error;
         }
@@ -108,19 +132,22 @@ internal static class ODataRequestValidation
         ODataValidationService validationService,
         string? top,
         string? skip,
+        string? skiptoken,
         string? count,
         out PaginationValues pagination,
         out int? topValue,
         out int? skipValue,
-        out bool? countValue)
+        out bool? countValue,
+        out bool useSkipToken)
     {
-        var error = TryParsePagingOrError(context, validationService, top, skip, count, out var paging);
+        var error = TryParsePagingOrError(context, validationService, top, skip, skiptoken, count, out var paging);
         if (error != null)
         {
             pagination = new PaginationValues(0, 0);
             topValue = null;
             skipValue = null;
             countValue = null;
+            useSkipToken = false;
             return error;
         }
 
@@ -128,6 +155,7 @@ internal static class ODataRequestValidation
         topValue = paging.Top;
         skipValue = paging.Skip;
         countValue = paging.Count;
+        useSkipToken = paging.UseSkipToken;
         return null;
     }
 }
