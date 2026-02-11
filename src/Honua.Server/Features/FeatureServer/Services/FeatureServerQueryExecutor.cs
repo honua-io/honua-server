@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -33,6 +34,12 @@ internal sealed class FeatureServerQueryExecutor
 
     public Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.GetExtentAsync(layerId, query, cancellationToken);
+
+    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => _featureReader.QueryStatisticsAsync(layerId, query, cancellationToken);
 
     public async Task<QueryResult<Feature>> QueryWithValidationAsync(
         int layerId,

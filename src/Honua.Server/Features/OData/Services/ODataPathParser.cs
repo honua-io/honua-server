@@ -119,6 +119,8 @@ internal static partial class ODataPathParser
 
         if (keyText.Contains('=', StringComparison.Ordinal))
         {
+            var hasLayerId = false;
+            var hasObjectId = false;
             var parts = keyText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var part in parts)
             {
@@ -138,6 +140,8 @@ internal static partial class ODataPathParser
                         errorMessage = "LayerId must be a valid integer.";
                         return false;
                     }
+
+                    hasLayerId = true;
                 }
                 else if (name.Equals("ObjectId", StringComparison.OrdinalIgnoreCase))
                 {
@@ -146,10 +150,12 @@ internal static partial class ODataPathParser
                         errorMessage = "ObjectId must be a valid integer.";
                         return false;
                     }
+
+                    hasObjectId = true;
                 }
             }
 
-            if (layerId == 0 || objectId == 0)
+            if (!hasLayerId || !hasObjectId)
             {
                 errorMessage = "Both LayerId and ObjectId are required.";
                 return false;
@@ -176,14 +182,14 @@ internal static partial class ODataPathParser
     private static bool TryParseLong(string value, out long result)
         => long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
-    [GeneratedRegex(@"^Layers\((?<layerId>[^)]+)\)(?<featureSegment>/Features(?:\((?<objectId>[^)]+)\))?)?$",
+    [GeneratedRegex(@"^Layers\((?<layerId>[^)]+)\)(?<featureSegment>/Features(?:\((?<objectId>[^)]+)\))?(?:/(?<tail>\$ref|\$value))?)?$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex LayerRegex();
 
-    [GeneratedRegex(@"^Layers\((?<layerId>[^)]+)\)/Features\((?<objectId>[^)]+)\)$",
+    [GeneratedRegex(@"^Layers\((?<layerId>[^)]+)\)/Features\((?<objectId>[^)]+)\)(?:/(?<tail>\$ref|\$value))?$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex LayerFeatureRegex();
 
-    [GeneratedRegex(@"^Features\((?<keys>[^)]+)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^Features\((?<keys>[^)]+)\)(?:/(?<tail>\$ref|\$value))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FeatureRegex();
 }

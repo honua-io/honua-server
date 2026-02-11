@@ -15,6 +15,11 @@ public static class Protocols
     public const string FeatureServer = "FeatureServer";
 
     /// <summary>
+    /// GeoServices REST API (Map Server).
+    /// </summary>
+    public const string MapServer = "MapServer";
+
+    /// <summary>
     /// OGC API - Features (Part 1: Core, Part 2: CRS, Part 3: Filtering).
     /// </summary>
     public const string OgcApiFeatures = "OGC-API-Features";
@@ -63,4 +68,19 @@ public static class Protocols
     /// Test quality validation suites.
     /// </summary>
     public const string TestQuality = "TestQuality";
+
+    /// <summary>
+    /// Esri Image Server REST API.
+    /// </summary>
+    public const string ImageServer = "ImageServer";
+
+    /// <summary>
+    /// OGC API - Maps (Part 1: Core).
+    /// </summary>
+    public const string OgcApiMaps = "OGC-API-Maps";
+
+    /// <summary>
+    /// Esri REST service directory and root metadata endpoints.
+    /// </summary>
+    public const string EsriCatalog = "EsriCatalog";
 }

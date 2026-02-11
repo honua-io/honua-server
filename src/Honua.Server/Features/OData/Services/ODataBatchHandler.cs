@@ -15,6 +15,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Features.OData.Services;
 
@@ -88,6 +89,7 @@ internal sealed partial class ODataBatchHandler
         {
             var groupRequests = groupMap[groupKey].ToImmutableArray();
             var isAtomicGroup = groupKey.StartsWith(AtomicGroupPrefix, StringComparison.Ordinal);
+            var responsesById = new Dictionary<string, ODataBatchResponseItem>(StringComparer.Ordinal);
 
             if (isAtomicGroup)
             {
@@ -116,6 +118,7 @@ internal sealed partial class ODataBatchHandler
                         addedErrors.Add(request.Id))
                     {
                         responses.Add(error);
+                        responsesById[request.Id] = error;
                     }
                 }
             }
@@ -123,11 +126,31 @@ internal sealed partial class ODataBatchHandler
             // Process individual requests in dependency order
             foreach (var request in dependencyOrder.OrderedRequests)
             {
+                if (request.DependsOn is { Length: > 0 })
+                {
+                    var failedDependency = request.DependsOn.FirstOrDefault(dep =>
+                        responsesById.TryGetValue(dep, out var dependencyResponse) &&
+                        dependencyResponse.Status >= 400);
+
+                    if (!string.IsNullOrWhiteSpace(failedDependency))
+                    {
+                        var dependencyFailed = CreateErrorResponse(
+                            request.Id,
+                            424,
+                            "DependencyFailed",
+                            $"Request depends on failed request id '{failedDependency}'.");
+                        responses.Add(dependencyFailed);
+                        responsesById[request.Id] = dependencyFailed;
+                        continue;
+                    }
+                }
+
                 var response = await ProcessSingleRequestAsync(
                     request,
                     baseUrl,
                     cancellationToken);
                 responses.Add(response);
+                responsesById[request.Id] = response;
             }
         }
 
@@ -139,6 +162,7 @@ internal sealed partial class ODataBatchHandler
 
     private const string NonAtomicGroupKey = "__non-atomic__";
     private const string AtomicGroupPrefix = "atomic:";
+    private const int DefaultBatchCollectionTop = 1000;
 
     private static bool HasDependencies(ImmutableArray<ODataBatchRequestItem> requests)
         => requests.Any(r => r.DependsOn is { Length: > 0 });
@@ -908,7 +932,7 @@ internal sealed partial class ODataBatchHandler
             switch (request.Method.ToUpperInvariant())
             {
                 case "GET":
-                    return await HandleGetAsync(request.Id, layer, objectId, baseUrl, cancellationToken);
+                    return await HandleGetAsync(request.Id, layer, objectId, request.Url, baseUrl, cancellationToken);
 
                 case "POST":
                     return await HandlePostAsync(request.Id, layer, request.Body, baseUrl, cancellationToken);
@@ -941,13 +965,54 @@ internal sealed partial class ODataBatchHandler
         string requestId,
         LayerDefinition layer,
         long? objectId,
+        string requestUrl,
         string baseUrl,
         CancellationToken cancellationToken)
     {
         if (!objectId.HasValue)
         {
-            // Collection query not supported in batch
-            return CreateErrorResponse(requestId, 400, "InvalidRequest", "Collection queries are not supported in batch. Specify an object ID.");
+            if (!TryParseCollectionQueryOptions(
+                requestUrl,
+                out var top,
+                out var skip,
+                out var count,
+                out var select,
+                out var parseError))
+            {
+                return CreateErrorResponse(requestId, 400, "InvalidRequest", parseError ?? "Invalid collection query options.");
+            }
+
+            var effectiveTop = top ?? DefaultBatchCollectionTop;
+            var effectiveSkip = skip ?? 0;
+            var query = new FeatureQuery
+            {
+                Limit = effectiveTop,
+                Offset = effectiveSkip,
+                SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            };
+
+            var queryResult = await _featureReader.QueryAsync(layer.Id, query, cancellationToken);
+            var collectionAxisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
+            var values = queryResult.Items.Select(feature =>
+            {
+                var payload = FeatureToBody(feature, layer, collectionAxisOrder, baseUrl, out _);
+                if (!string.IsNullOrWhiteSpace(select))
+                {
+                    payload = ODataUtilityService.ApplySelect(payload, select);
+                }
+
+                return (object)payload;
+            }).ToArray();
+
+            var response = new ODataResponse
+            {
+                Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select),
+                Count = count == true ? queryResult.TotalCount : null,
+                Value = values,
+                NextLink = null
+            };
+
+            return CreateSuccessResponse(requestId, 200, response);
         }
 
         var feature = await _featureReader.GetAsync(layer.Id, objectId.Value, cancellationToken);
@@ -1104,6 +1169,127 @@ internal sealed partial class ODataBatchHandler
         }
 
         return parsed;
+    }
+
+    private static bool TryParseCollectionQueryOptions(
+        string requestUrl,
+        out int? top,
+        out int? skip,
+        out bool? count,
+        out string? select,
+        out string? errorMessage)
+    {
+        top = null;
+        skip = null;
+        count = null;
+        select = null;
+        errorMessage = null;
+
+        var queryString = ExtractQueryString(requestUrl);
+        if (string.IsNullOrWhiteSpace(queryString))
+        {
+            return true;
+        }
+
+        var query = QueryHelpers.ParseQuery(queryString);
+        foreach (var parameter in query)
+        {
+            var key = parameter.Key;
+            var value = parameter.Value.ToString();
+
+            switch (key.ToLowerInvariant())
+            {
+                case "$top":
+                    if (!ODataParsingUtilities.TryParseOptionalInt(value, "$top", out var topValue, out var topError))
+                    {
+                        errorMessage = topError;
+                        return false;
+                    }
+
+                    top = topValue;
+                    break;
+
+                case "$skip":
+                    if (!ODataParsingUtilities.TryParseOptionalInt(value, "$skip", out var skipValue, out var skipError))
+                    {
+                        errorMessage = skipError;
+                        return false;
+                    }
+
+                    skip = skipValue;
+                    break;
+
+                case "$skiptoken":
+                    if (!ODataParsingUtilities.TryParseOptionalInt(value, "$skiptoken", out var skipTokenValue, out var skipTokenError))
+                    {
+                        errorMessage = skipTokenError;
+                        return false;
+                    }
+
+                    if (skip.HasValue && skipTokenValue.HasValue)
+                    {
+                        errorMessage = "$skip and $skiptoken cannot be used together.";
+                        return false;
+                    }
+
+                    if (skipTokenValue.HasValue)
+                    {
+                        skip = skipTokenValue;
+                    }
+
+                    break;
+
+                case "$count":
+                    if (!ODataParsingUtilities.TryParseOptionalBool(value, "$count", out var countValue, out var countError))
+                    {
+                        errorMessage = countError;
+                        return false;
+                    }
+
+                    count = countValue;
+                    break;
+
+                case "$select":
+                    select = value;
+                    break;
+
+                default:
+                    errorMessage = $"Unsupported query option '{key}' for batch collection GET.";
+                    return false;
+            }
+        }
+
+        if (top.HasValue && (top.Value < 0 || top.Value > DefaultBatchCollectionTop))
+        {
+            errorMessage = $"$top must be between 0 and {DefaultBatchCollectionTop.ToString(CultureInfo.InvariantCulture)}.";
+            return false;
+        }
+
+        if (skip.HasValue && skip.Value < 0)
+        {
+            errorMessage = "$skip/$skiptoken cannot be negative.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? ExtractQueryString(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute))
+        {
+            return absolute.Query.TrimStart('?');
+        }
+
+        var separator = url.IndexOf('?', StringComparison.Ordinal);
+        return separator >= 0 && separator < url.Length - 1
+            ? url[(separator + 1)..]
+            : null;
     }
 
     private async Task<Feature> CreateFeatureFromBodyAsync(

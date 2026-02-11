@@ -9,7 +9,7 @@ namespace Honua.Server.Features.FeatureServer.Models;
 public sealed class DeleteAttachmentResult
 {
     /// <summary>
-    /// Feature ID that owns the attachment
+    /// Attachment object ID.
     /// </summary>
     public required long ObjectId { get; init; }
 
@@ -17,6 +17,11 @@ public sealed class DeleteAttachmentResult
     /// Whether the operation was successful
     /// </summary>
     public required bool Success { get; init; }
+
+    /// <summary>
+    /// Global ID of the attachment when available.
+    /// </summary>
+    public string? GlobalId { get; init; }
 }
 
 /// <summary>

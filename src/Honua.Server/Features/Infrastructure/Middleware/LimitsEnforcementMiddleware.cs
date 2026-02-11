@@ -58,7 +58,8 @@ internal sealed class LimitsEnforcementMiddleware(
         context.Items["LimitsTimeoutToken"] = linkedCts.Token;
 
         // 4. Log request processing start with limits context
-        InfrastructureLog.RequestProcessingStarted(_logger, context.Request.Method, context.Request.Path,
+        var requestPath = context.Request.Path.Value ?? string.Empty;
+        InfrastructureLog.RequestProcessingStarted(_logger, context.Request.Method, requestPath,
             context.Request.ContentLength ?? 0, _limits.Connections.RequestTimeout.TotalSeconds);
 
         try
@@ -69,7 +70,7 @@ internal sealed class LimitsEnforcementMiddleware(
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             // Request timed out
-            InfrastructureLog.RequestTimedOut(_logger, context.Request.Path, _limits.Connections.RequestTimeout.TotalSeconds);
+            InfrastructureLog.RequestTimedOut(_logger, requestPath, _limits.Connections.RequestTimeout.TotalSeconds);
 
             if (!context.Response.HasStarted)
             {
@@ -84,7 +85,7 @@ internal sealed class LimitsEnforcementMiddleware(
         catch (Exception ex)
         {
             // Log unexpected errors (but don't handle them - let other middleware handle)
-            InfrastructureLog.RequestProcessingError(_logger, context.Request.Path, ex.GetType().Name, ex.Message, ex);
+            InfrastructureLog.RequestProcessingError(_logger, requestPath, ex.GetType().Name, ex.Message, ex);
             throw;
         }
         finally
@@ -117,13 +118,15 @@ internal sealed class LimitsEnforcementMiddleware(
         // the request body size limits configured at the Kestrel level
         if (!contentLength.HasValue)
         {
-            InfrastructureLog.PayloadSizeValidationSkipped(_logger, context.Request.Path);
+            var requestPath = context.Request.Path.Value ?? string.Empty;
+            InfrastructureLog.PayloadSizeValidationSkipped(_logger, requestPath);
             return true;
         }
 
         if (contentLength.Value > maxPayloadSize)
         {
-            InfrastructureLog.PayloadSizeExceeded(_logger, context.Request.Path, contentLength.Value, maxPayloadSize);
+            var requestPath = context.Request.Path.Value ?? string.Empty;
+            InfrastructureLog.PayloadSizeExceeded(_logger, requestPath, contentLength.Value, maxPayloadSize);
             return false;
         }
 

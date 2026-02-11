@@ -24,6 +24,22 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 internal static class CollectionsEndpoints
 {
+    private static readonly IReadOnlyDictionary<string, string> _queryablesFormatParameters =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["json"] = MediaTypes.Json,
+            ["html"] = MediaTypes.Html,
+            ["schemajson"] = MediaTypes.SchemaJson,
+            ["schema+json"] = MediaTypes.SchemaJson
+        };
+
+    private static readonly string[] _queryablesSupportedMediaTypes =
+    [
+        MediaTypes.SchemaJson,
+        MediaTypes.Json,
+        MediaTypes.Html
+    ];
+
     /// <summary>
     /// Maps collections management endpoints
     /// </summary>
@@ -59,6 +75,7 @@ internal static class CollectionsEndpoints
             .WithTags("OGC API Features")
             .CacheOutput("OgcQueryables")
             .Produces<QueryablesSchema>(200, MediaTypes.Json)
+            .Produces<QueryablesSchema>(200, MediaTypes.SchemaJson)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
@@ -265,7 +282,14 @@ internal static class CollectionsEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
             }
 
-            if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+            if (!OgcCommonUtilities.TryGetOutputFormat(
+                    f,
+                    context,
+                    _queryablesFormatParameters,
+                    _queryablesSupportedMediaTypes,
+                    MediaTypes.Json,
+                    out var outputFormat,
+                    out var formatError))
             {
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
@@ -298,8 +322,11 @@ internal static class CollectionsEndpoints
                 return accessError;
             }
 
+            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var queryablesId = $"{baseUrl}/ogc/features/collections/{collectionId}/queryables";
+
             // Build queryables schema from layer fields
-            var queryables = CreateQueryablesSchema(layer);
+            var queryables = CreateQueryablesSchema(layer, queryablesId);
 
             return OgcCommonUtilities.FormatMetadataResponse(queryables, OgcJsonContext.Default.QueryablesSchema, outputFormat, "Queryables");
         }
@@ -339,63 +366,63 @@ internal static class CollectionsEndpoints
     {
         // Use layer ID as collection ID (string representation)
         var collectionId = layer.Id.ToString();
-        var collectionLinks = ImmutableArray.Create(
-            // Self link
-            Link.Create(
-                href: $"{baseUrl}/ogc/features/collections/{collectionId}",
-                rel: RelationTypes.Self,
-                type: MediaTypes.Json,
-                title: layer.Name
-            ),
+        var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
+        var collectionLinks = ImmutableArray.CreateBuilder<Link>();
 
-            // Items link
-            Link.Create(
-                href: $"{baseUrl}/ogc/features/collections/{collectionId}/items",
+        // Self link
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
+            rel: RelationTypes.Self,
+            type: MediaTypes.Json,
+            title: layer.Name));
+
+        // Items links for all supported encodings
+        foreach (var format in OgcFeaturesUtilities.FeatureFormats)
+        {
+            var href = string.Equals(format.QueryValue, "geojson", StringComparison.OrdinalIgnoreCase)
+                ? itemsBaseHref
+                : $"{itemsBaseHref}?f={Uri.EscapeDataString(format.QueryValue)}";
+            collectionLinks.Add(Link.Create(
+                href: href,
                 rel: RelationTypes.Items,
-                type: MediaTypes.GeoJson,
-                title: "Items"
-            ),
+                type: format.MediaType,
+                title: $"Items ({format.Title})"));
+        }
 
-            // Data link (alternate to items)
-            Link.Create(
-                href: $"{baseUrl}/ogc/features/collections/{collectionId}/items",
-                rel: RelationTypes.Data,
-                type: MediaTypes.GeoJson,
-                title: "Data"
-            ),
+        // Data link (alternate to items)
+        collectionLinks.Add(Link.Create(
+            href: itemsBaseHref,
+            rel: RelationTypes.Data,
+            type: MediaTypes.GeoJson,
+            title: "Data"));
 
-            // Parent (collections)
-            Link.Create(
-                href: $"{baseUrl}/ogc/features/collections",
-                rel: "parent",
-                type: MediaTypes.Json,
-                title: "Collections"
-            ),
+        // Parent (collections)
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections",
+            rel: "parent",
+            type: MediaTypes.Json,
+            title: "Collections"));
 
-            // Queryables link
-            Link.Create(
-                href: $"{baseUrl}/ogc/features/collections/{collectionId}/queryables",
-                rel: RelationTypes.Queryables,
-                type: MediaTypes.Json,
-                title: "Queryables"
-            ),
+        // Queryables link
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionId}/queryables",
+            rel: RelationTypes.Queryables,
+            type: MediaTypes.SchemaJson,
+            title: "Queryables"));
 
-            // Style link (MapLibre style JSON)
-            Link.Create(
-                href: $"{baseUrl}/api/styles/{layer.Id}.json",
-                rel: RelationTypes.Style,
-                type: MediaTypes.Json,
-                title: "Style"
-            ),
+        // Style link (MapLibre style JSON)
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/api/styles/{layer.Id}.json",
+            rel: RelationTypes.Style,
+            type: MediaTypes.Json,
+            title: "Style"));
 
-            // Tilesets list link (OGC API Tiles)
-            Link.Create(
-                href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
-                rel: RelationTypes.TilesetsVector,
-                type: MediaTypes.Json,
-                title: "Vector tilesets"
-            )
-        );
+        // Tilesets list link (OGC API Tiles)
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
+            rel: RelationTypes.TilesetsVector,
+            type: MediaTypes.Json,
+            title: "Vector tilesets"));
 
         SpatialExtent? spatialExtent = null;
         if (layer.Extent != null)
@@ -440,7 +467,7 @@ internal static class CollectionsEndpoints
             Id = collectionId,
             Title = layer.Name,
             Description = layer.Description,
-            Links = collectionLinks,
+            Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,
             StorageCrs = storageCrsDefinition?.Uri
@@ -450,7 +477,9 @@ internal static class CollectionsEndpoints
     /// <summary>
     /// Creates queryables schema from layer definition
     /// </summary>
-    private static QueryablesSchema CreateQueryablesSchema(LayerDefinition layer)
+    private static QueryablesSchema CreateQueryablesSchema(
+        LayerDefinition layer,
+        string queryablesId)
     {
         var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();
         var requiredFields = new List<string>();
@@ -481,6 +510,7 @@ internal static class CollectionsEndpoints
 
         return new QueryablesSchema
         {
+            Id = queryablesId,
             Type = "object",
             Title = $"Queryables for {layer.Name}",
             Description = $"Schema for queryable properties of the {layer.Name} collection",

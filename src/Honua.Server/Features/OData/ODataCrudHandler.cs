@@ -2,9 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
@@ -112,7 +109,101 @@ internal sealed class ODataCrudHandler(
             HonuaTelemetry.SetSuccess(activity);
         }
 
-        return ODataUtilityService.CreateResultFromCrudResult(context, result);
+        return ODataUtilityService.CreateResultFromCrudResult(context, result, format);
+    }
+
+    /// <summary>
+    /// Handles getting a canonical OData entity reference for a feature.
+    /// </summary>
+    public async Task<IResult> HandleGetFeatureReferenceAsync(
+        HttpContext context,
+        int layerId,
+        long objectId,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
+        if (queryValidation != null)
+        {
+            return queryValidation;
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
+        var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
+        if (!result.IsSuccess)
+        {
+            return ODataUtilityService.CreateResultFromCrudResult(context, result);
+        }
+
+        var reference = new Dictionary<string, object?>
+        {
+            ["@odata.id"] = ODataUtilityService.CreateLocationHeader(baseUrl, layerId, objectId)
+        };
+
+        ODataUtilityService.SetODataHeaders(context);
+        return Results.Json(
+            reference,
+            ODataJsonContext.Default.DictionaryStringObject,
+            contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
+    }
+
+    /// <summary>
+    /// Handles getting the raw value representation for a feature.
+    /// </summary>
+    public async Task<IResult> HandleGetFeatureValueAsync(
+        HttpContext context,
+        int layerId,
+        long objectId,
+        [FromQuery(Name = "$format")] string? format = null,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.FeatureValue);
+        if (queryValidation != null)
+        {
+            return queryValidation;
+        }
+
+        var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
+        if (formatValidation != null)
+        {
+            return formatValidation;
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
+        var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
+        if (!result.IsSuccess)
+        {
+            return ODataUtilityService.CreateResultFromCrudResult(context, result, format);
+        }
+
+        ODataUtilityService.SetODataHeaders(context, result.ETag);
+        return Results.Json(
+            result.Data,
+            ODataJsonContext.Default.DictionaryStringObject,
+            contentType: ODataUtilityService.GetODataContentType(context.Request, format));
     }
 
     /// <summary>
@@ -163,20 +254,11 @@ internal sealed class ODataCrudHandler(
                 "LayerId is required when creating a feature.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, resolvedLayerId.Value, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, resolvedLayerId.Value, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context,
-            resolvedLayerId.Value,
-            effectiveToken);
-        if (rbacError != null)
-        {
-            return rbacError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -260,20 +342,11 @@ internal sealed class ODataCrudHandler(
             return ODataUtilityService.CreateODataError(context, "InvalidRequest", "ObjectId in payload does not match route.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context,
-            layerId,
-            effectiveToken);
-        if (rbacError != null)
-        {
-            return rbacError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -344,20 +417,11 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context,
-            layerId,
-            effectiveToken);
-        if (rbacError != null)
-        {
-            return rbacError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(

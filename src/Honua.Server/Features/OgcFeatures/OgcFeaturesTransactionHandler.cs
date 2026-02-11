@@ -11,10 +11,9 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
@@ -48,23 +47,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessAsync(
+                context, collectionId, cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
-
-            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-                context,
-                layerId,
-                cancellationToken);
-            if (rbacError != null)
-            {
-                return rbacError;
-            }
 
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
                 HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
@@ -178,23 +168,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessAsync(
+                context, collectionId, cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
             var layer = layerValidation.Layer!;
             var layerId = layer.Id;
-
-            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-                context,
-                layerId,
-                cancellationToken);
-            if (rbacError != null)
-            {
-                return rbacError;
-            }
 
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
                 HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
@@ -566,7 +547,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         string featureId,
         string outputFormat)
     {
-        var baseUrl = $"{request.Scheme}://{request.Host}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
 
         return new List<Link>

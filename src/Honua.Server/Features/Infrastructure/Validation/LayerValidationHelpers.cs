@@ -155,6 +155,84 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
+    /// Validates layer existence, write access, and RBAC data-editor role in a single call.
+    /// Combines <see cref="ValidateLayerWithAccessAsync(HttpContext, int, AccessScope, CancellationToken)"/>
+    /// with <see cref="ServiceDataEditorAuthorization.RequireLayerDataEditorAsync"/>.
+    /// </summary>
+    public static async Task<LayerValidationResult> ValidateWriteAccessAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken = default)
+    {
+        var layerValidation = await ValidateLayerWithAccessAsync(
+            context, layerId, scope: AccessScope.Write, cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            context, layerId, cancellationToken);
+        if (rbacError != null)
+        {
+            return new LayerValidationResult(false, null, rbacError);
+        }
+
+        return layerValidation;
+    }
+
+    /// <summary>
+    /// Validates collection existence, write access, and RBAC data-editor role for OGC Features.
+    /// </summary>
+    public static async Task<LayerValidationResult> ValidateCollectionWriteAccessAsync(
+        HttpContext context,
+        string collectionId,
+        CancellationToken cancellationToken = default)
+    {
+        var layerValidation = await ValidateCollectionWithAccessAsync(
+            context, collectionId, scope: AccessScope.Write, cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            context, layerValidation.Layer!.Id, cancellationToken);
+        if (rbacError != null)
+        {
+            return new LayerValidationResult(false, null, rbacError);
+        }
+
+        return layerValidation;
+    }
+
+    /// <summary>
+    /// Validates layer existence, write access, and RBAC data-editor role with OData-specific
+    /// error formatting.
+    /// </summary>
+    public static async Task<LayerValidationResult> ValidateODataWriteAccessAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken = default)
+    {
+        var layerValidation = await ValidateLayerWithAccessAsync(
+            context, layerId, ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            context, layerId, cancellationToken);
+        if (rbacError != null)
+        {
+            return new LayerValidationResult(false, null, rbacError);
+        }
+
+        return layerValidation;
+    }
+
+    /// <summary>
     /// Creates OData-formatted error response with correct status code mapping.
     /// Preserves existing OData error message formats and status code logic.
     /// </summary>

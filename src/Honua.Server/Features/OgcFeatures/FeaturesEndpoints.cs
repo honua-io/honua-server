@@ -65,7 +65,6 @@ internal static partial class FeaturesEndpoints
             .WithTags("OGC API Features", "Transactions")
             .Accepts<GeoJsonFeature>(MediaTypes.GeoJson)
             .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
-            .Produces(201) // If feature didn't exist (upsert behavior)
             .Produces(400)
             .Produces(404)
             .RequireAuthorization();

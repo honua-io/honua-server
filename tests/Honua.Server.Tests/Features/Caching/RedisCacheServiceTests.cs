@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
@@ -252,6 +254,39 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         // Assert
         result.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public void PruneKeyLocks_IdleLock_RemovesDictionaryEntryWithoutDisposingSemaphore()
+    {
+        // Arrange
+        var keyLocksField = typeof(RedisCacheService).GetField("_keyLocks", BindingFlags.NonPublic | BindingFlags.Instance);
+        keyLocksField.Should().NotBeNull();
+
+        var keyLocks = keyLocksField!.GetValue(_cacheService) as ConcurrentDictionary<string, SemaphoreSlim>;
+        keyLocks.Should().NotBeNull();
+
+        var key = "prune:test";
+        var semaphore = new SemaphoreSlim(1, 1);
+        keyLocks![key] = semaphore;
+
+        var pruneMethod = typeof(RedisCacheService).GetMethod("PruneKeyLocks", BindingFlags.NonPublic | BindingFlags.Instance);
+        pruneMethod.Should().NotBeNull();
+
+        // Act
+        pruneMethod!.Invoke(_cacheService, null);
+
+        // Assert
+        keyLocks.ContainsKey(key).Should().BeFalse();
+
+        var waited = semaphore.Wait(0);
+        waited.Should().BeTrue();
+        if (waited)
+        {
+            semaphore.Release();
+        }
+        semaphore.Dispose();
     }
 
     internal sealed class MockLogger<T> : ILogger<T>

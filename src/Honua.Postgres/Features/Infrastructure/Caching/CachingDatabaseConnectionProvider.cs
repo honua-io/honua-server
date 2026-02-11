@@ -99,7 +99,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             activity?.SetTag("db.transaction.id", transaction.GetHashCode().ToString(CultureInfo.InvariantCulture));
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            DatabaseTransactionStarted(_logger, isolationLevel.ToString());
+            DatabaseTransactionStarted(_logger, isolationLevel);
 
             return (connection, transaction);
         }
@@ -177,5 +177,5 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     private static partial void DatabaseDeadlockRetry(ILogger logger, int attempt, string errorMessage, Exception exception);
 
     [LoggerMessage(3, LogLevel.Debug, "Started transaction with isolation level {IsolationLevel}")]
-    private static partial void DatabaseTransactionStarted(ILogger logger, string isolationLevel);
+    private static partial void DatabaseTransactionStarted(ILogger logger, IsolationLevel isolationLevel);
 }

@@ -181,7 +181,7 @@ public static class RelationTypes
     /// <summary>
     /// Indicates the link target provides queryables schema.
     /// </summary>
-    public const string Queryables = "queryables";
+    public const string Queryables = "http://www.opengis.net/def/rel/ogc/1.0/queryables";
 
     /// <summary>
     /// Indicates the link target provides a tilesets list for vector tiles.
@@ -287,6 +287,11 @@ public static class MediaTypes
     /// OpenAPI 3.0 specification media type.
     /// </summary>
     public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
+
+    /// <summary>
+    /// JSON Schema media type.
+    /// </summary>
+    public const string SchemaJson = "application/schema+json";
 
     /// <summary>
     /// GML 3.2 media type.

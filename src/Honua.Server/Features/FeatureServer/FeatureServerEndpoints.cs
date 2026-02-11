@@ -70,6 +70,14 @@ internal static partial class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/applyEdits", HandleServiceApplyEdits)
+            .WithDisplayName("Apply Service-Level Feature Edits")
+            .WithName("ServiceApplyEdits")
+            .WithSummary("Apply feature edits across multiple layers")
+            .WithDescription("Apply feature edits to multiple layers in a single request including add, update, and delete operations")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/applyEdits", HandleApplyEdits)
             .WithDisplayName("Apply Feature Edits")
             .WithName("ApplyEdits")
@@ -80,6 +88,30 @@ internal static partial class FeatureServerEndpoints
         // .Produces<ApplyEditsResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/addFeatures", HandleAddFeatures)
+            .WithDisplayName("Add Features")
+            .WithName("AddFeatures")
+            .WithSummary("Add new features to a layer")
+            .WithDescription("Adds one or more features to a layer")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/updateFeatures", HandleUpdateFeatures)
+            .WithDisplayName("Update Features")
+            .WithName("UpdateFeatures")
+            .WithSummary("Update existing features in a layer")
+            .WithDescription("Updates one or more features in a layer")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/deleteFeatures", HandleDeleteFeatures)
+            .WithDisplayName("Delete Features")
+            .WithName("DeleteFeatures")
+            .WithSummary("Delete features from a layer")
+            .WithDescription("Deletes one or more features from a layer")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
 
         var relatedGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsGet)
             .WithDisplayName("Query Related Records (GET)")

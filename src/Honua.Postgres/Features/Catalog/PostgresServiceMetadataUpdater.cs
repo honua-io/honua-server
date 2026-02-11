@@ -21,9 +21,7 @@ internal sealed class PostgresServiceMetadataUpdater : IServiceMetadataUpdater
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
-        string quotedSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(
-            string.IsNullOrEmpty(schemaName) ? "honua" : schemaName);
-        _servicesTable = $"{quotedSchema}.services";
+        _servicesTable = Infrastructure.SchemaSearchPath.QualifyTable("services", schemaName);
     }
 
     /// <inheritdoc />

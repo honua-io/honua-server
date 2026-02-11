@@ -50,6 +50,7 @@ internal static partial class ODataEndpoints
                     query.Select,
                     query.Top,
                     query.Skip,
+                    query.Skiptoken,
                     query.Count,
                     query.Format,
                     cancellationToken))
@@ -104,8 +105,10 @@ internal static partial class ODataEndpoints
                     query.Orderby,
                     query.Top,
                     query.Skip,
+                    query.Skiptoken,
                     query.Count,
                     query.Expand,
+                    query.Compute,
                     query.Search,
                     query.Apply,
                     query.Format,
@@ -147,8 +150,10 @@ internal static partial class ODataEndpoints
                     query.Orderby,
                     query.Top,
                     query.Skip,
+                    query.Skiptoken,
                     query.Count,
                     query.Expand,
+                    query.Compute,
                     query.Search,
                     query.Apply,
                     query.Format,
@@ -206,8 +211,10 @@ internal static partial class ODataEndpoints
                     query.Orderby,
                     query.Top,
                     query.Skip,
+                    query.Skiptoken,
                     query.Count,
                     query.Expand,
+                    query.Compute,
                     query.Search,
                     query.Apply,
                     query.Format,
@@ -260,6 +267,35 @@ internal static partial class ODataEndpoints
             .WithSummary("Get a single feature by ID")
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
+            .Produces(404);
+
+        var getFeatureRef = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})/$ref",
+            (HttpContext context,
+                int layerId,
+                long objectId,
+                [FromServices] ODataCrudHandler handler,
+                CancellationToken cancellationToken) =>
+                handler.HandleGetFeatureReferenceAsync(context, layerId, objectId, cancellationToken))
+            .WithDisplayName("OData Get Feature Reference")
+            .WithName("ODataGetFeatureReference")
+            .WithSummary("Get canonical entity reference for a feature")
+            .WithTags("OData")
+            .Produces<Dictionary<string, object?>>(200, "application/json")
+            .Produces(404);
+
+        var getFeatureValue = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})/$value",
+            (HttpContext context,
+                int layerId,
+                long objectId,
+                [FromServices] ODataCrudHandler handler,
+                [AsParameters] ODataQueryOptions query,
+                CancellationToken cancellationToken) =>
+                handler.HandleGetFeatureValueAsync(context, layerId, objectId, query.Format, cancellationToken))
+            .WithDisplayName("OData Get Feature Value")
+            .WithName("ODataGetFeatureValue")
+            .WithSummary("Get the raw JSON value for a feature")
+            .WithTags("OData")
+            .Produces<string>(200, "application/json")
             .Produces(404);
 
         var getLayerFeature = endpoints.MapGet("/odata/Layers({layerId:int})/Features({objectId:long})",
@@ -374,7 +410,6 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Models.ODataBatchResponse>(200, "application/json")
             .Produces(400);
-        batch.RequireAuthorization();
 
         // GET - Aggregation with $apply (legacy)
         var apply = endpoints.MapGet("/odata/Features({layerId:int})/$apply",

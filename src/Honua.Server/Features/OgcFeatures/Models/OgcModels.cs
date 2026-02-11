@@ -174,10 +174,16 @@ public sealed record FeatureCollection : ICollectionResponse<GeoJsonFeature>
 public sealed record QueryablesSchema
 {
     /// <summary>
+    /// Stable identifier for the queryables schema resource.
+    /// </summary>
+    [JsonPropertyName("$id")]
+    public string? Id { get; init; }
+
+    /// <summary>
     /// JSON Schema specification version
     /// </summary>
     [JsonPropertyName("$schema")]
-    public string Schema { get; init; } = "https://json-schema.org/draft/2019-09/schema";
+    public string Schema { get; init; } = "https://json-schema.org/draft/2020-12/schema";
 
     /// <summary>
     /// Schema document type (always "object" for queryables)

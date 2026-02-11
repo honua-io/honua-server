@@ -25,12 +25,22 @@ internal static class ODataUtilityService
     /// <summary>
     /// OData JSON content type with minimal metadata
     /// </summary>
-    private const string ODataContentType = "application/json;odata.metadata=minimal";
+    private const string ODataMediaType = "application/json";
+    private const string ODataMetadataMinimal = "minimal";
+    private const string ODataMetadataFull = "full";
+    private const string ODataMetadataNone = "none";
+    private const string ODataContentType = $"{ODataMediaType};odata.metadata={ODataMetadataMinimal}";
 
     private static readonly FrozenSet<string> _allowedFormats = new[]
         {
             "json",
-            "application/json"
+            "application/json",
+            "json;odata.metadata=minimal",
+            "json;odata.metadata=full",
+            "json;odata.metadata=none",
+            "application/json;odata.metadata=minimal",
+            "application/json;odata.metadata=full",
+            "application/json;odata.metadata=none"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -132,14 +142,23 @@ internal static class ODataUtilityService
         string? select,
         string? orderby,
         bool? count,
-        string? expand = null)
+        string? expand = null,
+        bool useSkipToken = false,
+        string? compute = null)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
-        var queryParams = new List<string>
+        var queryParams = new List<string>();
+
+        if (useSkipToken)
         {
-            $"$skip={nextSkip}",
-            $"$top={top}"
-        };
+            queryParams.Add($"$skiptoken={nextSkip}");
+        }
+        else
+        {
+            queryParams.Add($"$skip={nextSkip}");
+        }
+
+        queryParams.Add($"$top={top}");
 
         if (!string.IsNullOrWhiteSpace(filter))
         {
@@ -164,6 +183,11 @@ internal static class ODataUtilityService
         if (!string.IsNullOrWhiteSpace(expand))
         {
             queryParams.Add($"$expand={Uri.EscapeDataString(expand)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(compute))
+        {
+            queryParams.Add($"$compute={Uri.EscapeDataString(compute)}");
         }
 
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
@@ -254,6 +278,17 @@ internal static class ODataUtilityService
         return ODataContentType;
     }
 
+    public static string GetODataContentType(HttpRequest request, string? format)
+    {
+        if (TryResolveMetadataLevel(format, out var level) ||
+            TryResolveMetadataLevelFromAccept(request.Headers.Accept.ToString(), out level))
+        {
+            return $"{ODataMediaType};odata.metadata={level}";
+        }
+
+        return ODataContentType;
+    }
+
     public static IReadOnlySet<string> GetAllowedFormats()
     {
         return _allowedFormats;
@@ -321,7 +356,8 @@ internal static class ODataUtilityService
     /// </summary>
     public static IResult CreateResultFromCrudResult<T>(
         HttpContext context,
-        ODataCrudResult<T> crudResult)
+        ODataCrudResult<T> crudResult,
+        string? format = null)
     {
         if (!crudResult.IsSuccess)
         {
@@ -347,14 +383,14 @@ internal static class ODataUtilityService
             return Results.Json(
                 dictionary,
                 ODataJsonContext.Default.DictionaryStringObject,
-                contentType: ODataContentType,
+                contentType: GetODataContentType(context.Request, format),
                 statusCode: crudResult.StatusCode);
         }
 
         return Results.Json(
             crudResult.Data,
             GetJsonTypeInfo<T>(),
-            contentType: ODataContentType,
+            contentType: GetODataContentType(context.Request, format),
             statusCode: crudResult.StatusCode);
     }
 
@@ -609,6 +645,92 @@ internal static class ODataUtilityService
         }
 
         return $"\"{trimmed}\"";
+    }
+
+    private static bool TryResolveMetadataLevel(string? format, out string level)
+    {
+        level = ODataMetadataMinimal;
+        if (string.IsNullOrWhiteSpace(format))
+        {
+            return false;
+        }
+
+        var mediaType = format.Trim();
+        if (string.Equals(mediaType, "json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(mediaType, ODataMediaType, StringComparison.OrdinalIgnoreCase))
+        {
+            level = ODataMetadataMinimal;
+            return true;
+        }
+
+        return TryResolveMetadataLevelFromMediaType(mediaType, out level);
+    }
+
+    private static bool TryResolveMetadataLevelFromAccept(string? acceptHeader, out string level)
+    {
+        level = ODataMetadataMinimal;
+        if (string.IsNullOrWhiteSpace(acceptHeader))
+        {
+            return false;
+        }
+
+        var mediaTypes = acceptHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var mediaType in mediaTypes)
+        {
+            if (TryResolveMetadataLevelFromMediaType(mediaType, out level))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveMetadataLevelFromMediaType(string mediaType, out string level)
+    {
+        level = ODataMetadataMinimal;
+
+        var parts = mediaType.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        var type = parts[0];
+        if (!type.Equals("json", StringComparison.OrdinalIgnoreCase) &&
+            !type.Equals(ODataMediaType, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (parts.Length == 1)
+        {
+            level = ODataMetadataMinimal;
+            return true;
+        }
+
+        foreach (var parameter in parts.Skip(1))
+        {
+            var kvp = parameter.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (kvp.Length != 2)
+            {
+                continue;
+            }
+
+            if (!kvp[0].Equals("odata.metadata", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var candidate = kvp[1].Trim().Trim('"').ToLowerInvariant();
+            if (candidate is ODataMetadataMinimal or ODataMetadataFull or ODataMetadataNone)
+            {
+                level = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

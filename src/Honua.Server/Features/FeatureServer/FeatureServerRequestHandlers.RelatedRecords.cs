@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
@@ -56,6 +57,13 @@ internal static partial class FeatureServerEndpoints
         if (values == null)
         {
             return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+        }
+
+        if (!TryValidateAllowedParameters(values, queryValidator, AllowedQueryParameters.QueryRelatedRecords, out error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
         }
 
         if (!TryParseRelatedRecordsParameters(values, out var queryParams, out var parseError))
@@ -115,6 +123,56 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        if (!TryParseBoolValue(values, "returnZ", false, out var returnZ, out errorMessage))
+        {
+            return false;
+        }
+
+        if (!TryParseBoolValue(values, "returnM", false, out var returnM, out errorMessage))
+        {
+            return false;
+        }
+
+        if (!TryParseBoolValue(values, "returnTrueCurves", false, out var returnTrueCurves, out errorMessage))
+        {
+            return false;
+        }
+
+        if (!TryParseIntValue(values, "geometryPrecision", out var geometryPrecision, out errorMessage))
+        {
+            return false;
+        }
+
+        if (geometryPrecision.HasValue && geometryPrecision.Value < 0)
+        {
+            errorMessage = "geometryPrecision cannot be negative";
+            return false;
+        }
+
+        if (!TryParseDoubleValue(values, "maxAllowableOffset", out var maxAllowableOffset, out errorMessage))
+        {
+            return false;
+        }
+
+        if (maxAllowableOffset.HasValue && maxAllowableOffset.Value < 0)
+        {
+            errorMessage = "maxAllowableOffset cannot be negative";
+            return false;
+        }
+
+        long? historicMoment = null;
+        var historicMomentValue = GetValueString(values, "historicMoment");
+        if (!string.IsNullOrWhiteSpace(historicMomentValue))
+        {
+            if (!long.TryParse(historicMomentValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedHistoricMoment))
+            {
+                errorMessage = "historicMoment must be an integer";
+                return false;
+            }
+
+            historicMoment = parsedHistoricMoment;
+        }
+
         var where = GetValueString(values, "where");
         var definitionExpression = GetValueString(values, "definitionExpression");
         if (!string.IsNullOrWhiteSpace(definitionExpression))
@@ -132,6 +190,15 @@ internal static partial class FeatureServerEndpoints
             Where = where,
             ReturnGeometry = returnGeometry,
             F = GetValueString(values, "f") ?? "json",
+            OutSr = GetValueString(values, "outSR"),
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            ReturnTrueCurves = returnTrueCurves,
+            GeometryPrecision = geometryPrecision,
+            MaxAllowableOffset = maxAllowableOffset,
+            GdbVersion = GetValueString(values, "gdbVersion"),
+            SqlFormat = GetValueString(values, "sqlFormat"),
+            HistoricMoment = historicMoment,
             ResultOffset = resultOffset,
             ResultRecordCount = resultRecordCount
         };

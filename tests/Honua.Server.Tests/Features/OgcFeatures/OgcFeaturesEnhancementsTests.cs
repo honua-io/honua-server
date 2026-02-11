@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
@@ -205,6 +206,59 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
         json.RootElement.TryGetProperty("properties", out var properties).Should().BeTrue();
         properties.TryGetProperty("name", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
+    public async Task GetQueryables_WithSchemaJsonAcceptHeader_ReturnsSchemaJson()
+    {
+        var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Accept.Clear();
+        client.DefaultRequestHeaders.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/schema+json;q=1.0"));
+        client.DefaultRequestHeaders.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;q=0.5"));
+
+        var response = await client.GetAsync($"/ogc/features/collections/{TestCollectionId}/queryables");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/schema+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("$schema").GetString().Should().Be("https://json-schema.org/draft/2020-12/schema");
+        json.RootElement.GetProperty("$id").GetString()
+            .Should().EndWith($"/ogc/features/collections/{TestCollectionId}/queryables");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task GetCollection_IncludesItemsLinksForAllSupportedFormats()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+
+        var itemLinkTypes = links
+            .Where(link => link.TryGetProperty("rel", out var rel) && rel.GetString() == "items")
+            .Select(link => link.GetProperty("type").GetString())
+            .Where(type => !string.IsNullOrWhiteSpace(type))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        itemLinkTypes.Should().Contain("application/geo+json");
+        itemLinkTypes.Should().Contain("application/json");
+        itemLinkTypes.Should().Contain("application/gml+xml;version=3.2");
+        itemLinkTypes.Should().Contain("text/html");
+
+        links.Any(link =>
+                link.TryGetProperty("rel", out var rel) &&
+                rel.GetString() == RelationTypes.Queryables &&
+                link.TryGetProperty("type", out var type) &&
+                type.GetString() == "application/schema+json")
+            .Should()
+            .BeTrue();
     }
 
     [IntegrationTest]
@@ -458,6 +512,11 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             rel.GetString() == "self");
         hasSelfLink.Should().BeTrue();
 
+        var hasQueryablesLink = links.Any(link =>
+            link.TryGetProperty("rel", out var rel) &&
+            rel.GetString() == RelationTypes.Queryables);
+        hasQueryablesLink.Should().BeTrue();
+
         // Verify link structure
         foreach (var link in links)
         {
@@ -611,6 +670,21 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var response = await client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items");
 
         // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithWeightedAcceptHeader_UsesHighestQualityMatch()
+    {
+        var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Accept.Clear();
+        client.DefaultRequestHeaders.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/gml+xml;version=3.2;q=0.1"));
+        client.DefaultRequestHeaders.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;q=1.0"));
+
+        var response = await client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items");
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }

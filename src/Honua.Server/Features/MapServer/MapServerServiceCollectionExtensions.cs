@@ -10,7 +10,7 @@ internal static class MapServerServiceCollectionExtensions
 {
     /// <summary>
     /// Registers MapServer services. MapServer adds SkiaSharp-based rendering for
-    /// export, identify, and legend operations. Query is handled via redirect.
+    /// export, identify, and legend operations. Query uses FeatureServer handlers.
     /// </summary>
     public static IServiceCollection AddMapServer(this IServiceCollection services)
     {
@@ -18,7 +18,7 @@ internal static class MapServerServiceCollectionExtensions
 
         // MapServer uses core services (IFeatureReader, ILayerStyleCatalog) which are already registered.
         // Rendering is handled by static utility classes (SkiaMapRenderer, StyleTranslator, etc.).
-        // Query endpoints redirect to FeatureServer to maintain vertical slice isolation.
+        // Query endpoints reuse FeatureServer query handling for ArcGIS REST parity.
 
         return services;
     }

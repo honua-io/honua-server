@@ -148,6 +148,7 @@ internal static class CoreEndpoints
         }
 
         EnsureCacheControl(context, _conformanceCacheDuration);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
         var conformance = new ConformanceDeclaration
         {
@@ -166,7 +167,7 @@ internal static class CoreEndpoints
             ).AddRange(OgcConformanceUris.Common),
             Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
-                $"{context.Request.Scheme}://{context.Request.Host}/ogc/features/conformance",
+                $"{baseUrl}/ogc/features/conformance",
                 outputFormat,
                 OgcCommonUtilities.MetadataFormats,
                 "Conformance declaration")

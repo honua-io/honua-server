@@ -34,9 +34,54 @@ public sealed class QueryRelatedRecordsParameters
     public bool ReturnGeometry { get; init; } = true;
 
     /// <summary>
-    /// Response format (json, geojson)
+    /// Response format (json, pjson)
     /// </summary>
     public string F { get; init; } = "json";
+
+    /// <summary>
+    /// Output spatial reference for response geometry.
+    /// </summary>
+    public string? OutSr { get; init; }
+
+    /// <summary>
+    /// Whether to include Z values in output geometry.
+    /// </summary>
+    public bool ReturnZ { get; init; }
+
+    /// <summary>
+    /// Whether to include M values in output geometry.
+    /// </summary>
+    public bool ReturnM { get; init; }
+
+    /// <summary>
+    /// Geometry coordinate precision override.
+    /// </summary>
+    public int? GeometryPrecision { get; init; }
+
+    /// <summary>
+    /// Maximum allowable offset for geometry generalization.
+    /// </summary>
+    public double? MaxAllowableOffset { get; init; }
+
+    /// <summary>
+    /// Geodatabase version for versioned data sources.
+    /// </summary>
+    public string? GdbVersion { get; init; }
+
+    /// <summary>
+    /// SQL format mode.
+    /// </summary>
+    public string? SqlFormat { get; init; }
+
+    /// <summary>
+    /// Historic moment timestamp in epoch milliseconds.
+    /// </summary>
+    public long? HistoricMoment { get; init; }
+
+    /// <summary>
+    /// Whether to return true-curve geometry payloads.
+    /// </summary>
+    public bool ReturnTrueCurves { get; init; }
 
     /// <summary>
     /// Starting offset for pagination

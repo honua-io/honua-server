@@ -381,10 +381,8 @@ internal sealed partial class ODataSearchService
             return result;
         }
 
-        // Parse $expand expression - comma-separated list of relationship names
-        var relationshipNames = expand
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Parse $expand expression and accept expand options, e.g. Rel($select=Name).
+        var relationshipNames = ParseExpandRelationshipNames(expand);
 
         // Find matching relationships
         foreach (var relationship in layer.LayerRelationships)
@@ -470,6 +468,77 @@ internal sealed partial class ODataSearchService
                     relationsDict[outputName] = new object?[] { relatedFeatureDict };
                 }
             }
+        }
+
+        return result;
+    }
+
+    private static HashSet<string> ParseExpandRelationshipNames(string expand)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(expand))
+        {
+            return names;
+        }
+
+        var segments = SplitTopLevel(expand);
+        foreach (var segment in segments)
+        {
+            var trimmed = segment.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                continue;
+            }
+
+            var slashIndex = trimmed.IndexOf('/');
+            if (slashIndex >= 0)
+            {
+                trimmed = trimmed[..slashIndex];
+            }
+
+            var optionIndex = trimmed.IndexOf('(');
+            if (optionIndex >= 0)
+            {
+                trimmed = trimmed[..optionIndex];
+            }
+
+            trimmed = trimmed.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+            {
+                names.Add(trimmed);
+            }
+        }
+
+        return names;
+    }
+
+    private static List<string> SplitTopLevel(string expression)
+    {
+        var result = new List<string>();
+        var depth = 0;
+        var start = 0;
+
+        for (var i = 0; i < expression.Length; i++)
+        {
+            var c = expression[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+            }
+            else if (c == ',' && depth == 0)
+            {
+                result.Add(expression[start..i]);
+                start = i + 1;
+            }
+        }
+
+        if (start < expression.Length)
+        {
+            result.Add(expression[start..]);
         }
 
         return result;

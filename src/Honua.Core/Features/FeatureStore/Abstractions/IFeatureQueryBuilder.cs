@@ -70,6 +70,14 @@ internal interface IFeatureQueryBuilder
         FieldType fieldType);
 
     /// <summary>
+    /// Builds an aggregate statistics query (outStatistics with optional GROUP BY)
+    /// </summary>
+    ParameterizedQuery BuildStatisticsQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
     /// Builds an MVT tile query
     /// </summary>
     ParameterizedQuery BuildMvtTileQuery(

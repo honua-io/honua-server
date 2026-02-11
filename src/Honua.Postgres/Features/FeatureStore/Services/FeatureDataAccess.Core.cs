@@ -62,10 +62,9 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         _queryTimeoutSeconds = GetTimeoutSeconds(limits.Query.QueryTimeout, TimeConstants.ThirtySeconds);
         _tileTimeoutSeconds = GetTimeoutSeconds(limits.Tiles.TileTimeout, TimeConstants.TenSeconds);
 
-        var tableNameOnly = "features";
         _tableName = string.IsNullOrEmpty(dependencies.SchemaName)
-            ? tableNameOnly
-            : $"{Infrastructure.SchemaSearchPath.ValidateAndQuote(dependencies.SchemaName)}.{tableNameOnly}";
+            ? "features"
+            : Infrastructure.SchemaSearchPath.QualifyTable("features", dependencies.SchemaName);
     }
 
     private static partial class Log

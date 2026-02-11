@@ -146,7 +146,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Relationships to other layers
     /// </summary>
-    public object[] Relationships { get; init; } = [];
+    public LayerRelationshipInfo[] Relationships { get; init; } = [];
 
     /// <summary>
     /// Whether the layer has static data
@@ -207,4 +207,24 @@ public sealed class LayerResponse
     /// Whether the layer supports spatial queries
     /// </summary>
     public bool SupportsCoordinatesQuantization { get; init; } = true;
+
+    /// <summary>
+    /// Whether the layer allows geometry updates on features
+    /// </summary>
+    public bool AllowGeometryUpdates { get; init; } = true;
+
+    /// <summary>
+    /// Information about editor tracking fields (null when editor tracking is not configured)
+    /// </summary>
+    public EditFieldsInfo? EditFieldsInfo { get; init; }
+
+    /// <summary>
+    /// Information about last edit timestamps
+    /// </summary>
+    public EditingInfo? EditingInfo { get; init; }
+
+    /// <summary>
+    /// Feature templates for creating new features
+    /// </summary>
+    public FeatureTemplate[] Templates { get; init; } = [];
 }

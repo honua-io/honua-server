@@ -109,4 +109,9 @@ public sealed class FeatureServerResponse
     /// Relationships between layers (typically empty for basic implementation)
     /// </summary>
     public object[] Relationships { get; init; } = [];
+
+    /// <summary>
+    /// Whether the service allows geometry updates on features
+    /// </summary>
+    public bool AllowGeometryUpdates { get; init; } = true;
 }

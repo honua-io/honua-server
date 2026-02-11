@@ -8,7 +8,7 @@ namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    private static async Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> TryReadRequestValuesAsync(
+    internal static async Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> TryReadRequestValuesAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -64,7 +64,7 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    private static Dictionary<string, StringValues> ToCaseInsensitiveDictionary(IQueryCollection values)
+    internal static Dictionary<string, StringValues> ToCaseInsensitiveDictionary(IQueryCollection values)
     {
         if (values.Count == 0)
         {

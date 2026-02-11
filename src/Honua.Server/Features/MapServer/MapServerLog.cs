@@ -91,4 +91,31 @@ internal static partial class MapServerLog
         Level = LogLevel.Error,
         Message = "MapServer legend failed: {ServiceId}: {ErrorMessage}")]
     public static partial void LegendFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    /// <summary>
+    /// Logs when a find request is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5430,
+        Level = LogLevel.Information,
+        Message = "MapServer find requested: {ServiceId} searchText={SearchText}")]
+    public static partial void FindRequested(ILogger logger, string serviceId, string searchText);
+
+    /// <summary>
+    /// Logs when a find request completes.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5431,
+        Level = LogLevel.Information,
+        Message = "MapServer find completed: {ServiceId} found {ResultCount} results")]
+    public static partial void FindCompleted(ILogger logger, string serviceId, int resultCount);
+
+    /// <summary>
+    /// Logs when a find request fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5432,
+        Level = LogLevel.Error,
+        Message = "MapServer find failed: {ServiceId}: {ErrorMessage}")]
+    public static partial void FindFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 }

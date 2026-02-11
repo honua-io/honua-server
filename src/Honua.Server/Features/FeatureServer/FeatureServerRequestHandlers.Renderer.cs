@@ -74,6 +74,15 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Layer does not support renderers");
         }
 
+        // When a classificationDef is provided, return an error rather than
+        // silently ignoring it and returning a simple renderer.
+        if (!string.IsNullOrWhiteSpace(classificationDef))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Classification renderers are not supported",
+                ["classBreaksDef and uniqueValueDef classification types are not yet implemented. Omit classificationDef to generate a simple renderer."]);
+        }
+
         var symbol = BuildSimpleSymbol(layer.GeometryType);
         if (symbol == null)
         {

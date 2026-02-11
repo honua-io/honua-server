@@ -195,6 +195,55 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithExplicitGeometryCrsAndFilterCrs_DoesNotSwapExplicitLiteralAxisOrder()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[1000, 2000]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Explicit CRS Filter Feature"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(createJson, Encoding.UTF8, "application/geo+json")
+        };
+        createRequest.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+
+        var createResponse = await _fixture.Client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+
+        var filterJson =
+            """{"op":"s_intersects","args":[{"property":"geometry"},{"type":"Point","coordinates":[1000,2000],"crs":{"type":"name","properties":{"name":"EPSG:3857"}}}]}""";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?filter-lang=cql2-json&filter={Uri.EscapeDataString(filterJson)}&filter-crs=EPSG:4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
+        collection.Should().NotBeNull();
+        collection!.Features.Should().Contain(f => f.Id == created.Id);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCrsParameter_SetsContentCrsHeader()
     {
         var crs = "EPSG:3857";
@@ -204,5 +253,52 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
         contentCrsValues!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithOutputCrsAndNoBboxCrs_DefaultsBboxToCrs84()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[1000, 2000]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "BBox Default CRS Feature"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(createJson, Encoding.UTF8, "application/geo+json")
+        };
+        createRequest.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+
+        var createResponse = await _fixture.Client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+
+        var outputCrs = Uri.EscapeDataString("EPSG:3857");
+        var bbox = Uri.EscapeDataString("-1,-1,1,1");
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items?crs={outputCrs}&bbox={bbox}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
+        collection.Should().NotBeNull();
+        collection!.Features.Should().Contain(item => item.Id == created.Id);
     }
 }

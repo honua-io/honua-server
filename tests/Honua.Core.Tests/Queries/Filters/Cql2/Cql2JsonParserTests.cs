@@ -7,6 +7,9 @@ using Honua.Core.Queries.Filters.Cql2;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
+/// <summary>
+/// Tests for CQL2 JSON filter expression parsing.
+/// </summary>
 public class Cql2JsonParserTests
 {
     private readonly Cql2JsonParser _parser = new();
@@ -43,6 +46,38 @@ public class Cql2JsonParserTests
         spatial.Operator.Should().Be(SpatialOperator.Intersects);
         spatial.Left.Should().BeOfType<PropertyReference>();
         spatial.Right.Should().BeOfType<GeometryLiteral>();
+    }
+
+    [Fact]
+    public void Parse_SpatialPredicate_WithExplicitGeometryCrsObject_UsesExplicitSrid()
+    {
+        // Arrange
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"type":"Point","coordinates":[1,2],"crs":{"type":"name","properties":{"name":"EPSG:3857"}}}]}""";
+
+        // Act
+        var result = _parser.Parse(json);
+
+        // Assert
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        var geometry = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        geometry.Srid.Should().Be(3857);
+    }
+
+    [Fact]
+    public void Parse_SpatialPredicate_WithExplicitGeometryCrsUri_UsesExplicitSrid()
+    {
+        // Arrange
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"type":"Point","coordinates":[1,2],"crs":{"type":"name","properties":{"name":"http://www.opengis.net/def/crs/EPSG/0/26910"}}}]}""";
+
+        // Act
+        var result = _parser.Parse(json);
+
+        // Assert
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        var geometry = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        geometry.Srid.Should().Be(26910);
     }
 
     [Fact]

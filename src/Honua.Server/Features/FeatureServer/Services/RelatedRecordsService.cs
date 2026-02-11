@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.FeatureServer.Services;
@@ -55,6 +56,10 @@ internal interface IRelatedRecordsService
     /// <param name="objectIdFieldName">Field name used for object identifiers</param>
     /// <param name="returnGeometry">Whether to include geometry in response</param>
     /// <param name="outputSrid">Output spatial reference identifier</param>
+    /// <param name="returnZ">Whether to include Z values in output geometry</param>
+    /// <param name="returnM">Whether to include M values in output geometry</param>
+    /// <param name="geometryPrecision">Output geometry precision override</param>
+    /// <param name="maxAllowableOffset">Output geometry simplification tolerance override</param>
     /// <param name="outFields">Fields to include in response</param>
     /// <returns>Grouped related record results</returns>
     RelatedRecordGroup[] GroupRelatedRecords(
@@ -64,6 +69,10 @@ internal interface IRelatedRecordsService
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         ImmutableArray<string>? outFields);
 }
 
@@ -156,6 +165,10 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         ImmutableArray<string>? outFields)
     {
         HashSet<string>? outFieldSet = null;
@@ -163,6 +176,12 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         {
             outFieldSet = new HashSet<string>(outFields.Value, StringComparer.OrdinalIgnoreCase);
         }
+
+        var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
+            _geometryLimits,
+            geometryPrecision,
+            maxAllowableOffset,
+            forceSimplify: maxAllowableOffset is > 0);
 
         var featuresByOriginId = new Dictionary<long, List<Feature>>();
 
@@ -197,7 +216,17 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                     {
                         ObjectIdFieldName = objectIdFieldName,
                         SpatialReference = spatialReference,
-                        Features = [.. relatedFeatures!.Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFieldSet, _geometryLimits))]
+                        Features =
+                        [
+                            ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
+                                f,
+                                returnGeometry,
+                                outputSrid,
+                                returnZ,
+                                returnM,
+                                outFieldSet,
+                                effectiveGeometryLimits))
+                        ]
                     }
                     : null
             };
@@ -211,6 +240,8 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         Feature feature,
         bool returnGeometry,
         int? outputSrid,
+        bool returnZ,
+        bool returnM,
         HashSet<string>? outFields,
         GeometryLimits geometryLimits)
     {
@@ -225,7 +256,12 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             Attributes = attributes,
             IncludeGeometry = returnGeometry,
             Geometry = returnGeometry
-                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid, geometryLimits)
+                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                    feature.Geometry,
+                    outputSrid,
+                    geometryLimits,
+                    returnZ,
+                    returnM)
                 : null
         };
     }

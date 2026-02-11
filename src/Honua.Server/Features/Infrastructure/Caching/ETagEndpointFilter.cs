@@ -89,18 +89,19 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             // Check conditional headers
             var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
             var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
+            var requestPath = httpContext.Request.Path.Value ?? string.Empty;
 
             // Validate If-Match header
             if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
             {
-                Log.PreconditionFailed(_logger, httpContext.Request.Path, ifMatch, etag);
+                Log.PreconditionFailed(_logger, requestPath, ifMatch, etag);
                 return Results.StatusCode((int)HttpStatusCode.PreconditionFailed);
             }
 
             // Check If-None-Match header
             if (!etagService.IsModified(ifNoneMatch, etag))
             {
-                Log.NotModified(_logger, httpContext.Request.Path, ifNoneMatch, etag);
+                Log.NotModified(_logger, requestPath, ifNoneMatch, etag);
 
                 // Return 304 Not Modified with ETag
                 var notModifiedResult = Results.StatusCode((int)HttpStatusCode.NotModified);
@@ -109,7 +110,7 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
                 return new NotModifiedWithETagResult(etag, etagService);
             }
 
-            Log.ETagGenerated(_logger, httpContext.Request.Path, etag);
+            Log.ETagGenerated(_logger, requestPath, etag);
 
             // Return the original result with ETag headers
             return new ResultWithETag(result, etag, etagService);
@@ -128,21 +129,22 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
 
         var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
         var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
+        var requestPath = httpContext.Request.Path.Value ?? string.Empty;
 
         if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
         {
-            Log.PreconditionFailed(_logger, httpContext.Request.Path, ifMatch, etag);
+            Log.PreconditionFailed(_logger, requestPath, ifMatch, etag);
             return ValueTask.FromResult<object>(Results.StatusCode((int)HttpStatusCode.PreconditionFailed));
         }
 
         if (!etagService.IsModified(ifNoneMatch, etag))
         {
-            Log.NotModified(_logger, httpContext.Request.Path, ifNoneMatch, etag);
+            Log.NotModified(_logger, requestPath, ifNoneMatch, etag);
             return ValueTask.FromResult<object>(new NotModifiedWithETagResult(etag, etagService));
         }
 
         etagService.SetCacheHeaders(httpContext.Response, etag);
-        Log.ETagGenerated(_logger, httpContext.Request.Path, etag);
+        Log.ETagGenerated(_logger, requestPath, etag);
         return ValueTask.FromResult<object>(result);
     }
 

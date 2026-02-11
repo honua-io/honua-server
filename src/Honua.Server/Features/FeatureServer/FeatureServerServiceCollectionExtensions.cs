@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Abstractions;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -25,6 +26,8 @@ internal static class FeatureServerServiceCollectionExtensions
         services.AddScoped<FeatureServerQueryExecutor>();
         services.AddScoped<FeatureServerQueryDependencies>();
         services.AddScoped<FeatureServerQueryHandler>();
+        services.AddScoped<IFeatureQueryDispatcher>(static serviceProvider =>
+            serviceProvider.GetRequiredService<FeatureServerQueryHandler>());
         services.AddScoped<FeatureServerRelatedRecordsDependencies>();
         services.AddScoped<FeatureServerRelatedRecordsHandler>();
         services.AddScoped<FeatureServerEditsDependencies>();

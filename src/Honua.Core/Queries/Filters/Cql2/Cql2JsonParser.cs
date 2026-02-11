@@ -563,9 +563,9 @@ public sealed class Cql2JsonParser
 
     private static GeometryLiteral ParseGeometryLiteral(JsonElement element)
     {
-        if (element.TryGetProperty("bbox", out var bboxElement))
+        if (element.TryGetProperty("bbox", out _))
         {
-            return ParseBboxLiteral(bboxElement);
+            return ParseBboxLiteral(element);
         }
 
         var geoJson = element.GetRawText();
@@ -576,7 +576,7 @@ public sealed class Cql2JsonParser
             var geometry = reader.Read<Geometry>(geoJson)
                 ?? throw new ArgumentException("Geometry could not be parsed");
 
-            var srid = geometry.SRID > 0 ? geometry.SRID : DefaultSrid;
+            var srid = ResolveGeometrySrid(element, geometry);
             var writer = new WKBWriter();
             var wkb = writer.Write(geometry);
 
@@ -588,9 +588,10 @@ public sealed class Cql2JsonParser
         }
     }
 
-    private static GeometryLiteral ParseBboxLiteral(JsonElement bboxElement)
+    private static GeometryLiteral ParseBboxLiteral(JsonElement element)
     {
-        if (bboxElement.ValueKind != JsonValueKind.Array ||
+        if (!element.TryGetProperty("bbox", out var bboxElement) ||
+            bboxElement.ValueKind != JsonValueKind.Array ||
             (bboxElement.GetArrayLength() != 4 && bboxElement.GetArrayLength() != 6))
         {
             throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
@@ -600,6 +601,7 @@ public sealed class Cql2JsonParser
         var minY = bboxElement[1].GetDouble();
         var maxX = bboxElement[2].GetDouble();
         var maxY = bboxElement[3].GetDouble();
+        var srid = TryExtractSridFromGeometryCrs(element, out var explicitSrid) ? explicitSrid : DefaultSrid;
 
         var coordinates = new[]
         {
@@ -610,11 +612,102 @@ public sealed class Cql2JsonParser
             new Coordinate(minX, minY)
         };
 
-        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: DefaultSrid);
+        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: srid);
         var polygon = geometryFactory.CreatePolygon(coordinates);
         var writer = new WKBWriter();
         var wkb = writer.Write(polygon);
 
-        return new GeometryLiteral(wkb, DefaultSrid, bboxElement.GetRawText());
+        return new GeometryLiteral(wkb, srid, element.GetRawText());
+    }
+
+    private static int ResolveGeometrySrid(JsonElement geometryElement, Geometry geometry)
+    {
+        if (TryExtractSridFromGeometryCrs(geometryElement, out var explicitSrid))
+        {
+            return explicitSrid;
+        }
+
+        if (geometry.SRID > 0)
+        {
+            return geometry.SRID;
+        }
+
+        return DefaultSrid;
+    }
+
+    private static bool TryExtractSridFromGeometryCrs(JsonElement geometryElement, out int srid)
+    {
+        srid = 0;
+
+        if (!geometryElement.TryGetProperty("crs", out var crsElement))
+        {
+            return false;
+        }
+
+        return TryExtractSridFromCrsElement(crsElement, out srid);
+    }
+
+    private static bool TryExtractSridFromCrsElement(JsonElement crsElement, out int srid)
+    {
+        srid = 0;
+
+        if (crsElement.ValueKind == JsonValueKind.String)
+        {
+            return TryParseSrid(crsElement.GetString(), out srid);
+        }
+
+        if (crsElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (crsElement.TryGetProperty("properties", out var propertiesElement) &&
+            propertiesElement.ValueKind == JsonValueKind.Object &&
+            propertiesElement.TryGetProperty("name", out var nameElement) &&
+            nameElement.ValueKind == JsonValueKind.String &&
+            TryParseSrid(nameElement.GetString(), out srid))
+        {
+            return true;
+        }
+
+        return crsElement.TryGetProperty("name", out var directNameElement) &&
+               directNameElement.ValueKind == JsonValueKind.String &&
+               TryParseSrid(directNameElement.GetString(), out srid);
+    }
+
+    private static bool TryParseSrid(string? crsIdentifier, out int srid)
+    {
+        srid = 0;
+
+        if (string.IsNullOrWhiteSpace(crsIdentifier))
+        {
+            return false;
+        }
+
+        var trimmed = crsIdentifier.Trim();
+        if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
+        {
+            return int.TryParse(
+                trimmed.AsSpan("EPSG:".Length),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out srid) && srid > 0;
+        }
+
+        ReadOnlySpan<char> span = trimmed.AsSpan();
+        var trailingDigitsStart = span.Length;
+        while (trailingDigitsStart > 0 && char.IsDigit(span[trailingDigitsStart - 1]))
+        {
+            trailingDigitsStart--;
+        }
+
+        if (trailingDigitsStart == span.Length)
+        {
+            return false;
+        }
+
+        var digits = span[trailingDigitsStart..];
+        return int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid) &&
+               srid > 0;
     }
 }

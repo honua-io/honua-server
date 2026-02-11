@@ -49,8 +49,10 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$orderby")] string? orderby = null,
         [FromQuery(Name = "$top")] string? top = null,
         [FromQuery(Name = "$skip")] string? skip = null,
+        [FromQuery(Name = "$skiptoken")] string? skiptoken = null,
         [FromQuery(Name = "$count")] string? count = null,
         [FromQuery(Name = "$expand")] string? expand = null,
+        [FromQuery(Name = "$compute")] string? compute = null,
         [FromQuery(Name = "$search")] string? search = null,
         [FromQuery(Name = "$apply")] string? apply = null,
         [FromQuery(Name = "$format")] string? format = null,
@@ -79,20 +81,38 @@ internal sealed partial class ODataStreamingQueryHandler(
                 _validationService,
                 top,
                 skip,
+                skiptoken,
                 count,
                 out var pagination,
                 out var topValue,
                 out var skipValue,
-                out var countValue);
+                out var countValue,
+                out var useSkipToken);
             if (pagingError != null)
             {
                 return pagingError;
+            }
+
+            if (!ODataComputeService.TryParse(compute, out var computeExpressions, out var computeError))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    computeError ?? "Invalid $compute expression.");
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
             if (!string.IsNullOrWhiteSpace(apply))
             {
+                if (!computeExpressions.IsDefaultOrEmpty)
+                {
+                    return ODataUtilityService.CreateODataError(
+                        context,
+                        "InvalidQueryOption",
+                        "$compute cannot be combined with $apply.");
+                }
+
                 var resolvedLayerId = layerId;
                 if (!resolvedLayerId.HasValue)
                 {
@@ -118,11 +138,19 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 ODataUtilityService.SetODataHeaders(context);
                 return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult,
-                    contentType: ODataUtilityService.GetODataContentType());
+                    contentType: ODataUtilityService.GetODataContentType(context.Request, format));
             }
 
             if (!string.IsNullOrWhiteSpace(search))
             {
+                if (!computeExpressions.IsDefaultOrEmpty)
+                {
+                    return ODataUtilityService.CreateODataError(
+                        context,
+                        "InvalidQueryOption",
+                        "$compute cannot be combined with $search.");
+                }
+
                 var resolvedLayerId = layerId;
                 if (!resolvedLayerId.HasValue)
                 {
@@ -150,7 +178,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 ODataUtilityService.SetODataHeaders(context);
                 return Results.Json(result, ODataJsonContext.Default.ODataSearchResult,
-                    contentType: ODataUtilityService.GetODataContentType());
+                    contentType: ODataUtilityService.GetODataContentType(context.Request, format));
             }
 
             if (!layerId.HasValue)
@@ -200,7 +228,19 @@ internal sealed partial class ODataStreamingQueryHandler(
                 // For small result sets or when $expand is used, delegate to non-streaming handler
                 var queryHandler = context.RequestServices.GetRequiredService<ODataQueryHandler>();
                 return await queryHandler.HandleGetFeaturesNonStreamingAsync(
-                    context, layerId.Value, filter, select, orderby, topValue, skipValue, countValue, expand, cancellationToken);
+                    context,
+                    layerId.Value,
+                    filter,
+                    select,
+                    orderby,
+                    topValue,
+                    skipValue,
+                    countValue,
+                    expand,
+                    useSkipToken,
+                    compute,
+                    format,
+                    cancellationToken);
             }
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
@@ -218,7 +258,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 effectiveToken);
 
             // Set up streaming response
-            context.Response.ContentType = ODataUtilityService.GetODataContentType();
+            context.Response.ContentType = ODataUtilityService.GetODataContentType(context.Request, format);
             context.Response.Headers["Transfer-Encoding"] = "chunked";
             ODataUtilityService.SetODataHeaders(context);
 
@@ -238,7 +278,10 @@ internal sealed partial class ODataStreamingQueryHandler(
                 orderby,
                 countValue,
                 expand,
+                useSkipToken,
+                compute,
                 totalCount,
+                computeExpressions,
                 _geometryService,
                 effectiveToken);
 
@@ -286,7 +329,10 @@ internal sealed partial class ODataStreamingQueryHandler(
         string? orderby,
         bool? count,
         string? expand,
+        bool useSkipToken,
+        string? compute,
         long totalCount,
+        System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
         IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
@@ -320,6 +366,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerSrid,
                 axisOrder,
                 selectedFields,
+                computeExpressions,
                 geometryService,
                 cancellationToken);
             streamedCount++;
@@ -342,7 +389,9 @@ internal sealed partial class ODataStreamingQueryHandler(
                 select,
                 orderby,
                 count,
-                expand);
+                expand,
+                useSkipToken,
+                compute);
             writer.WriteString("@odata.nextLink", nextLink);
         }
 
@@ -362,14 +411,18 @@ internal sealed partial class ODataStreamingQueryHandler(
         int? layerSrid,
         AxisOrder axisOrder,
         HashSet<string>? select,
+        System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
         IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
         writer.WriteStartObject();
+        var writtenProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Core OData feature properties
         writer.WriteNumber("ObjectId", feature.Id);
+        writtenProperties.Add("ObjectId");
         writer.WriteNumber("LayerId", layerId);
+        writtenProperties.Add("LayerId");
 
         if (select == null || select.Contains("Geometry"))
         {
@@ -383,11 +436,20 @@ internal sealed partial class ODataStreamingQueryHandler(
             {
                 writer.WriteNull("Geometry");
             }
+
+            writtenProperties.Add("Geometry");
         }
 
+        Dictionary<string, object?>? computeSource = null;
         if (feature.Attributes != null)
         {
             var normalized = ODataAttributeSerializer.NormalizeAttributes(feature.Attributes);
+            computeSource = new Dictionary<string, object?>(normalized, StringComparer.OrdinalIgnoreCase)
+            {
+                ["ObjectId"] = feature.Id,
+                ["LayerId"] = layerId
+            };
+
             foreach (var kvp in normalized)
             {
                 if (ODataUtilityService.IsReservedFeatureProperty(kvp.Key))
@@ -397,7 +459,44 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 if (select == null || select.Contains(kvp.Key))
                 {
-                    await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
+                    if (writtenProperties.Add(kvp.Key))
+                    {
+                        await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
+                    }
+                }
+            }
+        }
+        else
+        {
+            computeSource = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ObjectId"] = feature.Id,
+                ["LayerId"] = layerId
+            };
+        }
+
+        if (!computeExpressions.IsDefaultOrEmpty && computeSource != null)
+        {
+            ODataComputeService.ApplyCompute(computeSource, computeExpressions);
+            foreach (var expression in computeExpressions)
+            {
+                if (select != null && !select.Contains(expression.Alias))
+                {
+                    continue;
+                }
+
+                if (!writtenProperties.Add(expression.Alias))
+                {
+                    continue;
+                }
+
+                if (computeSource.TryGetValue(expression.Alias, out var computedValue))
+                {
+                    await WriteODataJsonValueAsync(writer, expression.Alias, computedValue, cancellationToken);
+                }
+                else
+                {
+                    writer.WriteNull(expression.Alias);
                 }
             }
         }
