@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
     srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED,
 
-    CONSTRAINT raster_data_layer_id_fk FOREIGN KEY (layer_id) REFERENCES honua.layers(id) ON DELETE CASCADE
+    CONSTRAINT raster_data_layer_id_fk FOREIGN KEY (layer_id) REFERENCES honua.layers(layer_id) ON DELETE CASCADE
 );
 
 -- Create indices for performance
