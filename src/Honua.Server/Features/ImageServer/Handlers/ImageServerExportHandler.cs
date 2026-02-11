@@ -205,6 +205,12 @@ internal sealed class ImageServerExportHandler
 
     private static (int width, int height) CalculateOutputDimensions(ExportImageRequest request, Core.Features.Raster.Domain.RasterInfo raster)
     {
+        // Guard against invalid raster metadata
+        if (raster.Width <= 0 || raster.Height <= 0)
+        {
+            return (DefaultMaxOutputDimension, DefaultMaxOutputDimension);
+        }
+
         // If size is specified, use it as width and calculate proportional height
         if (request.Size.HasValue)
         {

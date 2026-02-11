@@ -19,6 +19,8 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerIdentifyHandler
 {
+    private const int MaxJsonGeometrySize = 1000;
+
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerIdentifyHandler> _logger;
@@ -149,7 +151,7 @@ internal sealed class ImageServerIdentifyHandler
         if (request.Geometry.StartsWith('{'))
         {
             // Limit JSON size to prevent DoS
-            if (request.Geometry.Length > 1000)
+            if (request.Geometry.Length > MaxJsonGeometrySize)
             {
                 return (null, null, null);
             }

@@ -19,6 +19,9 @@ namespace Honua.Server.Features.OgcMaps.Handlers;
 /// </summary>
 internal sealed class OgcMapsRenderingHandler
 {
+    private const int DefaultImageDimension = 256;
+    private const int MaxImageDimension = 4096;
+
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterMapRenderer _mapRenderer;
     private readonly IRasterStore _rasterStore;
@@ -273,18 +276,18 @@ internal sealed class OgcMapsRenderingHandler
             var format = RasterParsingHelpers.ParseRasterFormat(request.F ?? "png");
 
             // Parse and validate dimensions (prevent DoS via oversized images)
-            var width = request.Width ?? 256;
-            var height = request.Height ?? 256;
-            if (width < 1 || width > 4096 || height < 1 || height > 4096)
+            var width = request.Width ?? DefaultImageDimension;
+            var height = request.Height ?? DefaultImageDimension;
+            if (width < 1 || width > MaxImageDimension || height < 1 || height > MaxImageDimension)
             {
-                OgcMapsLog.MapDimensionsExceeded(_logger, width, height, 4096, 4096);
+                OgcMapsLog.MapDimensionsExceeded(_logger, width, height, MaxImageDimension, MaxImageDimension);
                 return null;
             }
 
-            // Parse datetime
+            // Parse datetime using invariant culture to avoid ambiguous date formats
             DateTimeOffset? datetime = null;
             if (!string.IsNullOrEmpty(request.Datetime) &&
-                DateTimeOffset.TryParse(request.Datetime, out var parsedDateTime))
+                DateTimeOffset.TryParse(request.Datetime, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDateTime))
             {
                 datetime = parsedDateTime;
             }
