@@ -113,9 +113,4 @@ internal static partial class OgcMapsLog
         Message = "Using default bounding box for layer {LayerId}: [{XMin}, {YMin}, {XMax}, {YMax}]")]
     public static partial void UsingDefaultBounds(ILogger logger, int layerId, double xMin, double yMin, double xMax, double yMax);
 
-    [LoggerMessage(
-        EventId = 5917,
-        Level = LogLevel.Information,
-        Message = "OGC Maps operation completed for layer {LayerId} in {ElapsedMs}ms")]
-    public static partial void OperationCompleted(ILogger logger, int layerId, double elapsedMs);
 }

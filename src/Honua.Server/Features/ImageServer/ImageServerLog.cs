@@ -113,9 +113,4 @@ internal static partial class ImageServerLog
         Message = "Invalid identify parameters for layer {LayerId}: {ValidationErrors}")]
     public static partial void InvalidIdentifyParameters(ILogger logger, int layerId, string validationErrors);
 
-    [LoggerMessage(
-        EventId = 5817,
-        Level = LogLevel.Information,
-        Message = "Image Server operation completed for layer {LayerId} in {ElapsedMs}ms")]
-    public static partial void OperationCompleted(ILogger logger, int layerId, double elapsedMs);
 }

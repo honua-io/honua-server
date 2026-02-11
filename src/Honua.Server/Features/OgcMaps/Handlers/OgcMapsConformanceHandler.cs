@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.OgcMaps.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.OgcMaps.Handlers;
 
@@ -11,11 +12,20 @@ namespace Honua.Server.Features.OgcMaps.Handlers;
 /// </summary>
 internal sealed class OgcMapsConformanceHandler
 {
+    private readonly ILogger<OgcMapsConformanceHandler> _logger;
+
+    public OgcMapsConformanceHandler(ILogger<OgcMapsConformanceHandler> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     /// <summary>
     /// Gets the conformance classes that this server implements for OGC API - Maps.
     /// </summary>
     public Task<OgcMapsConformance> GetConformanceAsync(CancellationToken cancellationToken = default)
     {
+        OgcMapsLog.ConformanceRequested(_logger);
+
         var conformance = new OgcMapsConformance
         {
             ConformsTo = [

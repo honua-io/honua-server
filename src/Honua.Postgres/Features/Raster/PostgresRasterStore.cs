@@ -54,7 +54,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                    ST_YMin(ST_Envelope(raster)) AS ymin,
                    ST_XMax(ST_Envelope(raster)) AS xmax,
                    ST_YMax(ST_Envelope(raster)) AS ymax,
-                   created_at, modified_at
+                   created_at, updated_at
             FROM {_rasterDataTable}
             WHERE layer_id = @layerId AND id = @rasterId
             """;
@@ -442,7 +442,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                    ST_YMin(ST_Envelope(raster)) AS ymin,
                    ST_XMax(ST_Envelope(raster)) AS xmax,
                    ST_YMax(ST_Envelope(raster)) AS ymax,
-                   created_at, modified_at
+                   created_at, updated_at
             FROM {_rasterDataTable}
             WHERE layer_id = @layerId
             ORDER BY created_at DESC
@@ -477,7 +477,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         };
 
         var noDataOrd = reader.GetOrdinal("nodata_value");
-        var modifiedOrd = reader.GetOrdinal("modified_at");
+        var updatedOrd = reader.GetOrdinal("updated_at");
 
         return new RasterInfo
         {
@@ -500,7 +500,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 Srid = reader.GetInt32(reader.GetOrdinal("srid"))
             },
             CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
-            ModifiedAt = reader.IsDBNull(modifiedOrd) ? null : reader.GetDateTime(modifiedOrd)
+            ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
         };
     }
 

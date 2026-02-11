@@ -257,10 +257,16 @@ internal sealed class OgcMapsRenderingHandler
                 }
                 var extent = layer.Extent.Value;
                 bbox = [extent.MinX, extent.MinY, extent.MaxX, extent.MaxY];
+                OgcMapsLog.UsingDefaultBounds(_logger, layer.Id, extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
             }
 
-            // Parse CRS
+            // Parse CRS - log when requested CRS is not recognized
             var outputCrs = SpatialReferenceHelpers.TryParseSrid(request.Crs);
+            if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
+            {
+                OgcMapsLog.UnsupportedCrs(_logger, request.Crs);
+            }
+
             var bboxCrs = SpatialReferenceHelpers.TryParseSrid(request.BboxCrs);
 
             // Parse format
@@ -271,6 +277,7 @@ internal sealed class OgcMapsRenderingHandler
             var height = request.Height ?? 256;
             if (width < 1 || width > 4096 || height < 1 || height > 4096)
             {
+                OgcMapsLog.MapDimensionsExceeded(_logger, width, height, 4096, 4096);
                 return null;
             }
 
