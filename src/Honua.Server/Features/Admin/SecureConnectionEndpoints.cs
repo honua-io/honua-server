@@ -24,12 +24,38 @@ namespace Honua.Server.Features.Admin;
 /// All endpoints require admin authorization.
 /// Connection strings are never exposed in API responses for security.
 /// </remarks>
-internal static class SecureConnectionEndpoints
+internal static partial class SecureConnectionEndpoints
 {
     /// <summary>
     /// Log category for secure connection endpoints.
     /// </summary>
     internal sealed class SecureConnectionEndpointsLog;
+
+    /// <summary>
+    /// Source-generated logging methods for secure connection endpoints.
+    /// </summary>
+    internal static partial class SecureConnectionLog
+    {
+        [LoggerMessage(EventId = 4400, Level = LogLevel.Information,
+            Message = "Retrieved {Count} secure connections")]
+        public static partial void ConnectionsRetrieved(ILogger logger, int count);
+
+        [LoggerMessage(EventId = 4401, Level = LogLevel.Information,
+            Message = "Created secure connection '{Name}' with ID {ConnectionId}")]
+        public static partial void SecureConnectionCreated(ILogger logger, string name, Guid connectionId);
+
+        [LoggerMessage(EventId = 4402, Level = LogLevel.Information,
+            Message = "Connection test for '{ConnectionName}' result: {IsHealthy}")]
+        public static partial void ConnectionTestCompleted(ILogger logger, string connectionName, bool isHealthy);
+
+        [LoggerMessage(EventId = 4403, Level = LogLevel.Information,
+            Message = "Encryption validation result: {IsValid}, key version: {KeyVersion}")]
+        public static partial void EncryptionValidated(ILogger logger, bool isValid, int keyVersion);
+
+        [LoggerMessage(EventId = 4404, Level = LogLevel.Information,
+            Message = "Deleted secure connection {ConnectionId}")]
+        public static partial void SecureConnectionDeleted(ILogger logger, Guid connectionId);
+    }
     /// <summary>
     /// Configure secure connection admin endpoints with formal API versioning.
     /// </summary>
@@ -194,7 +220,7 @@ internal static class SecureConnectionEndpoints
                 CreatedBy = c.CreatedBy
             }).ToList();
 
-            logger.LogInformation("Retrieved {Count} secure connections", summaries.Count);
+            SecureConnectionLog.ConnectionsRetrieved(logger, summaries.Count);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<SecureConnectionSummary>>.CreateSuccess(summaries.AsReadOnly()));
         }
@@ -363,8 +389,7 @@ internal static class SecureConnectionEndpoints
                 CreatedBy = createdConnection.CreatedBy
             };
 
-            logger.LogInformation("Created secure connection '{Name}' with ID {ConnectionId}",
-                createdConnection.Name, createdConnection.ConnectionId);
+            SecureConnectionLog.SecureConnectionCreated(logger, createdConnection.Name, createdConnection.ConnectionId);
 
             return TypedResults.Created($"/api/v1/admin/connections/{createdConnection.ConnectionId}",
                 ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
@@ -406,8 +431,7 @@ internal static class SecureConnectionEndpoints
                 Message = isHealthy ? "Connection is healthy" : "Connection test failed"
             };
 
-            logger.LogInformation("Connection test for '{ConnectionName}' result: {IsHealthy}",
-                connection.Name, isHealthy);
+            SecureConnectionLog.ConnectionTestCompleted(logger, connection.Name, isHealthy);
 
             return TypedResults.Ok(ApiResponse<ConnectionTestResult>.CreateSuccess(result));
         }
@@ -440,8 +464,7 @@ internal static class SecureConnectionEndpoints
                 Message = isValid ? "Encryption service is working correctly" : "Encryption service validation failed"
             };
 
-            logger.LogInformation("Encryption validation result: {IsValid}, key version: {KeyVersion}",
-                isValid, keyVersion);
+            SecureConnectionLog.EncryptionValidated(logger, isValid, keyVersion);
 
             return TypedResults.Ok(ApiResponse<EncryptionValidationResult>.CreateSuccess(result));
         }
@@ -590,7 +613,7 @@ internal static class SecureConnectionEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
             }
 
-            logger.LogInformation("Deleted secure connection {ConnectionId}", id);
+            SecureConnectionLog.SecureConnectionDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
         }
         catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")

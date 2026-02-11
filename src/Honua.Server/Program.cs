@@ -460,8 +460,9 @@ app.UseSerilogRequestLogging(options =>
 });
 
 // Log application startup
+var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
 Honua.Server.Features.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
-    typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
+    appVersion,
     app.Environment.EnvironmentName);
 
 // Run database migrations on startup

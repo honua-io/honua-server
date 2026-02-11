@@ -129,8 +129,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             var baseUrl = _options.BaseUrl ?? "/temp";
             var publicUrl = $"{baseUrl.TrimEnd('/')}/{fileName}";
 
-            _logger.LogInformation("Stored temporary file {FileId} ({Size} bytes, expires {ExpiresAt})",
-                fileId, data.Length, expirationTime);
+            LogTemporaryFileStored(_logger, fileId, data.Length, expirationTime);
 
             return publicUrl;
         }
@@ -248,7 +247,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
             if (cleanedCount > 0)
             {
-                _logger.LogInformation("Cleaned up {CleanedCount} expired temporary files", cleanedCount);
+                LogExpiredFilesCleanedUp(_logger, cleanedCount);
             }
         }
         catch (Exception ex)
@@ -296,6 +295,14 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             _ => ""
         };
     }
+
+    [LoggerMessage(EventId = 4500, Level = LogLevel.Information,
+        Message = "Stored temporary file {FileId} ({Size} bytes, expires {ExpiresAt})")]
+    private static partial void LogTemporaryFileStored(ILogger logger, string fileId, int size, DateTimeOffset expiresAt);
+
+    [LoggerMessage(EventId = 4501, Level = LogLevel.Information,
+        Message = "Cleaned up {CleanedCount} expired temporary files")]
+    private static partial void LogExpiredFilesCleanedUp(ILogger logger, int cleanedCount);
 
     [JsonSerializable(typeof(TemporaryFileMetadata))]
     private sealed partial class TemporaryFileMetadataJsonContext : JsonSerializerContext

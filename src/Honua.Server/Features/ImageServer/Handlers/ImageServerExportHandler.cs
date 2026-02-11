@@ -89,7 +89,8 @@ internal sealed class ImageServerExportHandler
             // Determine output dimensions and propagate to query
             var (width, height) = CalculateOutputDimensions(request, primaryRaster);
             var exportQuery = query.Value with { OutputWidth = width, OutputHeight = height };
-            ImageServerLog.ExportImageStarted(_logger, layerId, width, height, exportQuery.OutputFormat.ToString());
+            var formatName = exportQuery.OutputFormat.ToString();
+            ImageServerLog.ExportImageStarted(_logger, layerId, width, height, formatName);
 
             // Export the image
             var result = await _rasterStore.ExportImageAsync(layerId, primaryRaster.Id, exportQuery, cancellationToken);

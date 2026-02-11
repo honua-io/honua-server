@@ -153,8 +153,9 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 RelatedRecordGroups = relatedRecordGroups
             };
 
+            var totalRelatedRecords = relatedRecordGroups.Sum(g => g.RelatedRecords?.Features?.Length ?? 0);
             FeatureServerLog.RelatedRecordsQueryCompleted(_logger, serviceId, layerId,
-                relatedRecordGroups.Sum(g => g.RelatedRecords?.Features?.Length ?? 0), relatedRecordGroups.Length);
+                totalRelatedRecords, relatedRecordGroups.Length);
 
             return Results.Json(response, FeatureServerJsonContext.Default.QueryRelatedRecordsResponse, contentType: "application/json");
         }
