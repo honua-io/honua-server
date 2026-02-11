@@ -17,6 +17,9 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.ImageServer;
 
+/// <summary>
+/// Tests for ImageServerMetadataHandler functionality.
+/// </summary>
 [Protocol(Protocols.ImageServer)]
 public class ImageServerMetadataHandlerTests
 {

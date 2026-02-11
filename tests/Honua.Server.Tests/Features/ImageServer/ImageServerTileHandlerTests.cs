@@ -15,6 +15,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.ImageServer;
 
+/// <summary>
+/// Tests for ImageServerTileHandler functionality.
+/// </summary>
 [Protocol(Protocols.ImageServer)]
 public class ImageServerTileHandlerTests
 {

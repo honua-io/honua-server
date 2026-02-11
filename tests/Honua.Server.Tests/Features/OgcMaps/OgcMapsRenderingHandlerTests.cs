@@ -17,6 +17,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OgcMaps;
 
+/// <summary>
+/// Tests for OgcMapsRenderingHandler functionality.
+/// </summary>
 [Protocol(Protocols.OgcApiMaps)]
 public class OgcMapsRenderingHandlerTests
 {

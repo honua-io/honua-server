@@ -18,6 +18,9 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.ImageServer;
 
+/// <summary>
+/// Tests for ImageServerExportHandler functionality.
+/// </summary>
 [Protocol(Protocols.ImageServer)]
 public class ImageServerExportHandlerTests
 {

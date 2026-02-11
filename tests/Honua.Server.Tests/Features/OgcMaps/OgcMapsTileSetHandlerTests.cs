@@ -14,6 +14,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OgcMaps;
 
+/// <summary>
+/// Tests for OgcMapsTileSetHandler functionality.
+/// </summary>
 [Protocol(Protocols.OgcApiMaps)]
 public class OgcMapsTileSetHandlerTests
 {

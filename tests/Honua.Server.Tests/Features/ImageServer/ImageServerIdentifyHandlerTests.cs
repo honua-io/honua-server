@@ -16,6 +16,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.ImageServer;
 
+/// <summary>
+/// Tests for ImageServerIdentifyHandler functionality.
+/// </summary>
 [Protocol(Protocols.ImageServer)]
 public class ImageServerIdentifyHandlerTests
 {
