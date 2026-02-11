@@ -25,8 +25,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
     [InlineData("returnExceededLimitFeatures=true", "returnExceededLimitFeatures")]
     [InlineData("resultType=tile", "resultType")]
-    [InlineData("outStatistics=1", "outStatistics")]
-    [InlineData("groupByFieldsForStatistics=category", "groupByFieldsForStatistics")]
     [InlineData("having=1=1", "having")]
     [InlineData("sqlFormat=standard", "sqlFormat")]
     [InlineData("gdbVersion=sde.DEFAULT", "gdbVersion")]

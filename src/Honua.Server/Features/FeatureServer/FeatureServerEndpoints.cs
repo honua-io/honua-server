@@ -70,6 +70,14 @@ internal static partial class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/applyEdits", HandleServiceApplyEdits)
+            .WithDisplayName("Apply Service-Level Feature Edits")
+            .WithName("ServiceApplyEdits")
+            .WithSummary("Apply feature edits across multiple layers")
+            .WithDescription("Apply feature edits to multiple layers in a single request including add, update, and delete operations")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/applyEdits", HandleApplyEdits)
             .WithDisplayName("Apply Feature Edits")
             .WithName("ApplyEdits")

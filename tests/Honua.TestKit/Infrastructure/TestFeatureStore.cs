@@ -1111,4 +1111,6 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
 
         return Task.FromResult<byte[]?>(mockMvt);
     }
+
+    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default) => throw new NotImplementedException();
 }

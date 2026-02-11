@@ -7,7 +7,10 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -39,7 +42,7 @@ internal static partial class MapServerEndpoints
         Envelope
     }
 
-    private sealed record IdentifyLayerSelection(IdentifyLayerMode Mode, LayerDefinition[] Layers);
+    private sealed record IdentifyLayerSelection(IdentifyLayerMode Mode, RenderLayer[] RenderLayers);
 
     private sealed record IdentifyGeometryInput(
         string RawValue,
@@ -161,6 +164,15 @@ internal static partial class MapServerEndpoints
                     layerDefsError ?? "Invalid layerDefs parameter.");
             }
 
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    dynamicLayersError ?? "Invalid dynamicLayers parameter.");
+            }
+
+            var timeValue = GetValue(values, "time");
+            var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
+
             if (!TryResolveIdentifySrid(srValue, geometry, service.SpatialReference.Srid, out var geometrySrid, out var srError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, srError ?? "Invalid spatial reference.");
@@ -188,9 +200,10 @@ internal static partial class MapServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
+            var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
             var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(mapExtent, imageWidth, imageDpi, geometrySrid);
-            var identifySelection = ResolveIdentifyLayers(service, layersParam, context, scaleDenominator);
+            var identifySelection = ResolveIdentifyLayers(service, layersParam, dynamicLayers, context, scaleDenominator);
 
             var searchTolerance = CoordinateTransformer.PixelToMapUnits(tolerance, mapExtent, imageWidth);
             if (!TryBuildIdentifySpatialFilter(
@@ -208,17 +221,45 @@ internal static partial class MapServerEndpoints
             var results = new List<IdentifyResult>();
 
             var layersToSearch = identifySelection.Mode == IdentifyLayerMode.Top
-                ? identifySelection.Layers.Reverse().ToArray()
-                : identifySelection.Layers;
+                ? identifySelection.RenderLayers.Reverse().ToArray()
+                : identifySelection.RenderLayers;
 
-            foreach (var layer in layersToSearch)
+            foreach (var renderLayer in layersToSearch)
             {
+                var layer = renderLayer.Layer;
                 if (!layer.HasGeometry)
                 {
                     continue;
                 }
 
                 layerDefs.TryGetValue(layer.Id, out var layerDef);
+                var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
+
+                if (!TryGetEffectiveTimeParameters(
+                        timeValue,
+                        timeRelationValue,
+                        layer,
+                        new Dictionary<int, LayerTimeOptions>(),
+                        out var effectiveTime,
+                        out var effectiveTimeRelation,
+                        out var timeError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        timeError ?? "Invalid time parameter.");
+                }
+
+                if (!TryBuildLayerSqlFilter(
+                        filterExpressionService,
+                        layer,
+                        combinedDefinition,
+                        effectiveTime,
+                        effectiveTimeRelation,
+                        out var sqlFilter,
+                        out var filterError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        filterError ?? "Invalid filter parameter.");
+                }
 
                 var featureQuery = new FeatureQuery
                 {
@@ -226,7 +267,7 @@ internal static partial class MapServerEndpoints
                     SpatialReferenceSrid = service.SpatialReference.Srid,
                     OutputSrid = geometrySrid,
                     Limit = MaxIdentifyResults,
-                    Where = layerDef
+                    SqlFilter = sqlFilter
                 };
 
                 var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
@@ -235,6 +276,9 @@ internal static partial class MapServerEndpoints
                 {
                     continue;
                 }
+
+                var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+                var displayField = ResolveDisplayField(layer, objectIdField);
 
                 foreach (var feature in queryResult.Items)
                 {
@@ -257,12 +301,13 @@ internal static partial class MapServerEndpoints
                         }
                     }
 
-                    var displayValue = GetDisplayFieldValue(feature, layer);
+                    var displayValue = GetDisplayFieldValue(feature, displayField);
 
                     var identifyResult = new IdentifyResult
                     {
                         LayerId = layer.Id,
                         LayerName = layer.Name,
+                        DisplayFieldName = displayField,
                         Value = displayValue,
                         Attributes = attributes,
                         GeometryType = MapGeometryTypeToEsri(layer.GeometryType),
@@ -588,6 +633,7 @@ internal static partial class MapServerEndpoints
     private static IdentifyLayerSelection ResolveIdentifyLayers(
         ServiceDefinition service,
         string? layersParam,
+        IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context,
         double scaleDenominator)
     {
@@ -633,6 +679,34 @@ internal static partial class MapServerEndpoints
             }
         }
 
+        if (dynamicLayers.Count > 0)
+        {
+            var layerLookup = service.Layers.ToDictionary(l => l.Id);
+            var renderLayers = new List<RenderLayer>();
+
+            foreach (var dl in dynamicLayers)
+            {
+                if (!layerLookup.TryGetValue(dl.MapLayerId, out var layer))
+                {
+                    continue;
+                }
+
+                if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                {
+                    continue;
+                }
+
+                if (ids is { Count: > 0 } && !ids.Contains(dl.Id))
+                {
+                    continue;
+                }
+
+                renderLayers.Add(new RenderLayer(layer, dl.Id, dl.DefinitionExpression));
+            }
+
+            return new IdentifyLayerSelection(mode, renderLayers.ToArray());
+        }
+
         IEnumerable<LayerDefinition> candidates = accessibleLayers;
 
         if (mode is IdentifyLayerMode.Visible or IdentifyLayerMode.Top)
@@ -649,7 +723,8 @@ internal static partial class MapServerEndpoints
             candidates = candidates.Where(l => ids.Contains(l.Id));
         }
 
-        return new IdentifyLayerSelection(mode, candidates.ToArray());
+        return new IdentifyLayerSelection(mode,
+            candidates.Select(l => new RenderLayer(l, l.Id, null)).ToArray());
     }
 
     private static bool IsIdentifyLayerModeToken(string token)
@@ -848,15 +923,11 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static string? GetDisplayFieldValue(Feature feature, LayerDefinition layer)
+    private static string? GetDisplayFieldValue(Feature feature, string displayField)
     {
-        // Try first string attribute as display value
-        foreach (var kvp in feature.Attributes)
+        if (feature.Attributes.TryGetValue(displayField, out var value) && value is string s && !string.IsNullOrWhiteSpace(s))
         {
-            if (kvp.Value is string s && !string.IsNullOrWhiteSpace(s))
-            {
-                return s;
-            }
+            return s;
         }
 
         return feature.Id.ToString(CultureInfo.InvariantCulture);

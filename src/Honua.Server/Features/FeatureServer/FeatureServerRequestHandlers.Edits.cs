@@ -4,8 +4,13 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -68,6 +73,9 @@ internal static partial class FeatureServerEndpoints
                 ["features parameter is required"]);
         }
 
+        // Standalone endpoints default to rollbackOnFailure=true per ArcGIS spec
+        ApplyStandaloneEditDefaults(request);
+
         return await ExecuteEditsRequestAsync(
             serviceId,
             layerId,
@@ -106,6 +114,9 @@ internal static partial class FeatureServerEndpoints
                 ["features parameter is required"]);
         }
 
+        // Standalone endpoints default to rollbackOnFailure=true per ArcGIS spec
+        ApplyStandaloneEditDefaults(request);
+
         return await ExecuteEditsRequestAsync(
             serviceId,
             layerId,
@@ -132,21 +143,313 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
+        // When no objectIds are provided, check for where/geometry filter parameters
+        if (request.Deletes == null || request.Deletes.Length == 0)
+        {
+            var resolveResult = await TryResolveDeleteIdsFromFilterAsync(
+                serviceId, layerId, context, limitsOptions.Value, cancellationToken);
+            if (resolveResult.Error != null)
+            {
+                return resolveResult.Error;
+            }
+
+            if (resolveResult.Ids != null)
+            {
+                request.Deletes = resolveResult.Ids;
+            }
+        }
+
         if (request.Deletes == null || request.Deletes.Length == 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid deleteFeatures request",
-                ["objectIds parameter is required"]);
+                ["objectIds, where, or geometry parameter is required"]);
         }
 
-        return await ExecuteEditsRequestAsync(
+        // Standalone endpoints default to rollbackOnFailure=true per ArcGIS spec
+        ApplyStandaloneEditDefaults(request);
+
+        return await ExecuteDeleteRequestAsync(
             serviceId,
             layerId,
             context,
             editsHandler,
             limitsOptions.Value.Edits,
+            request);
+    }
+
+    private static async Task<(object[]? Ids, IResult? Error)> TryResolveDeleteIdsFromFilterAsync(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        LimitsOptions limits,
+        CancellationToken cancellationToken)
+    {
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        var whereClause = GetValueString(values, "where");
+        var geometry = GetValueString(values, "geometry");
+
+        if (string.IsNullOrWhiteSpace(whereClause) && string.IsNullOrWhiteSpace(geometry))
+        {
+            return (null, null);
+        }
+
+        var geometryType = GetValueString(values, "geometryType");
+        var spatialRel = GetValueString(values, "spatialRel");
+        var inSr = GetValueString(values, "inSR");
+
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
+        if (!resourceResult.IsValid)
+        {
+            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
+            return (null, StandardErrorHelpers.CreateNotFound(context, errorMessage));
+        }
+
+        var layer = resourceResult.Resource!.Layer;
+        var query = new FeatureQuery
+        {
+            Where = whereClause,
+            Limit = limits.Query.MaxRecordCount,
+            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+            OutFields = [FieldNames.ObjectId]
+        };
+
+        if (!string.IsNullOrWhiteSpace(geometry))
+        {
+            if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(
+                geometry, geometryType, out var parsedGeometry, out var geoError))
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid geometry parameter",
+                    [geoError ?? "Geometry parameter is invalid."]));
+            }
+
+            if (parsedGeometry != null)
+            {
+                var queryServices = context.RequestServices.GetRequiredService<IFeatureServerQueryServices>();
+                var inputSrid = await queryServices.ResolveSridAsync(
+                    inSr, parsedGeometry.SpatialReference, cancellationToken);
+                if (!inputSrid.HasValue)
+                {
+                    inputSrid = layer.SpatialReference.ToSrid();
+                }
+
+                var deleteQueryParams = new QueryParameters
+                {
+                    Geometry = geometry,
+                    GeometryType = geometryType,
+                    SpatialRel = spatialRel,
+                    InSr = inSr
+                };
+                var spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+                    deleteQueryParams, parsedGeometry, inputSrid);
+                query = query with { SpatialFilter = spatialFilter };
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(whereClause))
+        {
+            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+            if (!parseResult.IsSuccess)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid where clause",
+                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]));
+            }
+
+            if (parseResult.Expression != null)
+            {
+                var translationResult = filterService.Translate(parseResult.Expression, layer);
+                if (!translationResult.IsSuccess)
+                {
+                    return (null, StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid where clause",
+                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]));
+                }
+
+                query = query with { SqlFilter = translationResult.SqlFilter };
+            }
+        }
+
+        var queryResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
+        var ids = queryResult.Items.Select(f => (object)f.Id).ToArray();
+        return (ids, null);
+    }
+
+    private static async Task<IResult> ExecuteDeleteRequestAsync(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        FeatureServerEditsHandler editsHandler,
+        Honua.Core.Configuration.EditLimits editLimits,
+        ApplyEditsRequest request)
+    {
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.DeleteFeatures, out var parameterError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parameterError ?? "Invalid query parameter."]);
+        }
+
+        if (!TryApplyEditOptionsFromQuery(request, context.Request.Query, out var queryError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid deleteFeatures request",
+                [queryError ?? "Invalid query parameters."]);
+        }
+
+        if (!TryValidateOutputFormat(request.F, JsonOnlyFormats, out var normalizedFormat, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid deleteFeatures request",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        request.F = normalizedFormat;
+
+        if (request.UseGlobalIds)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "useGlobalIds is not supported",
+                ["Set useGlobalIds to false and supply objectIds in attributes."]);
+        }
+
+        if (request.ReturnEditMoment)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "returnEditMoment is not supported");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.GdbVersion))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "gdbVersion is not supported");
+        }
+
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        return await editsHandler.HandleApplyEditsAsync(
+            serviceId,
+            layerId,
             request,
-            "deleteFeatures");
+            editLimits,
+            cancellationToken);
+    }
+
+    private static async Task<IResult> HandleServiceApplyEdits(
+        string serviceId,
+        HttpContext context,
+        FeatureServerEditsHandler editsHandler,
+        IOptions<LimitsOptions> limitsOptions)
+    {
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.ApplyEdits, out var parameterError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parameterError ?? "Invalid query parameter."]);
+        }
+
+        ServiceLayerEdits[]? layerEdits;
+        try
+        {
+            layerEdits = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
+        }
+        catch (JsonException ex)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid service applyEdits request",
+                [$"Invalid JSON: {ex.Message}"]);
+        }
+
+        if (layerEdits == null || layerEdits.Length == 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid service applyEdits request",
+                ["Request body must be a non-empty JSON array of layer edits."]);
+        }
+
+        var editLimits = limitsOptions.Value.Edits;
+        var results = new ServiceLayerEditResult[layerEdits.Length];
+
+        for (var i = 0; i < layerEdits.Length; i++)
+        {
+            var entry = layerEdits[i];
+            var request = new ApplyEditsRequest
+            {
+                Adds = entry.Adds,
+                Updates = entry.Updates,
+                Deletes = entry.Deletes
+            };
+
+            var layerResult = await editsHandler.HandleApplyEditsAsync(
+                serviceId,
+                entry.Id,
+                request,
+                editLimits,
+                cancellationToken);
+
+            // Extract the ApplyEditsResponse from the IResult
+            if (layerResult is Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
+            {
+                var response = jsonResult.Value;
+                results[i] = new ServiceLayerEditResult
+                {
+                    Id = entry.Id,
+                    AddResults = response?.AddResults,
+                    UpdateResults = response?.UpdateResults,
+                    DeleteResults = response?.DeleteResults
+                };
+            }
+            else
+            {
+                // If the layer returned an error, return it directly
+                return layerResult;
+            }
+        }
+
+        var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
+        return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse, contentType: "application/json");
+    }
+
+    private static async Task<ServiceLayerEdits[]?> TryReadServiceApplyEditsRequestAsync(
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.HasFormContentType)
+        {
+            var form = await request.ReadFormAsync(cancellationToken);
+            var editsJson = form["edits"].ToString();
+            if (string.IsNullOrWhiteSpace(editsJson))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize(editsJson, FeatureServerJsonContext.Default.ServiceLayerEditsArray);
+        }
+
+        return await JsonSerializer.DeserializeAsync(
+            request.Body,
+            FeatureServerJsonContext.Default.ServiceLayerEditsArray,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Sets default values for standalone edit endpoints (addFeatures, updateFeatures, deleteFeatures).
+    /// Per ArcGIS spec, standalone endpoints default rollbackOnFailure to true,
+    /// while applyEdits defaults to false. Only applies when not explicitly set in the request.
+    /// </summary>
+    private static void ApplyStandaloneEditDefaults(ApplyEditsRequest request)
+    {
+        if (!request.RollbackOnFailureExplicitlySet)
+        {
+            request.RollbackOnFailure = true;
+        }
     }
 
     private static async Task<IResult> ExecuteEditsRequestAsync(
@@ -228,6 +531,11 @@ internal static partial class FeatureServerEndpoints
         }
 
         var values = ToCaseInsensitiveDictionary(query);
+
+        if (TryGetValue(values, "rollbackOnFailure", out var rollbackQueryRaw) && !StringValues.IsNullOrEmpty(rollbackQueryRaw))
+        {
+            request.RollbackOnFailureExplicitlySet = true;
+        }
 
         if (!TryParseBoolValue(values, "rollbackOnFailure", request.RollbackOnFailure, out var rollbackOnFailure, out error))
         {
@@ -526,6 +834,11 @@ internal static partial class FeatureServerEndpoints
     {
         error = null;
 
+        if (TryGetValue(values, "rollbackOnFailure", out var rollbackRaw) && !StringValues.IsNullOrEmpty(rollbackRaw))
+        {
+            request.RollbackOnFailureExplicitlySet = true;
+        }
+
         if (!TryParseBoolValue(values, "rollbackOnFailure", request.RollbackOnFailure, out var rollbackOnFailure, out error))
         {
             return false;
@@ -564,6 +877,7 @@ internal static partial class FeatureServerEndpoints
 
         if (root.TryGetProperty("rollbackOnFailure", out var rollbackElement))
         {
+            request.RollbackOnFailureExplicitlySet = true;
             if (!TryParseBooleanElement(rollbackElement, out var rollbackOnFailure))
             {
                 error = "rollbackOnFailure must be a boolean value";

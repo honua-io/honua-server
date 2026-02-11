@@ -95,7 +95,7 @@ internal static partial class MapServerEndpoints
             var defaultHeight = mapConfig?.DefaultImageHeight ?? DefaultImageHeight;
             var defaultDpi = mapConfig?.DefaultDpi ?? DefaultDpi;
             var defaultFormat = mapConfig?.DefaultFormat ?? "png";
-            var defaultTransparent = mapConfig?.DefaultTransparent ?? true;
+            var defaultTransparent = mapConfig?.DefaultTransparent ?? false;
             var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
 
             if (!TryParseSize(GetValue(values, "size"), defaultWidth, defaultHeight, out var imageWidth, out var imageHeight, out var sizeError))

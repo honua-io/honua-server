@@ -150,6 +150,16 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
     }
 
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var statisticsQuery = _queryBuilder.BuildStatisticsQuery(layerId, query, geometryStorageType);
+        return await _dataAccess.ExecuteStatisticsQueryAsync(statisticsQuery, query, layerId, cancellationToken);
+    }
+
     #endregion
 
     #region Spatial Operations

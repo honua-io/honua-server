@@ -72,6 +72,22 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("ServiceMetadata");
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/find",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleFind(context))
+            .WithDisplayName("Find Features")
+            .WithName("MapServerFind")
+            .WithSummary("Find features by text search across layers")
+            .WithDescription("Searches for features matching text across multiple layers")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/find",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleFind(context))
+            .WithDisplayName("Find Features (POST)")
+            .WithName("MapServerFindPost")
+            .WithSummary("Find features by text search across layers using POST")
+            .WithDescription("Searches for features matching text across multiple layers")
+            .WithTags("MapServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryGet)
             .WithDisplayName("Query MapServer Layer (GET)")
             .WithName("MapServerQueryGet")

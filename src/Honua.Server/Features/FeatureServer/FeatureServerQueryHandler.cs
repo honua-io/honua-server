@@ -1,11 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Configuration;
@@ -311,6 +309,65 @@ internal sealed class FeatureServerQueryHandler(
             // Build query from validated parameters
             FeatureQuery query = BuildFeatureQuery(validatedParams, layer, parsedGeometry, inputSrid, outputSrid, sqlFilter, queryLimits);
 
+            // Handle statistics queries (outStatistics)
+            if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
+            {
+                if (!TryParseStatisticsDefinitions(validatedParams.OutStatistics, layer, out var statisticsDefs, out var statsError))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid outStatistics",
+                        [statsError ?? "outStatistics must be a valid JSON array."]);
+                }
+
+                ImmutableArray<string>? groupByFields = null;
+                if (!string.IsNullOrWhiteSpace(validatedParams.GroupByFieldsForStatistics))
+                {
+                    var parsed = validatedParams.GroupByFieldsForStatistics
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(f => f.Trim())
+                        .ToImmutableArray();
+                    if (parsed.IsDefaultOrEmpty)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context,
+                            "Invalid groupByFieldsForStatistics",
+                            ["groupByFieldsForStatistics must contain valid field names."]);
+                    }
+
+                    groupByFields = parsed;
+                }
+
+                var statisticsQuery = query with
+                {
+                    OutStatistics = statisticsDefs,
+                    GroupByFields = groupByFields,
+                    Limit = null,
+                    Offset = null,
+                    OrderBy = null,
+                    Distinct = false
+                };
+
+                var cached = await TryGetCachedResponseAsync();
+                if (cached != null)
+                {
+                    return cached;
+                }
+
+                var stopwatch = Stopwatch.StartNew();
+                var statisticsRows = await _queryExecutor.QueryStatisticsAsync(layerId, statisticsQuery, cancellationToken);
+                stopwatch.Stop();
+                FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+
+                var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
+                    Geometry = null
+                }).ToArray();
+
+                HonuaTelemetry.SetSuccess(featureActivity, statisticsFeatures.Length);
+                var statisticsResponse = new QueryResponse { Features = statisticsFeatures };
+                return await CreateCachedResultAsync(statisticsResponse, FeatureServerJsonContext.Default.QueryResponse, "application/json");
+            }
+
             var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
 
             if (validatedParams.ReturnCountOnly)
@@ -399,11 +456,6 @@ internal sealed class FeatureServerQueryHandler(
 
             var effectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
             var useStreaming = effectiveLimit > StreamingThreshold;
-            if (validatedParams.ReturnDistinctValues)
-            {
-                // Distinct handling requires materialized results.
-                useStreaming = false;
-            }
 
             if (!useStreaming)
             {
@@ -418,13 +470,13 @@ internal sealed class FeatureServerQueryHandler(
                 queryStopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "query", serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
 
-                if (validatedParams.ReturnDistinctValues)
-                {
-                    result = ApplyDistinctValues(result, query.OutFields);
-                }
-
                 string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
                     [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
+
+                if (validatedParams.ReturnDistinctValues && outFields is { Length: > 0 })
+                {
+                    result = ApplyDistinctValues(result, outFields);
+                }
 
                 (object? formattedResponse, string? contentType) = _queryServices.FormatQueryResult(
                     result,
@@ -531,6 +583,7 @@ internal sealed class FeatureServerQueryHandler(
             Limit = queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             OutputSrid = outputSrid,
+            Distinct = queryParams.ReturnDistinctValues,
             OrderBy = OrderByParsing.ParseFeatureServerOrderBy(
                 queryParams.OrderByFields,
                 layer,
@@ -600,67 +653,6 @@ internal sealed class FeatureServerQueryHandler(
     }
 
 
-    private static QueryResult<Feature> ApplyDistinctValues(
-        QueryResult<Feature> result,
-        ImmutableArray<string>? outFields)
-    {
-        if (result.Items.IsDefaultOrEmpty)
-        {
-            return result;
-        }
-
-        var distinctItems = new List<Feature>(result.Items.Length);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var feature in result.Items)
-        {
-            var key = BuildDistinctKey(feature, outFields);
-            if (seen.Add(key))
-            {
-                distinctItems.Add(feature);
-            }
-        }
-
-        return QueryResult<Feature>.Create(distinctItems.Count, distinctItems.ToImmutableArray(), result.HasMoreResults);
-    }
-
-    private static string BuildDistinctKey(Feature feature, ImmutableArray<string>? outFields)
-    {
-        IEnumerable<string> fieldNames = outFields.HasValue && !outFields.Value.IsDefaultOrEmpty
-            ? outFields.Value
-            : feature.Attributes.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase);
-
-        var builder = new StringBuilder();
-        foreach (var field in fieldNames)
-        {
-            builder.Append(field.ToLowerInvariant());
-            builder.Append('=');
-            feature.Attributes.TryGetValue(field, out var value);
-            builder.Append(FormatDistinctValue(value));
-            builder.Append('|');
-        }
-
-        return builder.ToString();
-    }
-
-    private static string FormatDistinctValue(object? value)
-    {
-        if (value == null)
-        {
-            return "<null>";
-        }
-
-        return value switch
-        {
-            string text => text,
-            JsonElement element => element.GetRawText(),
-            DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
-            DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
-            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
-            _ => value.ToString() ?? string.Empty
-        };
-    }
-
     private static bool TryValidateUnsupportedParameters(QueryParameters queryParams, out string? errorMessage)
     {
         var unsupported = new List<string>();
@@ -679,16 +671,6 @@ internal sealed class FeatureServerQueryHandler(
             !string.Equals(queryParams.ResultType, "standard", StringComparison.OrdinalIgnoreCase))
         {
             unsupported.Add("resultType");
-        }
-
-        if (!string.IsNullOrWhiteSpace(queryParams.OutStatistics))
-        {
-            unsupported.Add("outStatistics");
-        }
-
-        if (!string.IsNullOrWhiteSpace(queryParams.GroupByFieldsForStatistics))
-        {
-            unsupported.Add("groupByFieldsForStatistics");
         }
 
         if (!string.IsNullOrWhiteSpace(queryParams.Having))
@@ -729,5 +711,177 @@ internal sealed class FeatureServerQueryHandler(
 
         errorMessage = $"Unsupported query parameters: {string.Join(", ", unsupported)}.";
         return false;
+    }
+
+    private static bool TryParseStatisticsDefinitions(
+        string outStatisticsJson,
+        LayerDefinition layer,
+        out ImmutableArray<StatisticDefinition> definitions,
+        out string? error)
+    {
+        error = null;
+        definitions = default;
+
+        try
+        {
+            using var document = JsonDocument.Parse(outStatisticsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                error = "outStatistics must be a JSON array.";
+                return false;
+            }
+
+            var defs = new List<StatisticDefinition>();
+            var fieldNames = new HashSet<string>(
+                layer.Fields.Select(f => f.Name),
+                StringComparer.OrdinalIgnoreCase);
+            // Also allow objectid
+            fieldNames.Add(FieldNames.ObjectId);
+
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (!element.TryGetProperty("statisticType", out var typeElement) ||
+                    !element.TryGetProperty("onStatisticField", out var fieldElement) ||
+                    !element.TryGetProperty("outStatisticFieldName", out var aliasElement))
+                {
+                    error = "Each statistic definition must have statisticType, onStatisticField, and outStatisticFieldName.";
+                    return false;
+                }
+
+                var statisticTypeStr = typeElement.GetString();
+                var onField = fieldElement.GetString();
+                var outAlias = aliasElement.GetString();
+
+                if (string.IsNullOrWhiteSpace(statisticTypeStr) ||
+                    string.IsNullOrWhiteSpace(onField) ||
+                    string.IsNullOrWhiteSpace(outAlias))
+                {
+                    error = "statisticType, onStatisticField, and outStatisticFieldName must not be empty.";
+                    return false;
+                }
+
+                if (!fieldNames.Contains(onField))
+                {
+                    error = $"Field '{onField}' does not exist on the layer.";
+                    return false;
+                }
+
+                if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
+                {
+                    error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
+                    return false;
+                }
+
+                defs.Add(new StatisticDefinition
+                {
+                    StatisticType = statisticType,
+                    OnStatisticField = onField,
+                    OutStatisticFieldName = outAlias
+                });
+            }
+
+            if (defs.Count == 0)
+            {
+                error = "outStatistics array must not be empty.";
+                return false;
+            }
+
+            definitions = defs.ToImmutableArray();
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = $"Invalid outStatistics JSON: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool TryParseStatisticType(string value, out StatisticType statisticType)
+    {
+        statisticType = default;
+        if (string.Equals(value, "count", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Count;
+            return true;
+        }
+
+        if (string.Equals(value, "sum", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Sum;
+            return true;
+        }
+
+        if (string.Equals(value, "min", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Min;
+            return true;
+        }
+
+        if (string.Equals(value, "max", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Max;
+            return true;
+        }
+
+        if (string.Equals(value, "avg", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Avg;
+            return true;
+        }
+
+        if (string.Equals(value, "stddev", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Stddev;
+            return true;
+        }
+
+        if (string.Equals(value, "var", StringComparison.OrdinalIgnoreCase))
+        {
+            statisticType = StatisticType.Var;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static QueryResult<Feature> ApplyDistinctValues(QueryResult<Feature> result, string[] outFields)
+    {
+        if (result.Items.IsDefaultOrEmpty)
+        {
+            return result;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var distinct = ImmutableArray.CreateBuilder<Feature>();
+
+        foreach (var feature in result.Items)
+        {
+            var key = BuildDistinctKey(feature, outFields);
+            if (seen.Add(key))
+            {
+                distinct.Add(feature);
+            }
+        }
+
+        return QueryResult<Feature>.Create(distinct.Count, distinct.ToImmutable());
+    }
+
+    private static string BuildDistinctKey(Feature feature, string[] outFields)
+    {
+        var parts = new string[outFields.Length];
+        for (var i = 0; i < outFields.Length; i++)
+        {
+            var fieldName = outFields[i];
+            if (feature.Attributes.TryGetValue(fieldName, out var value) && value != null)
+            {
+                parts[i] = value.ToString() ?? string.Empty;
+            }
+            else
+            {
+                parts[i] = "\0null\0";
+            }
+        }
+
+        return string.Join("\0", parts);
     }
 }

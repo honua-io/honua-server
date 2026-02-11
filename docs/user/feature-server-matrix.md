@@ -7,7 +7,6 @@ Sources:
 Legend:
 - Implemented: endpoint exists and handles the operation.
 - Partial: endpoint exists but only a subset of parameters or behavior is implemented.
-- Stubbed: endpoint exists but returns "not implemented".
 - Not implemented: no endpoint or handler.
 
 ## Esri REST Feature Service coverage
@@ -20,58 +19,79 @@ MapServer coverage is tracked separately:
 
 ## Feature Service (root resource)
 
+### Implemented
+
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Feature service metadata (resource) | `/rest/services/{serviceId}/FeatureServer` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer` | Service metadata + layer list. |
-| Append | `/rest/services/{serviceName}/FeatureServer/append` | POST | Not implemented | None | No service-level append endpoint. |
-| Apply Edits | `/rest/services/{serviceName}/FeatureServer/applyEdits` | POST | Not implemented | None | Layer-level applyEdits is implemented. |
-| Create Replica | `/rest/services/{serviceName}/FeatureServer/createReplica` | POST | Not implemented | None | Replication APIs not present. |
-| Extract Changes | `/rest/services/{serviceName}/FeatureServer/extractChanges` | POST | Not implemented | None | Replication APIs not present. |
-| Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Not implemented | None | Not implemented. |
-| Query | `/rest/services/{serviceName}/FeatureServer/query` | GET | Not implemented | None | Only layer-level query exists. |
-| Query Domains | `/rest/services/{serviceName}/FeatureServer/queryDomains` | GET | Not implemented | None | Not implemented. |
-| Relationships | `/rest/services/{serviceName}/FeatureServer/relationships` | GET | Not implemented | None | Not implemented. |
-| Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Not implemented | None | Not implemented. |
-| Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Not implemented | None | Not implemented. |
+| Service metadata | `/rest/services/{serviceId}/FeatureServer` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer` | Service metadata + layer list. Dynamic capabilities string (Query, Create, Update, Delete, Editing, Extract, Uploads). Includes `allowGeometryUpdates`, `supportsStatistics`, `supportsAdvancedQueries`. |
+| Apply Edits | `/rest/services/{serviceName}/FeatureServer/applyEdits` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/applyEdits` | Multi-layer batch edits. Request body is a JSON array of per-layer edits (`[{id, adds, updates, deletes}]`). Response aggregates per-layer results. |
+
+### Not implemented
+
+| Esri operation | Esri path | Methods | Honua status | Notes |
+| --- | --- | --- | --- | --- |
+| Append | `/rest/services/{serviceName}/FeatureServer/append` | POST | Not implemented | |
+| Create Replica | `/rest/services/{serviceName}/FeatureServer/createReplica` | POST | Not implemented | Replication APIs not present. |
+| Extract Changes | `/rest/services/{serviceName}/FeatureServer/extractChanges` | POST | Not implemented | Replication APIs not present. |
+| Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Not implemented | |
+| Query | `/rest/services/{serviceName}/FeatureServer/query` | GET | Not implemented | Only layer-level query exists. |
+| Query Domains | `/rest/services/{serviceName}/FeatureServer/queryDomains` | GET | Not implemented | |
+| Relationships | `/rest/services/{serviceName}/FeatureServer/relationships` | GET | Not implemented | |
+| Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Not implemented | |
+| Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Not implemented | |
 
 ## Feature Layer (resource + operations)
 
-| Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Feature layer metadata (resource) | `/rest/services/{serviceId}/FeatureServer/{layerId}` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}` | Layer metadata. |
-| Add Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/addFeatures` | POST | Not implemented | None | Use `applyEdits` adds. |
-| Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Not implemented | None | Not implemented. |
-| Apply Edits | `/rest/services/{serviceName}/FeatureServer/{layerId}/applyEdits` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits` | Supports adds/updates/deletes, rollbackOnFailure, useGlobalIds. |
-| Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Not implemented | None | Not implemented. |
-| Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Not implemented | None | Not implemented. |
-| Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Not implemented | None | Not implemented. |
-| Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Not implemented | None | Not implemented. |
-| Delete Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteFeatures` | POST | Not implemented | None | Use `applyEdits` deletes. |
-| Get Estimates | `/rest/services/{serviceName}/FeatureServer/{layerId}/getEstimates` | GET | Not implemented | None | Not implemented. |
-| Generate Renderer | `/rest/services/{serviceName}/FeatureServer/{layerId}/generateRenderer` | GET | Implemented (simple) | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer` | Returns a simple renderer; `classificationDef` is validated but ignored. |
-| Query | `/rest/services/{serviceName}/FeatureServer/{layerId}/query` | GET | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/query` | GET + POST supported. |
-| Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Not implemented | None | Not implemented. |
-| Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Not implemented | None | Not implemented. |
-| Query Attachments | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAttachments` | GET | Partial | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments` | Requires `objectId`; other Esri parameters not supported. |
-| Query Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryBins` | GET | Not implemented | None | Not implemented. |
-| Query Date Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryDateBins` | GET | Not implemented | None | Not implemented. |
-| Query Top Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryTopFeatures` | GET | Not implemented | None | Not implemented. |
-| Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports objectIds, relationshipId, where, outFields, returnGeometry, resultRecordCount. |
-| Update Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/updateFeatures` | POST | Not implemented | None | Use `applyEdits` updates. |
-| Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Not implemented | None | Not implemented. |
-| Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Not implemented | None | Not implemented. |
-| Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Not implemented | None | Not implemented. |
-
-## Attachments (additional FeatureServer operations)
+### Implemented
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Add Attachment | `/rest/services/{serviceName}/FeatureServer/{layerId}/addAttachment` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment` | Form data: `objectId`, file, optional `keywords`. |
-| Update Attachment | `/rest/services/{serviceName}/FeatureServer/{layerId}/updateAttachment` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment` | Form data: `objectId`, `attachmentId`, optional `keywords`. |
-| Delete Attachments | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteAttachments` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments` | Form data: `objectId`, comma-separated `attachmentIds`. |
-| Download Attachment | `/rest/services/{serviceName}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}` | Binary download. |
+| Layer metadata | `/rest/services/{serviceId}/FeatureServer/{layerId}` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}` | Includes `editFieldsInfo`, `editingInfo`, `templates`, `allowGeometryUpdates`, `supportsStatistics`. |
+| Query | `/rest/services/{serviceName}/FeatureServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/query` | Full query support including statistics, distinct, spatial, temporal. See parameter coverage below. |
+| Apply Edits | `/rest/services/{serviceName}/FeatureServer/{layerId}/applyEdits` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits` | Supports adds/updates/deletes, rollbackOnFailure (default `false`), useGlobalIds. |
+| Add Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/addFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures` | Standalone add endpoint. rollbackOnFailure defaults to `true`. |
+| Update Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/updateFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures` | Standalone update endpoint. rollbackOnFailure defaults to `true`. |
+| Delete Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures` | Supports `objectIds`, `where` clause, and `geometry`/`geometryType`/`spatialRel`/`inSR` for spatial deletes. rollbackOnFailure defaults to `true`. |
+| Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports objectIds, relationshipId, where, outFields, returnGeometry, resultRecordCount. |
+| Generate Renderer | `/rest/services/{serviceName}/FeatureServer/{layerId}/generateRenderer` | GET | Partial | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer` | Returns a simple renderer. `classificationDef` is rejected with 400 (classification-based renderers not yet supported). |
+
+### Partial
+
+| Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Query Attachments | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAttachments` | GET, POST | Partial | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments` | Requires `objectId`; other Esri parameters not supported. |
+
+### Not implemented
+
+| Esri operation | Esri path | Methods | Honua status | Notes |
+| --- | --- | --- | --- | --- |
+| Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Not implemented | |
+| Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Not implemented | |
+| Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Not implemented | |
+| Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Not implemented | |
+| Get Estimates | `/rest/services/{serviceName}/FeatureServer/{layerId}/getEstimates` | GET | Not implemented | |
+| Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Not implemented | |
+| Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Not implemented | |
+| Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Not implemented | |
+| Query Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryBins` | GET | Not implemented | |
+| Query Date Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryDateBins` | GET | Not implemented | |
+| Query Top Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryTopFeatures` | GET | Not implemented | |
+| Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Not implemented | |
+| Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Not implemented | |
+| Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Not implemented | |
+
+## Attachments
+
+| Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Add Attachment | `.../{layerId}/addAttachment` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment` | Form data: `objectId`, file, optional `keywords`. |
+| Update Attachment | `.../{layerId}/updateAttachment` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment` | Form data: `objectId`, `attachmentId`, optional `keywords`. |
+| Delete Attachments | `.../{layerId}/deleteAttachments` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments` | Form data: `objectId`, comma-separated `attachmentIds`. |
+| Download Attachment | `.../{layerId}/{featureId}/attachments/{attachmentId}` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}` | Binary download. |
 
 ## Query parameter coverage (layer `/query`)
+
+### Implemented
 
 | Area | Esri parameters | Honua status | Notes |
 | --- | --- | --- | --- |
@@ -79,68 +99,131 @@ MapServer coverage is tracked separately:
 | Spatial filters | `geometry`, `geometryType`, `spatialRel`, `distance`, `units` | Implemented | Distance + KNN supported; geometry supports GeoServices JSON or point/envelope CSV. |
 | Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON output requires EPSG:4326. |
 | Pagination | `resultOffset`, `resultRecordCount` | Implemented | Validated against limits. |
-| Fields/sort | `outFields`, `orderByFields` | Implemented | `*` returns all fields. |
+| Fields | `outFields` | Implemented | `*` returns all fields. |
+| Sorting | `orderByFields` | Implemented | Validates against layer fields; supports any field with ASC/DESC. |
 | Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. |
-| Distinct | `returnDistinctValues` | Implemented (in-memory) | Distinct over returned features; best with explicit `outFields`. |
+| Distinct | `returnDistinctValues` | Implemented | In-memory distinct over returned features; works best with explicit `outFields`. |
+| Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
 | KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. |
-| Temporal | `time`, `timeRelation` | Implemented (limited) | Uses layer timeInfo or first temporal field. |
+| Temporal | `time`, `timeRelation` | Implemented | Uses layer timeInfo or first temporal field. |
 | Output format | `f=json`, `f=geojson` | Partial | `f=pbf` rejected. |
-| Rejected | `returnCentroid` | Not implemented | Explicitly rejected. |
-| Rejected | `returnTrueCurves`, `returnExceededLimitFeatures`, `resultType` (non-standard) | Not implemented | Explicitly rejected. |
-| Rejected | `outStatistics`, `groupByFieldsForStatistics`, `having` | Not implemented | Explicitly rejected. |
-| Rejected | `sqlFormat`, `gdbVersion`, `quantizationParameters`, `datumTransformation` | Not implemented | Explicitly rejected. |
+| Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
+
+### Not implemented (explicitly rejected)
+
+| Area | Esri parameters | Notes |
+| --- | --- | --- |
+| Having | `having` | Rejected; HAVING clause for statistics not yet supported. |
+| Centroid | `returnCentroid` | Rejected. |
+| True curves | `returnTrueCurves` | Rejected. |
+| Exceeded limit | `returnExceededLimitFeatures` | Rejected. |
+| Result type | `resultType` (non-standard) | Rejected. |
+| SQL format | `sqlFormat` | Rejected. |
+| GDB version | `gdbVersion` | Rejected. |
+| Quantization | `quantizationParameters` | Rejected. |
+| Datum transform | `datumTransformation` | Rejected. |
 
 ## ApplyEdits parameter coverage (layer `/applyEdits`)
 
-| Esri parameter | Honua status | Notes |
-| --- | --- | --- |
-| `adds` | Implemented | Accepts GeoServices features; geometry required for layers. |
-| `updates` | Implemented | Requires `objectId` in attributes. |
-| `deletes` | Implemented | Expects object ID values; global/unique IDs not supported. |
-| `rollbackOnFailure` | Implemented | Default is `true`. |
-| `useGlobalIds` | Not implemented | Explicitly rejected; object IDs are required. |
-| `gdbVersion` | Not implemented | Ignored. |
-| `returnEditMoment` | Not implemented | Ignored. |
-| `attachments` | Not implemented | Use dedicated attachment endpoints instead. |
-| `assetMaps` | Not implemented | Ignored. |
-| `trueCurveClient` | Not implemented | Ignored. |
-| `sessionID` | Not implemented | Ignored. |
-| `usePreviousEditMoment` | Not implemented | Ignored. |
-| `datumTransformation` | Not implemented | Geometry must match layer SRID. |
-| `timeReferenceUnknownClient` | Not implemented | Ignored. |
-| `async` | Not implemented | Ignored. |
-| `returnEditResults` | Not implemented | Results are always returned. |
-| `editsUploadId` | Not implemented | Ignored. |
-| `editsUploadFormat` | Not implemented | Ignored. |
-| `useUniqueIds` | Not implemented | Ignored. |
-| `f` | Not implemented | Response is always JSON. |
+### Implemented
+
+| Esri parameter | Notes |
+| --- | --- |
+| `adds` | Accepts GeoServices features; geometry required for geometry layers. |
+| `updates` | Requires `objectId` in attributes. |
+| `deletes` | Expects object ID values; global/unique IDs not supported. |
+| `rollbackOnFailure` | Default `false` for applyEdits, `true` for standalone add/update/delete endpoints. |
+
+### Not implemented
+
+| Esri parameter | Notes |
+| --- | --- |
+| `useGlobalIds` | Rejected; object IDs are required. |
+| `gdbVersion` | Ignored. |
+| `returnEditMoment` | Ignored. |
+| `attachments` | Use dedicated attachment endpoints. |
+| `assetMaps` | Ignored. |
+| `trueCurveClient` | Ignored. |
+| `sessionID` | Ignored. |
+| `usePreviousEditMoment` | Ignored. |
+| `datumTransformation` | Geometry must match layer SRID. |
+| `timeReferenceUnknownClient` | Ignored. |
+| `async` | Ignored. |
+| `returnEditResults` | Results are always returned. |
+| `editsUploadId` | Ignored. |
+| `editsUploadFormat` | Ignored. |
+| `useUniqueIds` | Ignored. |
+| `f` | Response is always JSON. |
 
 ## QueryRelatedRecords parameter coverage (layer `/queryRelatedRecords`)
 
-| Esri parameter | Honua status | Notes |
+### Implemented
+
+| Esri parameter | Notes |
+| --- | --- |
+| `objectIds` | Required. |
+| `relationshipId` | Required. |
+| `outFields` | Supports `*` for all fields. |
+| `definitionExpression` | Aliased to `where` (combined with `where` if both present). |
+| `returnGeometry` | Defaults to true. |
+| `resultRecordCount` | Applies limit. |
+| `resultOffset` | Applies offset. |
+
+### Not implemented
+
+| Esri parameter | Notes |
+| --- | --- |
+| `maxAllowableOffset` | Ignored. |
+| `geometryPrecision` | Ignored. |
+| `historicMoment` | Ignored. |
+| `outSR` | Output SR always uses the related layer SR. |
+| `returnZ` | Ignored. |
+| `returnM` | Ignored. |
+| `returnTrueCurves` | Ignored. |
+| `gdbVersion` | Ignored. |
+| `orderByFields` | Ignored. |
+| `returnCountOnly` | Ignored. |
+| `f` | Response is always JSON. |
+
+## Service metadata properties
+
+| Property | Honua status | Notes |
 | --- | --- | --- |
-| `objectIds` | Implemented | Required. |
-| `relationshipId` | Implemented | Required. |
-| `outFields` | Implemented | Supports `*` for all fields. |
-| `definitionExpression` | Implemented | Aliased to `where` (combined with `where` if both are present). |
-| `returnGeometry` | Implemented | Defaults to true. |
-| `maxAllowableOffset` | Not implemented | Ignored. |
-| `geometryPrecision` | Not implemented | Ignored. |
-| `historicMoment` | Not implemented | Ignored. |
-| `outSR` | Not implemented | Output SR always uses the related layer SR. |
-| `returnZ` | Not implemented | Ignored. |
-| `returnM` | Not implemented | Ignored. |
-| `returnTrueCurves` | Not implemented | Ignored. |
-| `gdbVersion` | Not implemented | Ignored. |
-| `resultRecordCount` | Implemented | Applies limit. |
-| `resultOffset` | Implemented | Applies offset. |
-| `orderByFields` | Not implemented | Ignored. |
-| `returnCountOnly` | Not implemented | Ignored. |
-| `f` | Not implemented | Response is always JSON. |
+| `capabilities` | Implemented | Dynamic: Query, Create, Update, Delete, Editing, Extract, Uploads based on service config. |
+| `layers` | Implemented | Full layer list with id, name, geometryType, visibility, scale range. |
+| `spatialReference` | Implemented | From service definition. |
+| `initialExtent` / `fullExtent` | Implemented | From service effective extent. |
+| `maxRecordCount` | Implemented | From query limits. |
+| `supportedQueryFormats` | Implemented | Normalized to uppercase. |
+| `supportsAdvancedQueries` | Implemented | From service definition. |
+| `supportsStatistics` | Implemented | Always true. |
+| `objectIdField` | Implemented | Resolved from layer primary keys or defaults to `objectid`. |
+| `fields` | Implemented | All fields across service layers. |
+| `allowGeometryUpdates` | Implemented | Reflects `supportsEditing`. |
 
-## Notes and gaps worth highlighting
+## Layer metadata properties
 
-- Service-level FeatureServer operations (append, applyEdits, query, replicas, etc.) are not implemented; only layer-level operations are exposed.
-- `generateRenderer` returns a simple renderer; `classificationDef` is accepted but not interpreted.
-- `queryAttachments` supports only a required `objectId` and omits other Esri parameters such as `globalIds`, `attachmentTypes`, `definitionExpression`, and `size`.
-- `returnCentroid` is explicitly rejected; `returnDistinctValues` is supported as an in-memory distinct of the returned features.
+| Property | Honua status | Notes |
+| --- | --- | --- |
+| `id`, `name`, `description`, `type` | Implemented | Standard layer info. |
+| `geometryType` | Implemented | Mapped to esriGeometry* types. |
+| `spatialReference` | Implemented | From layer definition. |
+| `extent` | Implemented | From layer extent. |
+| `fields` | Implemented | Full field list with type, alias, length, nullable, editable. |
+| `objectIdField` | Implemented | From primary key or default. |
+| `drawingInfo` | Implemented | From layer metadata. |
+| `capabilities` | Implemented | Dynamic: Query, Create, Update, Delete, Editing, Extract, Uploads. |
+| `supportsStatistics` | Implemented | Always true. |
+| `supportsAdvancedQueries` | Implemented | From service definition. |
+| `supportsOrderBy`, `supportsDistinct`, `supportsPagination` | Implemented | All true. |
+| `supportsRollbackOnFailureParameter` | Implemented | Reflects editing support. |
+| `hasAttachments` | Implemented | From layer definition. |
+| `supportsQueryRelated` | Implemented | True when layer has relationships. |
+| `relationships` | Implemented | Relationship info array. |
+| `allowGeometryUpdates` | Implemented | Reflects editing support. |
+| `editFieldsInfo` | Implemented | Null (editor tracking not supported). |
+| `editingInfo` | Implemented | Present for editable layers. |
+| `templates` | Implemented | Empty array (no feature templates configured). |
+| `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
+| `maxRecordCount` | Implemented | From query limits. |
+| `supportedQueryFormats` | Implemented | Normalized format list. |

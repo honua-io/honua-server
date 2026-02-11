@@ -724,18 +724,17 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
-    public async Task GenerateRenderer_WithClassificationDef_ReturnsRenderer()
+    public async Task GenerateRenderer_WithClassificationDef_ReturnsBadRequest()
     {
         var classificationDef = Uri.EscapeDataString("""{"type":"uniqueValue"}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
-        response.Be200Ok();
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest,
+            "classification-based renderers are not yet supported and should return 400");
 
         var content = await response.Content.ReadAsStringAsync();
-        using var jsonDoc = JsonDocument.Parse(content);
-        jsonDoc.RootElement.GetProperty("type").GetString().Should().Be("simple");
-        jsonDoc.RootElement.TryGetProperty("symbol", out _).Should().BeTrue();
+        content.Should().Contain("classification");
     }
 
     [IntegrationTest]

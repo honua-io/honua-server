@@ -93,6 +93,22 @@ internal static partial class FeatureServerEndpoints
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        public static readonly FrozenSet<string> DeleteFeatures = new[]
+            {
+                "f",
+                "rollbackOnFailure",
+                "useGlobalIds",
+                "gdbVersion",
+                "returnEditMoment",
+                "objectIds",
+                "where",
+                "geometry",
+                "geometryType",
+                "spatialRel",
+                "inSR"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
         public static readonly FrozenSet<string> QueryRelatedRecords = new[]
             {
                 "objectIds",
@@ -176,7 +192,7 @@ internal static partial class FeatureServerEndpoints
     private static FeatureServerResponse MapServiceToResponse(ServiceDefinition service, QueryLimits queryLimits)
     {
         var objectIdField = ResolveServiceObjectIdField(service);
-        var supportsStatistics = false;
+        var supportsStatistics = true;
         var supportsAdvancedQueries = service.SupportsAdvancedQueries;
         var hasGeometry = service.Layers.Any(layer => layer.HasGeometry);
 
@@ -190,12 +206,13 @@ internal static partial class FeatureServerEndpoints
             FullExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
-            Capabilities = string.Join(",", service.Capabilities),
+            Capabilities = BuildServiceCapabilities(service),
             Fields = [.. service.AllFields.Select(MapFieldInfo)],
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
-            HasGeometryProperties = hasGeometry
+            HasGeometryProperties = hasGeometry,
+            AllowGeometryUpdates = service.SupportsEditing
         };
     }
 
@@ -221,7 +238,7 @@ internal static partial class FeatureServerEndpoints
         JsonElement? drawingInfo)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
-        var supportsStatistics = false;
+        var supportsStatistics = true;
         var supportsAdvancedQueries = service.SupportsAdvancedQueries;
         var supportsRelated = layer.HasRelationships;
 
@@ -253,7 +270,11 @@ internal static partial class FeatureServerEndpoints
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
             SupportsCoordinatesQuantization = false,
-            Relationships = BuildRelationshipResponse(layer)
+            Relationships = BuildRelationshipResponse(layer),
+            AllowGeometryUpdates = service.SupportsEditing,
+            EditFieldsInfo = null,
+            EditingInfo = service.SupportsEditing ? new EditingInfo() : null,
+            Templates = []
         };
     }
 
@@ -378,6 +399,35 @@ internal static partial class FeatureServerEndpoints
         }
 
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static string BuildServiceCapabilities(ServiceDefinition service)
+    {
+        var capabilities = new List<string>();
+        if (service.Capabilities.Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Query");
+        }
+
+        if (service.SupportsEditing)
+        {
+            capabilities.Add("Create");
+            capabilities.Add("Update");
+            capabilities.Add("Delete");
+            capabilities.Add("Editing");
+        }
+
+        if (service.Capabilities.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Extract");
+        }
+
+        if (service.Layers.Any(layer => layer.SupportsAttachments))
+        {
+            capabilities.Add("Uploads");
+        }
+
+        return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     private static string BuildLayerCapabilities(ServiceDefinition service, LayerDefinition layer)

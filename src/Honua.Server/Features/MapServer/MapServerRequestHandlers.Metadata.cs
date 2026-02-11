@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -8,6 +9,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.MapServer.Models;
 using Microsoft.Extensions.Options;
 
@@ -61,7 +63,8 @@ internal static partial class MapServerEndpoints
             .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
             .ToArray();
 
-        var response = MapServiceToMapServerResponse(service with { Layers = visibleLayers });
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
+        var response = MapServiceToMapServerResponse(service with { Layers = visibleLayers }, limitsOptions.Query.MaxRecordCount);
         return Results.Json(response, MapServerJsonContext.Default.MapServerResponse, contentType: "application/json");
     }
 
@@ -116,7 +119,15 @@ internal static partial class MapServerEndpoints
         }
 
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-        var response = MapLayerToMapServerLayerResponse(service, layer, limitsOptions.Query.MaxRecordCount);
+
+        var styleService = context.RequestServices.GetService<ILayerStyleService>();
+        JsonElement? drawingInfo = null;
+        if (styleService != null)
+        {
+            drawingInfo = await styleService.GetDrawingInfoAsync(layer, context.RequestAborted).ConfigureAwait(false);
+        }
+
+        var response = MapLayerToMapServerLayerResponse(service, layer, limitsOptions.Query.MaxRecordCount, drawingInfo);
         return Results.Json(response, MapServerJsonContext.Default.MapServerLayerResponse, contentType: "application/json");
     }
 
@@ -144,7 +155,7 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static MapServerResponse MapServiceToMapServerResponse(ServiceDefinition service)
+    private static MapServerResponse MapServiceToMapServerResponse(ServiceDefinition service, int maxRecordCount)
     {
         var mapConfig = service.Metadata?.MapServer;
         var visibleFeatureLayers = service.Layers.Where(layer => layer.HasGeometry).ToArray();
@@ -182,14 +193,17 @@ internal static partial class MapServerEndpoints
                 ? EsriExtent.FromFeatureExtent(service.EffectiveExtent.Value)
                 : null,
             MaxImageWidth = mapConfig?.MaxImageWidth ?? 4096,
-            MaxImageHeight = mapConfig?.MaxImageHeight ?? 4096
+            MaxImageHeight = mapConfig?.MaxImageHeight ?? 4096,
+            MaxRecordCount = maxRecordCount,
+            SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.SupportedFormats))
         };
     }
 
     private static MapServerLayerResponse MapLayerToMapServerLayerResponse(
         ServiceDefinition service,
         LayerDefinition layer,
-        int maxRecordCount)
+        int maxRecordCount,
+        JsonElement? drawingInfo = null)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var displayField = ResolveDisplayField(layer, objectIdField);
@@ -223,8 +237,23 @@ internal static partial class MapServerEndpoints
             MinScale = layer.MinScale,
             MaxScale = layer.MaxScale,
             DefaultVisibility = layer.DefaultVisibility,
-            MaxRecordCount = maxRecordCount
+            MaxRecordCount = maxRecordCount,
+            DrawingInfo = drawingInfo.HasValue ? (object)drawingInfo.Value : null,
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
+            SupportsOrderBy = true,
+            SupportsDistinct = true,
+            SupportsPagination = true
         };
+    }
+
+    private static string[] NormalizeSupportedQueryFormats(string[]? formats)
+    {
+        if (formats == null || formats.Length == 0)
+        {
+            return ["JSON"];
+        }
+
+        return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     private static string ResolveMapUnits(Honua.Core.Features.Shared.Models.SpatialReference spatialReference)

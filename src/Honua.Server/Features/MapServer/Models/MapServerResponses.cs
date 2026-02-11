@@ -111,6 +111,18 @@ internal sealed class MapServerResponse
     /// </summary>
     [JsonPropertyName("maxImageHeight")]
     public int MaxImageHeight { get; init; } = 4096;
+
+    /// <summary>
+    /// Maximum number of records returned per query.
+    /// </summary>
+    [JsonPropertyName("maxRecordCount")]
+    public int MaxRecordCount { get; init; } = 1000;
+
+    /// <summary>
+    /// Supported query output formats.
+    /// </summary>
+    [JsonPropertyName("supportedQueryFormats")]
+    public string? SupportedQueryFormats { get; init; }
 }
 
 /// <summary>
@@ -147,6 +159,18 @@ internal sealed class MapServerLayerInfo
     /// </summary>
     [JsonPropertyName("maxScale")]
     public double? MaxScale { get; init; }
+
+    /// <summary>
+    /// Parent layer identifier (-1 for root layers).
+    /// </summary>
+    [JsonPropertyName("parentLayerId")]
+    public int ParentLayerId { get; init; } = -1;
+
+    /// <summary>
+    /// Sub-layer identifiers (null for leaf layers).
+    /// </summary>
+    [JsonPropertyName("subLayerIds")]
+    public int[]? SubLayerIds { get; init; }
 }
 
 /// <summary>
@@ -279,6 +303,54 @@ internal sealed class MapServerLayerResponse
     /// </summary>
     [JsonPropertyName("maxRecordCount")]
     public int MaxRecordCount { get; init; } = 1000;
+
+    /// <summary>
+    /// Drawing info for client-side symbology.
+    /// </summary>
+    [JsonPropertyName("drawingInfo")]
+    public object? DrawingInfo { get; init; }
+
+    /// <summary>
+    /// Supported query output formats.
+    /// </summary>
+    [JsonPropertyName("supportedQueryFormats")]
+    public string[]? SupportedQueryFormats { get; init; }
+
+    /// <summary>
+    /// Indicates whether statistics queries are supported.
+    /// </summary>
+    [JsonPropertyName("supportsStatistics")]
+    public bool SupportsStatistics { get; init; }
+
+    /// <summary>
+    /// Indicates whether ORDER BY is supported.
+    /// </summary>
+    [JsonPropertyName("supportsOrderBy")]
+    public bool SupportsOrderBy { get; init; }
+
+    /// <summary>
+    /// Indicates whether DISTINCT is supported.
+    /// </summary>
+    [JsonPropertyName("supportsDistinct")]
+    public bool SupportsDistinct { get; init; }
+
+    /// <summary>
+    /// Indicates whether result pagination is supported.
+    /// </summary>
+    [JsonPropertyName("supportsPagination")]
+    public bool SupportsPagination { get; init; }
+
+    /// <summary>
+    /// Parent layer identifier (-1 for root layers).
+    /// </summary>
+    [JsonPropertyName("parentLayerId")]
+    public int ParentLayerId { get; init; } = -1;
+
+    /// <summary>
+    /// Sub-layer identifiers (null for leaf layers).
+    /// </summary>
+    [JsonPropertyName("subLayerIds")]
+    public int[]? SubLayerIds { get; init; }
 }
 
 /// <summary>
@@ -357,6 +429,12 @@ internal sealed class IdentifyResult
     /// </summary>
     [JsonPropertyName("layerName")]
     public string? LayerName { get; init; }
+
+    /// <summary>
+    /// Name of the display field for this layer.
+    /// </summary>
+    [JsonPropertyName("displayFieldName")]
+    public string? DisplayFieldName { get; init; }
 
     /// <summary>
     /// Display field value.
@@ -507,4 +585,70 @@ internal sealed class ExportImageResponse
     /// </summary>
     [JsonPropertyName("scale")]
     public double? Scale { get; init; }
+}
+
+/// <summary>
+/// Response for the find operation.
+/// </summary>
+internal sealed class FindResponse
+{
+    /// <summary>
+    /// Find results.
+    /// </summary>
+    [JsonPropertyName("results")]
+    public FindResult[]? Results { get; init; }
+}
+
+/// <summary>
+/// Single find result.
+/// </summary>
+internal sealed class FindResult
+{
+    /// <summary>
+    /// Layer identifier.
+    /// </summary>
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; init; }
+
+    /// <summary>
+    /// Layer name.
+    /// </summary>
+    [JsonPropertyName("layerName")]
+    public string? LayerName { get; init; }
+
+    /// <summary>
+    /// Display field name for the layer.
+    /// </summary>
+    [JsonPropertyName("displayFieldName")]
+    public string? DisplayFieldName { get; init; }
+
+    /// <summary>
+    /// Field name where the match was found.
+    /// </summary>
+    [JsonPropertyName("foundFieldName")]
+    public string? FoundFieldName { get; init; }
+
+    /// <summary>
+    /// Matched display value.
+    /// </summary>
+    [JsonPropertyName("value")]
+    public string? Value { get; init; }
+
+    /// <summary>
+    /// Feature attributes.
+    /// </summary>
+    [JsonPropertyName("attributes")]
+    public Dictionary<string, object?>? Attributes { get; init; }
+
+    /// <summary>
+    /// Feature geometry type.
+    /// </summary>
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; init; }
+
+    /// <summary>
+    /// Feature geometry.
+    /// </summary>
+    [JsonPropertyName("geometry")]
+    public object? Geometry { get; init; }
 }
