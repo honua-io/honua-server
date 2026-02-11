@@ -156,13 +156,17 @@ internal sealed class PostgresRasterStore : IRasterStore
             };
         }
 
-        var data = reader.IsDBNull(reader.GetOrdinal("data"))
-            ? Array.Empty<byte>()
-            : (byte[])reader["data"];
-        var width = reader.GetInt32(reader.GetOrdinal("width"));
-        var height = reader.GetInt32(reader.GetOrdinal("height"));
-        var srid = reader.GetInt32(reader.GetOrdinal("srid"));
-        var bandCount = reader.GetInt32(reader.GetOrdinal("band_count"));
+        var dataOrd = reader.GetOrdinal("data");
+        var widthOrd = reader.GetOrdinal("width");
+        var heightOrd = reader.GetOrdinal("height");
+        var sridOrd = reader.GetOrdinal("srid");
+        var bandCountOrd = reader.GetOrdinal("band_count");
+
+        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var width = reader.GetInt32(widthOrd);
+        var height = reader.GetInt32(heightOrd);
+        var srid = reader.GetInt32(sridOrd);
+        var bandCount = reader.GetInt32(bandCountOrd);
 
         PostgresRasterLog.ImageExported(_logger, layerId, rasterId, width, height, data.Length);
 
@@ -466,40 +470,60 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private static RasterInfo ReadRasterInfo(DbDataReader reader)
     {
+        // Cache ordinals once (avoids 19 repeated column-name lookups per row)
+        var idOrd = reader.GetOrdinal("id");
+        var layerIdOrd = reader.GetOrdinal("layer_id");
+        var nameOrd = reader.GetOrdinal("name");
+        var widthOrd = reader.GetOrdinal("width");
+        var heightOrd = reader.GetOrdinal("height");
+        var bandCountOrd = reader.GetOrdinal("band_count");
+        var pixelTypeOrd = reader.GetOrdinal("pixel_type");
+        var sridOrd = reader.GetOrdinal("srid");
+        var noDataOrd = reader.GetOrdinal("nodata_value");
+        var upperLeftXOrd = reader.GetOrdinal("upper_left_x");
+        var scaleXOrd = reader.GetOrdinal("scale_x");
+        var skewXOrd = reader.GetOrdinal("skew_x");
+        var upperLeftYOrd = reader.GetOrdinal("upper_left_y");
+        var skewYOrd = reader.GetOrdinal("skew_y");
+        var scaleYOrd = reader.GetOrdinal("scale_y");
+        var xminOrd = reader.GetOrdinal("xmin");
+        var yminOrd = reader.GetOrdinal("ymin");
+        var xmaxOrd = reader.GetOrdinal("xmax");
+        var ymaxOrd = reader.GetOrdinal("ymax");
+        var createdAtOrd = reader.GetOrdinal("created_at");
+        var updatedOrd = reader.GetOrdinal("updated_at");
+
         var geoTransform = new[]
         {
-            reader.GetDouble(reader.GetOrdinal("upper_left_x")),
-            reader.GetDouble(reader.GetOrdinal("scale_x")),
-            reader.GetDouble(reader.GetOrdinal("skew_x")),
-            reader.GetDouble(reader.GetOrdinal("upper_left_y")),
-            reader.GetDouble(reader.GetOrdinal("skew_y")),
-            reader.GetDouble(reader.GetOrdinal("scale_y"))
+            reader.GetDouble(upperLeftXOrd),
+            reader.GetDouble(scaleXOrd),
+            reader.GetDouble(skewXOrd),
+            reader.GetDouble(upperLeftYOrd),
+            reader.GetDouble(skewYOrd),
+            reader.GetDouble(scaleYOrd)
         };
-
-        var noDataOrd = reader.GetOrdinal("nodata_value");
-        var updatedOrd = reader.GetOrdinal("updated_at");
 
         return new RasterInfo
         {
-            Id = reader.GetInt64(reader.GetOrdinal("id")),
-            LayerId = reader.GetInt32(reader.GetOrdinal("layer_id")),
-            Name = reader.GetString(reader.GetOrdinal("name")),
-            Width = reader.GetInt32(reader.GetOrdinal("width")),
-            Height = reader.GetInt32(reader.GetOrdinal("height")),
-            BandCount = reader.GetInt32(reader.GetOrdinal("band_count")),
-            PixelType = reader.GetString(reader.GetOrdinal("pixel_type")),
-            Srid = reader.GetInt32(reader.GetOrdinal("srid")),
+            Id = reader.GetInt64(idOrd),
+            LayerId = reader.GetInt32(layerIdOrd),
+            Name = reader.GetString(nameOrd),
+            Width = reader.GetInt32(widthOrd),
+            Height = reader.GetInt32(heightOrd),
+            BandCount = reader.GetInt32(bandCountOrd),
+            PixelType = reader.GetString(pixelTypeOrd),
+            Srid = reader.GetInt32(sridOrd),
             NoDataValue = reader.IsDBNull(noDataOrd) ? null : reader.GetDouble(noDataOrd),
             GeoTransform = geoTransform,
             Extent = new RasterExtent
             {
-                XMin = reader.GetDouble(reader.GetOrdinal("xmin")),
-                YMin = reader.GetDouble(reader.GetOrdinal("ymin")),
-                XMax = reader.GetDouble(reader.GetOrdinal("xmax")),
-                YMax = reader.GetDouble(reader.GetOrdinal("ymax")),
-                Srid = reader.GetInt32(reader.GetOrdinal("srid"))
+                XMin = reader.GetDouble(xminOrd),
+                YMin = reader.GetDouble(yminOrd),
+                XMax = reader.GetDouble(xmaxOrd),
+                YMax = reader.GetDouble(ymaxOrd),
+                Srid = reader.GetInt32(sridOrd)
             },
-            CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+            CreatedAt = reader.GetDateTime(createdAtOrd),
             ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
         };
     }

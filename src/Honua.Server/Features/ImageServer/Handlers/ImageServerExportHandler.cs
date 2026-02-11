@@ -21,6 +21,8 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerExportHandler
 {
+    private const int DefaultMaxOutputDimension = 1024;
+
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
     private readonly ITemporaryFileService _temporaryFileService;
@@ -212,8 +214,8 @@ internal sealed class ImageServerExportHandler
             return (width, height);
         }
 
-        // Default to original raster dimensions (could be configurable)
-        return (Math.Min(raster.Width, 1024), Math.Min(raster.Height, 1024));
+        // Default to original raster dimensions capped at max output size
+        return (Math.Min(raster.Width, DefaultMaxOutputDimension), Math.Min(raster.Height, DefaultMaxOutputDimension));
     }
 
     private static ResamplingAlgorithm ParseInterpolation(string interpolation)
