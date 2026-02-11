@@ -46,7 +46,7 @@ internal static class SpatialReferenceHelpers
         }
 
         // Handle OGC CRS84 URI
-        if (crs.EndsWith("CRS84", StringComparison.Ordinal))
+        if (crs.EndsWith("CRS84", StringComparison.OrdinalIgnoreCase))
             return 4326;
 
         // Handle bare SRID number

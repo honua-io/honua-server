@@ -17,6 +17,24 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerMetadataHandler
 {
+    /// <summary>ArcGIS REST API version for compatibility.</summary>
+    private const string ArcGisVersion = "10.9.1";
+
+    /// <summary>Minimum pixel size advertised in service metadata (finest resolution).</summary>
+    private const double MinPixelSize = 0.1;
+
+    /// <summary>Maximum pixel size advertised in service metadata (coarsest resolution).</summary>
+    private const double MaxPixelSize = 1000.0;
+
+    /// <summary>Maximum image height in pixels for export requests.</summary>
+    private const int MaxImageHeight = 4100;
+
+    /// <summary>Maximum image width in pixels for export requests.</summary>
+    private const int MaxImageWidth = 15000;
+
+    /// <summary>Maximum number of records returned in catalog queries.</summary>
+    private const int MaxRecordCount = 1000;
+
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerMetadataHandler> _logger;
@@ -82,7 +100,7 @@ internal sealed class ImageServerMetadataHandler
             // Build service info response
             var serviceInfo = new ImageServerServiceInfo
             {
-                CurrentVersion = "10.9.1", // ArcGIS version compatibility
+                CurrentVersion = ArcGisVersion,
                 ServiceDescription = layer.Description ?? $"Image service for {layer.Name}",
                 Name = layer.Name,
                 Description = layer.Description,
@@ -99,8 +117,8 @@ internal sealed class ImageServerMetadataHandler
                 PixelSizeY = CalculatePixelSize(extent.Value, primaryRaster.Height, isHeight: true),
                 BandCount = primaryRaster.BandCount,
                 PixelType = MapPixelType(primaryRaster.PixelType),
-                MinPixelSize = 0.1, // Configurable based on zoom levels
-                MaxPixelSize = 1000.0, // Configurable based on data resolution
+                MinPixelSize = MinPixelSize,
+                MaxPixelSize = MaxPixelSize,
                 CopyrightText = layer.Description ?? "",
                 ServiceDataType = "esriImageServiceDataTypeGeneric",
                 MinValues = statistics.Select(s => s.MinValue ?? 0).ToArray(),
@@ -108,9 +126,9 @@ internal sealed class ImageServerMetadataHandler
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
                 Capabilities = "Catalog,Image,Metadata,Pixels",
-                MaxImageHeight = 4100,
-                MaxImageWidth = 15000,
-                MaxRecordCount = 1000
+                MaxImageHeight = MaxImageHeight,
+                MaxImageWidth = MaxImageWidth,
+                MaxRecordCount = MaxRecordCount
             };
 
             ImageServerLog.ServiceInfoGenerated(_logger, layerId, primaryRaster.BandCount, statistics.Length);

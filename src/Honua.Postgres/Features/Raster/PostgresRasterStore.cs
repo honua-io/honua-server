@@ -252,8 +252,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (await tileReader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var tileData = (byte[])tileReader["tile_data"];
-            var contentType = tileReader.GetString(1);
+            var tileDataOrd = tileReader.GetOrdinal("tile_data");
+            var contentTypeOrd = tileReader.GetOrdinal("content_type");
+            var tileData = (byte[])tileReader[tileDataOrd];
+            var contentType = tileReader.GetString(contentTypeOrd);
             PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, tileData.Length);
             return new RasterResult
             {
