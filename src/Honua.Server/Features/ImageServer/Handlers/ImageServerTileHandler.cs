@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -43,7 +42,14 @@ internal sealed class ImageServerTileHandler
         string format,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "tile",
+            HonuaTelemetry.Protocols.ImageServer,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "get-image-tile")
+             .WithTag(HonuaTelemetry.Tags.TileZ, level)
+             .WithTag(HonuaTelemetry.Tags.TileY, row)
+             .WithTag(HonuaTelemetry.Tags.TileX, col);
 
         try
         {
@@ -67,16 +73,6 @@ internal sealed class ImageServerTileHandler
             {
                 return Results.BadRequest("Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif.");
             }
-
-            // Start telemetry activity with tile-specific tags
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "tile",
-                HonuaTelemetry.Protocols.ImageServer,
-                layerId.ToString(CultureInfo.InvariantCulture));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "get-image-tile");
-            featureActivity?.SetTag(HonuaTelemetry.Tags.TileZ, level);
-            featureActivity?.SetTag(HonuaTelemetry.Tags.TileY, row);
-            featureActivity?.SetTag(HonuaTelemetry.Tags.TileX, col);
 
             // Get raster data
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
@@ -109,9 +105,7 @@ internal sealed class ImageServerTileHandler
 
             var result = tileResult.Value;
             ImageServerLog.ImageTileGenerated(_logger, layerId, result.Data.Length);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, 1);
+            scope.SetSuccess(1);
 
             return Results.File(result.Data, result.ContentType);
         }
@@ -122,12 +116,8 @@ internal sealed class ImageServerTileHandler
         catch (Exception ex)
         {
             ImageServerLog.ImageTileFailed(_logger, ex, layerId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
+            scope.RecordException(ex);
             return Results.Problem("An error occurred while retrieving the image tile.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
         }
     }
 }

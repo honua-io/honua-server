@@ -1,13 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
@@ -48,7 +48,11 @@ internal sealed class OgcMapsRenderingHandler
         HttpContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "render",
+            HonuaTelemetry.Protocols.OgcMaps,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "render-collection-map");
 
         try
         {
@@ -57,7 +61,7 @@ internal sealed class OgcMapsRenderingHandler
             if (layer == null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return Results.NotFound();
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
@@ -68,13 +72,6 @@ internal sealed class OgcMapsRenderingHandler
                     return accessError;
                 }
             }
-
-            // Start telemetry activity
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "render",
-                HonuaTelemetry.Protocols.OgcMaps,
-                layerId.ToString(CultureInfo.InvariantCulture));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "render-collection-map");
 
             // Create map render request
             var renderRequest = CreateMapRenderRequest(request, layer);
@@ -91,13 +88,11 @@ internal sealed class OgcMapsRenderingHandler
             if (result.Data.Length == 0)
             {
                 OgcMapsLog.NoMapDataFound(_logger, layerId);
-                return Results.NotFound();
+                return CreateNotFoundResult(context, $"No map data found for collection {layerId}");
             }
 
             OgcMapsLog.CollectionMapRenderCompleted(_logger, layerId, result.Data.Length);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, 1);
+            scope.SetSuccess(1);
 
             return Results.File(result.Data, result.ContentType);
         }
@@ -108,12 +103,8 @@ internal sealed class OgcMapsRenderingHandler
         catch (Exception ex)
         {
             OgcMapsLog.CollectionMapRenderFailed(_logger, ex, layerId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
-            return Results.Problem("An error occurred while rendering the collection map.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
+            scope.RecordException(ex);
+            return CreateErrorResult(context, "An error occurred while rendering the collection map.");
         }
     }
 
@@ -126,7 +117,12 @@ internal sealed class OgcMapsRenderingHandler
         HttpContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "render",
+            HonuaTelemetry.Protocols.OgcMaps,
+            string.Join(",", layerIds));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "render-dataset-map")
+             .WithTag("layer_count", layerIds.Length);
 
         try
         {
@@ -138,7 +134,7 @@ internal sealed class OgcMapsRenderingHandler
                 if (layer == null)
                 {
                     OgcMapsLog.CollectionNotFound(_logger, layerId);
-                    return Results.NotFound();
+                    return CreateNotFoundResult(context, $"Collection {layerId} not found");
                 }
 
                 if (context is not null)
@@ -152,14 +148,6 @@ internal sealed class OgcMapsRenderingHandler
 
                 layers.Add(layer);
             }
-
-            // Start telemetry activity for dataset map rendering
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "render",
-                HonuaTelemetry.Protocols.OgcMaps,
-                string.Join(",", layerIds));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "render-dataset-map");
-            featureActivity?.SetTag("layer_count", layerIds.Length);
 
             // Use the first layer for extent calculation
             var primaryLayer = layers[0];
@@ -177,13 +165,11 @@ internal sealed class OgcMapsRenderingHandler
             if (result.Data.Length == 0)
             {
                 OgcMapsLog.NoDatasetMapDataFound(_logger, layerIds.Length);
-                return Results.NotFound();
+                return CreateNotFoundResult(context, "No map data found for dataset");
             }
 
             OgcMapsLog.DatasetMapRenderCompleted(_logger, layerIds.Length, result.Data.Length);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, layerIds.Length);
+            scope.SetSuccess(layerIds.Length);
 
             return Results.File(result.Data, result.ContentType);
         }
@@ -194,12 +180,8 @@ internal sealed class OgcMapsRenderingHandler
         catch (Exception ex)
         {
             OgcMapsLog.DatasetMapRenderFailed(_logger, ex, layerIds.Length);
-            HonuaTelemetry.RecordException(featureActivity, ex);
-            return Results.Problem("An error occurred while rendering the dataset map.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
+            scope.RecordException(ex);
+            return CreateErrorResult(context, "An error occurred while rendering the dataset map.");
         }
     }
 
@@ -213,7 +195,12 @@ internal sealed class OgcMapsRenderingHandler
         HttpContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "render",
+            HonuaTelemetry.Protocols.OgcMaps,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "render-styled-map")
+             .WithTag("style_id", styleId);
 
         try
         {
@@ -222,7 +209,7 @@ internal sealed class OgcMapsRenderingHandler
             if (layer == null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return Results.NotFound();
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
@@ -233,14 +220,6 @@ internal sealed class OgcMapsRenderingHandler
                     return accessError;
                 }
             }
-
-            // Start telemetry activity
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "render",
-                HonuaTelemetry.Protocols.OgcMaps,
-                layerId.ToString(CultureInfo.InvariantCulture));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "render-styled-map");
-            featureActivity?.SetTag("style_id", styleId);
 
             // Create map render request
             var renderRequest = CreateMapRenderRequest(request, layer);
@@ -257,13 +236,11 @@ internal sealed class OgcMapsRenderingHandler
             if (result.Data.Length == 0)
             {
                 OgcMapsLog.NoMapDataFound(_logger, layerId);
-                return Results.NotFound();
+                return CreateNotFoundResult(context, $"No map data found for collection {layerId}");
             }
 
             OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, result.Data.Length);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, 1);
+            scope.SetSuccess(1);
 
             return Results.File(result.Data, result.ContentType);
         }
@@ -274,7 +251,7 @@ internal sealed class OgcMapsRenderingHandler
         catch (NotSupportedException ex)
         {
             OgcMapsLog.StyledMapRenderFailed(_logger, ex, layerId, styleId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
+            scope.RecordException(ex);
             return Results.Problem(
                 title: "Styled maps are not currently supported for raster collections.",
                 detail: ex.Message,
@@ -283,14 +260,28 @@ internal sealed class OgcMapsRenderingHandler
         catch (Exception ex)
         {
             OgcMapsLog.StyledMapRenderFailed(_logger, ex, layerId, styleId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
-            return Results.Problem("An error occurred while rendering the styled map.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
+            scope.RecordException(ex);
+            return CreateErrorResult(context, "An error occurred while rendering the styled map.");
         }
     }
+
+    /// <summary>
+    /// Creates a not-found result using StandardErrorHelpers when context is available,
+    /// or a plain 404 when it is not.
+    /// </summary>
+    private static IResult CreateNotFoundResult(HttpContext? context, string message)
+        => context is not null
+            ? StandardErrorHelpers.CreateNotFound(context, message)
+            : Results.NotFound();
+
+    /// <summary>
+    /// Creates an internal server error result using StandardErrorHelpers when context is available,
+    /// or a plain 500 Problem when it is not.
+    /// </summary>
+    private static IResult CreateErrorResult(HttpContext? context, string message)
+        => context is not null
+            ? StandardErrorHelpers.CreateInternalServerError(context, message)
+            : Results.Problem(message, statusCode: 500);
 
     private MapRenderRequest? CreateMapRenderRequest(OgcMapRequest request, Core.Features.Catalog.Domain.LayerDefinition layer)
     {

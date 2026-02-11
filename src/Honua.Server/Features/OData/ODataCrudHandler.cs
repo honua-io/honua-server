@@ -2,9 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
@@ -257,20 +254,11 @@ internal sealed class ODataCrudHandler(
                 "LayerId is required when creating a feature.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, resolvedLayerId.Value, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, resolvedLayerId.Value, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context,
-            resolvedLayerId.Value,
-            effectiveToken);
-        if (rbacError != null)
-        {
-            return rbacError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -354,20 +342,11 @@ internal sealed class ODataCrudHandler(
             return ODataUtilityService.CreateODataError(context, "InvalidRequest", "ObjectId in payload does not match route.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context,
-            layerId,
-            effectiveToken);
-        if (rbacError != null)
-        {
-            return rbacError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -438,20 +417,11 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: effectiveToken);
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context,
-            layerId,
-            effectiveToken);
-        if (rbacError != null)
-        {
-            return rbacError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(

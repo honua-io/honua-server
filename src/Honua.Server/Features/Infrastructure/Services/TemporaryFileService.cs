@@ -136,7 +136,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to store temporary file {FileId}", fileId);
+            LogStoreFileFailed(_logger, fileId, ex);
             throw;
         }
     }
@@ -213,7 +213,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve temporary file {FileId}", fileId);
+            LogRetrieveFileFailed(_logger, fileId, ex);
             return null;
         }
     }
@@ -242,7 +242,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to process metadata file {MetadataPath}", metadataPath);
+                    LogProcessMetadataFailed(_logger, metadataPath, ex);
                 }
             }
 
@@ -253,7 +253,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to cleanup expired temporary files");
+            LogCleanupFailed(_logger, ex);
         }
     }
 
@@ -282,7 +282,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to delete temporary file {FileId}", fileId);
+            LogDeleteFileFailed(_logger, fileId, ex);
         }
     }
 
@@ -305,6 +305,26 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
     [LoggerMessage(EventId = 4501, Level = LogLevel.Information,
         Message = "Cleaned up {CleanedCount} expired temporary files")]
     private static partial void LogExpiredFilesCleanedUp(ILogger logger, int cleanedCount);
+
+    [LoggerMessage(EventId = 4502, Level = LogLevel.Error,
+        Message = "Failed to store temporary file {FileId}")]
+    private static partial void LogStoreFileFailed(ILogger logger, string fileId, Exception exception);
+
+    [LoggerMessage(EventId = 4503, Level = LogLevel.Error,
+        Message = "Failed to retrieve temporary file {FileId}")]
+    private static partial void LogRetrieveFileFailed(ILogger logger, string fileId, Exception exception);
+
+    [LoggerMessage(EventId = 4504, Level = LogLevel.Warning,
+        Message = "Failed to process metadata file {MetadataPath}")]
+    private static partial void LogProcessMetadataFailed(ILogger logger, string metadataPath, Exception exception);
+
+    [LoggerMessage(EventId = 4505, Level = LogLevel.Error,
+        Message = "Failed to cleanup expired temporary files")]
+    private static partial void LogCleanupFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 4506, Level = LogLevel.Warning,
+        Message = "Failed to delete temporary file {FileId}")]
+    private static partial void LogDeleteFileFailed(ILogger logger, string fileId, Exception exception);
 
     [JsonSerializable(typeof(TemporaryFileMetadata))]
     private sealed partial class TemporaryFileMetadataJsonContext : JsonSerializerContext

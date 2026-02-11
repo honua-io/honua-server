@@ -99,13 +99,22 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
         ValidateKey(pattern);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var regex = new Regex(
-            "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        var prefix = TryGetSimplePrefix(pattern);
+        Regex? regex = null;
+        if (prefix == null)
+        {
+            regex = new Regex(
+                "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$",
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromMilliseconds(50));
+        }
 
         foreach (var key in _keys.Keys)
         {
-            if (!regex.IsMatch(key))
+            var isMatch = prefix != null
+                ? key.StartsWith(prefix, StringComparison.Ordinal)
+                : regex!.IsMatch(key);
+            if (!isMatch)
             {
                 continue;
             }
@@ -115,6 +124,18 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
         }
 
         return Task.CompletedTask;
+    }
+
+    private static string? TryGetSimplePrefix(string pattern)
+    {
+        if (pattern.Length > 0 &&
+            pattern[^1] == '*' &&
+            pattern.IndexOf('*') == pattern.Length - 1)
+        {
+            return pattern[..^1];
+        }
+
+        return null;
     }
 
     public void Dispose()

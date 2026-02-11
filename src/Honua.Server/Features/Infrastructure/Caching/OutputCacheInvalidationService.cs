@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// <summary>
 /// Centralized output cache invalidation for data mutations.
 /// </summary>
-internal sealed class OutputCacheInvalidationService
+internal sealed partial class OutputCacheInvalidationService
 {
     private readonly IOutputCacheStore? _cacheStore;
     private readonly IResponseCache? _responseCache;
@@ -102,7 +102,7 @@ internal sealed class OutputCacheInvalidationService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(ex, "Failed to evict output cache tag {Tag}", tag);
+                LogEvictTagFailed(_logger, tag, ex);
             }
         }
     }
@@ -127,8 +127,16 @@ internal sealed class OutputCacheInvalidationService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(ex, "Failed to evict response cache pattern {Pattern}", pattern);
+                LogEvictPatternFailed(_logger, pattern, ex);
             }
         }
     }
+
+    [LoggerMessage(EventId = 4510, Level = LogLevel.Warning,
+        Message = "Failed to evict output cache tag {Tag}")]
+    private static partial void LogEvictTagFailed(ILogger logger, string tag, Exception exception);
+
+    [LoggerMessage(EventId = 4511, Level = LogLevel.Warning,
+        Message = "Failed to evict response cache pattern {Pattern}")]
+    private static partial void LogEvictPatternFailed(ILogger logger, string pattern, Exception exception);
 }

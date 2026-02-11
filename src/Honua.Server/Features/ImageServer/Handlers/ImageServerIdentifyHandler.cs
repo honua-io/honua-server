@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -43,7 +42,11 @@ internal sealed class ImageServerIdentifyHandler
         IdentifyRequest request,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "identify",
+            HonuaTelemetry.Protocols.ImageServer,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "identify-pixel");
 
         try
         {
@@ -54,13 +57,6 @@ internal sealed class ImageServerIdentifyHandler
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return Results.NotFound();
             }
-
-            // Start telemetry activity
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "identify",
-                HonuaTelemetry.Protocols.ImageServer,
-                layerId.ToString(CultureInfo.InvariantCulture));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "identify-pixel");
 
             // Get raster data
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
@@ -110,9 +106,7 @@ internal sealed class ImageServerIdentifyHandler
             };
 
             ImageServerLog.IdentifyCompleted(_logger, layerId, pixelResult.HasData, pixelResult.BandValues.Count);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, 1);
+            scope.SetSuccess(1);
 
             return Results.Ok(response);
         }
@@ -123,12 +117,8 @@ internal sealed class ImageServerIdentifyHandler
         catch (Exception ex)
         {
             ImageServerLog.IdentifyFailed(_logger, ex, layerId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
+            scope.RecordException(ex);
             return Results.Problem("An error occurred while identifying pixel values.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
         }
     }
 

@@ -857,20 +857,6 @@ internal sealed partial class OgcFilterProcessor
         public static TemporalFilterResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
     }
 
-    private sealed class AxisSwapFilter : ICoordinateSequenceFilter
-    {
-        public bool Done => false;
-        public bool GeometryChanged => true;
-
-        public void Filter(CoordinateSequence seq, int i)
-        {
-            var x = seq.GetX(i);
-            var y = seq.GetY(i);
-            seq.SetX(i, y);
-            seq.SetY(i, x);
-        }
-    }
-
     private static partial class FilterLog
     {
         [LoggerMessage(EventId = 5470, Level = LogLevel.Warning,

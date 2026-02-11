@@ -557,13 +557,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         foreach (var kvp in _keyLocks)
         {
-            if (kvp.Value.Wait(0))
+            // Remove only idle locks from the dictionary.
+            // Do not dispose here: callers may still hold references obtained from GetOrAdd
+            // and disposing would create racy ObjectDisposedException failures.
+            if (kvp.Value.CurrentCount == 1)
             {
-                kvp.Value.Release();
-                if (_keyLocks.TryRemove(kvp))
-                {
-                    kvp.Value.Dispose();
-                }
+                _keyLocks.TryRemove(kvp);
             }
         }
     }

@@ -89,13 +89,19 @@ internal static class ServiceDataEditorAuthorization
             return AccessDecision.Allowed();
         }
 
-        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-
-        foreach (var service in services)
+        var scopedServiceIds = EnumerateServiceScopedRoleServiceIds(context.User, options)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (scopedServiceIds.Length == 0)
         {
-            if (service.Layers.Any(layer => layer.Id == layerId) &&
-                HasServiceScopedRole(context.User, options, service.Name))
+            return AccessDecision.Forbidden("User does not have the required data editor role.");
+        }
+
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        foreach (var serviceId in scopedServiceIds)
+        {
+            var service = await layerCatalog.GetServiceAsync(serviceId, cancellationToken);
+            if (service?.Layers.Any(layer => layer.Id == layerId) == true)
             {
                 return AccessDecision.Allowed();
             }
@@ -105,20 +111,7 @@ internal static class ServiceDataEditorAuthorization
     }
 
     private static IResult? CreateDecisionResult(HttpContext context, AccessDecision decision)
-    {
-        if (decision.IsAllowed)
-        {
-            return null;
-        }
-
-        var detail = decision.RequiresAuthentication
-            ? "Authentication is required to access this resource."
-            : "Access to this resource is forbidden.";
-
-        return decision.RequiresAuthentication
-            ? StandardErrorHelpers.CreateUnauthorized(context, detail)
-            : StandardErrorHelpers.CreateForbidden(context, detail);
-    }
+        => AccessPolicyHelpers.CreateAccessDeniedResult(context, decision);
 
     private static bool IsAdmin(ClaimsPrincipal principal, RbacOptions options)
     {
@@ -154,9 +147,7 @@ internal static class ServiceDataEditorAuthorization
 
     private static bool HasServiceScopedRole(ClaimsPrincipal principal, RbacOptions options, string serviceId)
     {
-        var prefix = string.IsNullOrWhiteSpace(options.DataEditorServicePrefix)
-            ? "data-editor:"
-            : options.DataEditorServicePrefix.Trim();
+        var prefix = GetServiceScopedRolePrefix(options);
 
         var expected = string.Concat(prefix, serviceId);
 
@@ -169,6 +160,36 @@ internal static class ServiceDataEditorAuthorization
         }
 
         return false;
+    }
+
+    private static IEnumerable<string> EnumerateServiceScopedRoleServiceIds(ClaimsPrincipal principal, RbacOptions options)
+    {
+        var prefix = GetServiceScopedRolePrefix(options);
+        foreach (var role in EnumerateRoles(principal, options))
+        {
+            if (!role.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (role.Length <= prefix.Length)
+            {
+                continue;
+            }
+
+            var serviceId = role[prefix.Length..].Trim();
+            if (serviceId.Length > 0)
+            {
+                yield return serviceId;
+            }
+        }
+    }
+
+    private static string GetServiceScopedRolePrefix(RbacOptions options)
+    {
+        return string.IsNullOrWhiteSpace(options.DataEditorServicePrefix)
+            ? "data-editor:"
+            : options.DataEditorServicePrefix.Trim();
     }
 
     private static IEnumerable<string> EnumerateRoles(ClaimsPrincipal principal, RbacOptions options)

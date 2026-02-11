@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -48,7 +47,11 @@ internal sealed class ImageServerExportHandler
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "export",
+            HonuaTelemetry.Protocols.ImageServer,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "export-image");
 
         try
         {
@@ -59,13 +62,6 @@ internal sealed class ImageServerExportHandler
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return Results.NotFound();
             }
-
-            // Start telemetry activity with proper protocol and tags
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "export",
-                HonuaTelemetry.Protocols.ImageServer,
-                layerId.ToString(CultureInfo.InvariantCulture));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "export-image");
 
             // Get raster data
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
@@ -125,9 +121,7 @@ internal sealed class ImageServerExportHandler
             };
 
             ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, 1);
+            scope.SetSuccess(1);
 
             return Results.Ok(exportResponse);
         }
@@ -138,12 +132,8 @@ internal sealed class ImageServerExportHandler
         catch (Exception ex)
         {
             ImageServerLog.ExportImageFailed(_logger, ex, layerId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
+            scope.RecordException(ex);
             return Results.Problem("An error occurred while exporting the image.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
         }
     }
 

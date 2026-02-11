@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
@@ -36,7 +36,11 @@ internal sealed class OgcMapsTileSetHandler
         HttpContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        Activity? featureActivity = null;
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "metadata",
+            HonuaTelemetry.Protocols.OgcMaps,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "get-map-tile-sets");
 
         try
         {
@@ -45,7 +49,7 @@ internal sealed class OgcMapsTileSetHandler
             if (layer == null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return Results.NotFound();
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
@@ -56,13 +60,6 @@ internal sealed class OgcMapsTileSetHandler
                     return accessError;
                 }
             }
-
-            // Start telemetry activity
-            featureActivity = HonuaTelemetry.StartFeatureActivity(
-                "metadata",
-                HonuaTelemetry.Protocols.OgcMaps,
-                layerId.ToString(CultureInfo.InvariantCulture));
-            featureActivity?.SetTag(HonuaTelemetry.Tags.Operation, "get-map-tile-sets");
 
             // Create tile set definitions for common tile matrix sets
             var tileSets = new[]
@@ -105,9 +102,7 @@ internal sealed class OgcMapsTileSetHandler
             };
 
             OgcMapsLog.TileSetsRetrieved(_logger, layerId, tileSets.Length);
-
-            // Record telemetry success
-            HonuaTelemetry.SetSuccess(featureActivity, tileSets.Length);
+            scope.SetSuccess(tileSets.Length);
 
             return Results.Ok(tileSets);
         }
@@ -118,12 +113,18 @@ internal sealed class OgcMapsTileSetHandler
         catch (Exception ex)
         {
             OgcMapsLog.TileSetRetrievalFailed(_logger, ex, layerId);
-            HonuaTelemetry.RecordException(featureActivity, ex);
-            return Results.Problem("An error occurred while retrieving map tile sets.", statusCode: 500);
-        }
-        finally
-        {
-            featureActivity?.Dispose();
+            scope.RecordException(ex);
+            return CreateErrorResult(context, "An error occurred while retrieving map tile sets.");
         }
     }
+
+    private static IResult CreateNotFoundResult(HttpContext? context, string message)
+        => context is not null
+            ? StandardErrorHelpers.CreateNotFound(context, message)
+            : Results.NotFound();
+
+    private static IResult CreateErrorResult(HttpContext? context, string message)
+        => context is not null
+            ? StandardErrorHelpers.CreateInternalServerError(context, message)
+            : Results.Problem(message, statusCode: 500);
 }

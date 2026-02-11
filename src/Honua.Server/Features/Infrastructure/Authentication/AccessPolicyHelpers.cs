@@ -13,6 +13,25 @@ namespace Honua.Server.Features.Infrastructure.Authentication;
 /// </summary>
 internal static class AccessPolicyHelpers
 {
+    internal const string AuthRequiredMessage = "Authentication is required to access this resource.";
+    internal const string AccessForbiddenMessage = "Access to this resource is forbidden.";
+
+    /// <summary>
+    /// Creates the appropriate error result for a denied access decision.
+    /// Returns null if the decision is allowed.
+    /// </summary>
+    internal static IResult? CreateAccessDeniedResult(HttpContext context, AccessDecision decision)
+    {
+        if (decision.IsAllowed)
+        {
+            return null;
+        }
+
+        return decision.RequiresAuthentication
+            ? StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage)
+            : StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+    }
+
     public static AccessDecision EvaluateAccess(
         HttpContext context,
         AccessPolicy? layerPolicy,
@@ -35,18 +54,7 @@ internal static class AccessPolicyHelpers
         AccessScope scope = AccessScope.Read)
     {
         var decision = EvaluateAccess(context, layerPolicy, servicePolicy, scope);
-        if (decision.IsAllowed)
-        {
-            return null;
-        }
-
-        var detail = decision.RequiresAuthentication
-            ? "Authentication is required to access this resource."
-            : "Access to this resource is forbidden.";
-
-        return decision.RequiresAuthentication
-            ? StandardErrorHelpers.CreateUnauthorized(context, detail)
-            : StandardErrorHelpers.CreateForbidden(context, detail);
+        return CreateAccessDeniedResult(context, decision);
     }
 
     public static IResult? RequireServiceAccess(
@@ -97,13 +105,9 @@ internal static class AccessPolicyHelpers
             return null;
         }
 
-        var detail = requiresAuth
-            ? "Authentication is required to access this resource."
-            : "Access to this resource is forbidden.";
-
         return requiresAuth
-            ? StandardErrorHelpers.CreateUnauthorized(context, detail)
-            : StandardErrorHelpers.CreateForbidden(context, detail);
+            ? StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage)
+            : StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
     }
 
     public static bool IsLayerAccessible(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
