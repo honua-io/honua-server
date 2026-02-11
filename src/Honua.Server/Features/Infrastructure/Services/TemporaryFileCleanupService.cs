@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Services;
@@ -28,7 +29,7 @@ internal sealed class TemporaryFileCleanupService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Temporary file cleanup service started. Cleanup interval: {Interval}", _cleanupInterval);
+        TemporaryFileCleanupLog.ServiceStarted(_logger, _cleanupInterval);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -48,7 +49,7 @@ internal sealed class TemporaryFileCleanupService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred during temporary file cleanup");
+                TemporaryFileCleanupLog.CleanupFailed(_logger, ex);
 
                 // Wait a bit before trying again after an error
                 try
@@ -62,7 +63,7 @@ internal sealed class TemporaryFileCleanupService : BackgroundService
             }
         }
 
-        _logger.LogInformation("Temporary file cleanup service stopped");
+        TemporaryFileCleanupLog.ServiceStopped(_logger);
     }
 
     private async Task PerformCleanupAsync(CancellationToken cancellationToken)
@@ -70,8 +71,41 @@ internal sealed class TemporaryFileCleanupService : BackgroundService
         using var scope = _serviceScopeFactory.CreateScope();
         var temporaryFileService = scope.ServiceProvider.GetRequiredService<ITemporaryFileService>();
 
-        _logger.LogDebug("Starting temporary file cleanup");
+        TemporaryFileCleanupLog.CleanupStarted(_logger);
         await temporaryFileService.CleanupExpiredFilesAsync(cancellationToken);
-        _logger.LogDebug("Temporary file cleanup completed");
+        TemporaryFileCleanupLog.CleanupCompleted(_logger);
     }
+}
+
+internal static partial class TemporaryFileCleanupLog
+{
+    [LoggerMessage(
+        EventId = 8900,
+        Level = LogLevel.Information,
+        Message = "Temporary file cleanup service started. Cleanup interval: {Interval}")]
+    public static partial void ServiceStarted(ILogger logger, TimeSpan interval);
+
+    [LoggerMessage(
+        EventId = 8901,
+        Level = LogLevel.Error,
+        Message = "Error occurred during temporary file cleanup")]
+    public static partial void CleanupFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 8902,
+        Level = LogLevel.Information,
+        Message = "Temporary file cleanup service stopped")]
+    public static partial void ServiceStopped(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 8903,
+        Level = LogLevel.Debug,
+        Message = "Starting temporary file cleanup")]
+    public static partial void CleanupStarted(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 8904,
+        Level = LogLevel.Debug,
+        Message = "Temporary file cleanup completed")]
+    public static partial void CleanupCompleted(ILogger logger);
 }

@@ -51,7 +51,8 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         using (LogContext.PushProperty(CorrelationIdLogProperty, correlationId))
         {
             // Log correlation ID establishment for debugging (verbose level)
-            InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, context.Request.Path);
+            var requestPath = context.Request.Path.Value ?? string.Empty;
+            InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, requestPath);
 
             try
             {

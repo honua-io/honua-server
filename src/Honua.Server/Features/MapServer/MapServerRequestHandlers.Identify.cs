@@ -166,15 +166,18 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, srError ?? "Invalid spatial reference.");
             }
 
-            if (TryGetIdentifyPoint(geometry, out var pointX, out var pointY))
+            if (logger.IsEnabled(LogLevel.Information))
             {
-                MapServerLog.IdentifyRequested(logger, serviceId,
-                    pointX.ToString(CultureInfo.InvariantCulture),
-                    pointY.ToString(CultureInfo.InvariantCulture));
-            }
-            else
-            {
-                MapServerLog.IdentifyRequested(logger, serviceId, "n/a", "n/a");
+                if (TryGetIdentifyPoint(geometry, out var pointX, out var pointY))
+                {
+                    var pointXString = pointX.ToString(CultureInfo.InvariantCulture);
+                    var pointYString = pointY.ToString(CultureInfo.InvariantCulture);
+                    MapServerLog.IdentifyRequested(logger, serviceId, pointXString, pointYString);
+                }
+                else
+                {
+                    MapServerLog.IdentifyRequested(logger, serviceId, "n/a", "n/a");
+                }
             }
 
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
