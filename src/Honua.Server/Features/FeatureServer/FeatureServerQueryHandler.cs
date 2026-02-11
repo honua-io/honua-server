@@ -18,6 +18,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -25,6 +26,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -33,7 +35,7 @@ namespace Honua.Server.Features.FeatureServer;
 /// </summary>
 internal sealed class FeatureServerQueryHandler(
     FeatureServerQueryDependencies dependencies,
-    ILogger<FeatureServerQueryHandler> logger)
+    ILogger<FeatureServerQueryHandler> logger) : IFeatureQueryDispatcher
 {
     private static readonly IResult _streamingResult = new StreamingResult();
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
@@ -49,6 +51,33 @@ internal sealed class FeatureServerQueryHandler(
 
     /// <summary>
     /// Executes a feature query operation with proper validation and formatting.
+    /// </summary>
+    public async Task<IResult> HandleQueryFeaturesAsync(
+        string serviceId,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        HttpContext context,
+        ICommonQueryValidator queryValidator,
+        CancellationToken cancellationToken = default)
+    {
+        if (!FeatureServerEndpoints.TryParseQueryParameters(values, out var queryParams, out var parseError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parseError ?? "Invalid query parameter."]);
+        }
+
+        return await HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            queryParams,
+            context,
+            queryValidator,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes a feature query operation with parsed query parameters.
     /// </summary>
     public async Task<IResult> HandleQueryFeaturesAsync(
         string serviceId,

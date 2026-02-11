@@ -20,6 +20,7 @@ public sealed class VerticalSliceIsolationTests
     {
         "Admin",
         "FeatureServer",
+        "EsriCatalog",
         "GeometryService",
         "ImageServer",
         "MapServer",
