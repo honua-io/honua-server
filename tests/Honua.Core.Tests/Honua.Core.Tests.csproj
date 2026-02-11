@@ -17,7 +17,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="FluentAssertions" Version="7.2.0" />
+    <PackageReference Include="FluentAssertions" Version="7.2.1" />
     <PackageReference Include="FsCheck" Version="3.3.2" />
     <PackageReference Include="FsCheck.Xunit" Version="3.3.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
