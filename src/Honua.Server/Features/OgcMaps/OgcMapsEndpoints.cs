@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
 
@@ -10,7 +11,7 @@ namespace Honua.Server.Features.OgcMaps;
 /// OGC API - Maps endpoints providing server-rendered map imagery.
 /// Implements OGC API - Maps Part 1: Core specification.
 /// </summary>
-public static class OgcMapsEndpoints
+public static partial class OgcMapsEndpoints
 {
     /// <summary>
     /// Maps OGC API - Maps endpoints to the application.
@@ -140,6 +141,12 @@ public static class OgcMapsEndpoints
             return Results.BadRequest("Collection ID must be a valid integer");
         }
 
+        // Validate styleId from URL path: alphanumeric, dash, underscore only
+        if (string.IsNullOrEmpty(styleId) || !StyleIdPattern().IsMatch(styleId) || styleId.Length > 100)
+        {
+            return Results.BadRequest("StyleId must contain only alphanumeric characters, dashes, and underscores");
+        }
+
         return await handler.RenderStyledMapAsync(layerId, styleId, request, cancellationToken);
     }
 
@@ -159,4 +166,6 @@ public static class OgcMapsEndpoints
         return await handler.GetMapTileSetsAsync(layerId, cancellationToken);
     }
 
+    [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
+    private static partial Regex StyleIdPattern();
 }

@@ -331,10 +331,10 @@ internal sealed class PostgresRasterStore : IRasterStore
             stats.Add(new RasterStatistics
             {
                 Band = cachedReader.GetInt32(0),
-                MinValue = cachedReader.IsDBNull(1) ? 0 : cachedReader.GetDouble(1),
-                MaxValue = cachedReader.IsDBNull(2) ? 0 : cachedReader.GetDouble(2),
-                MeanValue = cachedReader.IsDBNull(3) ? 0 : cachedReader.GetDouble(3),
-                StandardDeviation = cachedReader.IsDBNull(4) ? 0 : cachedReader.GetDouble(4),
+                MinValue = cachedReader.IsDBNull(1) ? null : cachedReader.GetDouble(1),
+                MaxValue = cachedReader.IsDBNull(2) ? null : cachedReader.GetDouble(2),
+                MeanValue = cachedReader.IsDBNull(3) ? null : cachedReader.GetDouble(3),
+                StandardDeviation = cachedReader.IsDBNull(4) ? null : cachedReader.GetDouble(4),
                 ValidPixelCount = cachedReader.IsDBNull(5) ? 0 : cachedReader.GetInt64(5),
                 NoDataPixelCount = cachedReader.IsDBNull(6) ? 0 : cachedReader.GetInt64(6)
             });
@@ -377,10 +377,10 @@ internal sealed class PostgresRasterStore : IRasterStore
             stats.Add(new RasterStatistics
             {
                 Band = computeReader.GetInt32(0),
-                MinValue = computeReader.IsDBNull(1) ? 0 : computeReader.GetDouble(1),
-                MaxValue = computeReader.IsDBNull(2) ? 0 : computeReader.GetDouble(2),
-                MeanValue = computeReader.IsDBNull(3) ? 0 : computeReader.GetDouble(3),
-                StandardDeviation = computeReader.IsDBNull(4) ? 0 : computeReader.GetDouble(4),
+                MinValue = computeReader.IsDBNull(1) ? null : computeReader.GetDouble(1),
+                MaxValue = computeReader.IsDBNull(2) ? null : computeReader.GetDouble(2),
+                MeanValue = computeReader.IsDBNull(3) ? null : computeReader.GetDouble(3),
+                StandardDeviation = computeReader.IsDBNull(4) ? null : computeReader.GetDouble(4),
                 ValidPixelCount = computeReader.IsDBNull(5) ? 0 : computeReader.GetInt64(5),
                 NoDataPixelCount = 0
             });

@@ -61,6 +61,14 @@ public sealed class TemporaryFileOptions
 /// </summary>
 internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService
 {
+    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png",
+        "image/jpeg",
+        "image/tiff",
+        "application/octet-stream"
+    };
+
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
 
@@ -84,6 +92,11 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         if (data.Length > _options.MaxFileSizeBytes)
         {
             throw new InvalidOperationException($"File size {data.Length} exceeds maximum allowed size {_options.MaxFileSizeBytes}");
+        }
+
+        if (!AllowedContentTypes.Contains(contentType))
+        {
+            throw new InvalidOperationException($"Content type '{contentType}' is not allowed. Allowed types: {string.Join(", ", AllowedContentTypes)}");
         }
 
         var fileId = Guid.NewGuid().ToString("N");
@@ -173,6 +186,13 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             foreach (var ext in possibleExtensions)
             {
                 var testPath = Path.Combine(_options.StorageDirectory, $"{actualFileId}{ext}");
+                // Defense-in-depth: verify data file path also stays within storage directory
+                var resolvedData = Path.GetFullPath(testPath);
+                if (!resolvedData.StartsWith(resolvedBase, StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
                 if (File.Exists(testPath))
                 {
                     filePath = testPath;
