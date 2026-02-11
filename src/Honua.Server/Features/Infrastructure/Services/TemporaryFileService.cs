@@ -61,7 +61,7 @@ public sealed class TemporaryFileOptions
 /// </summary>
 internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService
 {
-    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> _allowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/png",
         "image/jpeg",
@@ -69,7 +69,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         "application/octet-stream"
     };
 
-    private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".tiff", ".tif", ""];
+    private static readonly string[] _imageExtensions = [".png", ".jpg", ".jpeg", ".tiff", ".tif", ""];
 
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
@@ -96,9 +96,9 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             throw new InvalidOperationException($"File size {data.Length} exceeds maximum allowed size {_options.MaxFileSizeBytes}");
         }
 
-        if (!AllowedContentTypes.Contains(contentType))
+        if (!_allowedContentTypes.Contains(contentType))
         {
-            throw new InvalidOperationException($"Content type '{contentType}' is not allowed. Allowed types: {string.Join(", ", AllowedContentTypes)}");
+            throw new InvalidOperationException($"Content type '{contentType}' is not allowed. Allowed types: {string.Join(", ", _allowedContentTypes)}");
         }
 
         var fileId = Guid.NewGuid().ToString("N");
@@ -182,7 +182,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             }
 
             // Find the actual file (try different extensions)
-            var possibleExtensions = ImageExtensions;
+            var possibleExtensions = _imageExtensions;
             string? filePath = null;
 
             foreach (var ext in possibleExtensions)
@@ -269,7 +269,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             }
 
             // Delete data file (try different extensions)
-            var possibleExtensions = ImageExtensions;
+            var possibleExtensions = _imageExtensions;
             foreach (var ext in possibleExtensions)
             {
                 var filePath = Path.Combine(_options.StorageDirectory, $"{fileId}{ext}");
