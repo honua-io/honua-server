@@ -1,12 +1,26 @@
-name: Bug
-description: Report a bug or regression
+name: Bug Report
+description: Report a bug or regression with reproducible details
+title: "bug: "
 labels: ["bug"]
 body:
-  - type: textarea
-    id: description
+  - type: markdown
     attributes:
-      label: Description
-      description: What's wrong?
+      value: |
+        Thanks for reporting this. Please include enough detail for us to reproduce and fix the issue quickly.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A concise summary of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recordings
+      description: Drag and drop screenshots, GIFs, or screen recordings here (or paste links).
     validations:
       required: true
 
@@ -14,11 +28,11 @@ body:
     id: reproduction
     attributes:
       label: Steps to Reproduce
-      description: How can we reproduce this?
+      description: How can we reproduce this issue?
       placeholder: |
-        1.
-        2.
-        3.
+        1. Go to ...
+        2. Run ...
+        3. Observe ...
     validations:
       required: true
 
@@ -39,9 +53,16 @@ body:
       required: true
 
   - type: textarea
-    id: regression-test
+    id: environment
     attributes:
-      label: Regression Test
-      description: Describe the test that should prevent this from recurring
+      label: Environment
+      description: Provide runtime and client details so we can reproduce accurately.
       placeholder: |
-        Integration test that verifies...
+        - Honua version/commit:
+        - Deployment: (Docker, local, cloud)
+        - OS:
+        - Browser/client + version:
+        - Database: (PostgreSQL/PostGIS version)
+        - Any relevant config:
+    validations:
+      required: true
