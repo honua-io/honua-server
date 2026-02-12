@@ -208,18 +208,18 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "failed";
-                errorMessage = "Import failed.";
+                errorMessage = ex.Message;
                 failedFeatures = state.Progress.FailedFeatures;
                 state.Progress = state.Progress with
                 {
                     Status = ImportStatus.Failed,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = "Import failed."
+                    ErrorMessage = ex.Message
                 };
                 ImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
                     errorMessage, stopwatch.Elapsed.TotalMilliseconds);

@@ -97,11 +97,11 @@ public abstract class LayerSelectionPageBase : ComponentBase
                 SelectedConnectionId = Connections[0].ConnectionId;
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             if (requestId == _connectionsRequestId)
             {
-                ErrorMessage = "Failed to load connections.";
+                ErrorMessage = $"Failed to load connections: {ex.Message}";
             }
         }
         finally
@@ -146,11 +146,11 @@ public abstract class LayerSelectionPageBase : ComponentBase
             PublishedLayers.Clear();
             PublishedLayers.AddRange(result.Data ?? Array.Empty<PublishedLayerSummary>());
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             if (requestId == _layersRequestId)
             {
-                ErrorMessage = "Failed to load layers.";
+                ErrorMessage = $"Failed to load layers: {ex.Message}";
                 PublishedLayers.Clear();
             }
         }

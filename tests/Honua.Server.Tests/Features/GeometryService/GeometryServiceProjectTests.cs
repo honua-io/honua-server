@@ -27,21 +27,20 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/project")]
     public async Task Project_Wgs84ToWebMercator_ReturnsCorrectCoordinates()
     {
-        // Arrange - a point in WGS84, project to Web Mercator (3857)
-        var request = new ProjectRequest
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": 0, "y": 0, "spatialReference": {"wkid": 4326}}""").RootElement],
-            InSR = 4326,
-            OutSR = 3857
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0, "spatialReference": {"wkid": 4326}}]
+            },
+            "inSR": "4326",
+            "outSR": "3857"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.ProjectRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -49,9 +48,9 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
             responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
 
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(1);
+        result!.GeometryType.Should().Be("esriGeometryPoint");
+        result.Geometries.Should().HaveCount(1);
 
-        // Origin point (0,0) in WGS84 should be (0,0) in Web Mercator too
         var geom = result.Geometries![0];
         geom.TryGetProperty("x", out var x).Should().BeTrue();
         x.GetDouble().Should().BeApproximately(0, 1.0);
@@ -62,21 +61,20 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/project")]
     public async Task Project_SameSrid_ReturnsUnchanged()
     {
-        // Arrange - project 4326 to 4326 (no-op)
-        var request = new ProjectRequest
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}""").RootElement],
-            InSR = 4326,
-            OutSR = 4326
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}]
+            },
+            "inSR": "4326",
+            "outSR": "4326"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.ProjectRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -86,7 +84,6 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.Geometries.Should().HaveCount(1);
 
-        // Coordinates should be unchanged
         var geom = result.Geometries![0];
         geom.TryGetProperty("x", out var x).Should().BeTrue();
         x.GetDouble().Should().BeApproximately(-122.4194, 0.001);
@@ -97,21 +94,20 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/project")]
     public async Task Project_InvalidSrid_Returns400()
     {
-        // Arrange - invalid inSR
-        var request = new ProjectRequest
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": 0, "y": 0}""").RootElement],
-            InSR = 0,
-            OutSR = 4326
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0}]
+            },
+            "inSR": "0",
+            "outSR": "4326"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.ProjectRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
 
-        // Assert
         response.Be400BadRequest();
     }
 
@@ -120,26 +116,24 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/project")]
     public async Task Project_BatchGeometries_ReturnsAll()
     {
-        // Arrange - multiple points
-        var request = new ProjectRequest
+        var body = """
         {
-            Geometries =
-            [
-                JsonDocument.Parse("""{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}""").RootElement,
-                JsonDocument.Parse("""{"x": -73.9857, "y": 40.7484, "spatialReference": {"wkid": 4326}}""").RootElement,
-                JsonDocument.Parse("""{"x": 2.3522, "y": 48.8566, "spatialReference": {"wkid": 4326}}""").RootElement
-            ],
-            InSR = 4326,
-            OutSR = 3857
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [
+                    {"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}},
+                    {"x": -73.9857, "y": 40.7484, "spatialReference": {"wkid": 4326}},
+                    {"x": 2.3522, "y": 48.8566, "spatialReference": {"wkid": 4326}}
+                ]
+            },
+            "inSR": "4326",
+            "outSR": "3857"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.ProjectRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -148,5 +142,66 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.Geometries.Should().HaveCount(3, "all input geometries should be projected");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("GET /rest/services/geometry/project")]
+    public async Task Project_GetWithQueryString_ReturnsProjectedGeometry()
+    {
+        var geometries = Uri.EscapeDataString(
+            """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""");
+        var url = $"/rest/services/geometry/project?geometries={geometries}&inSR=4326&outSR=3857";
+
+        var response = await _fixture.Client.GetAsync(url);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.GeometryType.Should().Be("esriGeometryPoint");
+        result.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("GET /rest/services/geometry/project")]
+    public async Task Project_GetMissingParameters_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services/geometry/project?inSR=4326");
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/geometry/project")]
+    public async Task Project_JsonSpatialReference_ParsesCorrectly()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0}]
+            },
+            "inSR": {"wkid": 4326},
+            "outSR": {"wkid": 3857}
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
     }
 }

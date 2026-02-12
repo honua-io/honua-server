@@ -27,23 +27,22 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_PointGeometry_ReturnsPolygon()
     {
-        // Arrange - a point in WGS84
-        var request = new BufferRequest
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}""").RootElement],
-            InSR = 4326,
-            Distances = [1000],
-            Unit = "esriMeters",
-            Geodesic = true
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}]
+            },
+            "inSR": "4326",
+            "distances": "1000",
+            "unit": "esriMeters",
+            "geodesic": "true"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -51,9 +50,8 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
             responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
 
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(1);
-
-        // Buffer of a point should produce a polygon with rings
+        result!.GeometryType.Should().Be("esriGeometryPolygon");
+        result.Geometries.Should().HaveCount(1);
         var geom = result.Geometries![0];
         geom.GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
     }
@@ -63,23 +61,22 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_GeodesicProjectedInSR_ReturnsPolygon()
     {
-        // Arrange - a point in Web Mercator (projected SRID)
-        var request = new BufferRequest
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": 0, "y": 0}""").RootElement],
-            InSR = 3857,
-            Distances = [1000],
-            Unit = "esriMeters",
-            Geodesic = true
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0}]
+            },
+            "inSR": "3857",
+            "distances": "1000",
+            "unit": "esriMeters",
+            "geodesic": "true"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -88,7 +85,6 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.Geometries.Should().HaveCount(1);
-
         var geom = result.Geometries![0];
         geom.GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
     }
@@ -98,27 +94,25 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_MultipleDistances_ReturnsMultipleGeometries()
     {
-        // Arrange - two points with two distances
-        var request = new BufferRequest
+        var body = """
         {
-            Geometries =
-            [
-                JsonDocument.Parse("""{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}""").RootElement,
-                JsonDocument.Parse("""{"x": -73.9857, "y": 40.7484, "spatialReference": {"wkid": 4326}}""").RootElement
-            ],
-            InSR = 4326,
-            Distances = [500, 1000],
-            Unit = "esriMeters",
-            Geodesic = true
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [
+                    {"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}},
+                    {"x": -73.9857, "y": 40.7484, "spatialReference": {"wkid": 4326}}
+                ]
+            },
+            "inSR": "4326",
+            "distances": "500,1000",
+            "unit": "esriMeters",
+            "geodesic": "true"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -134,28 +128,26 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_UnionResults_ReturnsSingleGeometry()
     {
-        // Arrange - two nearby points that will overlap when buffered
-        var request = new BufferRequest
+        var body = """
         {
-            Geometries =
-            [
-                JsonDocument.Parse("""{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}""").RootElement,
-                JsonDocument.Parse("""{"x": -122.4180, "y": 37.7760, "spatialReference": {"wkid": 4326}}""").RootElement
-            ],
-            InSR = 4326,
-            Distances = [5000],
-            Unit = "esriMeters",
-            UnionResults = true,
-            Geodesic = true
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [
+                    {"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}},
+                    {"x": -122.4180, "y": 37.7760, "spatialReference": {"wkid": 4326}}
+                ]
+            },
+            "inSR": "4326",
+            "distances": "5000",
+            "unit": "esriMeters",
+            "unionResults": "true",
+            "geodesic": "true"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -171,21 +163,20 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_InvalidGeometry_Returns400()
     {
-        // Arrange - empty geometries array
-        var request = new BufferRequest
+        var body = """
         {
-            Geometries = [],
-            InSR = 4326,
-            Distances = [100]
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": []
+            },
+            "inSR": "4326",
+            "distances": "100"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
 
-        // Assert
         response.Be400BadRequest();
     }
 
@@ -194,21 +185,82 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_MissingDistance_Returns400()
     {
-        // Arrange - no distances
-        var request = new BufferRequest
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}""").RootElement],
-            InSR = 4326,
-            Distances = []
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}]
+            },
+            "inSR": "4326"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.BufferRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
 
-        // Assert
         response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("GET /rest/services/geometry/buffer")]
+    public async Task Buffer_GetWithQueryString_ReturnsPolygon()
+    {
+        var url = "/rest/services/geometry/buffer" +
+            "?geometries=%7B%22geometryType%22%3A%22esriGeometryPoint%22%2C%22geometries%22%3A%5B%7B%22x%22%3A-122.4194%2C%22y%22%3A37.7749%7D%5D%7D" +
+            "&inSR=4326&distances=1000&unit=esriMeters&geodesic=true";
+
+        var response = await _fixture.Client.GetAsync(url);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.GeometryType.Should().Be("esriGeometryPolygon");
+        result.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("GET /rest/services/geometry/buffer")]
+    public async Task Buffer_GetMissingParameters_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services/geometry/buffer?inSR=4326");
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/geometry/buffer")]
+    public async Task Buffer_JsonSpatialReference_ParsesCorrectly()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -122.4194, "y": 37.7749}]
+            },
+            "inSR": {"wkid": 4326},
+            "distances": "1000",
+            "unit": "9001",
+            "geodesic": "true"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
     }
 }

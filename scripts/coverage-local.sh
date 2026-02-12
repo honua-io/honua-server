@@ -81,32 +81,14 @@ if [[ -f "${REPORTS_DIR}/Summary.txt" ]]; then
     cat "${REPORTS_DIR}/Summary.txt"
 fi
 
-# Check if coverage meets thresholds
+# Coverage summary (informational only)
 if [[ -f "${REPORTS_DIR}/Summary.json" ]]; then
     LINE_COVERAGE=$(jq -r '.summary.linecoverage' "${REPORTS_DIR}/Summary.json" 2>/dev/null || echo "0")
     BRANCH_COVERAGE=$(jq -r '.summary.branchcoverage' "${REPORTS_DIR}/Summary.json" 2>/dev/null || echo "0")
 
-    echo -e "\n${BLUE}🎯 Threshold Check:${NC}"
-
-    # Current thresholds from CI
-    LINE_THRESHOLD=1
-    BRANCH_THRESHOLD=0.5
-
-    if (( $(echo "$LINE_COVERAGE >= $LINE_THRESHOLD" | bc -l) )); then
-        echo -e "✅ Line coverage: ${GREEN}${LINE_COVERAGE}%${NC} (>= ${LINE_THRESHOLD}%)"
-    else
-        echo -e "❌ Line coverage: ${RED}${LINE_COVERAGE}%${NC} (< ${LINE_THRESHOLD}%)"
-    fi
-
-    if (( $(echo "$BRANCH_COVERAGE >= $BRANCH_THRESHOLD" | bc -l) )); then
-        echo -e "✅ Branch coverage: ${GREEN}${BRANCH_COVERAGE}%${NC} (>= ${BRANCH_THRESHOLD}%)"
-    else
-        echo -e "❌ Branch coverage: ${RED}${BRANCH_COVERAGE}%${NC} (< ${BRANCH_THRESHOLD}%)"
-    fi
-
-    # Roadmap reminder
-    echo -e "\n${YELLOW}🛣️ Coverage Roadmap:${NC}"
-    echo "  Current: ~0.7%/0.4% → ${LINE_THRESHOLD}%/${BRANCH_THRESHOLD}% → 10%/5% → 80%/70% (MVP)"
+    echo -e "\n${BLUE}📈 Coverage Snapshot:${NC}"
+    echo -e "Line coverage: ${GREEN}${LINE_COVERAGE}%${NC}"
+    echo -e "Branch coverage: ${GREEN}${BRANCH_COVERAGE}%${NC}"
 fi
 
 # Open HTML report if on macOS

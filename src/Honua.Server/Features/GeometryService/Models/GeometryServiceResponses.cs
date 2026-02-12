@@ -12,6 +12,12 @@ namespace Honua.Server.Features.GeometryService.Models;
 public sealed class GeometryServiceResponse
 {
     /// <summary>
+    /// The geometry type of the result geometries (e.g. esriGeometryPolygon).
+    /// </summary>
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; init; }
+
+    /// <summary>
     /// Array of result geometries in GeoServices JSON format.
     /// </summary>
     [JsonPropertyName("geometries")]

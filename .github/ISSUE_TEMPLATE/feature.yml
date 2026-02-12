@@ -1,60 +1,63 @@
-name: Feature
-description: New feature or enhancement
-labels: ["enhancement"]
+name: Feature / Feedback
+description: Share product feedback, pain points, and feature requests
+title: "feedback: "
+labels: ["feedback", "enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing feedback. Focus on the problem and desired outcome so we can prioritize effectively.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What is difficult, missing, or broken in your workflow today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired-outcome
+    attributes:
+      label: Desired outcome
+      description: What would success look like for you?
+    validations:
+      required: true
+
   - type: dropdown
-    id: phase
+    id: priority
     attributes:
-      label: MVP Phase
-      description: Which phase does this belong to?
+      label: Priority
+      description: How urgent is this request?
       options:
-        - Phase 0 - Foundation
-        - Phase 1 - FeatureServer Query
-        - Phase 2 - FeatureServer Editing
-        - Phase 3 - OGC API Features
-        - Phase 3.25 - Vector Tiles (MVT)
-        - Phase 3.5 - OData v4
-        - Phase 4 - Admin UI + File Import
-        - Phase 4.5 - Deployment Templates
-        - Phase 5 - Authentication + Polish
-        - Backlog (post-MVP)
+        - P1 - Critical (blocking)
+        - P2 - High
+        - P3 - Medium
+        - P4 - Low / nice to have
     validations:
       required: true
 
   - type: textarea
-    id: description
+    id: impact
     attributes:
-      label: Description
-      description: What should be implemented?
+      label: Impact
+      description: Who is affected and what is the impact if we do or do not implement this?
+      placeholder: |
+        - Impacted users:
+        - Frequency:
+        - Business/operational impact:
+        - Workarounds:
     validations:
       required: true
 
   - type: textarea
-    id: acceptance
+    id: proposed-approach
     attributes:
-      label: Acceptance Criteria
-      description: How do we know this is done?
-      placeholder: |
-        - [ ] Criterion 1
-        - [ ] Criterion 2
-        - [ ] Tests written and passing
-    validations:
-      required: true
+      label: Proposed approach (optional)
+      description: Share any ideas for implementation, API shape, or UX flow.
 
   - type: textarea
-    id: legacy-reference
+    id: additional-context
     attributes:
-      label: Legacy Reference
-      description: Relevant files in ../Honua.Server/ for behavior reference (not copy-paste)
-      placeholder: |
-        - src/platform/core/Query/...
-        - tests/integration/Query/...
-
-  - type: textarea
-    id: tests
-    attributes:
-      label: Test Plan
-      description: What tests are needed?
-      placeholder: |
-        - [ ] Integration test: ...
-        - [ ] Edge case: ...
+      label: Additional context (optional)
+      description: Links, screenshots, logs, mockups, or references.

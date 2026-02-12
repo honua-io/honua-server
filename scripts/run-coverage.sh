@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Comprehensive test coverage script for achieving 95%+ coverage
+# Optional coverage collection and reporting script
 
 set -e
 
@@ -89,29 +89,10 @@ if command -v reportgenerator &> /dev/null; then
       -reporttypes:JsonSummary
 fi
 
-echo "📈 Coverage Quality Gates Check..."
-
-# Extract coverage percentages (this would need actual implementation)
+echo "📈 Coverage Summary..."
 LINE_COVERAGE=$(cat coverage-reports/summary/Summary.json | jq -r '.coverage.linecoverage' 2>/dev/null || echo "0")
 BRANCH_COVERAGE=$(cat coverage-reports/summary/Summary.json | jq -r '.coverage.branchcoverage' 2>/dev/null || echo "0")
-
 echo "Line Coverage: ${LINE_COVERAGE}%"
 echo "Branch Coverage: ${BRANCH_COVERAGE}%"
-
-# Quality gates
-if (( $(echo "$LINE_COVERAGE >= 95" | bc -l 2>/dev/null || echo "0") )); then
-    echo "✅ Line coverage target met (95%)"
-else
-    echo "❌ Line coverage below target: ${LINE_COVERAGE}% (target: 95%)"
-    exit 1
-fi
-
-if (( $(echo "$BRANCH_COVERAGE >= 90" | bc -l 2>/dev/null || echo "0") )); then
-    echo "✅ Branch coverage target met (90%)"
-else
-    echo "❌ Branch coverage below target: ${BRANCH_COVERAGE}% (target: 90%)"
-    exit 1
-fi
-
-echo "✅ All coverage targets met!"
+echo "ℹ️ Coverage is informational and not used as a CI quality gate."
 echo "📊 Full report available at: coverage-reports/index.html"

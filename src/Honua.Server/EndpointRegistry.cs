@@ -20,6 +20,7 @@ public static class EndpointRegistry
 
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
+        new("GET", "/api/v1/admin/connections/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
         new("GET", "/api/v1/admin/connections/{id}/layers"),
         new("POST", "/api/v1/admin/connections/{id}/layers"),
@@ -29,11 +30,16 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/capabilities"),
         new("GET", "/api/v1/admin/manifest"),
         new("POST", "/api/v1/admin/manifest/apply"),
+        new("GET", "/api/v1/admin/services"),
+        new("GET", "/api/v1/admin/services/{serviceName}/settings"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/protocols"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/mapserver"),
 
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
         new("GET", "/api/v1/admin/connections/{id}"),
         new("POST", "/api/v1/admin/connections"),
+        new("POST", "/api/v1/admin/connections/test"),
         new("PUT", "/api/v1/admin/connections/{id}"),
         new("DELETE", "/api/v1/admin/connections/{id}"),
         new("POST", "/api/v1/admin/connections/{id}/test"),
@@ -53,6 +59,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/import/formats"),
         new("POST", "/api/v1/admin/import/preview"),
         new("POST", "/api/v1/admin/import/upload"),
+        new("GET", "/api/v1/admin/import/uploads/{uploadId}/progress"),
+        new("POST", "/api/v1/admin/import/uploads/{uploadId}/cancel"),
+        new("GET", "/api/v1/admin/import/uploads"),
         new("GET", "/api/v1/admin/import/jobs/{jobId}"),
         new("POST", "/api/v1/admin/import/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/jobs"),
@@ -71,6 +80,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/active"),
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
 
+        new("GET", "/api/v1/admin/observability/errors"),
+        new("GET", "/api/v1/admin/observability/telemetry"),
+
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
 
         new("GET", "/api/v1/metrics/health"),
@@ -88,6 +100,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures"),
@@ -116,6 +129,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/identify"),
         new("POST", "/rest/services/{serviceId}/MapServer/identify"),
         new("GET", "/rest/services/{serviceId}/MapServer/legend"),
+        new("GET", "/rest/services/{serviceId}/MapServer/find"),
+        new("POST", "/rest/services/{serviceId}/MapServer/find"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/MapServer/{layerId}/query"),
 
@@ -179,9 +194,18 @@ public static class EndpointRegistry
         new("GET", "/ogc/tiles/tileMatrixSets"),
         new("GET", "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}"),
 
+        new("GET", "/rest/services/geometry/buffer"),
         new("POST", "/rest/services/geometry/buffer"),
+        new("GET", "/rest/services/geometry/simplify"),
         new("POST", "/rest/services/geometry/simplify"),
+        new("GET", "/rest/services/geometry/project"),
         new("POST", "/rest/services/geometry/project"),
+
+        new("GET", "/ogc/maps/conformance"),
+        new("GET", "/ogc/maps/collections/{collectionId}/map"),
+        new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),
+        new("GET", "/ogc/maps/collections/{collectionId}/styles/{styleId}/map"),
+        new("GET", "/ogc/maps/map"),
     ];
 }
 

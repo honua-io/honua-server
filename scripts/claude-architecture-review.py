@@ -8,6 +8,7 @@ import os
 import sys
 import subprocess
 import json
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -109,6 +110,15 @@ def is_test_path(file_path: str) -> bool:
         return True
     return False
 
+def is_reviewable_source_path(file_path: str) -> bool:
+    """Return True when a file belongs to source projects with public API guardrails."""
+    normalized = file_path.replace("\\", "/").lower()
+    return (
+        normalized.startswith("src/honua.core/")
+        or normalized.startswith("src/honua.server/")
+        or normalized.startswith("src/honua.postgres/")
+    )
+
 def analyze_api_patterns(file_path: str, content: str) -> List[str]:
     """Check for API pattern violations"""
     violations = []
@@ -127,15 +137,40 @@ def analyze_documentation(file_path: str, content: str) -> List[str]:
     """Check for missing documentation"""
     violations = []
 
+    # Documentation blocking rules are enforced for public source APIs, not tests/tooling.
+    if not is_reviewable_source_path(file_path) or is_test_path(file_path):
+        return violations
+
+    # Match public type declarations and capture the declared type name.
+    type_decl_pattern = re.compile(
+        r'^\s*public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+)*'
+        r'(class|interface|record|enum)\s+([A-Za-z_][A-Za-z0-9_]*)'
+    )
+
+    def has_xml_doc(lines: List[str], index: int) -> bool:
+        # Walk upward over blank lines and attributes to find the nearest meaningful line.
+        cursor = index - 1
+        while cursor >= 0:
+            candidate = lines[cursor].strip()
+            if not candidate:
+                cursor -= 1
+                continue
+            if candidate.startswith("[") and candidate.endswith("]"):
+                cursor -= 1
+                continue
+            return candidate.startswith("///")
+        return False
+
     # Check for public types without XML docs
     lines = content.split('\n')
     for i, line in enumerate(lines):
-        if "public class" in line or "public interface" in line or "public enum" in line:
-            # Check if previous line has XML documentation
-            prev_line = lines[i-1] if i > 0 else ""
-            if not prev_line.strip().startswith("///"):
-                type_name = line.split()[-1] if line.split() else "unknown"
-                violations.append(f"❌ BLOCKING: Missing XML documentation for public type: {type_name}")
+        match = type_decl_pattern.match(line)
+        if not match:
+            continue
+
+        type_name = match.group(2)
+        if not has_xml_doc(lines, i):
+            violations.append(f"❌ BLOCKING: Missing XML documentation for public type: {type_name}")
 
     return violations
 

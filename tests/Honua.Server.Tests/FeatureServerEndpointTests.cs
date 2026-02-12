@@ -1992,6 +1992,40 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_WithLayerPayload_ReturnsPerLayerResults()
+    {
+        var request = """
+            [
+                {
+                    "id": 0,
+                    "adds": [
+                        {
+                            "attributes": {
+                                "name": "Service-level test feature"
+                            },
+                            "geometry": {
+                                "x": -122.4194,
+                                "y": 37.7749
+                            }
+                        }
+                    ]
+                }
+            ]
+            """;
+        var content = new StringContent(request, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
+            content);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("editResults");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAddOperation_ReturnsNewObjectId()
     {

@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using FluentAssertions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -287,6 +288,30 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.NotNull(apiResponse.Data);
         Assert.Equal(created.ConnectionId, apiResponse.Data.ConnectionId);
         Assert.Equal(created.Name, apiResponse.Data.ConnectionName);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections/test")]
+    public async Task TestDraftConnection_WithValidRequest_ReturnsResultOrBadRequest()
+    {
+        var request = new CreateSecureConnectionRequest
+        {
+            Name = $"draft-test-{Guid.NewGuid():N}",
+            Host = "localhost",
+            Port = 5432,
+            DatabaseName = "testdb",
+            Username = "testuser",
+            Password = "testpassword123",
+            SslRequired = true,
+            SslMode = "Require"
+        };
+
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/api/v1/admin/connections/test", content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

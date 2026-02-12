@@ -24,8 +24,8 @@ internal static partial class GeometryServiceLog
     [LoggerMessage(
         EventId = 5501,
         Level = LogLevel.Information,
-        Message = "Simplify operation completed: {GeometryCount} geometries, tolerance={Tolerance}")]
-    public static partial void SimplifyOperationCompleted(ILogger logger, int geometryCount, double tolerance);
+        Message = "Simplify operation completed: {GeometryCount} geometries (topological correction)")]
+    public static partial void SimplifyOperationCompleted(ILogger logger, int geometryCount);
 
     /// <summary>
     /// Logs when a project operation completes successfully.
@@ -62,4 +62,10 @@ internal static partial class GeometryServiceLog
         Level = LogLevel.Warning,
         Message = "Unsupported CRS referenced: SRID {Srid}")]
     public static partial void UnsupportedCrs(ILogger logger, int srid);
+
+    [LoggerMessage(
+        EventId = 5506,
+        Level = LogLevel.Debug,
+        Message = "Geometry service request parsed: operation={Operation}, geometryCount={GeometryCount}, geometryType={GeometryType}")]
+    public static partial void RequestParsed(ILogger logger, string operation, int geometryCount, string? geometryType);
 }
