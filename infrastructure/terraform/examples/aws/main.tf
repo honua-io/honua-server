@@ -9,6 +9,7 @@ module "honua" {
   image               = "ghcr.io/honua-io/honua-server:latest"
   admin_password      = var.honua_admin_password
   alb_certificate_arn = var.alb_certificate_arn
+  waf_web_acl_arn     = var.waf_web_acl_arn
 
   additional_env = {
     HONUA_ADMIN_UI = "true"

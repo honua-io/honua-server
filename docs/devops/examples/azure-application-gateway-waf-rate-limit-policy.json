@@ -1,0 +1,82 @@
+{
+  "location": "eastus",
+  "properties": {
+    "policySettings": {
+      "enabledState": "Enabled",
+      "mode": "Prevention",
+      "requestBodyCheck": true
+    },
+    "customRules": [
+      {
+        "name": "ApiRateLimit",
+        "priority": 1,
+        "ruleType": "RateLimitRule",
+        "rateLimitDuration": "OneMin",
+        "rateLimitThreshold": 200,
+        "matchConditions": [
+          {
+            "matchVariables": [
+              {
+                "variableName": "RequestUri"
+              }
+            ],
+            "operator": "BeginsWith",
+            "matchValues": [
+              "/rest/",
+              "/ogc/",
+              "/odata/"
+            ]
+          }
+        ],
+        "groupByUserSession": [
+          {
+            "groupByVariables": [
+              {
+                "variableName": "ClientAddr"
+              }
+            ]
+          }
+        ],
+        "action": "Block"
+      },
+      {
+        "name": "AdminRateLimit",
+        "priority": 2,
+        "ruleType": "RateLimitRule",
+        "rateLimitDuration": "OneMin",
+        "rateLimitThreshold": 30,
+        "matchConditions": [
+          {
+            "matchVariables": [
+              {
+                "variableName": "RequestUri"
+              }
+            ],
+            "operator": "BeginsWith",
+            "matchValues": [
+              "/admin/"
+            ]
+          }
+        ],
+        "groupByUserSession": [
+          {
+            "groupByVariables": [
+              {
+                "variableName": "ClientAddr"
+              }
+            ]
+          }
+        ],
+        "action": "Block"
+      }
+    ],
+    "managedRules": {
+      "managedRuleSets": [
+        {
+          "ruleSetType": "OWASP",
+          "ruleSetVersion": "3.2"
+        }
+      ]
+    }
+  }
+}

@@ -15,3 +15,9 @@ variable "alb_certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "waf_web_acl_arn" {
+  description = "Optional WAFv2 Web ACL ARN associated to the ALB."
+  type        = string
+  default     = ""
+}
