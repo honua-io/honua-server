@@ -28,6 +28,9 @@ module "observability" {
 }
 ```
 
+Defaults for `alert_rules_file` and `honua_dashboard_file` are resolved relative to
+the module path, so callers do not need to match a specific root-module folder depth.
+
 ## Outputs
 
 - `prometheus_url`

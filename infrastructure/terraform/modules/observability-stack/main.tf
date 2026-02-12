@@ -1,5 +1,9 @@
 locals {
-  alert_rules = yamldecode(file(var.alert_rules_file))
+  default_alert_rules_file = "${path.module}/../../../../docker/prometheus/alerts.yml"
+  default_dashboard_file   = "${path.module}/../../../../docker/grafana/dashboards/honua-overview.json"
+  alert_rules_file         = var.alert_rules_file != "" ? var.alert_rules_file : local.default_alert_rules_file
+  honua_dashboard_file     = var.honua_dashboard_file != "" ? var.honua_dashboard_file : local.default_dashboard_file
+  alert_rules              = yamldecode(file(local.alert_rules_file))
 
   honua_scrape_config = merge(
     {
@@ -140,7 +144,7 @@ resource "kubernetes_config_map_v1" "honua_dashboard" {
   }
 
   data = {
-    "honua-overview.json" = file(var.honua_dashboard_file)
+    "honua-overview.json" = file(local.honua_dashboard_file)
   }
 
   depends_on = [kubernetes_namespace_v1.this]

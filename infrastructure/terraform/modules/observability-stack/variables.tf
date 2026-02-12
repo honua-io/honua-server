@@ -64,15 +64,15 @@ variable "evaluation_interval" {
 }
 
 variable "alert_rules_file" {
-  description = "Path to a Prometheus rules YAML file."
+  description = "Path to a Prometheus rules YAML file. Leave empty to use the module default."
   type        = string
-  default     = "../../../../docker/prometheus/alerts.yml"
+  default     = ""
 }
 
 variable "honua_dashboard_file" {
-  description = "Path to the Honua Grafana dashboard JSON."
+  description = "Path to the Honua Grafana dashboard JSON. Leave empty to use the module default."
   type        = string
-  default     = "../../../../docker/grafana/dashboards/honua-overview.json"
+  default     = ""
 }
 
 variable "prometheus_persistence_enabled" {
