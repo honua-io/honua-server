@@ -1,116 +1,42 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace Honua.Server.Features.GeometryService.Models;
 
 /// <summary>
-/// Request body for the buffer operation.
+/// Parsed parameters for the buffer operation.
+/// Populated by <see cref="Services.GeometryServiceRequestParser"/>, not by ASP.NET model binding.
 /// </summary>
-public sealed class BufferRequest
+internal sealed class BufferParameters
 {
-    /// <summary>
-    /// Array of GeoServices JSON geometries to buffer.
-    /// </summary>
-    [JsonPropertyName("geometries")]
-    public JsonElement[]? Geometries { get; init; }
-
-    /// <summary>
-    /// Input spatial reference (WKID).
-    /// </summary>
-    [JsonPropertyName("inSR")]
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
     public int InSR { get; init; }
-
-    /// <summary>
-    /// Output spatial reference (WKID). Defaults to inSR if not specified.
-    /// </summary>
-    [JsonPropertyName("outSR")]
     public int? OutSR { get; init; }
-
-    /// <summary>
-    /// Buffer distances. If a single value is provided, it is applied to all geometries.
-    /// If multiple values are provided, each is applied to the corresponding geometry.
-    /// </summary>
-    [JsonPropertyName("distances")]
-    public double[]? Distances { get; init; }
-
-    /// <summary>
-    /// Unit of the buffer distance (e.g. esriMeters, esriFeet, esriKilometers).
-    /// </summary>
-    [JsonPropertyName("unit")]
+    public int? BufferSR { get; init; }
+    public required double[] Distances { get; init; }
     public string? Unit { get; init; }
-
-    /// <summary>
-    /// When true, all buffered geometries are unioned into a single result geometry.
-    /// </summary>
-    [JsonPropertyName("unionResults")]
     public bool UnionResults { get; init; }
-
-    /// <summary>
-    /// When true, geodesic (geography-based) buffering is used.
-    /// </summary>
-    [JsonPropertyName("geodesic")]
     public bool Geodesic { get; init; }
 }
 
 /// <summary>
-/// Request body for the simplify operation.
+/// Parsed parameters for the simplify operation (topological correction via ST_MakeValid).
 /// </summary>
-public sealed class SimplifyRequest
+internal sealed class SimplifyParameters
 {
-    /// <summary>
-    /// Array of GeoServices JSON geometries to simplify.
-    /// </summary>
-    [JsonPropertyName("geometries")]
-    public JsonElement[]? Geometries { get; init; }
-
-    /// <summary>
-    /// Input spatial reference (WKID).
-    /// </summary>
-    [JsonPropertyName("inSR")]
-    public int InSR { get; init; }
-
-    /// <summary>
-    /// Output spatial reference (WKID). Defaults to inSR if not specified.
-    /// </summary>
-    [JsonPropertyName("outSR")]
-    public int? OutSR { get; init; }
-
-    /// <summary>
-    /// Maximum allowable offset (tolerance) for simplification.
-    /// </summary>
-    [JsonPropertyName("maxDeviation")]
-    public double MaxDeviation { get; init; }
-
-    /// <summary>
-    /// Unit of the deviation (e.g. esriMeters, esriFeet). Defaults to the unit of inSR.
-    /// </summary>
-    [JsonPropertyName("deviationUnit")]
-    public string? DeviationUnit { get; init; }
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public int SR { get; init; }
 }
 
 /// <summary>
-/// Request body for the project operation.
+/// Parsed parameters for the project (reproject) operation.
 /// </summary>
-public sealed class ProjectRequest
+internal sealed class ProjectParameters
 {
-    /// <summary>
-    /// Array of GeoServices JSON geometries to reproject.
-    /// </summary>
-    [JsonPropertyName("geometries")]
-    public JsonElement[]? Geometries { get; init; }
-
-    /// <summary>
-    /// Input spatial reference (WKID).
-    /// </summary>
-    [JsonPropertyName("inSR")]
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
     public int InSR { get; init; }
-
-    /// <summary>
-    /// Output spatial reference (WKID).
-    /// </summary>
-    [JsonPropertyName("outSR")]
     public int OutSR { get; init; }
 }

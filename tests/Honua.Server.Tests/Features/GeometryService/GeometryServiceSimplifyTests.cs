@@ -25,36 +25,32 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Simplify)]
     [Endpoint("POST /rest/services/geometry/simplify")]
-    public async Task Simplify_ComplexPolygon_ReturnsSimplifiedGeometry()
+    public async Task Simplify_ValidPolygon_ReturnsTopologicallyCorrectedGeometry()
     {
-        // Arrange - a polygon with many vertices
-        var polygonJson = """
+        var body = """
         {
-            "rings": [
-                [
-                    [-122.42, 37.78], [-122.41, 37.78], [-122.415, 37.785],
-                    [-122.41, 37.79], [-122.42, 37.79], [-122.425, 37.785],
-                    [-122.42, 37.78]
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {
+                        "rings": [
+                            [
+                                [-122.42, 37.78], [-122.41, 37.78], [-122.415, 37.785],
+                                [-122.41, 37.79], [-122.42, 37.79], [-122.425, 37.785],
+                                [-122.42, 37.78]
+                            ]
+                        ],
+                        "spatialReference": {"wkid": 4326}
+                    }
                 ]
-            ],
-            "spatialReference": {"wkid": 4326}
+            },
+            "sr": "4326"
         }
         """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var request = new SimplifyRequest
-        {
-            Geometries = [JsonDocument.Parse(polygonJson).RootElement],
-            InSR = 4326,
-            MaxDeviation = 0.001
-        };
-
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.SimplifyRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/simplify", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -62,41 +58,38 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
             responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
 
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(1);
+        result!.GeometryType.Should().Be("esriGeometryPolygon");
+        result.Geometries.Should().HaveCount(1);
     }
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
     [Endpoint("POST /rest/services/geometry/simplify")]
-    public async Task Simplify_PreserveTopology_MaintainsValidity()
+    public async Task Simplify_MaintainsTopologicalValidity()
     {
-        // Arrange - a polygon that simplification should keep valid
-        var polygonJson = """
+        var body = """
         {
-            "rings": [
-                [
-                    [0.0, 0.0], [1.0, 0.0], [1.0, 0.5], [1.0, 1.0],
-                    [0.5, 1.0], [0.0, 1.0], [0.0, 0.5], [0.0, 0.0]
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {
+                        "rings": [
+                            [
+                                [0.0, 0.0], [1.0, 0.0], [1.0, 0.5], [1.0, 1.0],
+                                [0.5, 1.0], [0.0, 1.0], [0.0, 0.5], [0.0, 0.0]
+                            ]
+                        ],
+                        "spatialReference": {"wkid": 4326}
+                    }
                 ]
-            ],
-            "spatialReference": {"wkid": 4326}
+            },
+            "sr": "4326"
         }
         """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var request = new SimplifyRequest
-        {
-            Geometries = [JsonDocument.Parse(polygonJson).RootElement],
-            InSR = 4326,
-            MaxDeviation = 0.1
-        };
-
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.SimplifyRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/simplify", content);
 
-        // Assert
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -105,32 +98,59 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.Geometries.Should().HaveCount(1);
-
-        // Result should still be a polygon (have rings)
         var geom = result.Geometries![0];
         geom.GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
-    [Endpoint("POST /rest/services/geometry/simplify")]
-    public async Task Simplify_InvalidTolerance_Returns400()
+    [Endpoint("GET /rest/services/geometry/simplify")]
+    public async Task Simplify_GetWithQueryString_ReturnsGeometry()
     {
-        // Arrange - negative tolerance
-        var request = new SimplifyRequest
+        var geometries = Uri.EscapeDataString(
+            """{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[-122.42,37.78],[-122.41,37.78],[-122.41,37.79],[-122.42,37.79],[-122.42,37.78]]],"spatialReference":{"wkid":4326}}]}""");
+        var url = $"/rest/services/geometry/simplify?geometries={geometries}&sr=4326";
+
+        var response = await _fixture.Client.GetAsync(url);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.GeometryType.Should().Be("esriGeometryPolygon");
+        result.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Simplify)]
+    [Endpoint("GET /rest/services/geometry/simplify")]
+    public async Task Simplify_GetMissingParameters_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services/geometry/simplify?sr=4326");
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Simplify)]
+    [Endpoint("POST /rest/services/geometry/simplify")]
+    public async Task Simplify_MissingSR_Returns400()
+    {
+        var body = """
         {
-            Geometries = [JsonDocument.Parse("""{"x": 0, "y": 0}""").RootElement],
-            InSR = 4326,
-            MaxDeviation = -1.0
-        };
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0}]
+            }
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var json = JsonSerializer.Serialize(request, GeometryServiceJsonContext.Default.SimplifyRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        // Act
         var response = await _fixture.Client.PostAsync("/rest/services/geometry/simplify", content);
 
-        // Assert
         response.Be400BadRequest();
     }
 }

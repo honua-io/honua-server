@@ -70,6 +70,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.TableDiscovery)]
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    [Endpoint("GET /api/v1/admin/connections/tables")]
     [Endpoint("GET /api/v1/admin/connections/{*path}")]
     public async Task GetConnectionTables_WithEmptyConnectionId_Returns400()
     {

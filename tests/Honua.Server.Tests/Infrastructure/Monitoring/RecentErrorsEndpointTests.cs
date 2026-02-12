@@ -86,6 +86,21 @@ public sealed class RecentErrorsEndpointTests
         result.Errors[1].CorrelationId.Should().Be("trace-2");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/telemetry")]
+    public async Task TelemetryStatusEndpoint_ReturnsStatusPayload()
+    {
+        using var factory = CreateFactory(capacity: 5);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/admin/observability/telemetry");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("tracingEnabled");
+        payload.Should().Contain("otlpConfigured");
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(int capacity)
     {
         return new TestWebApplicationFactory()

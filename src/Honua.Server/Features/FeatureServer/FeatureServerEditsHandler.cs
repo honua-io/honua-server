@@ -216,8 +216,9 @@ internal sealed class FeatureServerEditsHandler(
                     code: 1000,
                     description: ex.Message);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                FeatureServerLog.FeatureAddFailed(logger, i, ex.Message, ex);
                 context.HasValidationErrors = true;
                 context.AddResults![i] = CreateFailureResult(
                     code: 1000,
@@ -265,8 +266,9 @@ internal sealed class FeatureServerEditsHandler(
                     description: ex.Message,
                     objectId: objectId);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                FeatureServerLog.FeatureUpdateFailed(logger, i, ex.Message, ex);
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
                     code: 1002,

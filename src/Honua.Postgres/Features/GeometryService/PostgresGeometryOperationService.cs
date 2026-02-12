@@ -24,7 +24,8 @@ internal sealed class PostgresGeometryOperationService(
         if (geodesic)
         {
             // Transform to WGS84 before geography cast; PostGIS geography only supports SRID 4326.
-            cmd.CommandText = "SELECT ST_AsBinary(ST_Buffer(ST_Transform(ST_SetSRID($1::geometry, $2), 4326)::geography, $3)::geometry)";
+            // Wrap result with ST_SetSRID to ensure the output geometry has SRID 4326 set explicitly.
+            cmd.CommandText = "SELECT ST_AsBinary(ST_SetSRID(ST_Buffer(ST_Transform(ST_SetSRID($1::geometry, $2), 4326)::geography, $3)::geometry, 4326))";
         }
         else
         {
@@ -74,6 +75,20 @@ internal sealed class PostgresGeometryOperationService(
 
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as byte[] ?? throw new InvalidOperationException("PostGIS project returned null.");
+    }
+
+    public async Task<byte[]> MakeValidAsync(byte[] wkb, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        cmd.CommandText = "SELECT ST_AsBinary(ST_MakeValid(ST_SetSRID($1::geometry, $2)))";
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as byte[] ?? throw new InvalidOperationException("PostGIS MakeValid returned null.");
     }
 
     public async Task<byte[]> UnionAsync(byte[][] wkbs, int srid, CancellationToken ct = default)

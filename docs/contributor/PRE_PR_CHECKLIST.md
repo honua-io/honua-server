@@ -31,7 +31,6 @@ dotnet test Honua.sln \
   --configuration Release \
   --filter "Category!=Integration" \
   --logger "trx;LogFileName=unit-results.trx" \
-  --collect:"XPlat Code Coverage" \
   --results-directory ./tests/TestResults
 ```
 
@@ -42,7 +41,6 @@ dotnet test Honua.sln \
   --configuration Release \
   --filter "Category=Integration" \
   --logger "trx;LogFileName=integration-results.trx" \
-  --collect:"XPlat Code Coverage" \
   --results-directory ./tests/TestResults
 ```
 
@@ -139,9 +137,9 @@ Must match the main commit and include GitHub issue number
 - Testing notes
 - Breaking changes (if any)
 
-## Coverage Thresholds
-- **Line Coverage**: Currently 40% (will increase to 80%)
-- **Branch Coverage**: Currently 30% (will increase to 70%)
+## Test Coverage Policy
+- **API Surface**: 100% (every endpoint has integration test)
+- **Line/Branch Metrics**: Informational only (not CI-blocking)
 
 ## Common Failure Reasons
 
@@ -159,13 +157,12 @@ After creating PR, monitor these CI jobs:
 2. **Unit Tests** - Should pass if local validation passed
 3. **Integration Tests** - May fail due to environment differences
 4. **Architecture Tests** - Enforces project rules
-5. **Coverage Report** - Must meet thresholds
-6. **LLM Architecture Review** - AI-powered code review (GPT-4)
+5. **LLM Architecture Review** - AI-powered code review (GPT-4)
    - **Can BLOCK PR** if finds critical violations
    - Posts detailed review comments automatically
    - Checks dependency flow, API patterns, documentation
-7. **Architecture Gate** - Hard blocker if LLM finds issues
-8. **AOT Build Verification** - Ensures production readiness
+6. **Architecture Gate** - Hard blocker if LLM finds issues
+7. **AOT Build Verification** - Ensures production readiness
 
 ## Emergency Fixes
 

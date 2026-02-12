@@ -453,4 +453,31 @@ public class ImportEndpointTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/uploads")]
+    public async Task GetActiveUploads_ReturnsUploadsList()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/import/uploads");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/uploads/{uploadId}/progress")]
+    public async Task GetUploadProgress_WithUnknownUploadId_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/import/uploads/nonexistent-upload/progress");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/uploads/{uploadId}/cancel")]
+    public async Task CancelUpload_WithUnknownUploadId_ReturnsNotFound()
+    {
+        var response = await _client.PostAsync("/api/v1/admin/import/uploads/nonexistent-upload/cancel", null);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
+    }
 }

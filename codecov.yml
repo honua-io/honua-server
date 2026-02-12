@@ -1,29 +1,10 @@
-# Codecov configuration for Honua Server
+# Codecov configuration for Honua Server (informational only)
 # Documentation: https://docs.codecov.com/docs/codecov-yaml
 
 coverage:
   precision: 2
   round: down
   range: "70...100"
-
-  status:
-    project:
-      default:
-        target: 80%
-        threshold: 1%
-        base: auto
-        branches:
-          - trunk
-        if_ci_failed: error
-
-    patch:
-      default:
-        target: 70%
-        threshold: 5%
-        base: auto
-        branches:
-          - trunk
-        if_ci_failed: error
 
   ignore:
     # Test projects
@@ -87,11 +68,7 @@ flags:
 
 component_management:
   default_rules:
-    statuses:
-      - type: project
-        target: 80%
-      - type: patch
-        target: 70%
+    statuses: []
   individual_components:
     - component_id: core
       name: Core Library

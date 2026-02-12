@@ -226,7 +226,7 @@ public class GeometryValidatorTests
 # Run all tests
 dotnet test
 
-# Run tests with coverage
+# Optional: run tests with coverage
 dotnet test --collect:"XPlat Code Coverage"
 
 # Run specific test categories
@@ -237,12 +237,11 @@ dotnet test --filter Category=Unit
 dotnet test tests/Honua.Architecture.Tests/
 ```
 
-#### Coverage Requirements
+#### Test Quality Requirements
 
-The project enforces coverage gates:
+The project enforces:
 - **API Surface**: 100% (every endpoint has integration test)
-- **Line Coverage**: 80% target (CI enforces 40% minimum during development)
-- **Branch Coverage**: 70% target (CI enforces 30% minimum during development)
+- **Line/Branch Coverage**: Informational only (no CI gate)
 
 ### 5. Committing Changes
 

@@ -360,4 +360,46 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_Get_ReturnsResponse()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("\"results\"");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_Post_ReturnsResponse()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("searchText", "test"),
+            new KeyValuePair<string, string>("layers", WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new KeyValuePair<string, string>("f", "json")
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find",
+            payload);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("\"results\"");
+        }
+    }
 }

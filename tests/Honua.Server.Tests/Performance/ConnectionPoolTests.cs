@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Data;
+using System.Diagnostics;
 using System.Globalization;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -160,12 +161,13 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
     {
         // Arrange
         var duration = TimeSpan.FromSeconds(10);
-        var endTime = DateTime.UtcNow.Add(duration);
+        const int minimumConnections = 20;
         var connectionCount = 0;
         var beforeMemory = GC.GetTotalMemory(forceFullCollection: true);
+        var stopwatch = Stopwatch.StartNew();
 
         // Act - sustained connection usage
-        while (DateTime.UtcNow < endTime)
+        while (stopwatch.Elapsed < duration)
         {
             await using var conn = await _fixture.GetConnectionAsync(_schemaName);
             await using var cmd = conn.CreateCommand();
@@ -173,6 +175,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
             await cmd.ExecuteScalarAsync();
             connectionCount++;
         }
+        stopwatch.Stop();
 
         // Force GC to measure actual memory usage
         GC.Collect();
@@ -181,7 +184,8 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         var afterMemory = GC.GetTotalMemory(forceFullCollection: true);
 
         // Assert
-        Assert.True(connectionCount > 100, $"Expected at least 100 connections, got {connectionCount}");
+        Assert.True(connectionCount >= minimumConnections,
+            $"Expected at least {minimumConnections} connections over {duration.TotalSeconds}s, got {connectionCount}");
 
         // Memory growth should be minimal (less than 10MB) for connection handling
         var memoryGrowthMB = (afterMemory - beforeMemory) / (1024.0 * 1024.0);

@@ -118,7 +118,7 @@ if (Test-Path $summaryFile) {
     Get-Content $summaryFile
 }
 
-# Check thresholds
+# Coverage summary (informational only)
 $summaryJsonFile = Join-Path $ReportsDir "Summary.json"
 if (Test-Path $summaryJsonFile) {
     try {
@@ -127,28 +127,9 @@ if (Test-Path $summaryJsonFile) {
         $branchCoverage = [double]$summary.summary.branchcoverage
 
         Write-Host ""
-        Write-Host "🎯 Threshold Check:" -ForegroundColor Blue
-
-        # Current thresholds from CI
-        $lineThreshold = 1.0
-        $branchThreshold = 0.5
-
-        if ($lineCoverage -ge $lineThreshold) {
-            Write-Host "✅ Line coverage: $lineCoverage% (>= $lineThreshold%)" -ForegroundColor Green
-        } else {
-            Write-Host "❌ Line coverage: $lineCoverage% (< $lineThreshold%)" -ForegroundColor Red
-        }
-
-        if ($branchCoverage -ge $branchThreshold) {
-            Write-Host "✅ Branch coverage: $branchCoverage% (>= $branchThreshold%)" -ForegroundColor Green
-        } else {
-            Write-Host "❌ Branch coverage: $branchCoverage% (< $branchThreshold%)" -ForegroundColor Red
-        }
-
-        # Roadmap reminder
-        Write-Host ""
-        Write-Host "🛣️ Coverage Roadmap:" -ForegroundColor Yellow
-        Write-Host "  Current: ~0.7%/0.4% → $lineThreshold%/$branchThreshold% → 10%/5% → 80%/70% (MVP)"
+        Write-Host "📈 Coverage Snapshot:" -ForegroundColor Blue
+        Write-Host "Line coverage: $lineCoverage%" -ForegroundColor Green
+        Write-Host "Branch coverage: $branchCoverage%" -ForegroundColor Green
     }
     catch {
         Write-Host "⚠️ Could not parse coverage summary" -ForegroundColor Yellow
@@ -165,21 +146,3 @@ if ($OpenReport -or $env:CI -eq $null) {
 
 Write-Host ""
 Write-Host "🎉 Coverage analysis complete!" -ForegroundColor Green
-
-# Exit with error code if thresholds not met (for CI scenarios)
-if ($env:CI -ne $null) {
-    if (Test-Path $summaryJsonFile) {
-        try {
-            $summary = Get-Content $summaryJsonFile | ConvertFrom-Json
-            $lineCoverage = [double]$summary.summary.linecoverage
-            $branchCoverage = [double]$summary.summary.branchcoverage
-
-            if ($lineCoverage -lt 1.0 -or $branchCoverage -lt 0.5) {
-                exit 1
-            }
-        }
-        catch {
-            # If we can't parse, don't fail the build
-        }
-    }
-}

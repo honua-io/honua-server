@@ -10,10 +10,6 @@ namespace Honua.ServiceDefaults;
 /// Provides centralized telemetry instrumentation for Honua Server.
 /// Contains ActivitySource for distributed tracing and Meter for custom metrics.
 /// </summary>
-/// <summary>
-/// Provides centralized telemetry instrumentation for Honua Server.
-/// Contains ActivitySource for distributed tracing and Meter for custom metrics.
-/// </summary>
 public static class HonuaTelemetry
 {
     /// <summary>
@@ -214,6 +210,9 @@ public static class HonuaTelemetry
 
         /// <summary>Business intelligence endpoints.</summary>
         public const string BusinessIntelligence = "BI";
+
+        /// <summary>Geometry service operations (buffer, simplify, project).</summary>
+        public const string GeometryService = "GeometryService";
     }
 
     /// <summary>

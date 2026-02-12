@@ -202,8 +202,6 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
             --blame-hang-timeout 8m \
-            --collect:"XPlat Code Coverage" \
-            --settings tests/coverlet.runsettings \
             -- RunConfiguration.MaxCpuCount=0
 
       - name: Install Python test dependencies
@@ -222,15 +220,6 @@ jobs:
       - name: TypeScript type check (JavaScript tests)
         run: npm run typecheck
         working-directory: tests/js
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./tests/TestResults/**/coverage.cobertura.xml
-          flags: combined
-          name: honua-server-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4

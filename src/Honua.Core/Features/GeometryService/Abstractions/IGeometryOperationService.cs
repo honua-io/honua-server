@@ -41,6 +41,17 @@ public interface IGeometryOperationService
     Task<byte[]> ProjectAsync(byte[] wkb, int fromSrid, int toSrid, CancellationToken ct = default);
 
     /// <summary>
+    /// Makes a geometry topologically valid (fixes self-intersections, ring orientation, etc.).
+    /// This corresponds to the ArcGIS REST API "simplify" operation, which performs topological
+    /// correction rather than generalization.
+    /// </summary>
+    /// <param name="wkb">Input geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of the input geometry.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Topologically valid geometry in WKB format.</returns>
+    Task<byte[]> MakeValidAsync(byte[] wkb, int srid, CancellationToken ct = default);
+
+    /// <summary>
     /// Computes the union of multiple geometries.
     /// </summary>
     /// <param name="wkbs">Array of input geometries in WKB format.</param>

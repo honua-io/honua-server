@@ -30,8 +30,6 @@ dotnet test Honua.sln \
     --configuration Release \
     --logger "console;verbosity=minimal" \
     --results-directory ./tests/TestResults \
-    --collect:"XPlat Code Coverage" \
-    --settings tests/coverlet.runsettings \
     -- RunConfiguration.MaxCpuCount=0
 
 echo "7. Testing AOT build..."
