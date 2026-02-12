@@ -30,6 +30,8 @@ This section is for installing, configuring, operating, and upgrading Honua in p
 
 **Performance Monitoring:**
 - [**Performance Monitoring**](performance-monitoring.md) — observability setup and metrics
+- [**Cloud-Native Alerting**](../alerting/README.md) — OTLP Collector to managed Prometheus alerting
+- [**Optional Prometheus + Grafana Stack**](optional-observability-stack.md) — Terraform add-on for in-cluster dashboards and alerts
 - [**Performance Testing**](performance-testing.md) — load testing strategies
 - [**Load & Soak Testing**](load-soak-testing.md) — comprehensive performance validation
 

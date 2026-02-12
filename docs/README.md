@@ -45,6 +45,8 @@
 
 **Performance:**
 - [Performance Monitoring](devops/performance-monitoring.md)
+- [Cloud-Native Alerting](alerting/README.md)
+- [Optional Prometheus + Grafana Stack](devops/optional-observability-stack.md)
 - [Caching Strategy](devops/CACHING_STRATEGY.md)
 - [Query Optimization](devops/query-optimization.md)
 - [Connection Pool Sizing](devops/connection-pool-sizing.md)

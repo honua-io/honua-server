@@ -9,6 +9,7 @@ groups:
         annotations:
           summary: "Honua instance down"
           description: "Prometheus has not scraped {{ $labels.instance }} for 2 minutes."
+          runbook: "docs/devops/runbooks/server-down.md"
 
       - alert: HonuaHighErrorRate
         expr: sum(rate(honua_http_request_total{status_code=~"5.."}[5m])) / sum(rate(honua_http_request_total[5m])) > 0.05
@@ -18,6 +19,7 @@ groups:
         annotations:
           summary: "High 5xx error rate"
           description: "5xx error rate > 5% for 10 minutes."
+          runbook: "docs/devops/runbooks/high-error-rate.md"
 
       - alert: HonuaHighLatencyP95
         expr: histogram_quantile(0.95, sum(rate(honua_http_request_duration_ms_bucket[5m])) by (le)) > 500
@@ -27,6 +29,7 @@ groups:
         annotations:
           summary: "High request latency (p95)"
           description: "P95 request latency > 500ms for 10 minutes."
+          runbook: "docs/devops/runbooks/high-response-time.md"
 
       - alert: HonuaActiveRequestsHigh
         expr: sum(honua_http_active_requests) > 100
@@ -36,6 +39,7 @@ groups:
         annotations:
           summary: "High active request count"
           description: "Active requests > 100 for 10 minutes."
+          runbook: "docs/devops/runbooks/high-cpu-usage.md"
 
       - alert: HonuaCacheHitRatioLow
         expr: sum(rate(honua_cache_operation_total{operation="hit"}[10m])) / sum(rate(honua_cache_operation_total{operation=~"hit|miss"}[10m])) < 0.7
@@ -45,6 +49,7 @@ groups:
         annotations:
           summary: "Low cache hit ratio"
           description: "Cache hit ratio < 70% for 15 minutes."
+          runbook: "docs/devops/runbooks/high-response-time.md"
 
       - alert: HonuaDatabaseLatencyP95
         expr: histogram_quantile(0.95, sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)) > 200
@@ -54,3 +59,4 @@ groups:
         annotations:
           summary: "High database query latency (p95)"
           description: "P95 database query latency > 200ms for 10 minutes."
+          runbook: "docs/devops/runbooks/database-issues.md"

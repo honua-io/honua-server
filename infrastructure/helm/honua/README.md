@@ -34,9 +34,23 @@ resources:
 
 autoscaling:
   enabled: true
-  minReplicas: 3
-  maxReplicas: 10
+  minReplicas: 2
+  maxReplicas: 20
   targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
 
 ingress:
   enabled: true
@@ -134,6 +148,9 @@ secret:
 | `image.tag` | `latest-aot` | Image tag. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
 | `resources` | `{}` | CPU/memory requests and limits. **Set for production.** |
 | `autoscaling.enabled` | false | Enable HPA. |
+| `autoscaling.targetCPUUtilizationPercentage` | `70` | CPU utilization threshold for scale decisions. |
+| `autoscaling.targetMemoryUtilizationPercentage` | `80` | Memory utilization threshold for scale decisions. |
+| `autoscaling.behavior` | scale up/down policies | autoscaling/v2 behavior policies and stabilization windows. |
 | `ingress.enabled` | false | Enable ingress. |
 | `config.env.*` | — | Non-secret environment variables (stored in ConfigMap). |
 | `secret.env.*` | — | Secret environment variables (stored in Secret). |
@@ -150,6 +167,19 @@ The chart configures probes on:
 - **Liveness**: `/healthz/live` (is the process alive?)
 - **Readiness**: `/healthz/ready` (is the database connected?)
 - **Startup**: `/healthz/live` with 30 retries (initial boot tolerance)
+
+## Geospatial HPA tuning guidance
+
+The default HPA thresholds are tuned for mixed geospatial workloads:
+- `targetCPUUtilizationPercentage: 70` for CPU-heavy spatial predicates and tile generation.
+- `targetMemoryUtilizationPercentage: 80` for bursty map rendering and large feature payloads.
+- `scaleUp` stabilization of 60s with 50% growth to react quickly to traffic ramps.
+- `scaleDown` stabilization of 300s with 10% shrink to avoid thrash after short spikes.
+
+For dataset-specific tuning:
+- Increase `maxReplicas` only after validating PostgreSQL connection limits.
+- Raise memory targets (for example 85-90) if large map exports are common and pod OOM is not observed.
+- Reduce `scaleDown` aggressiveness further for workloads with repeated 3-10 minute query bursts.
 
 ## Local validation
 

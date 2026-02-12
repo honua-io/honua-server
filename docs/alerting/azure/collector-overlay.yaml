@@ -1,0 +1,12 @@
+exporters:
+  prometheusremotewrite:
+    endpoint: "${AZURE_PROM_REMOTE_WRITE_ENDPOINT}"
+    headers:
+      x-ms-client-principal-id: "${AZURE_CLIENT_ID}"
+
+processors:
+  resource:
+    attributes:
+      - key: cloud.provider
+        value: azure
+        action: upsert

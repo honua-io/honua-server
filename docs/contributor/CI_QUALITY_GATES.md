@@ -15,6 +15,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 ## Quality Gates
 
 - Warnings are treated as errors during CI builds.
+- XML docs (`CS1591`) are currently enforced for `Honua.Core` as warnings (phase-in plan), with full-repo enforcement planned.
 - Formatting is enforced with `dotnet format` checks.
 - API surface coverage is enforced via architecture tests.
 - Coverage thresholds are enforced via Codecov; see `CODECOV_SETUP.md` for current targets.
