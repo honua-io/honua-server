@@ -4,7 +4,7 @@
 namespace Honua.Core.Features.GeometryService.Abstractions;
 
 /// <summary>
-/// Provides server-side geometry operations (buffer, simplify, project, union)
+/// Provides server-side geometry operations (buffer, simplify, project, union, intersect, difference, measurements)
 /// backed by a spatial database engine such as PostGIS.
 /// </summary>
 public interface IGeometryOperationService
@@ -59,4 +59,42 @@ public interface IGeometryOperationService
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Unioned geometry in WKB format.</returns>
     Task<byte[]> UnionAsync(byte[][] wkbs, int srid, CancellationToken ct = default);
+
+    /// <summary>
+    /// Computes the intersection of two geometries.
+    /// </summary>
+    /// <param name="targetWkb">Target geometry in WKB format.</param>
+    /// <param name="intersectorWkb">Intersector geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of both geometries.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Intersection geometry in WKB format.</returns>
+    Task<byte[]> IntersectAsync(byte[] targetWkb, byte[] intersectorWkb, int srid, CancellationToken ct = default);
+
+    /// <summary>
+    /// Computes the geometric difference of two geometries.
+    /// </summary>
+    /// <param name="targetWkb">Target geometry in WKB format.</param>
+    /// <param name="eraserWkb">Eraser geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of both geometries.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Difference geometry in WKB format.</returns>
+    Task<byte[]> DifferenceAsync(byte[] targetWkb, byte[] eraserWkb, int srid, CancellationToken ct = default);
+
+    /// <summary>
+    /// Computes area for a geometry.
+    /// </summary>
+    /// <param name="wkb">Geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of the geometry.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Area value in the geometry's native units.</returns>
+    Task<double> AreaAsync(byte[] wkb, int srid, CancellationToken ct = default);
+
+    /// <summary>
+    /// Computes length for a geometry.
+    /// </summary>
+    /// <param name="wkb">Geometry in WKB format.</param>
+    /// <param name="srid">Spatial reference ID of the geometry.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Length value in the geometry's native units.</returns>
+    Task<double> LengthAsync(byte[] wkb, int srid, CancellationToken ct = default);
 }

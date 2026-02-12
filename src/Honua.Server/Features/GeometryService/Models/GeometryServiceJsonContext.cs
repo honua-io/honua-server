@@ -13,6 +13,8 @@ namespace Honua.Server.Features.GeometryService.Models;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(GeometryServiceResponse))]
+[JsonSerializable(typeof(GeometryServiceAreaResponse))]
+[JsonSerializable(typeof(GeometryServiceLengthResponse))]
 [JsonSerializable(typeof(GeometryServiceErrorResponse))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class GeometryServiceJsonContext : JsonSerializerContext;

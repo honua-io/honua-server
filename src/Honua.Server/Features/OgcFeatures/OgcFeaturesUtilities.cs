@@ -40,6 +40,9 @@ internal static class OgcFeaturesUtilities
                 "datetime",
                 "limit",
                 "offset",
+                "ids",
+                "properties",
+                "sortby",
                 "filter",
                 "filter-lang",
                 "filter-crs"

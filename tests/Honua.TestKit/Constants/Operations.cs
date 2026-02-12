@@ -30,6 +30,12 @@ public static class Operations
     public const string Buffer = "Buffer";
     public const string Simplify = "Simplify";
     public const string Project = "Project";
+    public const string Intersect = "Intersect";
+    public const string Union = "Union";
+    public const string Clip = "Clip";
+    public const string Difference = "Difference";
+    public const string Area = "Area";
+    public const string Length = "Length";
 
     // Metadata Operations
     public const string GetMetadata = "GetMetadata";

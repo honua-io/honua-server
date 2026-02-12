@@ -23,6 +23,16 @@ internal sealed class GeometryServiceHandler(
         ?? throw new ArgumentNullException(nameof(geometryConverter));
     private readonly ILogger<GeometryServiceHandler> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
+    private static readonly Dictionary<string, double> AreaUnitDivisors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["esriSquareMeters"] = 1.0,
+        ["esriSquareKilometers"] = 1_000_000.0,
+        ["esriSquareFeet"] = 0.09290304,
+        ["esriSquareYards"] = 0.83612736,
+        ["esriSquareMiles"] = 2_589_988.110336,
+        ["esriHectares"] = 10_000.0,
+        ["esriAcres"] = 4_046.8564224
+    };
 
     public async Task<IResult> HandleBufferAsync(HttpContext context, CancellationToken ct)
     {
@@ -320,6 +330,262 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
+    public async Task<IResult> HandleUnionAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "union", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "union", parseError ?? "No parameters");
+                return CreateError(400, parseError ?? "Request parameters are required.");
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"));
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "union", geomError);
+                return CreateError(400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "union", "No geometries provided");
+                return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
+                GeometryServiceRequestParser.GetValue(values, "sr"));
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "union", srError);
+                return CreateError(400, srError);
+            }
+
+            if (sr <= 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "union", "Invalid sr");
+                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
+            }
+
+            var parameters = new UnionParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                GeometryType = geomType,
+                SR = sr
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "union", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
+            return await ExecuteUnionAsync(parameters, scope, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "union", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(400, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "union", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(500, "An internal error occurred during the union operation.");
+        }
+    }
+
+    public async Task<IResult> HandleIntersectAsync(HttpContext context, CancellationToken ct)
+    {
+        return await HandleBinaryGeometryOperationAsync(
+            context,
+            operationName: "intersect",
+            operation: (target, other, srid, token) => _operationService.IntersectAsync(target, other, srid, token),
+            ct);
+    }
+
+    public async Task<IResult> HandleClipAsync(HttpContext context, CancellationToken ct)
+    {
+        return await HandleBinaryGeometryOperationAsync(
+            context,
+            operationName: "clip",
+            operation: (target, other, srid, token) => _operationService.IntersectAsync(target, other, srid, token),
+            ct);
+    }
+
+    public async Task<IResult> HandleDifferenceAsync(HttpContext context, CancellationToken ct)
+    {
+        return await HandleBinaryGeometryOperationAsync(
+            context,
+            operationName: "difference",
+            operation: (target, other, srid, token) => _operationService.DifferenceAsync(target, other, srid, token),
+            ct);
+    }
+
+    public async Task<IResult> HandleAreaAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "area", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "area", parseError ?? "No parameters");
+                return CreateError(400, parseError ?? "Request parameters are required.");
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(400, formatError);
+            }
+
+            var (geomStrings, _, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"));
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "area", geomError);
+                return CreateError(400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "area", "No geometries provided");
+                return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
+                GeometryServiceRequestParser.GetValue(values, "sr"));
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "area", srError);
+                return CreateError(400, srError);
+            }
+
+            if (sr <= 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "area", "Invalid sr");
+                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
+            }
+
+            var parameters = new MeasurementParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                SR = sr,
+                Unit = GeometryServiceRequestParser.GetValue(values, "areaUnit")
+            };
+
+            return await ExecuteAreaAsync(parameters, scope, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "area", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(400, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "area", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(500, "An internal error occurred during the area operation.");
+        }
+    }
+
+    public async Task<IResult> HandleLengthAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "length", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "length", parseError ?? "No parameters");
+                return CreateError(400, parseError ?? "Request parameters are required.");
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(400, formatError);
+            }
+
+            var (geomStrings, _, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"));
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "length", geomError);
+                return CreateError(400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "length", "No geometries provided");
+                return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
+                GeometryServiceRequestParser.GetValue(values, "sr"));
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "length", srError);
+                return CreateError(400, srError);
+            }
+
+            if (sr <= 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "length", "Invalid sr");
+                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
+            }
+
+            var parameters = new MeasurementParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                SR = sr,
+                Unit = GeometryServiceRequestParser.GetValue(values, "lengthUnit")
+            };
+
+            return await ExecuteLengthAsync(parameters, scope, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "length", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(400, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "length", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(500, "An internal error occurred during the length operation.");
+        }
+    }
+
     private async Task<IResult> ExecuteBufferAsync(BufferParameters parameters, HonuaTelemetryScope scope, CancellationToken ct)
     {
         var unitMultiplier = GeometryServiceRequestParser.GetUnitMultiplier(parameters.Unit);
@@ -401,6 +667,180 @@ internal sealed class GeometryServiceHandler(
         GeometryServiceLog.ProjectOperationCompleted(_logger, parameters.GeometryJsonStrings.Length, parameters.InSR, parameters.OutSR);
         scope.SetSuccess(projectedGeometries.Count);
         return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private async Task<IResult> ExecuteUnionAsync(UnionParameters parameters, HonuaTelemetryScope scope, CancellationToken ct)
+    {
+        var wkbs = new byte[parameters.GeometryJsonStrings.Length][];
+        for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
+        {
+            wkbs[i] = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.GeometryJsonStrings[i]);
+        }
+
+        var unionResult = await _operationService.UnionAsync(wkbs, parameters.SR, ct).ConfigureAwait(false);
+        var response = ConvertToResponse(new List<byte[]> { unionResult }, parameters.SR, parameters.GeometryType);
+        GeometryServiceLog.UnionOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
+        scope.SetSuccess(1);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private async Task<IResult> HandleBinaryGeometryOperationAsync(
+        HttpContext context,
+        string operationName,
+        Func<byte[], byte[], int, CancellationToken, Task<byte[]>> operation,
+        CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            operationName, HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, parseError ?? "No parameters");
+                return CreateError(400, parseError ?? "Request parameters are required.");
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"));
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, geomError);
+                return CreateError(400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, "No geometries provided");
+                return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (operatorGeometry, operatorError) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "geometry"));
+            if (operatorError is not null || string.IsNullOrWhiteSpace(operatorGeometry))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, operatorError ?? "Missing geometry");
+                return CreateError(400, operatorError ?? "Parameter 'geometry' is required.");
+            }
+
+            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
+                GeometryServiceRequestParser.GetValue(values, "sr"));
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, srError);
+                return CreateError(400, srError);
+            }
+
+            if (sr <= 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, "Invalid sr");
+                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
+            }
+
+            var parameters = new BinaryGeometryOperationParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                GeometryType = geomType,
+                OperatorGeometryJson = operatorGeometry,
+                SR = sr
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, operationName, parameters.GeometryJsonStrings.Length, parameters.GeometryType);
+            return await ExecuteBinaryOperationAsync(parameters, operationName, operation, scope, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, operationName, ex.Message);
+            scope.RecordException(ex);
+            return CreateError(400, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, operationName, ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(500, $"An internal error occurred during the {operationName} operation.");
+        }
+    }
+
+    private async Task<IResult> ExecuteBinaryOperationAsync(
+        BinaryGeometryOperationParameters parameters,
+        string operationName,
+        Func<byte[], byte[], int, CancellationToken, Task<byte[]>> operation,
+        HonuaTelemetryScope scope,
+        CancellationToken ct)
+    {
+        var operatorWkb = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.OperatorGeometryJson);
+        var results = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+
+        foreach (var geomJson in parameters.GeometryJsonStrings)
+        {
+            var targetWkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geomJson);
+            var result = await operation(targetWkb, operatorWkb, parameters.SR, ct).ConfigureAwait(false);
+            results.Add(result);
+        }
+
+        var response = ConvertToResponse(results, parameters.SR, parameters.GeometryType);
+        GeometryServiceLog.BinaryOperationCompleted(_logger, operationName, parameters.GeometryJsonStrings.Length);
+        scope.SetSuccess(results.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private async Task<IResult> ExecuteAreaAsync(MeasurementParameters parameters, HonuaTelemetryScope scope, CancellationToken ct)
+    {
+        var values = new double[parameters.GeometryJsonStrings.Length];
+        var divisor = GetAreaUnitDivisor(parameters.Unit);
+
+        for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
+        {
+            var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.GeometryJsonStrings[i]);
+            var area = await _operationService.AreaAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
+            values[i] = area / divisor;
+        }
+
+        var response = new GeometryServiceAreaResponse { Areas = values };
+        GeometryServiceLog.MeasurementOperationCompleted(_logger, "area", values.Length);
+        scope.SetSuccess(values.Length);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceAreaResponse, contentType: "application/json");
+    }
+
+    private async Task<IResult> ExecuteLengthAsync(MeasurementParameters parameters, HonuaTelemetryScope scope, CancellationToken ct)
+    {
+        var values = new double[parameters.GeometryJsonStrings.Length];
+        var divisor = GeometryServiceRequestParser.GetUnitMultiplier(parameters.Unit);
+
+        for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
+        {
+            var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.GeometryJsonStrings[i]);
+            var length = await _operationService.LengthAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
+            values[i] = length / divisor;
+        }
+
+        var response = new GeometryServiceLengthResponse { Lengths = values };
+        GeometryServiceLog.MeasurementOperationCompleted(_logger, "length", values.Length);
+        scope.SetSuccess(values.Length);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceLengthResponse, contentType: "application/json");
+    }
+
+    private static double GetAreaUnitDivisor(string? unit)
+    {
+        if (string.IsNullOrWhiteSpace(unit))
+        {
+            return 1.0;
+        }
+
+        return AreaUnitDivisors.TryGetValue(unit, out var divisor) ? divisor : 1.0;
     }
 
     private GeometryServiceResponse ConvertToResponse(List<byte[]> wkbs, int srid, string? geometryType)

@@ -115,4 +115,78 @@ internal sealed class PostgresGeometryOperationService(
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as byte[] ?? throw new InvalidOperationException("PostGIS union returned null.");
     }
+
+    public async Task<byte[]> IntersectAsync(byte[] targetWkb, byte[] intersectorWkb, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        cmd.CommandText = """
+            SELECT ST_AsBinary(
+                COALESCE(
+                    ST_Intersection(ST_SetSRID($1::geometry, $3), ST_SetSRID($2::geometry, $3)),
+                    ST_GeomFromText('GEOMETRYCOLLECTION EMPTY', $3)
+                ))
+            """;
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = targetWkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = intersectorWkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as byte[] ?? throw new InvalidOperationException("PostGIS intersect returned null.");
+    }
+
+    public async Task<byte[]> DifferenceAsync(byte[] targetWkb, byte[] eraserWkb, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        cmd.CommandText = """
+            SELECT ST_AsBinary(
+                COALESCE(
+                    ST_Difference(ST_SetSRID($1::geometry, $3), ST_SetSRID($2::geometry, $3)),
+                    ST_GeomFromText('GEOMETRYCOLLECTION EMPTY', $3)
+                ))
+            """;
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = targetWkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = eraserWkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as byte[] ?? throw new InvalidOperationException("PostGIS difference returned null.");
+    }
+
+    public async Task<double> AreaAsync(byte[] wkb, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        cmd.CommandText = "SELECT ST_Area(ST_SetSRID($1::geometry, $2))";
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return Convert.ToDouble(
+            result ?? throw new InvalidOperationException("PostGIS area returned null."),
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public async Task<double> LengthAsync(byte[] wkb, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        cmd.CommandText = "SELECT ST_Length(ST_SetSRID($1::geometry, $2))";
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return Convert.ToDouble(
+            result ?? throw new InvalidOperationException("PostGIS length returned null."),
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -13,6 +14,8 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 internal static partial class FeaturesEndpoints
 {
+    private static readonly string[] PatchMethods = ["PATCH"];
+
     /// <summary>
     /// Maps features/items CRUD endpoints with delegation to specialized handlers.
     /// </summary>
@@ -69,6 +72,23 @@ internal static partial class FeaturesEndpoints
             .Produces(404)
             .RequireAuthorization();
 
+        endpoints.MapMethods(
+                "/ogc/features/collections/{collectionId}/items/{featureId}",
+                PatchMethods,
+                HandlePatchFeature)
+            .WithDisplayName("OGC API Features Patch Item")
+            .WithName("PatchItem")
+            .WithSummary("Partially update a feature")
+            .WithDescription("Apply a partial update to an existing feature")
+            .WithTags("OGC API Features", "Transactions")
+            .Accepts<GeoJsonFeature>(MediaTypes.GeoJson)
+            .Accepts<JsonElement>(MediaTypes.Json)
+            .Accepts<JsonElement>("application/merge-patch+json")
+            .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
+            .Produces(400)
+            .Produces(404)
+            .RequireAuthorization();
+
         endpoints.MapDelete("/ogc/features/collections/{collectionId}/items/{featureId}", HandleDeleteFeature)
             .WithDisplayName("OGC API Features Delete Item")
             .WithName("DeleteItem")
@@ -108,12 +128,15 @@ internal static partial class FeaturesEndpoints
         string? bbox,
         string? datetime,
         string? filter,
+        string? ids,
+        string? properties,
+        string? sortby,
         string? crs,
         OgcFeaturesQueryHandler queryHandler)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await queryHandler.HandleGetItemsAsync(
-            collectionId, context, f, limit, offset, bbox, datetime, filter, crs, cancellationToken);
+            collectionId, context, f, limit, offset, bbox, datetime, filter, ids, properties, sortby, crs, cancellationToken);
     }
 
     /// <summary>
@@ -156,6 +179,20 @@ internal static partial class FeaturesEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         return await transactionHandler.HandleReplaceFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
+    }
+
+    /// <summary>
+    /// Handles PatchFeature request by delegating to the transaction handler.
+    /// </summary>
+    private static async Task<IResult> HandlePatchFeature(
+        string collectionId,
+        string featureId,
+        HttpContext context,
+        OgcFeaturesTransactionHandler transactionHandler)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var ifMatch = context.Request.Headers.IfMatch.ToString();
+        return await transactionHandler.HandlePatchFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
     }
 
     /// <summary>

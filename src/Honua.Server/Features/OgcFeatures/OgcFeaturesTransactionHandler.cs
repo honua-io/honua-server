@@ -284,6 +284,202 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
+    /// <summary>
+    /// Handles partial feature updates with merge semantics and optimistic concurrency control.
+    /// </summary>
+    public async Task<IResult> HandlePatchFeatureAsync(
+        string collectionId,
+        string featureId,
+        string? ifMatch,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessAsync(
+                context, collectionId, cancellationToken);
+            if (!layerValidation.IsValid)
+            {
+                return layerValidation.ErrorResult!;
+            }
+            var layer = layerValidation.Layer!;
+            var layerId = layer.Id;
+
+            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "patch");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+
+            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+
+            var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+            if (existing == null)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ifMatch))
+            {
+                var etag = GenerateETag(existing.Value);
+                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource has been modified since the provided ETag.");
+                }
+            }
+
+            var (patchRequest, patchError) = await ReadPatchRequestAsync(context, cancellationToken);
+            if (patchRequest == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, patchError ?? "Invalid patch payload.");
+            }
+
+            if (patchRequest.FeatureId.HasValue && patchRequest.FeatureId.Value != objectId)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Payload feature ID '{patchRequest.FeatureId.Value}' does not match route feature ID '{featureId}'.");
+            }
+
+            var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
+                context.Request,
+                layer,
+                _crsRegistry,
+                cancellationToken);
+            if (!crsResult.IsValid)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, crsResult.Error ?? "Invalid Content-Crs header.");
+            }
+
+            var inputCrs = crsResult.Definition;
+
+            byte[]? geometryWkb = existing.Value.Geometry;
+            if (patchRequest.HasGeometry)
+            {
+                if (patchRequest.Geometry == null)
+                {
+                    geometryWkb = null;
+                }
+                else
+                {
+                    var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
+                        patchRequest.Geometry,
+                        inputCrs.Srid,
+                        inputCrs.AxisOrder);
+                    if (!wkbResult.IsSuccess)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            wkbResult.ErrorMessage ?? "Invalid geometry payload.");
+                    }
+
+                    geometryWkb = wkbResult.Wkb;
+                }
+            }
+
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
+            if (!geometryValidation.IsValid)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Invalid geometry: {geometryValidation.ErrorMessage}");
+            }
+
+            var attributesBuilder = existing.Value.Attributes.ToBuilder();
+            if (patchRequest.HasProperties)
+            {
+                if (patchRequest.Properties == null)
+                {
+                    attributesBuilder.Clear();
+                }
+                else
+                {
+                    foreach (var (key, value) in patchRequest.Properties)
+                    {
+                        if (value == null)
+                        {
+                            attributesBuilder.Remove(key);
+                        }
+                        else
+                        {
+                            attributesBuilder[key] = value;
+                        }
+                    }
+                }
+            }
+
+            var attributesResult = _mutationValidator.ValidateAttributes(
+                layer,
+                attributesBuilder.ToImmutable(),
+                ValidationExtensions.AttributeValidationMode.Strict);
+            if (!attributesResult.IsValid)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    attributesResult.ErrorMessage ?? "Invalid attributes.");
+            }
+
+            var feature = Feature.Create(
+                objectId,
+                geometryValidation.Geometry,
+                attributesResult.Value!);
+
+            try
+            {
+                var updated = await _featureWriter.UpdateAsync(layerId, feature, cancellationToken);
+                var newETag = GenerateETag(updated);
+                context.Response.Headers.ETag = $"\"{newETag}\"";
+
+                var updateLinks = BuildFeatureLinks(
+                    context.Request,
+                    collectionId,
+                    FormattableString.Invariant($"{updated.Id}"),
+                    MediaTypes.GeoJson);
+                context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
+                var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+
+                await InvalidateCacheAsync(context, layerId, cancellationToken);
+                HonuaTelemetry.SetSuccess(activity);
+                return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
+            }
+            catch (ResourceConflictException ex)
+            {
+                return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            }
+            catch (ResourceNotFoundException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (InvalidOperationException)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+            }
+            catch (ArgumentException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid feature payload.");
+            }
+            catch (NotSupportedException ex)
+            {
+                return StandardErrorHelpers.CreateFromException(context, ex);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.PatchFeatureFailed(_logger, collectionId, ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while patching the feature.");
+        }
+    }
+
     private async Task<BatchOperationResult> ProcessBatchOperationAsync(
         int layerId,
         LayerDefinition layer,
@@ -532,6 +728,130 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
+    private static async Task<(PatchRequest? Request, string? Error)> ReadPatchRequestAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (context.Request.ContentLength == 0)
+            {
+                return (null, "Request body is required.");
+            }
+
+            using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: cancellationToken);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return (null, "Patch payload must be a JSON object.");
+            }
+
+            var root = document.RootElement;
+            if (root.TryGetProperty("type", out var typeProperty))
+            {
+                if (typeProperty.ValueKind != JsonValueKind.String ||
+                    !string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase))
+                {
+                    return (null, "GeoJSON 'type' must be 'Feature' when provided.");
+                }
+            }
+
+            long? payloadId = null;
+            if (root.TryGetProperty("id", out var idProperty))
+            {
+                if (!TryReadLong(idProperty, out var parsedId))
+                {
+                    return (null, "GeoJSON 'id' must be an integer when provided.");
+                }
+
+                payloadId = parsedId;
+            }
+
+            Dictionary<string, object?>? properties = null;
+            var hasProperties = root.TryGetProperty("properties", out var propertiesProperty);
+            if (hasProperties)
+            {
+                if (propertiesProperty.ValueKind == JsonValueKind.Null)
+                {
+                    properties = null;
+                }
+                else if (propertiesProperty.ValueKind == JsonValueKind.Object)
+                {
+                    properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var property in propertiesProperty.EnumerateObject())
+                    {
+                        properties[property.Name] = JsonElementConverter.ConvertToObject(property.Value);
+                    }
+                }
+                else
+                {
+                    return (null, "GeoJSON 'properties' must be an object or null when provided.");
+                }
+            }
+
+            SimpleGeoJsonGeometry? geometry = null;
+            var hasGeometry = root.TryGetProperty("geometry", out var geometryProperty);
+            if (hasGeometry)
+            {
+                if (geometryProperty.ValueKind == JsonValueKind.Null)
+                {
+                    geometry = null;
+                }
+                else if (geometryProperty.ValueKind == JsonValueKind.Object)
+                {
+                    try
+                    {
+                        geometry = JsonSerializer.Deserialize(
+                            geometryProperty.GetRawText(),
+                            OgcJsonContext.Default.SimpleGeoJsonGeometry);
+                    }
+                    catch (JsonException)
+                    {
+                        return (null, "Invalid GeoJSON geometry payload.");
+                    }
+
+                    if (geometry == null || string.IsNullOrWhiteSpace(geometry.Type))
+                    {
+                        return (null, "GeoJSON geometry must include a 'type' value.");
+                    }
+                }
+                else
+                {
+                    return (null, "GeoJSON 'geometry' must be an object or null when provided.");
+                }
+            }
+
+            return (new PatchRequest(payloadId, hasGeometry, geometry, hasProperties, properties), null);
+        }
+        catch (JsonException)
+        {
+            return (null, "Invalid JSON payload.");
+        }
+    }
+
+    private static bool TryReadLong(JsonElement value, out long result)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out result))
+        {
+            return true;
+        }
+
+        if (value.ValueKind == JsonValueKind.String &&
+            long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
+        {
+            return true;
+        }
+
+        result = 0;
+        return false;
+    }
+
+    private sealed record PatchRequest(
+        long? FeatureId,
+        bool HasGeometry,
+        SimpleGeoJsonGeometry? Geometry,
+        bool HasProperties,
+        Dictionary<string, object?>? Properties);
+
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
         AxisOrder axisOrder,
@@ -600,5 +920,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
         [LoggerMessage(EventId = 5222, Level = LogLevel.Error, Message = "OGC replace feature failed for collection {CollectionId}")]
         public static partial void ReplaceFeatureFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 5223, Level = LogLevel.Error, Message = "OGC patch feature failed for collection {CollectionId}")]
+        public static partial void PatchFeatureFailed(ILogger logger, string collectionId, Exception exception);
     }
 }

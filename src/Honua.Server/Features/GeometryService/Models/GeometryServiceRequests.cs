@@ -40,3 +40,35 @@ internal sealed class ProjectParameters
     public int InSR { get; init; }
     public int OutSR { get; init; }
 }
+
+/// <summary>
+/// Parsed parameters for binary geometry operations that apply a single geometry against many geometries.
+/// Used by intersect, clip, and difference.
+/// </summary>
+internal sealed class BinaryGeometryOperationParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public required string OperatorGeometryJson { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for union operation.
+/// </summary>
+internal sealed class UnionParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for area and length operations.
+/// </summary>
+internal sealed class MeasurementParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public int SR { get; init; }
+    public string? Unit { get; init; }
+}
