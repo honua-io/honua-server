@@ -802,7 +802,7 @@ internal sealed class FeatureServerQueryHandler(
 
     private static double CalculateGeographicAreaSqKm(double minLon, double minLat, double maxLon, double maxLat)
     {
-        const double EarthRadiusKm = 6371.0088;
+        const double earthRadiusKm = 6371.0088;
 
         var normalizedMinLat = Math.Clamp(minLat, -90.0, 90.0);
         var normalizedMaxLat = Math.Clamp(maxLat, -90.0, 90.0);
@@ -816,7 +816,7 @@ internal sealed class FeatureServerQueryHandler(
         var longitudeSpanRad = DegreesToRadians(longitudeSpan);
 
         var sphericalBand = Math.Abs(Math.Sin(maxLatRad) - Math.Sin(minLatRad));
-        return EarthRadiusKm * EarthRadiusKm * sphericalBand * longitudeSpanRad;
+        return earthRadiusKm * earthRadiusKm * sphericalBand * longitudeSpanRad;
     }
 
     private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
