@@ -2,8 +2,6 @@
 
 Honua exposes multiple industry-standard geospatial APIs. This page helps you choose the right protocol and understand the shape of each API at a high level.
 
-**Scope**: Protocol selection and quick orientation. For exact capabilities and supported operations, use the coverage index and the API examples.
-
 ## **Quick Protocol Selection**
 
 | If you're using... | Use this API | Endpoint Pattern | Why |
@@ -120,11 +118,17 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 ## **Coverage and Compliance**
 
 Protocol support is tracked per standard and operation. Use these docs to confirm supported behaviors:
-- [Protocol Coverage Index](specifications/protocol-coverage.md)
-- [OGC API Features Part 1 (Core)](specifications/ogc-api-features-part1-core.md)
-- [OGC API Features Part 2 (CRS)](specifications/ogc-api-features-part2-crs.md)
-- [OGC API Features Part 3 (Filtering)](specifications/ogc-api-features-part3-filtering.md)
+
+**OGC API Features:**
+- [OGC API Features Coverage](specifications/ogc-api-features-coverage.md)
+- [Part 1 — Core](specifications/ogc-api-features-part1-core.md)
+- [Part 2 — CRS](specifications/ogc-api-features-part2-crs.md)
+- [Part 3 — Filtering](specifications/ogc-api-features-part3-filtering.md)
+
+**Other protocols:**
 - [OData v4 Coverage](specifications/odata-v4-coverage.md)
+- [FeatureServer Coverage Matrix](feature-server-matrix.md) — aligned to [Esri REST Feature Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
+- [MapServer Coverage Matrix](map-server-matrix.md) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
 
 ---
 

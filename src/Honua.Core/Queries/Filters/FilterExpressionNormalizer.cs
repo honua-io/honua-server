@@ -102,7 +102,11 @@ public static class FilterExpressionNormalizer
         }
 
         if (literal.Type == LiteralType.Text && literal.Value is string text &&
-            DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+            DateTimeOffset.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
         {
             return new Literal(parsed, LiteralType.DateTime);
         }

@@ -12,7 +12,8 @@ module "honua" {
   waf_web_acl_arn     = var.waf_web_acl_arn
 
   additional_env = {
-    HONUA_ADMIN_UI = "true"
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
   }
 }
 

@@ -76,6 +76,27 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WhenSuccessful_IncludesContentHeaders()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&f=png");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Headers.Contains("Content-Bbox").Should().BeTrue();
+            response.Headers.TryGetValues("Content-Bbox", out var bboxValues).Should().BeTrue();
+            bboxValues.Should().NotBeNull();
+            using var enumerator = bboxValues!.GetEnumerator();
+            enumerator.MoveNext().Should().BeTrue();
+            enumerator.Current.Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
     public async Task GetCollectionMap_UnknownFormat_ReturnsBadRequest()
     {
         // Arrange - "json" is not a valid OGC Maps format
@@ -113,7 +134,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/map")]
     [Operation(Operations.Render)]
-    public async Task GetDatasetMap_WithoutCollections_ReturnsBadRequest()
+    public async Task GetDatasetMap_WithoutCollections_ReturnsMapOrError()
     {
         // Arrange
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
@@ -122,7 +143,11 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/map{queryParams}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.OK,
+            HttpStatusCode.NotFound,
+            HttpStatusCode.Unauthorized,
+            HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]

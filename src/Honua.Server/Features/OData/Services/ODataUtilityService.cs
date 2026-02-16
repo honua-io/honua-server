@@ -231,11 +231,12 @@ internal static class ODataUtilityService
         long? totalCount = null,
         string? nextLink = null,
         string? select = null,
-        string? expand = null)
+        string? expand = null,
+        bool includeContext = true)
     {
         return new ODataResponse
         {
-            Context = BuildContextUrl(baseUrl, entityType, isSingle: false, select, expand),
+            Context = includeContext ? BuildContextUrl(baseUrl, entityType, isSingle: false, select, expand) : null,
             Count = totalCount,
             NextLink = nextLink,
             Value = value
@@ -280,14 +281,15 @@ internal static class ODataUtilityService
 
     public static string GetODataContentType(HttpRequest request, string? format)
     {
-        if (TryResolveMetadataLevel(format, out var level) ||
-            TryResolveMetadataLevelFromAccept(request.Headers.Accept.ToString(), out level))
-        {
-            return $"{ODataMediaType};odata.metadata={level}";
-        }
-
-        return ODataContentType;
+        var metadataLevel = ResolveMetadataLevel(request, format);
+        return $"{ODataMediaType};odata.metadata={metadataLevel}";
     }
+
+    public static bool ShouldIncludeContext(HttpRequest request, string? format)
+        => !string.Equals(
+            ResolveMetadataLevel(request, format),
+            ODataMetadataNone,
+            StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlySet<string> GetAllowedFormats()
     {
@@ -546,6 +548,12 @@ internal static class ODataUtilityService
         return sb.Length > 0 ? sb.ToString() : "Identifier";
     }
 
+    public static string BuildRelationshipMetadataName(string relationshipName, int relationshipId)
+    {
+        var sanitized = SanitizeIdentifier(relationshipName);
+        return $"{sanitized}_r{relationshipId}";
+    }
+
     private static string MapODataCode(int statusCode) => statusCode switch
     {
         StatusCodes.Status400BadRequest => "BadRequest",
@@ -731,6 +739,19 @@ internal static class ODataUtilityService
         }
 
         return false;
+    }
+
+    private static string ResolveMetadataLevel(HttpRequest request, string? format)
+    {
+        if (TryResolveMetadataLevel(format, out var formatLevel) ||
+            TryResolveMetadataLevelFromAccept(request.Headers.Accept.ToString(), out formatLevel))
+        {
+            return string.Equals(formatLevel, ODataMetadataNone, StringComparison.OrdinalIgnoreCase)
+                ? ODataMetadataNone
+                : ODataMetadataMinimal;
+        }
+
+        return ODataMetadataMinimal;
     }
 
     /// <summary>

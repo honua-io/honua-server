@@ -14,7 +14,7 @@
 
 - **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service), OGC API Features/Maps/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
-- **No GDAL dependency** — import GeoJSON, Shapefile, GeoPackage, CSV, KML/KMZ, and WKT directly. Import from live Esri REST services for migration.
+- **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, and WKT directly. Import from live Esri REST services for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
 
 ## Quick Start
@@ -79,7 +79,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Admin UI, automation scripts |
-| OpenAPI | `/openapi.json` | Any HTTP client |
+| OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
+| OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
 | Health | `/healthz/live`, `/healthz/ready` | Load balancers, orchestrators |
 
 ## Capabilities
@@ -92,7 +93,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 
-**File import** — GeoJSON, Shapefile, GeoPackage, CSV (lat/lon or WKT), KML/KMZ, and WKT. CRS auto-detection and PostGIS-based reprojection.
+**File import** — GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, and WKT. CRS auto-detection and PostGIS-based reprojection.
 
 **Service import** — Migrate existing Esri feature and map services, preserving structure and metadata.
 
@@ -116,7 +117,7 @@ HONUA_ADMIN_PASSWORD="change-me"
 
 **Common options:**
 ```bash
-HONUA_ADMIN_UI=true                       # Web admin UI at /admin
+HONUA_SERVE_ADMIN_UI=true                 # Serve admin UI at /admin
 HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
 HONUA_OPENTELEMETRY=true                  # Distributed tracing
 ConnectionStrings__Redis="localhost:6379"  # Redis cache
@@ -151,8 +152,8 @@ infrastructure/
 | Call the API | [Standards APIs](docs/user/STANDARDS_APIS.md) / [API Examples](docs/user/API_EXAMPLES.md) |
 | Manage services and layers | [Control Plane API](docs/user/CONTROL_PLANE_API.md) |
 | Understand the architecture | [Architecture](docs/contributor/ARCHITECTURE.md) / [ADRs](docs/contributor/adr/README.md) |
-| Configure security | [Security Configuration](docs/devops/SECURITY_CONFIGURATION.md) |
-| Troubleshoot issues | [Troubleshooting](docs/devops/TROUBLESHOOTING.md) / [Runbooks](docs/devops/runbooks/README.md) |
+| Configure security | [Security Configuration](docs/devops/security.md) |
+| Troubleshoot issues | [Troubleshooting](docs/devops/troubleshooting.md) / [Runbooks](docs/devops/runbooks/README.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 
 Full documentation index: [`docs/README.md`](docs/README.md)

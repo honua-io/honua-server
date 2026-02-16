@@ -340,7 +340,7 @@ internal static partial class ConfigurationLog
     /// Log configuration error with exception.
     /// </summary>
     [LoggerMessage(
-        EventId = 4013,
+        EventId = 4015,
         Level = LogLevel.Error,
         Message = "Configuration error: {Message}")]
     public static partial void ConfigurationError(ILogger logger, string message, Exception exception);

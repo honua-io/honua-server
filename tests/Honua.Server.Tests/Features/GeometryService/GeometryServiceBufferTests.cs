@@ -92,6 +92,51 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Buffer)]
     [Endpoint("POST /rest/services/geometry/buffer")]
+    public async Task Buffer_NonGeodesicGeographicInput_UsesLinearDistanceUnits()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0}]
+            },
+            "inSR": "4326",
+            "distances": "1000",
+            "unit": "esriMeters",
+            "geodesic": "false"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+
+        var ring = result.Geometries![0].GetProperty("rings")[0];
+        var minX = double.PositiveInfinity;
+        var maxX = double.NegativeInfinity;
+        foreach (var point in ring.EnumerateArray())
+        {
+            var x = point[0].GetDouble();
+            minX = Math.Min(minX, x);
+            maxX = Math.Max(maxX, x);
+        }
+
+        var widthDegrees = maxX - minX;
+        widthDegrees.Should().BeGreaterThan(0.001);
+        widthDegrees.Should().BeLessThan(0.1,
+            "a 1km buffer in EPSG:4326 should be a small angular distance, not hundreds of degrees");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_MultipleDistances_ReturnsMultipleGeometries()
     {
         var body = """

@@ -12,7 +12,8 @@ module "honua" {
   plan_sku_name  = var.plan_sku_name
 
   additional_env = {
-    HONUA_ADMIN_UI = "true"
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
   }
 }
 

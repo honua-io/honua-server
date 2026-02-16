@@ -52,11 +52,12 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
     [Endpoint("GET /healthz/live")]
     [Endpoint("GET /healthz/ready")]
     [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /metrics")]
     public async Task HealthEndpoints_AllVariations_ReturnCorrectStatus()
     {
         using var client = _fixture.CreateClient();
 
-        var endpoints = new[] { "/healthz/live", "/healthz/ready", "/healthz/metrics" };
+        var endpoints = new[] { "/healthz/live", "/healthz/ready", "/healthz/metrics", "/metrics" };
 
         foreach (var endpoint in endpoints)
         {

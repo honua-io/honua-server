@@ -23,6 +23,7 @@ internal sealed class OgcMapsRenderingHandler
 {
     private const int DefaultImageDimension = 256;
     private const int MaxImageDimension = 4096;
+    private const int DefaultBboxCrsSrid = 4326;
     private static readonly Regex _backgroundColorPattern = new("^0x[0-9A-Fa-f]{6}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly ILayerCatalog _layerCatalog;
@@ -64,7 +65,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            if (context is not null)
+            if (context is not null && layer.Metadata?.AccessPolicy != null)
             {
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
                 if (accessError != null)
@@ -78,7 +79,7 @@ internal sealed class OgcMapsRenderingHandler
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, "Failed to parse map request parameters");
-                return Results.BadRequest("Invalid map request parameters");
+                return CreateBadRequestResult(context, "Invalid map request parameters");
             }
 
             OgcMapsLog.CollectionMapRenderStarted(_logger, layerId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -94,7 +95,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.CollectionMapRenderCompleted(_logger, layerId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return Results.File(result.Data, result.ContentType);
+            return CreateMapFileResult(context, result, renderRequest.Value);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -121,33 +122,86 @@ internal sealed class OgcMapsRenderingHandler
             "render",
             HonuaTelemetry.Protocols.OgcMaps,
             string.Join(",", layerIds));
-        scope.WithTag(HonuaTelemetry.Tags.Operation, "render-dataset-map")
-             .WithTag("layer_count", layerIds.Length);
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "render-dataset-map");
 
+        var resolvedLayerCount = layerIds.Length;
         try
         {
-            // Validate all layers exist
+            // Resolve dataset layers from explicit selection or all accessible layers.
             var layers = new List<Core.Features.Catalog.Domain.LayerDefinition>();
-            foreach (var layerId in layerIds)
+            int[] resolvedLayerIds;
+
+            if (layerIds.Length == 0)
             {
-                var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-                if (layer == null)
+                var allLayers = await _layerCatalog.ListLayersAsync(cancellationToken);
+                if (allLayers.Length == 0)
                 {
-                    OgcMapsLog.CollectionNotFound(_logger, layerId);
-                    return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                    return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
                 }
 
                 if (context is not null)
                 {
-                    var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-                    if (accessError != null)
+                    foreach (var layer in allLayers)
                     {
-                        return accessError;
+                        if (layer.Metadata?.AccessPolicy == null || AccessPolicyHelpers.IsLayerAccessible(context, layer))
+                        {
+                            layers.Add(layer);
+                        }
                     }
                 }
+                else
+                {
+                    layers.AddRange(allLayers);
+                }
 
-                layers.Add(layer);
+                if (layers.Count == 0)
+                {
+                    if (context is not null)
+                    {
+                        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, allLayers);
+                        if (accessError != null)
+                        {
+                            return accessError;
+                        }
+                    }
+
+                    return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
+                }
+
+                resolvedLayerIds = new int[layers.Count];
+                for (var i = 0; i < layers.Count; i++)
+                {
+                    resolvedLayerIds[i] = layers[i].Id;
+                }
             }
+            else
+            {
+                foreach (var layerId in layerIds)
+                {
+                    var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
+                    if (layer == null)
+                    {
+                        OgcMapsLog.CollectionNotFound(_logger, layerId);
+                        return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                    }
+
+                    if (context is not null && layer.Metadata?.AccessPolicy != null)
+                    {
+                        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                        if (accessError != null)
+                        {
+                            return accessError;
+                        }
+                    }
+
+                    layers.Add(layer);
+                }
+
+                resolvedLayerIds = layerIds;
+            }
+
+            resolvedLayerCount = resolvedLayerIds.Length;
+            scope.WithTag("layer_count", resolvedLayerCount);
 
             // Use the first layer for extent calculation
             var primaryLayer = layers[0];
@@ -155,23 +209,23 @@ internal sealed class OgcMapsRenderingHandler
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, 0, "Failed to parse dataset map request parameters");
-                return Results.BadRequest("Invalid map request parameters");
+                return CreateBadRequestResult(context, "Invalid map request parameters");
             }
 
-            OgcMapsLog.DatasetMapRenderStarted(_logger, layerIds.Length, renderRequest.Value.Width, renderRequest.Value.Height);
+            OgcMapsLog.DatasetMapRenderStarted(_logger, resolvedLayerCount, renderRequest.Value.Width, renderRequest.Value.Height);
 
             // Render the dataset map
-            var result = await _mapRenderer.RenderDatasetMapAsync(layerIds, renderRequest.Value, cancellationToken);
+            var result = await _mapRenderer.RenderDatasetMapAsync(resolvedLayerIds, renderRequest.Value, cancellationToken);
             if (result.Data.Length == 0)
             {
-                OgcMapsLog.NoDatasetMapDataFound(_logger, layerIds.Length);
+                OgcMapsLog.NoDatasetMapDataFound(_logger, resolvedLayerCount);
                 return CreateNotFoundResult(context, "No map data found for dataset");
             }
 
-            OgcMapsLog.DatasetMapRenderCompleted(_logger, layerIds.Length, result.Data.Length);
-            scope.SetSuccess(layerIds.Length);
+            OgcMapsLog.DatasetMapRenderCompleted(_logger, resolvedLayerCount, result.Data.Length);
+            scope.SetSuccess(resolvedLayerCount);
 
-            return Results.File(result.Data, result.ContentType);
+            return CreateMapFileResult(context, result, renderRequest.Value);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -179,7 +233,7 @@ internal sealed class OgcMapsRenderingHandler
         }
         catch (Exception ex)
         {
-            OgcMapsLog.DatasetMapRenderFailed(_logger, ex, layerIds.Length);
+            OgcMapsLog.DatasetMapRenderFailed(_logger, ex, resolvedLayerCount);
             scope.RecordException(ex);
             return CreateErrorResult(context, "An error occurred while rendering the dataset map.");
         }
@@ -212,7 +266,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            if (context is not null)
+            if (context is not null && layer.Metadata?.AccessPolicy != null)
             {
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
                 if (accessError != null)
@@ -226,7 +280,7 @@ internal sealed class OgcMapsRenderingHandler
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, "Failed to parse styled map request parameters");
-                return Results.BadRequest("Invalid map request parameters");
+                return CreateBadRequestResult(context, "Invalid map request parameters");
             }
 
             OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -242,7 +296,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return Results.File(result.Data, result.ContentType);
+            return CreateMapFileResult(context, result, renderRequest.Value);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -269,6 +323,15 @@ internal sealed class OgcMapsRenderingHandler
     /// Creates a not-found result using StandardErrorHelpers when context is available,
     /// or a plain 404 when it is not.
     /// </summary>
+    private static IResult CreateBadRequestResult(HttpContext? context, string message)
+        => context is not null
+            ? StandardErrorHelpers.CreateBadRequest(context, message)
+            : Results.BadRequest(message);
+
+    /// <summary>
+    /// Creates a not-found result using StandardErrorHelpers when context is available,
+    /// or a plain 404 when it is not.
+    /// </summary>
     private static IResult CreateNotFoundResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateNotFound(context, message)
@@ -283,12 +346,76 @@ internal sealed class OgcMapsRenderingHandler
             ? StandardErrorHelpers.CreateInternalServerError(context, message)
             : Results.Problem(message, statusCode: 500);
 
+    private static IResult CreateMapFileResult(HttpContext? context, RasterResult result, MapRenderRequest renderRequest)
+    {
+        if (context is not null)
+        {
+            string? contentBboxHeader = null;
+            int? bboxSrid = null;
+            if (result.Extent.HasValue)
+            {
+                contentBboxHeader = FormatContentBboxHeader(result.Extent.Value);
+                bboxSrid = result.Extent.Value.Srid ?? result.Srid ?? renderRequest.Crs ?? renderRequest.BoundingBoxCrs;
+            }
+            else if (renderRequest.BoundingBox.Length == 4)
+            {
+                contentBboxHeader = FormatContentBboxHeader(renderRequest.BoundingBox);
+                bboxSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? result.Srid;
+            }
+
+            if (contentBboxHeader is not null)
+            {
+                context.Response.Headers["Content-Bbox"] = contentBboxHeader;
+            }
+
+            var contentCrsHeader = FormatContentCrsHeader(bboxSrid);
+            if (contentCrsHeader != null)
+            {
+                context.Response.Headers["Content-Crs"] = contentCrsHeader;
+            }
+        }
+
+        return Results.File(result.Data, result.ContentType);
+    }
+
+    private static string? FormatContentCrsHeader(int? srid)
+    {
+        if (srid is null or <= 0)
+        {
+            return null;
+        }
+
+        return FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid.Value}>");
+    }
+
+    private static string FormatContentBboxHeader(RasterExtent extent)
+        => FormattableString.Invariant($"{extent.XMin},{extent.YMin},{extent.XMax},{extent.YMax}");
+
+    private static string FormatContentBboxHeader(double[] bbox)
+        => FormattableString.Invariant($"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}");
+
     private MapRenderRequest? CreateMapRenderRequest(OgcMapRequest request, Core.Features.Catalog.Domain.LayerDefinition layer)
     {
         try
         {
+            // Parse CRS - log when requested CRS is not recognized
+            var outputCrs = SpatialReferenceHelpers.TryParseSrid(request.Crs);
+            if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
+            {
+                OgcMapsLog.UnsupportedCrs(_logger, request.Crs);
+                return null;
+            }
+
+            var requestedBboxCrs = SpatialReferenceHelpers.TryParseSrid(request.BboxCrs);
+            if (!string.IsNullOrEmpty(request.BboxCrs) && requestedBboxCrs == null)
+            {
+                OgcMapsLog.UnsupportedCrs(_logger, request.BboxCrs);
+                return null;
+            }
+
             // Parse bounding box
             double[] bbox;
+            int? bboxCrs;
             if (!string.IsNullOrEmpty(request.Bbox))
             {
                 if (!RasterParsingHelpers.TryParseBoundingBox(request.Bbox, out var minX, out var minY, out var maxX, out var maxY))
@@ -296,6 +423,7 @@ internal sealed class OgcMapsRenderingHandler
                     return null; // Invalid bbox format
                 }
                 bbox = [minX, minY, maxX, maxY];
+                bboxCrs = requestedBboxCrs ?? DefaultBboxCrsSrid;
             }
             else
             {
@@ -306,22 +434,8 @@ internal sealed class OgcMapsRenderingHandler
                 }
                 var extent = layer.Extent.Value;
                 bbox = [extent.MinX, extent.MinY, extent.MaxX, extent.MaxY];
+                bboxCrs = extent.SpatialReference;
                 OgcMapsLog.UsingDefaultBounds(_logger, layer.Id, extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
-            }
-
-            // Parse CRS - log when requested CRS is not recognized
-            var outputCrs = SpatialReferenceHelpers.TryParseSrid(request.Crs);
-            if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
-            {
-                OgcMapsLog.UnsupportedCrs(_logger, request.Crs);
-                return null;
-            }
-
-            var bboxCrs = SpatialReferenceHelpers.TryParseSrid(request.BboxCrs);
-            if (!string.IsNullOrEmpty(request.BboxCrs) && bboxCrs == null)
-            {
-                OgcMapsLog.UnsupportedCrs(_logger, request.BboxCrs);
-                return null;
             }
 
             // Parse format

@@ -194,6 +194,8 @@ internal static class CollectionsEndpoints
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
+            OgcFeaturesLog.CollectionRequested(logger, collectionId);
+
             if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
             {
                 if (errorResult != null)
@@ -395,6 +397,13 @@ internal static class CollectionsEndpoints
             rel: RelationTypes.Data,
             type: MediaTypes.GeoJson,
             title: "Data"));
+
+        // Collection map representation
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/ogc/maps/collections/{collectionId}/map",
+            rel: RelationTypes.Map,
+            type: "image/png",
+            title: "Map"));
 
         // Parent (collections)
         collectionLinks.Add(Link.Create(

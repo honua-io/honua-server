@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
@@ -47,6 +48,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton<IDatabaseMigrationRunner, NullDatabaseMigrationRunner>();
             services.AddSingleton<IMetadataResourceStore, InMemoryMetadataResourceStore>();
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
+            services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
         {
@@ -131,6 +133,12 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             return $"Host={host};Port={port};Database={databaseName};Username={username};Password={password};SslMode={sslMode}";
         }
+    }
+
+    private sealed class AllowAllSqlFilterTranslator : ISqlFilterTranslator
+    {
+        public SqlFragment Translate(FilterExpression filter, Core.Features.Catalog.Domain.LayerDefinition layer)
+            => new("1=1", Array.Empty<object?>());
     }
 
     private sealed class NullLayerPublishingService : ILayerPublishingService

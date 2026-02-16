@@ -106,6 +106,15 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeoServicesFeature[] features = result.Items
             .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
+        var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName);
+        var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
+        bool? hasZ = null;
+        bool? hasM = null;
+        if (layer.HasGeometry && returnGeometry)
+        {
+            hasZ = features.Any(feature => feature.Geometry?.HasZ == true);
+            hasM = features.Any(feature => feature.Geometry?.HasM == true);
+        }
 
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         var spatialReference = layer.HasGeometry
@@ -117,6 +126,10 @@ internal sealed class QueryFormatter : IQueryFormatter
             ObjectIdFieldName = objectIdFieldName,
             GeometryType = layer.HasGeometry ? MapGeometryType(layer.GeometryType) : null,
             SpatialReference = spatialReference,
+            DisplayFieldName = displayFieldName,
+            Fields = queryFields,
+            HasZ = hasZ,
+            HasM = hasM,
             Features = features,
             ExceededTransferLimit = result.HasMoreResults
         };
@@ -293,6 +306,78 @@ internal sealed class QueryFormatter : IQueryFormatter
         {
             target["OBJECTID"] = objectIdValue;
         }
+    }
+
+    internal static GeoServicesFieldInfo[] BuildQueryFields(
+        LayerDefinition layer,
+        string[]? outFields,
+        string objectIdFieldName)
+    {
+        var includeAllFields = outFields == null || outFields.Length == 0
+            || (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
+
+        HashSet<string>? requestedFields = null;
+        if (!includeAllFields)
+        {
+            requestedFields = new HashSet<string>(outFields!, StringComparer.OrdinalIgnoreCase)
+            {
+                objectIdFieldName
+            };
+        }
+
+        var mappedFields = layer.Fields
+            .Where(field => !field.IsGeometry)
+            .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
+            .Select(MapFieldInfo)
+            .ToList();
+
+        if (!mappedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
+        {
+            mappedFields.Add(new GeoServicesFieldInfo
+            {
+                Name = objectIdFieldName,
+                Type = "esriFieldTypeOID",
+                Alias = objectIdFieldName,
+                Nullable = false,
+                Editable = false
+            });
+        }
+
+        return mappedFields.ToArray();
+    }
+
+    internal static string ResolveDisplayFieldName(IReadOnlyList<GeoServicesFieldInfo> fields, string objectIdFieldName)
+    {
+        if (fields.Count == 0)
+        {
+            return objectIdFieldName;
+        }
+
+        var preferredNameField = fields.FirstOrDefault(
+            field => field.Name.Equals("name", StringComparison.OrdinalIgnoreCase));
+        if (preferredNameField != null)
+        {
+            return preferredNameField.Name;
+        }
+
+        var firstStringField = fields.FirstOrDefault(
+            field => field.Type.Equals("esriFieldTypeString", StringComparison.OrdinalIgnoreCase));
+        return firstStringField?.Name ?? objectIdFieldName;
+    }
+
+    internal static GeoServicesFieldInfo MapFieldInfo(FieldDefinition field)
+    {
+        return new GeoServicesFieldInfo
+        {
+            Name = field.Name,
+            Type = field.GeoServicesType,
+            SqlType = field.SqlType,
+            Alias = field.DisplayName,
+            Length = field.Length,
+            Nullable = field.Nullable,
+            Editable = !field.IsGeometry,
+            DefaultValue = field.DefaultValue
+        };
     }
 
     /// <summary>
@@ -534,12 +619,17 @@ internal sealed class StreamingQueryFormatter
 
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
+        var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
 
         // Start object
         writer.WriteStartObject();
 
         // Write metadata
         writer.WriteString("objectIdFieldName", objectIdFieldName);
+        writer.WriteString("displayFieldName", displayFieldName);
+        writer.WritePropertyName("fields");
+        JsonSerializer.Serialize(writer, queryFields, FeatureServerJsonContext.Default.GeoServicesFieldInfoArray);
 
         if (layer.HasGeometry)
         {
@@ -548,6 +638,13 @@ internal sealed class StreamingQueryFormatter
             writer.WriteNumber("wkid", srid);
             writer.WriteNumber("latestWkid", srid);
             writer.WriteEndObject();
+
+            if (returnGeometry)
+            {
+                // Streaming output cannot pre-scan all features; report requested dimensions.
+                writer.WriteBoolean("hasZ", returnZ);
+                writer.WriteBoolean("hasM", returnM);
+            }
         }
 
         var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(

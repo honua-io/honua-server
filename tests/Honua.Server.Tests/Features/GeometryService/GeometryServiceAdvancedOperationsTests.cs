@@ -56,6 +56,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Intersect)]
     [Endpoint("GET /rest/services/geometry/intersect")]
     public async Task Intersect_GetMissingParameters_Returns400()
     {
@@ -93,6 +94,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Union)]
     [Endpoint("GET /rest/services/geometry/union")]
     public async Task Union_GetMissingParameters_Returns400()
     {
@@ -132,6 +134,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Clip)]
     [Endpoint("GET /rest/services/geometry/clip")]
     public async Task Clip_GetMissingParameters_Returns400()
     {
@@ -171,6 +174,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Difference)]
     [Endpoint("GET /rest/services/geometry/difference")]
     public async Task Difference_GetMissingParameters_Returns400()
     {
@@ -209,6 +213,38 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Area)]
+    [Endpoint("POST /rest/services/geometry/area")]
+    public async Task Area_GeographicInput_ReturnsSquareMeters()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+                ]
+            },
+            "sr": "4326",
+            "areaUnit": "esriSquareMeters"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/area",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreaResponse);
+
+        result.Should().NotBeNull();
+        result!.Areas.Should().HaveCount(1);
+        result.Areas![0].Should().BeGreaterThan(1_000_000_000d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Area)]
     [Endpoint("GET /rest/services/geometry/area")]
     public async Task Area_GetMissingParameters_Returns400()
     {
@@ -247,6 +283,39 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Length)]
+    [Endpoint("POST /rest/services/geometry/length")]
+    public async Task Length_GeographicInput_ReturnsMeters()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[1,0]]]}
+                ]
+            },
+            "sr": "4326",
+            "lengthUnit": "esriMeters"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/length",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceLengthResponse);
+
+        result.Should().NotBeNull();
+        result!.Lengths.Should().HaveCount(1);
+        result.Lengths![0].Should().BeGreaterThan(100_000d);
+        result.Lengths![0].Should().BeLessThan(120_000d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Length)]
     [Endpoint("GET /rest/services/geometry/length")]
     public async Task Length_GetMissingParameters_Returns400()
     {

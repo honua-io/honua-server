@@ -118,4 +118,13 @@ internal static partial class MapServerLog
         Level = LogLevel.Error,
         Message = "MapServer find failed: {ServiceId}: {ErrorMessage}")]
     public static partial void FindFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    /// <summary>
+    /// Logs when a PostGIS extent transformation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5440,
+        Level = LogLevel.Warning,
+        Message = "PostGIS extent transform failed from SRID {FromSrid} to {ToSrid}")]
+    public static partial void PostGisExtentTransformFailed(ILogger logger, int fromSrid, int toSrid, Exception exception);
 }

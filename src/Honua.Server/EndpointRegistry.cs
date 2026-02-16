@@ -17,6 +17,7 @@ public static class EndpointRegistry
         new("GET", "/healthz/live"),
         new("GET", "/healthz/ready"),
         new("GET", "/healthz/metrics"),
+        new("GET", "/metrics"),
 
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
@@ -67,12 +68,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/import/jobs"),
         new("GET", "/api/v1/admin/import/limits"),
 
-        // v1 admin import endpoints (Esri)
-        new("POST", "/api/v1/admin/import/esri/discover"),
-        new("POST", "/api/v1/admin/import/esri/start"),
-        new("GET", "/api/v1/admin/import/esri/jobs/{jobId}"),
-        new("POST", "/api/v1/admin/import/esri/jobs/{jobId}/cancel"),
-        new("GET", "/api/v1/admin/import/esri/jobs"),
+        // v1 admin import endpoints (Geoservices)
+        new("POST", "/api/v1/admin/import/geoservices/discover"),
+        new("POST", "/api/v1/admin/import/geoservices/start"),
+        new("GET", "/api/v1/admin/import/geoservices/jobs/{jobId}"),
+        new("POST", "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"),
+        new("GET", "/api/v1/admin/import/geoservices/jobs"),
 
         // v1 admin operations progress endpoints
         new("GET", "/api/v1/admin/operations/{operationId}"),

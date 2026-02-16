@@ -93,7 +93,7 @@ builder.Services.AddScoped(sp =>
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddScoped<ISecureConnectionsClient, SecureConnectionsClient>();
 builder.Services.AddScoped<ILayerPublishingClient, LayerPublishingClient>();
-builder.Services.AddScoped<IEsriImportClient, EsriImportClient>();
+builder.Services.AddScoped<IGeoservicesImportClient, GeoservicesImportClient>();
 builder.Services.AddScoped<IFileImportClient, FileImportClient>();
 builder.Services.AddScoped<ILayerStyleClient, LayerStyleClient>();
 builder.Services.AddScoped<IServiceSettingsClient, ServiceSettingsClient>();

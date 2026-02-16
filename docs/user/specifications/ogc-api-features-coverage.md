@@ -24,6 +24,7 @@ Legend:
 | Single item | `/ogc/features/collections/{collectionId}/items/{featureId}` | GET | Implemented | `GET /ogc/features/collections/{collectionId}/items/{featureId}` | Supports `f` + `crs`. |
 | Create item | `/ogc/features/collections/{collectionId}/items` | POST | Implemented | `POST /ogc/features/collections/{collectionId}/items` | GeoJSON request body only. |
 | Replace item | `/ogc/features/collections/{collectionId}/items/{featureId}` | PUT | Implemented | `PUT /ogc/features/collections/{collectionId}/items/{featureId}` | GeoJSON request body only; upsert behavior. |
+| Patch item | `/ogc/features/collections/{collectionId}/items/{featureId}` | PATCH | Implemented | `PATCH /ogc/features/collections/{collectionId}/items/{featureId}` | Merge-style partial updates for `properties` and/or `geometry`. |
 | Delete item | `/ogc/features/collections/{collectionId}/items/{featureId}` | DELETE | Implemented | `DELETE /ogc/features/collections/{collectionId}/items/{featureId}` | No query parameters. |
 | Batch operations (extension) | N/A | POST | Implemented | `POST /ogc/features/collections/{collectionId}/items/batch` | Honua extension (not in OGC standard). |
 
@@ -36,6 +37,9 @@ Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.
 | `f` | Implemented | `geojson`, `json`, `gml`, `html` for feature content. GML output is supported but not claimed as a conformance class. |
 | `limit` | Implemented | Validated and normalized by server limits. |
 | `offset` | Implemented | Standard offset paging. |
+| `ids` | Implemented | Comma-separated feature IDs. |
+| `properties` | Implemented | Comma-separated property projection list (`*` keeps default behavior). |
+| `sortby` | Implemented | Comma-separated sort expressions (supports `+field`, `-field`, and `field asc|desc`). |
 | `bbox` | Implemented | 4 or 6 comma-separated values; anti-meridian supported for geographic CRS. |
 | `bbox-crs` | Implemented | CRS for interpreting `bbox`; must be in collection `crs` list. |
 | `crs` | Implemented | Output CRS; must be in collection `crs` list. Response includes `Content-Crs`. |
@@ -148,7 +152,5 @@ A_CONTAINS(tags, ('coastal','urban'))
 
 ## Unsupported or not implemented
 
-- `PATCH /ogc/features/collections/{collectionId}/items/{featureId}` (partial update) is not implemented.
-- `sortby`, `properties`, and `ids` query parameters are not supported on items endpoints.
 - Filter languages other than `cql2-text` and `cql2-json` are not supported.
 - Write operations do not accept GML; GeoJSON is required.

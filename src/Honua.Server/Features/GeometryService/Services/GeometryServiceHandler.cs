@@ -23,7 +23,7 @@ internal sealed class GeometryServiceHandler(
         ?? throw new ArgumentNullException(nameof(geometryConverter));
     private readonly ILogger<GeometryServiceHandler> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
-    private static readonly Dictionary<string, double> AreaUnitDivisors = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, double> _areaUnitDivisors = new(StringComparer.OrdinalIgnoreCase)
     {
         ["esriSquareMeters"] = 1.0,
         ["esriSquareKilometers"] = 1_000_000.0,
@@ -840,7 +840,7 @@ internal sealed class GeometryServiceHandler(
             return 1.0;
         }
 
-        return AreaUnitDivisors.TryGetValue(unit, out var divisor) ? divisor : 1.0;
+        return _areaUnitDivisors.TryGetValue(unit, out var divisor) ? divisor : 1.0;
     }
 
     private GeometryServiceResponse ConvertToResponse(List<byte[]> wkbs, int srid, string? geometryType)

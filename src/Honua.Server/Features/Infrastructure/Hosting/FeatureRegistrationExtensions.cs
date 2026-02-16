@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.EsriCatalog;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.GeometryService;
+using Honua.Server.Features.GeoservicesCatalog;
 using Honua.Server.Features.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
@@ -49,7 +49,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapFeatureServerEndpoints();
-        endpoints.MapEsriCatalogEndpoints();
+        endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapAttachmentEndpoints();

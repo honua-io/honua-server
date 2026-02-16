@@ -348,6 +348,65 @@ public class OgcMapsRenderingHandlerTests
         statusCodeResult.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_WithHttpContext_AddsContentHeaders()
+    {
+        var context = CreateAnonymousOgcMapsContext();
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent());
+        _mapRenderer.RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857,
+                Extent = new RasterExtent
+                {
+                    XMin = -10,
+                    YMin = -5,
+                    XMax = 10,
+                    YMax = 5,
+                    Srid = 3857
+                }
+            });
+
+        var result = await _handler.RenderCollectionMapAsync(1, CreateDefaultRequest(), context);
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        context.Response.Headers["Content-Crs"].ToString()
+            .Should().Be("<https://www.opengis.net/def/crs/EPSG/0/3857>");
+        context.Response.Headers["Content-Bbox"].ToString()
+            .Should().Be("-10,-5,10,5");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_WithoutLayerIds_UsesAllCatalogLayers()
+    {
+        _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
+            .Returns([CreateTestLayerWithExtent(1), CreateTestLayerWithExtent(2)]);
+        _mapRenderer.RenderDatasetMapAsync(Arg.Is<int[]>(ids => ids.Length == 2 && Array.IndexOf(ids, 1) >= 0 && Array.IndexOf(ids, 2) >= 0), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89, 0x50 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var result = await _handler.RenderDatasetMapAsync(Array.Empty<int>(), CreateDefaultRequest());
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        await _mapRenderer.Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(ids => ids.Length == 2 && Array.IndexOf(ids, 1) >= 0 && Array.IndexOf(ids, 2) >= 0),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================

@@ -418,7 +418,7 @@ internal static partial class ODataEndpoints
                 [FromServices] ODataAdvancedQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleApplyAsync(context, layerId, query.Apply, query.Filter, cancellationToken))
+                handler.HandleApplyAsync(context, layerId, query.Apply, query.Filter, query.Format, cancellationToken))
             .WithDisplayName("OData Aggregation")
             .WithName("ODataApply")
             .WithSummary("Aggregate features using $apply transformations (aggregate, groupby, filter, compute)")
@@ -434,7 +434,19 @@ internal static partial class ODataEndpoints
                 [FromServices] ODataAdvancedQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
                 CancellationToken cancellationToken) =>
-                handler.HandleSearchAsync(context, layerId, query.Search, query.Top, query.Skip, query.Count, cancellationToken))
+                handler.HandleSearchAsync(
+                    context,
+                    layerId,
+                    query.Search,
+                    query.Filter,
+                    query.Orderby,
+                    query.Select,
+                    query.Expand,
+                    query.Top,
+                    query.Skip,
+                    query.Count,
+                    query.Format,
+                    cancellationToken))
             .WithDisplayName("OData Search")
             .WithName("ODataSearch")
             .WithSummary("Full-text search across feature attributes using PostgreSQL text search")

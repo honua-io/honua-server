@@ -129,6 +129,26 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetSingleItem_WithCrsParameter_SwapsAxisOrder()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items/1?crs=http://www.opengis.net/def/crs/EPSG/0/4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues!.First().Should().Contain("http://www.opengis.net/def/crs/EPSG/0/4326");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var coordinates = json.RootElement.GetProperty("geometry").GetProperty("coordinates").EnumerateArray().ToArray();
+
+        coordinates.Should().HaveCount(2);
+        coordinates[0].GetDouble().Should().Be(37.5);
+        coordinates[1].GetDouble().Should().Be(-122.5);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCrs84Alias_ReturnsContentCrs()
     {
@@ -257,6 +277,15 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
                 rel.GetString() == RelationTypes.Queryables &&
                 link.TryGetProperty("type", out var type) &&
                 type.GetString() == "application/schema+json")
+            .Should()
+            .BeTrue();
+
+        links.Any(link =>
+                link.TryGetProperty("rel", out var rel) &&
+                rel.GetString() == RelationTypes.Map &&
+                link.TryGetProperty("href", out var href) &&
+                href.GetString() != null &&
+                href.GetString()!.Contains($"/ogc/maps/collections/{TestCollectionId}/map", StringComparison.Ordinal))
             .Should()
             .BeTrue();
     }
@@ -716,6 +745,29 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features")]
+    public async Task GetLandingPage_IncludesDatasetMapLink()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+
+        links.Any(link =>
+                link.TryGetProperty("rel", out var rel) &&
+                rel.GetString() == RelationTypes.Map &&
+                link.TryGetProperty("href", out var href) &&
+                href.GetString() != null &&
+                href.GetString()!.Contains("/ogc/maps/map", StringComparison.Ordinal))
+            .Should()
+            .BeTrue();
     }
 
     [IntegrationTest]

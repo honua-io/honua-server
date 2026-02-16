@@ -30,7 +30,7 @@ internal sealed partial class ArcGisRestClient
     /// <summary>
     /// Discover service metadata from an ArcGIS Server URL.
     /// </summary>
-    public async Task<EsriServiceInfo> DiscoverServiceAsync(
+    public async Task<GeoservicesServiceInfo> DiscoverServiceAsync(
         string serviceUrl,
         int timeoutSeconds,
         int maxRetries,
@@ -46,7 +46,7 @@ internal sealed partial class ArcGisRestClient
             timeoutSeconds,
             cancellationToken);
 
-        var layers = new List<EsriLayerInfo>();
+        var layers = new List<GeoservicesLayerInfo>();
 
         if (serviceResponse.Layers != null)
         {
@@ -64,7 +64,7 @@ internal sealed partial class ArcGisRestClient
             }
         }
 
-        return new EsriServiceInfo
+        return new GeoservicesServiceInfo
         {
             ServiceUrl = normalizedUrl,
             ServiceName = serviceResponse.ServiceDescription ?? ExtractServiceName(normalizedUrl),
@@ -81,7 +81,7 @@ internal sealed partial class ArcGisRestClient
     /// <summary>
     /// Get detailed metadata for a specific layer.
     /// </summary>
-    public async Task<EsriLayerInfo> GetLayerInfoAsync(
+    public async Task<GeoservicesLayerInfo> GetLayerInfoAsync(
         string serviceUrl,
         int layerId,
         int timeoutSeconds,
@@ -116,7 +116,7 @@ internal sealed partial class ArcGisRestClient
             Log.FeatureCountFailed(_logger, layerId, ex);
         }
 
-        return new EsriLayerInfo
+        return new GeoservicesLayerInfo
         {
             Id = layerResponse.Id,
             Name = layerResponse.Name ?? $"Layer {layerResponse.Id}",
@@ -315,12 +315,12 @@ internal sealed partial class ArcGisRestClient
         return formats.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    private static EsriFieldInfo[] ParseFields(ArcGisField[]? fields)
+    private static GeoservicesFieldInfo[] ParseFields(ArcGisField[]? fields)
     {
         if (fields == null || fields.Length == 0)
             return [];
 
-        return fields.Select(f => new EsriFieldInfo
+        return fields.Select(f => new GeoservicesFieldInfo
         {
             Name = f.Name ?? "unknown",
             Type = f.Type ?? "esriFieldTypeString",

@@ -160,6 +160,18 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_SafeCurieBboxCrs_ReturnsSuccessOrNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map" +
+            "?bbox=-180,-90,180,90&bbox-crs=%5BEPSG:4326%5D&f=png");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     public async Task GetCollectionMap_NoBbox_UsesLayerExtent()
     {
         // When no bbox is provided, handler should use the layer's extent

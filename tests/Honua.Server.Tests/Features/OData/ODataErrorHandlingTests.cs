@@ -214,6 +214,18 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         message.Should().Contain("Invalid sort direction in $orderby");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /odata/Features({layerId})?$orderby=population asc nulls last")]
+    public async Task OrderBy_WithExtraTokens_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$orderby=population asc nulls last");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+    }
+
     #endregion
 
     #region Supported Functions

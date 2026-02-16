@@ -9,7 +9,7 @@ base platform can run without self-hosted observability components.
 
 - Prometheus Helm release (`prometheus-community/prometheus`)
 - Grafana Helm release (`grafana/grafana`)
-- Honua metrics scrape job (`/metrics?format=prometheus` by default)
+- Configurable Honua scrape job (`honua_metrics_path` + optional `honua_metrics_format`)
 - Alert rules loaded from `docker/prometheus/alerts.yml`
 - Honua dashboard provisioning from `docker/grafana/dashboards/honua-overview.json`
 - Grafana admin credentials in a Kubernetes secret
@@ -30,6 +30,8 @@ module "observability" {
 
 Defaults for `alert_rules_file` and `honua_dashboard_file` are resolved relative to
 the module path, so callers do not need to match a specific root-module folder depth.
+
+Honua exposes native Prometheus text metrics at `/metrics` by default. Keep `honua_metrics_path` at `/metrics` unless you override `Observability:Prometheus:Path` in the server configuration.
 
 ## Outputs
 

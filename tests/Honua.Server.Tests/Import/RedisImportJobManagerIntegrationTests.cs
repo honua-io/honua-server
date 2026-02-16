@@ -82,13 +82,13 @@ public sealed class RedisImportJobManagerIntegrationTests
         using var provider = BuildRedisServices();
         var cache = provider.GetRequiredService<IDistributedCache>();
         var keyPrefix = $"test:request:{Guid.NewGuid():N}:";
-        var store = new RedisProgressStore<EsriImportRequest>(
+        var store = new RedisProgressStore<GeoservicesImportRequest>(
             cache,
             NullLogger.Instance,
             keyPrefix,
-            EsriImportJsonContext.Default.EsriImportRequest);
+            GeoservicesImportJsonContext.Default.GeoservicesImportRequest);
 
-        var request = new EsriImportRequest
+        var request = new GeoservicesImportRequest
         {
             ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
             LayerId = 1,

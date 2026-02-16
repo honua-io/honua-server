@@ -273,8 +273,7 @@ CREATE INDEX idx_ready_for_honua_geom ON ready_for_honua USING GIST (geom);
 
 ## 🔗 **Next Steps**
 
-1. **[Database Connections](admin-ui/connections-guide.md)** - Connect Honua to your PostGIS database
-2. **[Layer Publishing](admin-ui/layers-guide.md)** - Publish your tables through Honua's Admin UI
+1. **[Admin UI](admin-ui.md)** - Connect to PostGIS and publish layers through the Admin UI
 3. **[Geospatial Data APIs](STANDARDS_APIS.md)** - Understand how your data is exposed through different protocols
 4. **[API Examples](API_EXAMPLES.md)** - See your data in action through code examples
 

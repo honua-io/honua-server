@@ -11,48 +11,84 @@ internal static class SpatialReferenceHelpers
 {
     /// <summary>
     /// Parses a CRS string into an SRID integer.
-    /// Supports EPSG:XXXX, OGC URI format, CRS84, and bare SRID numbers.
+    /// Supports EPSG:XXXX, OGC URI format, safe CURIE format, CRS84, and bare SRID numbers.
     /// </summary>
     /// <param name="crs">The CRS string to parse (e.g., "EPSG:4326", "http://www.opengis.net/def/crs/EPSG/0/4326", "4326")</param>
     /// <returns>The SRID if successfully parsed, null otherwise</returns>
     public static int? TryParseSrid(string? crs)
     {
-        if (string.IsNullOrEmpty(crs))
-            return null;
-
-        // Handle EPSG:XXXX format
-        const string epsgPrefix = "EPSG:";
-        var epsgIndex = crs.IndexOf(epsgPrefix, StringComparison.OrdinalIgnoreCase);
-        if (epsgIndex >= 0)
+        if (string.IsNullOrWhiteSpace(crs))
         {
-            var codeStr = crs[(epsgIndex + epsgPrefix.Length)..];
-            if (int.TryParse(codeStr, out var code) && code > 0)
-                return code;
+            return null;
         }
 
-        // Handle OGC URI format: http://www.opengis.net/def/crs/EPSG/0/XXXX
+        var normalized = crs.Trim();
+        if (normalized.Length > 2 &&
+            normalized[0] == '[' &&
+            normalized[^1] == ']')
+        {
+            normalized = normalized[1..^1].Trim();
+        }
+
+        // Handle OGC CRS84 in URI, CURIE, and bare forms.
+        if (normalized.EndsWith("CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            return 4326;
+        }
+
+        // Handle EPSG:XXXX format
+        if (TryParsePositiveIntAfterPrefix(normalized, "EPSG:", out var epsgSrid))
+        {
+            return epsgSrid;
+        }
+
+        // Handle URN format: urn:ogc:def:crs:EPSG::XXXX
+        if (TryParsePositiveIntAfterPrefix(normalized, "urn:ogc:def:crs:EPSG::", out var urnSrid))
+        {
+            return urnSrid;
+        }
+
+        // Handle OGC URI format: https://www.opengis.net/def/crs/EPSG/0/XXXX
         const string ogcCrsPrefix = "/def/crs/EPSG/";
-        var ogcIndex = crs.IndexOf(ogcCrsPrefix, StringComparison.OrdinalIgnoreCase);
+        var ogcIndex = normalized.IndexOf(ogcCrsPrefix, StringComparison.OrdinalIgnoreCase);
         if (ogcIndex >= 0)
         {
-            var remainder = crs[(ogcIndex + ogcCrsPrefix.Length)..];
-            var slashIndex = remainder.IndexOf('/');
-            if (slashIndex >= 0)
+            var remainder = normalized[(ogcIndex + ogcCrsPrefix.Length)..];
+            var slashIndex = remainder.LastIndexOf('/');
+            var codeStr = slashIndex >= 0
+                ? remainder[(slashIndex + 1)..]
+                : remainder;
+
+            if (TryParsePositiveInt(codeStr, out var code))
             {
-                var codeStr = remainder[(slashIndex + 1)..];
-                if (int.TryParse(codeStr, out var code) && code > 0)
-                    return code;
+                return code;
             }
         }
 
-        // Handle OGC CRS84 URI
-        if (crs.EndsWith("CRS84", StringComparison.OrdinalIgnoreCase))
-            return 4326;
-
         // Handle bare SRID number
-        if (int.TryParse(crs, out var srid) && srid > 0)
+        if (TryParsePositiveInt(normalized, out var srid))
+        {
             return srid;
+        }
 
         return null;
+    }
+
+    private static bool TryParsePositiveIntAfterPrefix(string value, string prefix, out int parsed)
+    {
+        parsed = 0;
+        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var suffix = value[prefix.Length..];
+        return TryParsePositiveInt(suffix, out parsed);
+    }
+
+    private static bool TryParsePositiveInt(string value, out int parsed)
+    {
+        parsed = 0;
+        return int.TryParse(value, out parsed) && parsed > 0;
     }
 }

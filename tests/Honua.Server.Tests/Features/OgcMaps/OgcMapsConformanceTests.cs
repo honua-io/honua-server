@@ -55,7 +55,7 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
             "must declare OGC API - Maps Core conformance");
     }
 
@@ -66,9 +66,9 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landing-page");
-        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html");
-        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/oas30");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landing-page");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-common-1/1.0/conf/oas30");
     }
 
     [IntegrationTest]
@@ -78,19 +78,19 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
             "must declare Collection Map conformance");
     }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_IncludesDatasetMapConformance()
+    public async Task GetConformance_DoesNotClaimDatasetMapConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
-            "must declare Dataset Map conformance");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
+            "dataset map conformance is not declared until the full abstract test requirements are implemented");
     }
 
     [IntegrationTest]
@@ -100,7 +100,7 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().NotContain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
             "styled map rendering is not currently implemented");
     }
 
@@ -111,11 +111,11 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
             "must declare PNG conformance");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
             "must declare JPEG conformance");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff",
             "must declare TIFF conformance");
     }
 
@@ -126,10 +126,10 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
             "must declare CRS conformance");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox",
-            "must declare Bbox conformance");
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
+            "must declare spatial subsetting conformance");
     }
 
     [IntegrationTest]
@@ -139,7 +139,7 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling",
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling",
             "must declare Scaling conformance");
     }
 

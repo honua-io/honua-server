@@ -175,7 +175,7 @@ public static class HonuaTelemetry
     /// </summary>
     public static class Protocols
     {
-        /// <summary>Esri FeatureServer REST API.</summary>
+        /// <summary>GeoServices FeatureServer REST API.</summary>
         public const string FeatureServer = "FeatureServer";
 
         /// <summary>OGC API Features.</summary>
@@ -187,10 +187,10 @@ public static class HonuaTelemetry
         /// <summary>OGC API Maps.</summary>
         public const string OgcMaps = "OGC-Maps";
 
-        /// <summary>Esri MapServer REST API.</summary>
+        /// <summary>GeoServices MapServer REST API.</summary>
         public const string MapServer = "MapServer";
 
-        /// <summary>Esri Image Server REST API.</summary>
+        /// <summary>GeoServices Image Server REST API.</summary>
         public const string ImageServer = "ImageServer";
 
         /// <summary>OData v4 protocol.</summary>

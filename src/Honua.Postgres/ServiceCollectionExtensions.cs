@@ -204,7 +204,7 @@ internal static class ServiceCollectionExtensions
             return new UniversalImportJobService(importService, progressStore, performanceMonitor, logger);
         });
 
-        // Register ArcGIS REST client for Esri service imports
+        // Register ArcGIS REST client for Geoservices service imports
         services.AddHttpClient<ArcGisRestClient>()
             .ConfigureHttpClient(client =>
             {
@@ -212,8 +212,8 @@ internal static class ServiceCollectionExtensions
                 client.Timeout = TimeSpan.FromMinutes(5);
             });
 
-        // Register Esri import service
-        services.AddScoped<IEsriImportService, EsriImportService>();
+        // Register Geoservices import service
+        services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
 
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);

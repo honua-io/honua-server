@@ -1,6 +1,6 @@
 # Interactive API Documentation
 
-Honua Server provides comprehensive OpenAPI specifications for all supported protocols. These interactive docs allow you to explore and test the APIs directly.
+Honua Server provides OpenAPI specifications for OGC APIs and a versioned Admin API contract snapshot. These interactive docs allow you to explore and test the APIs directly.
 
 ## 🌐 **Available API Specifications**
 
@@ -40,6 +40,7 @@ Honua Server provides comprehensive OpenAPI specifications for all supported pro
 **Protocol**: REST API
 **Base URL**: `/api/v1/admin`
 **OpenAPI Spec**: [admin-api.json](admin-api.json)
+**Runtime OpenAPI Endpoint**: Not currently exposed
 **Authentication**: API Key or OIDC required
 
 **What you can do**:
@@ -87,10 +88,6 @@ curl https://your-honua-server.com/openapi.json
 
 # OGC API Tiles
 curl https://your-honua-server.com/ogc/tiles/openapi.json
-
-# Server Management API
-curl https://your-honua-server.com/api/v1/admin/openapi.json \
-  -H "Authorization: Bearer your-api-key"
 ```
 
 ### **Generate SDK Clients**
@@ -103,7 +100,7 @@ openapi-generator generate \
 
 # Generate C# client from Admin API
 openapi-generator generate \
-  -i https://your-honua-server.com/api/v1/admin/openapi.json \
+  -i docs/api-specs/admin-api.json \
   -g csharp \
   -o ./honua-csharp-client
 ```
@@ -116,4 +113,4 @@ openapi-generator generate \
 - [**Integration Patterns**](../user/INTEGRATION_PATTERNS.md) - Common integration approaches
 
 ---
-*Interactive API documentation powered by OpenAPI 3.0 specifications auto-generated from the Honua Server codebase.*
+*Interactive API documentation powered by OpenAPI 3.0 specifications versioned with the Honua Server codebase.*

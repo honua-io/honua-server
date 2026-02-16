@@ -14,7 +14,7 @@ public interface IGeometryOperationService
     /// </summary>
     /// <param name="wkb">Input geometry in WKB format.</param>
     /// <param name="srid">Spatial reference ID of the input geometry.</param>
-    /// <param name="distance">Buffer distance in the units of the spatial reference (or meters when geodesic).</param>
+    /// <param name="distance">Buffer distance in meters.</param>
     /// <param name="geodesic">When true, performs a geodesic (geography-based) buffer.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Buffered geometry in WKB format.</returns>
@@ -86,7 +86,7 @@ public interface IGeometryOperationService
     /// <param name="wkb">Geometry in WKB format.</param>
     /// <param name="srid">Spatial reference ID of the geometry.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Area value in the geometry's native units.</returns>
+    /// <returns>Area value in square meters.</returns>
     Task<double> AreaAsync(byte[] wkb, int srid, CancellationToken ct = default);
 
     /// <summary>
@@ -95,6 +95,6 @@ public interface IGeometryOperationService
     /// <param name="wkb">Geometry in WKB format.</param>
     /// <param name="srid">Spatial reference ID of the geometry.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Length value in the geometry's native units.</returns>
+    /// <returns>Length value in meters.</returns>
     Task<double> LengthAsync(byte[] wkb, int srid, CancellationToken ct = default);
 }

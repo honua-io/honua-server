@@ -75,6 +75,108 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithPutRequest_ReturnsMethodNotAllowed()
+    {
+        var createdId = await _fixture.InsertFeatureAsync(TestLayerId, "Batch PUT Candidate");
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "put-1",
+                Method = "PUT",
+                Url = $"Features({TestLayerId},{createdId})",
+                Body = new Dictionary<string, object?>
+                {
+                    ["Attributes"] = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Updated Via Put"
+                    }
+                }
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var responses = document.RootElement.GetProperty("responses");
+        responses.GetArrayLength().Should().Be(1);
+        responses[0].GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.MethodNotAllowed);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithFeatureRefRequest_ReturnsCanonicalReference()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "ref-1",
+                Method = "GET",
+                Url = $"Features(LayerId={TestLayerId},ObjectId=1)/$ref"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var item = document.RootElement.GetProperty("responses")[0];
+        item.GetProperty("status").GetInt32().Should().Be(200);
+        var odataId = item.GetProperty("body").GetProperty("@odata.id").GetString();
+        odataId.Should().Contain($"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithFeatureValueRequest_ReturnsRawPayload()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "value-1",
+                Method = "GET",
+                Url = $"Features(LayerId={TestLayerId},ObjectId=1)/$value"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var item = document.RootElement.GetProperty("responses")[0];
+        item.GetProperty("status").GetInt32().Should().Be(200);
+        var body = item.GetProperty("body");
+        body.GetProperty("ObjectId").GetInt64().Should().Be(1);
+        body.GetProperty("LayerId").GetInt32().Should().Be(TestLayerId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithMultipleRequests_ReturnsAllResponses()
     {
         var batchRequest = new ODataBatchRequest
@@ -819,6 +921,32 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})/$search with filter/orderby/select/expand")]
+    public async Task SearchEndpoint_WithFilterOrderBySelectAndExpand_AppliesAllOptions()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$search?$search=San&$filter=state eq 'California'&$orderby=ObjectId desc&$select=ObjectId,LayerId,name,state&$expand=Landmarks&$top=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value");
+        values.GetArrayLength().Should().Be(1);
+
+        var feature = values[0];
+        feature.TryGetProperty("ObjectId", out _).Should().BeTrue();
+        feature.TryGetProperty("LayerId", out _).Should().BeTrue();
+        feature.TryGetProperty("name", out _).Should().BeTrue();
+        feature.TryGetProperty("state", out var state).Should().BeTrue();
+        feature.TryGetProperty("Geometry", out _).Should().BeFalse();
+        feature.TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
+        landmarks.ValueKind.Should().Be(JsonValueKind.Array);
+        state.GetString().Should().Be("California");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithoutSearchParam_ReturnsError()
     {
@@ -842,6 +970,84 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
             "/odata/Features(99999)/$search?$search=test");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})?$search")]
+    public async Task SearchQueryOption_WithFilterOrderByAndSelect_AppliesAllOptions()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$search=San&$filter=state eq 'California'&$orderby=ObjectId desc&$select=ObjectId,LayerId,name,state&$top=2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().NotBeEmpty();
+        values.Count.Should().BeLessThanOrEqualTo(2);
+
+        foreach (var value in values)
+        {
+            value.TryGetProperty("ObjectId", out _).Should().BeTrue();
+            value.TryGetProperty("LayerId", out _).Should().BeTrue();
+            value.TryGetProperty("name", out var name).Should().BeTrue();
+            value.TryGetProperty("state", out var state).Should().BeTrue();
+            value.TryGetProperty("Geometry", out _).Should().BeFalse();
+
+            (name.GetString() ?? string.Empty).Should().Contain("San");
+            state.GetString().Should().Be("California");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})?$search with $expand")]
+    public async Task SearchQueryOption_WithExpand_IncludesRelatedEntities()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$search=San&$expand=Landmarks&$top=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value");
+        values.GetArrayLength().Should().BeGreaterThan(0);
+        values[0].TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
+        landmarks.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features?$search")]
+    public async Task SearchQueryOption_AllLayersRoute_WithLayerFilter_ReturnsResults()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features?$search=San&$filter=LayerId eq {TestLayerId} and state eq 'California'&$top=3");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().NotBeEmpty();
+        values.All(value => value.GetProperty("LayerId").GetInt32() == TestLayerId).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})?$apply with $search")]
+    public async Task SearchQueryOption_WithApplyCombination_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$search=San&$apply=aggregate(population with sum as TotalPopulation)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     #endregion
@@ -969,6 +1175,17 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         feature.TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
         landmarks.ValueKind.Should().Be(JsonValueKind.Array);
         landmarks.GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataExpand)]
+    [Endpoint("GET /odata/Features({layerId})?$expand with nested path")]
+    public async Task Features_WithNestedExpandPath_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$expand=Landmarks/SubItems");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     #endregion

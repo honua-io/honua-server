@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
 using Microsoft.AspNetCore.Http;
@@ -57,8 +58,8 @@ public static partial class OgcMapsEndpoints
         group.MapGet("/map", GetDatasetMap)
             .WithDisplayName("Get Dataset Map")
             .WithName("GetDatasetMap")
-            .WithSummary("Render map from multiple collections")
-            .WithDescription("Returns a rendered map image from multiple collections specified in the collections parameter")
+            .WithSummary("Render map from one or more collections")
+            .WithDescription("Returns a rendered map image from explicitly selected collections or, when omitted, all accessible collections")
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
             .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
@@ -102,7 +103,7 @@ public static partial class OgcMapsEndpoints
     {
         if (!int.TryParse(collectionId, out var layerId))
         {
-            return Results.BadRequest("Collection ID must be a valid integer");
+            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
 
         return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
@@ -117,42 +118,43 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(request.Collections))
+        var selectedLayerIds = Array.Empty<int>();
+        if (request.Collections is not null)
         {
-            return Results.BadRequest("Collections parameter is required for dataset maps");
-        }
-
-        var collectionTokens = request.Collections.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (collectionTokens.Length == 0)
-        {
-            return Results.BadRequest("Valid collection IDs are required");
-        }
-
-        var collectionIds = new List<int>(collectionTokens.Length);
-        var invalidCollections = new List<string>();
-        foreach (var token in collectionTokens)
-        {
-            if (int.TryParse(token, out var layerId))
+            var collectionTokens = request.Collections.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (collectionTokens.Length == 0)
             {
-                collectionIds.Add(layerId);
+                return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
             }
-            else
+
+            var collectionIds = new List<int>(collectionTokens.Length);
+            var invalidCollections = new List<string>();
+            foreach (var token in collectionTokens)
             {
-                invalidCollections.Add(token);
+                if (int.TryParse(token, out var layerId))
+                {
+                    collectionIds.Add(layerId);
+                }
+                else
+                {
+                    invalidCollections.Add(token);
+                }
             }
+
+            if (invalidCollections.Count > 0)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid collection IDs: {string.Join(", ", invalidCollections)}");
+            }
+
+            if (collectionIds.Count == 0)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
+            }
+
+            selectedLayerIds = collectionIds.Distinct().ToArray();
         }
 
-        if (invalidCollections.Count > 0)
-        {
-            return Results.BadRequest($"Invalid collection IDs: {string.Join(", ", invalidCollections)}");
-        }
-
-        if (collectionIds.Count == 0)
-        {
-            return Results.BadRequest("Valid collection IDs are required");
-        }
-
-        return await handler.RenderDatasetMapAsync(collectionIds.Distinct().ToArray(), request, context: context, cancellationToken);
+        return await handler.RenderDatasetMapAsync(selectedLayerIds, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -168,13 +170,13 @@ public static partial class OgcMapsEndpoints
     {
         if (!int.TryParse(collectionId, out var layerId))
         {
-            return Results.BadRequest("Collection ID must be a valid integer");
+            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
 
         // Validate styleId from URL path: alphanumeric, dash, underscore only
         if (string.IsNullOrEmpty(styleId) || !StyleIdPattern().IsMatch(styleId) || styleId.Length > 100)
         {
-            return Results.BadRequest("StyleId must contain only alphanumeric characters, dashes, and underscores");
+            return StandardErrorHelpers.CreateBadRequest(context, "StyleId must contain only alphanumeric characters, dashes, and underscores");
         }
 
         return await handler.RenderStyledMapAsync(layerId, styleId, request, context: context, cancellationToken);
@@ -191,7 +193,7 @@ public static partial class OgcMapsEndpoints
     {
         if (!int.TryParse(collectionId, out var layerId))
         {
-            return Results.BadRequest("Collection ID must be a valid integer");
+            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
 
         return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);

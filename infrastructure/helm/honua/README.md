@@ -9,6 +9,7 @@ helm dependency update infrastructure/helm/honua
 helm install honua infrastructure/helm/honua \
   --set secret.env.ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=honua;Password=honua" \
   --set secret.env.HONUA_ADMIN_PASSWORD="change-me" \
+  --set config.env.HONUA_SERVE_ADMIN_UI="true" \
   --set config.env.HONUA_ADMIN_UI="true"
 ```
 
@@ -69,6 +70,7 @@ ingress:
 
 config:
   env:
+    HONUA_SERVE_ADMIN_UI: "true"
     HONUA_ADMIN_UI: "true"
     HONUA_OBSERVABILITY: "true"
     HONUA_OPENTELEMETRY: "true"

@@ -61,6 +61,9 @@ public static partial class Extensions
         builder.Services.Configure<TracingOptions>(builder.Configuration.GetSection(TracingOptions.SectionName));
         HonuaTelemetry.ConfigureExceptionRecording(tracingOptions.RecordExceptionStackTraces);
 
+        // Bind Prometheus scraping options
+        builder.Services.Configure<PrometheusOptions>(builder.Configuration.GetSection(PrometheusOptions.SectionName));
+
         var otlpEndpoint = ResolveOtlpEndpoint(builder.Configuration, tracingOptions);
         var otlpHeaders = ResolveOtlpHeaders(builder.Configuration, tracingOptions);
         var useOtlp = !string.IsNullOrWhiteSpace(otlpEndpoint);
@@ -84,7 +87,8 @@ public static partial class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter(HonuaTelemetry.ServiceName);
+                .AddMeter(HonuaTelemetry.ServiceName)
+                .AddPrometheusExporter();
 
             if (useOtlp)
             {
@@ -168,6 +172,17 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Maps the native Prometheus text exposition endpoint.
+    /// </summary>
+    public static WebApplication MapPrometheusEndpoint(this WebApplication app)
+    {
+        var options = new PrometheusOptions();
+        app.Configuration.GetSection(PrometheusOptions.SectionName).Bind(options);
+        app.MapPrometheusScrapingEndpoint(NormalizePrometheusPath(options.Path));
+        return app;
+    }
+
     private static string? ResolveOtlpEndpoint(IConfiguration configuration, TracingOptions tracingOptions)
     {
         if (!string.IsNullOrWhiteSpace(tracingOptions.OtlpEndpoint))
@@ -207,6 +222,22 @@ public static partial class Extensions
         return !tracingOptions.IncludeDbStatementText ||
                tracingOptions.MaxAttributesPerSpan > 0 ||
                tracingOptions.MaxEventsPerSpan > 0;
+    }
+
+    private static string NormalizePrometheusPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return "/metrics";
+        }
+
+        var normalized = path.Trim();
+        if (!normalized.StartsWith('/'))
+        {
+            normalized = "/" + normalized;
+        }
+
+        return normalized;
     }
 
     private sealed class SpanSanitizingProcessor : BaseProcessor<Activity>

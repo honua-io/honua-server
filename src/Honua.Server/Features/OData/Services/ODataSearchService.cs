@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
@@ -22,6 +23,10 @@ namespace Honua.Server.Features.OData.Services;
 /// </summary>
 internal sealed partial class ODataSearchService
 {
+    private const int MaxSearchTerms = 8;
+    private const int MaxSearchTermLength = 128;
+    private const int MaxSearchableStringFields = 16;
+
     private readonly IResourceValidator _resourceValidator;
     private readonly IFeatureReader _featureReader;
     private readonly IRelationshipStore _relationshipStore;
@@ -61,6 +66,10 @@ internal sealed partial class ODataSearchService
         int? top = null,
         int? skip = null,
         bool? count = null,
+        string? filter = null,
+        string? orderby = null,
+        string? select = null,
+        string? expand = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(searchExpression))
@@ -85,14 +94,27 @@ internal sealed partial class ODataSearchService
 
         // Build a text search query using PostgreSQL full-text search
         var searchTerms = ParseSearchExpression(searchExpression);
+        var termCount = searchTerms.Sum(group => group.Count);
+        if (termCount > MaxSearchTerms)
+        {
+            throw new ArgumentException($"$search supports at most {MaxSearchTerms} terms.");
+        }
+
         var textSearchFilter = BuildTextSearchCondition(searchTerms, layer);
 
-        var query = new FeatureQuery
+        var query = _queryService.BuildFeatureQuery(
+            filter,
+            orderby,
+            top ?? 1000,
+            skip,
+            layer,
+            out var queryError);
+        if (queryError != null)
         {
-            SqlFilter = textSearchFilter,
-            Limit = top ?? 1000,
-            Offset = skip
-        };
+            throw new ArgumentException(queryError);
+        }
+
+        query = MergeFilters(query, textSearchFilter);
 
         var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
         var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
@@ -128,11 +150,40 @@ internal sealed partial class ODataSearchService
             return dict;
         }).ToArray();
 
+        if (!string.IsNullOrWhiteSpace(expand))
+        {
+            var objectIds = result.Items.Select(feature => feature.Id).ToArray();
+            var expanded = await ProcessExpandAsync(expand, layer, objectIds, cancellationToken);
+
+            foreach (var featureData in featuresData)
+            {
+                if (!featureData.TryGetValue("ObjectId", out var objectIdValue) ||
+                    !TryConvertObjectId(objectIdValue, out var objectId))
+                {
+                    continue;
+                }
+
+                if (!expanded.TryGetValue(objectId, out var relatedValues))
+                {
+                    continue;
+                }
+
+                foreach (var (relationshipName, relatedCollection) in relatedValues)
+                {
+                    featureData[relationshipName] = relatedCollection;
+                }
+            }
+        }
+
+        var selected = string.IsNullOrWhiteSpace(select)
+            ? featuresData.Cast<object>().ToArray()
+            : _queryService.ApplyFieldSelection(featuresData, select);
+
         return new ODataSearchResult
         {
-            Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features"),
+            Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand),
             Count = count == true ? result.TotalCount : null,
-            Value = featuresData.Cast<object>().ToArray()
+            Value = selected
         };
     }
 
@@ -261,6 +312,12 @@ internal sealed partial class ODataSearchService
 
             if (!string.IsNullOrWhiteSpace(term))
             {
+                if (term.Length > MaxSearchTermLength)
+                {
+                    throw new ArgumentException(
+                        $"$search term length exceeds {MaxSearchTermLength} characters.");
+                }
+
                 currentGroup.Add((term, negate, isPhrase));
                 negate = false;
             }
@@ -291,6 +348,7 @@ internal sealed partial class ODataSearchService
         var textFields = layer.AttributeFields
             .Where(f => f.Type == FieldType.String)
             .Select(f => f.Name)
+            .Take(MaxSearchableStringFields)
             .ToList();
 
         if (textFields.Count == 0)
@@ -364,6 +422,60 @@ internal sealed partial class ODataSearchService
             .Replace("_", "\\_", StringComparison.Ordinal);
     }
 
+    private static FeatureQuery MergeFilters(FeatureQuery query, SqlFragment sqlFragment)
+    {
+        if (query.SqlFilter == null)
+        {
+            return query with { SqlFilter = sqlFragment, Where = null };
+        }
+
+        var offset = query.SqlFilter.Parameters.Count;
+        var reindexedSql = ReindexSqlParameters(sqlFragment.Sql, offset);
+        var combinedSql = $"({query.SqlFilter.Sql}) AND ({reindexedSql})";
+        var combinedParameters = query.SqlFilter.Parameters.Concat(sqlFragment.Parameters).ToArray();
+        return query with
+        {
+            SqlFilter = new SqlFragment(combinedSql, combinedParameters),
+            Where = null
+        };
+    }
+
+    private static string ReindexSqlParameters(string sql, int offset)
+    {
+        if (offset == 0)
+        {
+            return sql;
+        }
+
+        return Regex.Replace(
+            sql,
+            @"@p(\d+)",
+            match =>
+            {
+                var index = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+                return $"@p{index + offset}";
+            });
+    }
+
+    private static bool TryConvertObjectId(object? value, out long objectId)
+    {
+        switch (value)
+        {
+            case long longValue:
+                objectId = longValue;
+                return true;
+            case int intValue:
+                objectId = intValue;
+                return true;
+            case JsonElement { ValueKind: JsonValueKind.Number } json when json.TryGetInt64(out var jsonLong):
+                objectId = jsonLong;
+                return true;
+            default:
+                objectId = default;
+                return false;
+        }
+    }
+
     /// <summary>
     /// Processes $expand to fetch related entities for features.
     /// Handles relationships and foreign key mappings.
@@ -375,6 +487,7 @@ internal sealed partial class ODataSearchService
         CancellationToken cancellationToken)
     {
         var result = new Dictionary<long, Dictionary<string, object?[]>>();
+        var requestedIds = objectIds.ToHashSet();
 
         if (objectIds.Length == 0)
         {
@@ -388,10 +501,31 @@ internal sealed partial class ODataSearchService
         foreach (var relationship in layer.LayerRelationships)
         {
             var sanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name);
-            if (!relationshipNames.Contains(relationship.Name) &&
-                !relationshipNames.Contains(sanitizedName))
+            var metadataName = ODataUtilityService.BuildRelationshipMetadataName(
+                relationship.Name,
+                relationship.RelationshipId);
+            var outputName = relationshipNames.Contains(relationship.Name)
+                ? relationship.Name
+                : relationshipNames.Contains(sanitizedName)
+                    ? sanitizedName
+                    : relationshipNames.Contains(metadataName)
+                        ? metadataName
+                        : null;
+            if (outputName == null)
             {
                 continue;
+            }
+
+            // Ensure expanded navigation properties are emitted even when no related rows exist.
+            foreach (var objectId in objectIds)
+            {
+                if (!result.TryGetValue(objectId, out var relationsDict))
+                {
+                    relationsDict = new Dictionary<string, object?[]>();
+                    result[objectId] = relationsDict;
+                }
+
+                relationsDict.TryAdd(outputName, Array.Empty<object?>());
             }
 
             var relatedLayerResult = await _resourceValidator.ValidateLayerAsync(
@@ -436,6 +570,11 @@ internal sealed partial class ODataSearchService
                     continue;
                 }
 
+                if (!requestedIds.Contains(originId.Value))
+                {
+                    continue;
+                }
+
                 if (!result.TryGetValue(originId.Value, out var relationsDict))
                 {
                     relationsDict = new Dictionary<string, object?[]>();
@@ -455,7 +594,6 @@ internal sealed partial class ODataSearchService
                     relatedGeometry,
                     relatedAttributes);
 
-                var outputName = relationshipNames.Contains(relationship.Name) ? relationship.Name : sanitizedName;
                 if (relationsDict.TryGetValue(outputName, out var existingRelations))
                 {
                     var newRelations = new object?[existingRelations.Length + 1];
@@ -490,10 +628,9 @@ internal sealed partial class ODataSearchService
                 continue;
             }
 
-            var slashIndex = trimmed.IndexOf('/');
-            if (slashIndex >= 0)
+            if (trimmed.Contains('/', StringComparison.Ordinal))
             {
-                trimmed = trimmed[..slashIndex];
+                throw new ArgumentException("Nested $expand paths are not supported.");
             }
 
             var optionIndex = trimmed.IndexOf('(');

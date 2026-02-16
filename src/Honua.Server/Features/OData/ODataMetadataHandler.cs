@@ -44,7 +44,13 @@ internal sealed class ODataMetadataHandler(
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var serviceDocument = _metadataService.GenerateServiceDocument(baseUrl);
+        var generatedDocument = _metadataService.GenerateServiceDocument(baseUrl);
+        var includeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format: null);
+        var serviceDocument = new ServiceDocument
+        {
+            Context = includeContext ? generatedDocument.Context : null,
+            Value = generatedDocument.Value
+        };
 
         ODataUtilityService.SetODataHeaders(context);
         return Results.Json(serviceDocument, ODataJsonContext.Default.ServiceDocument,

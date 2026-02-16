@@ -509,7 +509,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
         return typeof(T).Name switch
         {
             nameof(ImportProgress) => OperationType.Import,
-            nameof(EsriImportProgress) => OperationType.ExternalImport,
+            nameof(GeoservicesImportProgress) => OperationType.ExternalImport,
             _ => null
         };
     }
@@ -532,13 +532,13 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(ProgressWrapper))]
 [JsonSerializable(typeof(IOperationProgress))]
 [JsonSerializable(typeof(ImportProgress))]
-[JsonSerializable(typeof(EsriImportProgress))]
+[JsonSerializable(typeof(GeoservicesImportProgress))]
 [JsonSerializable(typeof(UploadProgress))]
 [JsonSerializable(typeof(IngestProgress))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]
-[JsonSerializable(typeof(EsriImportStatus))]
+[JsonSerializable(typeof(GeoservicesImportStatus))]
 internal sealed partial class UniversalProgressJsonContext : JsonSerializerContext
 {
 }

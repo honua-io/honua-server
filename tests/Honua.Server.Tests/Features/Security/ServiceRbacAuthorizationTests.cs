@@ -237,6 +237,51 @@ public sealed class ODataServiceRbacTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features({layerId})?$search")]
+    public async Task Search_WithAnonymousClient_ReturnsUnauthorized()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/odata/Features({ServiceRbacTestFixture.AlphaLayerId})?$search=RBAC");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.ODataApply)]
+    [Endpoint("GET /odata/Features({layerId})?$apply")]
+    public async Task Apply_WithAnonymousClient_ReturnsUnauthorized()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/odata/Features({ServiceRbacTestFixture.AlphaLayerId})?$apply=aggregate(ObjectId with countdistinct as Total)");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.ODataSearch)]
+    [Endpoint("GET /odata/Features?$search")]
+    public async Task Search_AllLayersRoute_WithAnonymousClient_ReturnsUnauthorized()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/odata/Features?$search=RBAC&$filter=LayerId eq {ServiceRbacTestFixture.AlphaLayerId}");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
 }
 
 internal static class ServiceRbacTestFixture

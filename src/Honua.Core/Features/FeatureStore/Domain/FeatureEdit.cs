@@ -41,6 +41,9 @@ public readonly record struct FeatureEditBatch
     /// </summary>
     public FeatureEditBatch()
     {
+        Creates = ImmutableArray<Feature>.Empty;
+        Updates = ImmutableArray<Feature>.Empty;
+        Deletes = ImmutableArray<long>.Empty;
     }
 
     /// <summary>
@@ -70,7 +73,10 @@ public readonly record struct FeatureEditBatch
     /// <summary>
     /// Gets the total number of operations in this batch
     /// </summary>
-    public int TotalOperations => Creates.Length + Updates.Length + Deletes.Length;
+    public int TotalOperations =>
+        (Creates.IsDefault ? 0 : Creates.Length) +
+        (Updates.IsDefault ? 0 : Updates.Length) +
+        (Deletes.IsDefault ? 0 : Deletes.Length);
 
     /// <summary>
     /// Gets whether this batch contains any operations

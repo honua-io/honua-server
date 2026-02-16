@@ -37,7 +37,7 @@ internal static class OrderByParsing
             IsValidODataFieldName,
             allowedCoreFields: null,
             allowUnknownFields: true,
-            allowExtraTokens: true,
+            allowExtraTokens: false,
             invalidFieldException: field => new ArgumentException($"Invalid field name in $orderby: {field}"),
             invalidDirectionException: direction => new ArgumentException(
                 $"Invalid sort direction in $orderby: {direction}. Use 'asc' or 'desc'."),

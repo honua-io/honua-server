@@ -30,6 +30,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
         int layerId,
         [FromQuery(Name = "$apply")] string? apply = null,
         [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -50,6 +51,12 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", "$apply parameter is required.");
             }
 
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
+            if (formatValidation != null)
+            {
+                return formatValidation;
+            }
+
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
                 context,
@@ -63,10 +70,18 @@ internal sealed partial class ODataAdvancedQueryHandler(
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
             var result = await _querySearchService.HandleApplyAsync(layerId, apply, filter, baseUrl, effectiveToken);
+            if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
+            {
+                result = new ODataAggregationResult
+                {
+                    Context = null,
+                    Value = result.Value
+                };
+            }
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult,
-                contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
+                contentType: ODataUtilityService.GetODataContentType(context.Request, format));
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -100,9 +115,14 @@ internal sealed partial class ODataAdvancedQueryHandler(
         HttpContext context,
         int layerId,
         [FromQuery(Name = "$search")] string? search = null,
+        [FromQuery(Name = "$filter")] string? filter = null,
+        [FromQuery(Name = "$orderby")] string? orderby = null,
+        [FromQuery(Name = "$select")] string? select = null,
+        [FromQuery(Name = "$expand")] string? expand = null,
         [FromQuery(Name = "$top")] string? top = null,
         [FromQuery(Name = "$skip")] string? skip = null,
         [FromQuery(Name = "$count")] string? count = null,
+        [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -121,6 +141,12 @@ internal sealed partial class ODataAdvancedQueryHandler(
             if (string.IsNullOrWhiteSpace(search))
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", "$search parameter is required.");
+            }
+
+            var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
+            if (formatValidation != null)
+            {
+                return formatValidation;
             }
 
             var pagingError = ODataRequestValidation.TryGetPagingValues(
@@ -152,11 +178,31 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-            var result = await _querySearchService.HandleSearchAsync(layerId, search, baseUrl, pagination.Limit, pagination.Offset, countValue, effectiveToken);
+            var result = await _querySearchService.HandleSearchAsync(
+                layerId,
+                search,
+                baseUrl,
+                pagination.Limit,
+                pagination.Offset,
+                countValue,
+                filter,
+                orderby,
+                select,
+                expand,
+                cancellationToken: effectiveToken);
+            if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
+            {
+                result = new ODataSearchResult
+                {
+                    Context = null,
+                    Count = result.Count,
+                    Value = result.Value
+                };
+            }
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(result, ODataJsonContext.Default.ODataSearchResult,
-                contentType: ODataUtilityService.GetODataContentType(context.Request, format: null));
+                contentType: ODataUtilityService.GetODataContentType(context.Request, format));
         }
         catch (OperationCanceledException)
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)

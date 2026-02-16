@@ -213,7 +213,7 @@ builder.Services.AddValidationServices();
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
 
-// Register Esri import job manager and background service
+// Register Geoservices import job manager and background service
 builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(sp =>
     new Honua.Server.Features.Import.UniversalProgressStore(
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
@@ -225,7 +225,7 @@ builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistribut
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>(),
         sp.GetService<IConnectionMultiplexer>()));
-builder.Services.AddHostedService<Honua.Server.Features.Import.EsriImportBackgroundService>();
+builder.Services.AddHostedService<Honua.Server.Features.Import.GeoservicesImportBackgroundService>();
 
 // Register OData services and handlers
 // Configure authentication options
@@ -286,7 +286,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
-        Honua.Server.Features.Import.EsriImportApiJsonContext.Default,
+        Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
@@ -470,6 +470,7 @@ await RunDatabaseMigrationsAsync();
 
 // Configure health endpoints
 app.MapHealthEndpoints();
+app.MapPrometheusEndpoint();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
@@ -502,8 +503,8 @@ app.MapServerFeatureEndpoints();
 // Configure file import endpoints
 app.MapImportEndpoints();
 
-// Configure Esri service import endpoints
-app.MapEsriImportEndpoints();
+// Configure Geoservices service import endpoints
+app.MapGeoservicesImportEndpoints();
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();

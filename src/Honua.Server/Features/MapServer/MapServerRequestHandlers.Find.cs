@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -129,6 +130,7 @@ internal static partial class MapServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
+            var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
             var results = new List<FindResult>();
 
@@ -157,13 +159,20 @@ internal static partial class MapServerEndpoints
 
                 foreach (var field in fieldsToSearch)
                 {
+                    var escapedSearchText = EscapeSqlStringLiteral(searchText);
                     var whereClause = contains
-                        ? $"\"{field.Name}\" LIKE '%{EscapeLikeValue(searchText)}%'"
-                        : $"\"{field.Name}\" = '{EscapeSqlStringValue(searchText)}'";
+                        ? $"{field.Name} LIKE '%{EscapeLikeWildcards(escapedSearchText)}%'"
+                        : $"{field.Name} = '{escapedSearchText}'";
 
                     if (!string.IsNullOrWhiteSpace(layerDef))
                     {
                         whereClause = $"({layerDef}) AND ({whereClause})";
+                    }
+
+                    var translationResult = filterExpressionService.Translate(FilterLanguage.ArcGisSql, whereClause, layer);
+                    if (!translationResult.IsSuccess)
+                    {
+                        continue;
                     }
 
                     var featureQuery = new FeatureQuery
@@ -171,7 +180,7 @@ internal static partial class MapServerEndpoints
                         SpatialReferenceSrid = service.SpatialReference.Srid,
                         OutputSrid = outputSrid,
                         Limit = MaxFindResults - results.Count,
-                        Where = whereClause
+                        SqlFilter = translationResult.SqlFilter
                     };
 
                     var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
@@ -235,6 +244,10 @@ internal static partial class MapServerEndpoints
             MapServerLog.FindFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             MapServerLog.FindFailed(logger, serviceId, ex.Message, ex);
@@ -272,11 +285,17 @@ internal static partial class MapServerEndpoints
             .ToArray();
     }
 
-    private static string EscapeLikeValue(string value)
-        => value.Replace("'", "''", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal);
-
-    private static string EscapeSqlStringValue(string value)
+    /// <summary>
+    /// Escapes single quotes for SQL string literals ('' escaping).
+    /// </summary>
+    private static string EscapeSqlStringLiteral(string value)
         => value.Replace("'", "''", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Escapes LIKE wildcard characters (% and _) in a value that is already
+    /// quote-escaped, so they are treated as literal characters.
+    /// </summary>
+    private static string EscapeLikeWildcards(string value)
+        => value.Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
 }

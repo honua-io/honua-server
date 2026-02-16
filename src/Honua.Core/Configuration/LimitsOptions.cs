@@ -91,7 +91,7 @@ public sealed class QueryLimits
     /// Prevents full-table scans on large datasets. Null disables limit.
     /// </summary>
     [Range(0.1, double.MaxValue, ErrorMessage = "MaxBboxAreaSqKm must be greater than 0.1")]
-    public double? MaxBboxAreaSqKm { get; init; } = 1000;
+    public double? MaxBboxAreaSqKm { get; init; } = 100000000d;
 
     /// <summary>
     /// Maximum time allowed for a single query operation.

@@ -8,10 +8,10 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// </summary>
 public static class ServiceProtocols
 {
-    /// <summary>Esri FeatureServer protocol.</summary>
+    /// <summary>GeoServices FeatureServer protocol.</summary>
     public const string FeatureServer = "FeatureServer";
 
-    /// <summary>Esri MapServer protocol.</summary>
+    /// <summary>GeoServices MapServer protocol.</summary>
     public const string MapServer = "MapServer";
 
     /// <summary>OGC API Features protocol.</summary>

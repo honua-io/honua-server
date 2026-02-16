@@ -131,7 +131,14 @@ internal sealed partial class ODataQueryHandler(
                 : _querySearchService.ApplyFieldSelection(layerData, select);
 
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-            var response = ODataUtilityService.CreateODataResponse(baseUrl, "Layers", result, totalCount, select: select);
+            var includeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format);
+            var response = ODataUtilityService.CreateODataResponse(
+                baseUrl,
+                "Layers",
+                result,
+                totalCount,
+                select: select,
+                includeContext: includeContext);
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(response, ODataJsonContext.Default.ODataResponse,
@@ -204,11 +211,14 @@ internal sealed partial class ODataQueryHandler(
                     : payload;
             }
 
-            payload["@odata.context"] = ODataUtilityService.BuildContextUrl(
-                ODataUtilityService.GetBaseUrl(context.Request),
-                "Layers",
-                isSingle: true,
-                select: select);
+            if (ODataUtilityService.ShouldIncludeContext(context.Request, format))
+            {
+                payload["@odata.context"] = ODataUtilityService.BuildContextUrl(
+                    ODataUtilityService.GetBaseUrl(context.Request),
+                    "Layers",
+                    isSingle: true,
+                    select: select);
+            }
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Json(payload, ODataJsonContext.Default.DictionaryStringObject,
@@ -453,7 +463,9 @@ internal sealed partial class ODataQueryHandler(
 
             var response = new ODataResponse
             {
-                Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand),
+                Context = ODataUtilityService.ShouldIncludeContext(context.Request, format)
+                    ? ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand)
+                    : null,
                 Count = count == true ? queryResult.TotalCount : null,
                 NextLink = nextLink,
                 Value = result

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -53,13 +54,22 @@ internal sealed partial class ODataQueryService
             }
         }
 
+        var orderByClauses = OrderByParsing.ParseODataOrderBy(orderby, layer);
+        if (!orderByClauses.HasValue || orderByClauses.Value.IsDefaultOrEmpty)
+        {
+            orderByClauses = ImmutableArray.Create(new OrderByClause(
+                FieldNames.ObjectId,
+                ascending: true,
+                fieldType: FieldType.BigInteger));
+        }
+
         return new FeatureQuery
         {
             Where = null,
             SqlFilter = sqlFilter,
             SpatialFilter = null,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OrderBy = OrderByParsing.ParseODataOrderBy(orderby, layer),
+            OrderBy = orderByClauses,
             Limit = resultRecordCount,
             Offset = resultOffset
         };
@@ -114,8 +124,10 @@ internal sealed partial class ODataQueryService
                 // If it's already a dictionary, filter based on selected fields
                 foreach (var kvp in existingDict)
                 {
+                    var isExpandedNavigation = kvp.Value is object?[] || kvp.Value is Dictionary<string, object?>;
                     if (kvp.Key.StartsWith("@odata.", StringComparison.OrdinalIgnoreCase) ||
                         ODataUtilityService.IsKeyProperty(kvp.Key) ||
+                        isExpandedNavigation ||
                         fields.Contains(kvp.Key))
                     {
                         dict[kvp.Key] = kvp.Value;
@@ -191,7 +203,7 @@ internal sealed partial class ODataQueryService
                 BinaryOperator.Subtract => leftNumber - rightNumber,
                 BinaryOperator.Multiply => leftNumber * rightNumber,
                 BinaryOperator.Divide => rightNumber == 0 ? throw new ArgumentException("Division by zero.") : leftNumber / rightNumber,
-                BinaryOperator.Modulo => leftNumber % rightNumber,
+                BinaryOperator.Modulo => rightNumber == 0 ? throw new ArgumentException("Modulo by zero.") : leftNumber % rightNumber,
                 _ => throw new ArgumentException($"Unsupported arithmetic operator {expression.Operator}.")
             };
         }

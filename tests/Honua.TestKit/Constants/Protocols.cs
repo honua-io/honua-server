@@ -70,7 +70,7 @@ public static class Protocols
     public const string TestQuality = "TestQuality";
 
     /// <summary>
-    /// Esri Image Server REST API.
+    /// GeoServices Image Server REST API.
     /// </summary>
     public const string ImageServer = "ImageServer";
 
@@ -80,7 +80,7 @@ public static class Protocols
     public const string OgcApiMaps = "OGC-API-Maps";
 
     /// <summary>
-    /// Esri REST service directory and root metadata endpoints.
+    /// GeoServices REST service directory and root metadata endpoints.
     /// </summary>
-    public const string EsriCatalog = "EsriCatalog";
+    public const string GeoservicesCatalog = "GeoservicesCatalog";
 }

@@ -4,60 +4,43 @@
 
 | I want to... | Go to |
 |---|---|
-| **Consume geospatial data** | [Standards APIs](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
-| **Manage the server** | [Control Plane API](user/CONTROL_PLANE_API.md) |
-| Deploy to production | [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) |
-| Monitor and troubleshoot | [DevOps Guide](devops/README.md) |
+| **Consume geospatial data** | [Protocols Overview](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
+| **Manage the server** | [Admin API](user/CONTROL_PLANE_API.md) / [Admin UI](user/admin-ui.md) |
+| **Deploy to production** | [Infrastructure & Deployment](devops/infrastructure.md) |
+| **Monitor and troubleshoot** | [Monitoring](devops/monitoring.md) / [Troubleshooting](devops/troubleshooting.md) |
+| **Evaluate protocol coverage** | [Coverage Matrices](#coverage-matrices) |
+| **Contribute** | [Getting Started](contributor/development/getting-started.md) |
 
-## User documentation
+## User Documentation
 
-**Getting Started:**
-- [User Journeys](user/USER_JOURNEYS.md) — role-based guides for GIS professionals, developers, analysts
-- [Geospatial Data APIs](user/STANDARDS_APIS.md) — FeatureServer + MapServer, OGC API Features/Tiles, OData v4, MVT
-- [API Examples](user/API_EXAMPLES.md) — request/response examples for geospatial data access
+- [User Journeys](user/USER_JOURNEYS.md) — role-based guides
+- [Protocols Overview](user/STANDARDS_APIS.md) — FeatureServer, MapServer, OGC, OData, MVT
+- [API Examples](user/API_EXAMPLES.md) — request/response examples
+- [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches
+- [Admin API](user/CONTROL_PLANE_API.md) — server management endpoints
+- [Admin UI](user/admin-ui.md) — browser interface guide
+- [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling
 
-**Integration & Architecture:**
-- [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches and code examples
-- [Server Management API](user/CONTROL_PLANE_API.md) — admin and automation endpoints
-- [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling best practices
+### Coverage Matrices
 
-**Reference:**
-- [FeatureServer Coverage](user/feature-server-matrix.md) — operation and parameter support
-- [MapServer Coverage](user/map-server-matrix.md) — map rendering operation support
-- [Protocol Coverage Index](user/specifications/protocol-coverage.md) — standards coverage overview
+- [FeatureServer Coverage](user/feature-server-matrix.md)
+- [MapServer Coverage](user/map-server-matrix.md)
+- [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
+- [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
 
-## DevOps documentation
+## DevOps Documentation
 
-**Deployment:**
-- [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — specific deployment patterns for different use cases
-- [Serverless](devops/serverless-deployments.md) — AWS Lambda and Azure Functions
-- [Container Images](devops/CONTAINER_IMAGES.md) — registries, tags, and publishing
-
-**Operations:**
-- [Operational Excellence](devops/OPERATIONAL_EXCELLENCE.md) — current operational tooling
+- [Infrastructure & Deployment](devops/infrastructure.md) — Docker Compose, Helm, Terraform AWS/Azure
+- [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — patterns by team size
+- [Security](devops/security.md) — authentication, authorization, rate limiting, CSP
+- [Monitoring & Alerting](devops/monitoring.md) — endpoints, metrics, tracing, cloud alerting
+- [Operations](devops/operations.md) — backups, migrations, pools, query tuning, caching
+- [Troubleshooting](devops/troubleshooting.md) — database, performance, auth, import, spatial
 - [Runbooks](devops/runbooks/README.md) — incident response playbooks
-- [Troubleshooting](devops/TROUBLESHOOTING.md) — common issues and fixes
-  - [Database connections](devops/troubleshooting/database-connection-issues.md)
-  - [Performance](devops/troubleshooting/performance-troubleshooting.md)
-  - [Authentication](devops/troubleshooting/authentication-problems.md)
-  - [Imports](devops/troubleshooting/import-process-issues.md)
-  - [Spatial queries](devops/troubleshooting/spatial-query-problems.md)
 
-**Performance:**
-- [Performance Monitoring](devops/performance-monitoring.md)
-- [Cloud-Native Alerting](alerting/README.md)
-- [Optional Prometheus + Grafana Stack](devops/optional-observability-stack.md)
-- [Caching Strategy](devops/CACHING_STRATEGY.md)
-- [Query Optimization](devops/query-optimization.md)
-- [Connection Pool Sizing](devops/connection-pool-sizing.md)
+## Contributor Documentation
 
-**Security:**
-- [Security Configuration](devops/SECURITY_CONFIGURATION.md) — OIDC, secrets, proxy settings
-- [Authorization Matrix](devops/AUTHORIZATION_MATRIX.md) — endpoint access requirements
-- [Container Security](devops/CONTAINER_SECURITY.md)
-- [Credential Rotation](devops/credential-rotation.md)
-- [Backup and Restore](devops/backup-restore.md)
-
----
-
-*This documentation is focused on using and operating Honua Server. For development and contribution information, see the project repository.*
+- [Getting Started](contributor/development/getting-started.md) — development setup
+- [Contributing](contributor/development/contributing.md) — code style, architecture rules, PR process
+- [Architecture](contributor/ARCHITECTURE.md) — system design
+- [ADRs](contributor/adr/README.md) — architectural decisions

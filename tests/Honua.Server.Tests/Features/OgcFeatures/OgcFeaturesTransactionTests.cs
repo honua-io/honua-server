@@ -163,6 +163,7 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
     [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PatchFeature_WithInvalidPropertiesShape_ReturnsBadRequest()
     {

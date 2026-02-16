@@ -14,7 +14,8 @@ module "honua" {
   enable_postgis = true  # Required — Honua needs PostGIS for migrations
 
   additional_env = {
-    HONUA_ADMIN_UI = "true"
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
   }
 }
 ```

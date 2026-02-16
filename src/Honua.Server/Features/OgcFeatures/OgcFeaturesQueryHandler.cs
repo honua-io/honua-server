@@ -49,7 +49,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
-    private static readonly ImmutableHashSet<string> SortByCoreFields = ImmutableHashSet.Create(
+    private static readonly ImmutableHashSet<string> _sortByCoreFields = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
         FieldNames.ObjectId,
         "object_id",
@@ -266,7 +266,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var features = result.Items
                 .Select(feature =>
                 {
-                    var links = BuildFeatureLinks(
+                    var links = OgcFeaturesUtilities.BuildFeatureLinks(
                         request,
                         collectionId,
                         FormattableString.Invariant($"{feature.Id}"),
@@ -448,16 +448,24 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             OgcFeaturesLog.ItemQueryStarted(_logger, collectionId, featureId);
             var stopwatch = Stopwatch.StartNew();
-            var feature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+            var query = new FeatureQuery
+            {
+                ObjectIds = ImmutableArray.Create(objectId),
+                Limit = 1,
+                SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+                OutputSrid = crsDefinition.Srid
+            };
+            var queryResult = await _featureReader.QueryAsync(layerId, query, cancellationToken);
             stopwatch.Stop();
             OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
-            if (feature == null)
+            if (queryResult.Items.IsDefaultOrEmpty)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            var featureLinks = BuildFeatureLinks(request, collectionId, featureId, outputFormat);
-            var ogcFeature = ToOgcFeature(feature.Value, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+            var feature = queryResult.Items[0];
+            var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat);
+            var ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
@@ -578,47 +586,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
             title: "Queryables schema"));
 
         return links.ToImmutable();
-    }
-
-    private static ImmutableArray<Link> BuildFeatureLinks(
-        HttpRequest request,
-        string collectionId,
-        string featureId,
-        string outputFormat)
-    {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
-        var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
-
-        var links = new List<Link>
-        {
-            Link.Create(
-                href: basePath,
-                rel: RelationTypes.Self,
-                type: outputFormat,
-                title: "Feature")
-        };
-
-        foreach (var format in OgcFeaturesUtilities.FeatureFormats)
-        {
-            if (string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            links.Add(Link.Create(
-                href: $"{basePath}?f={Uri.EscapeDataString(format.QueryValue)}",
-                rel: RelationTypes.Alternate,
-                type: format.MediaType,
-                title: format.Title));
-        }
-
-        links.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
-            rel: RelationTypes.Collection,
-            type: MediaTypes.Json,
-            title: "Collection"));
-
-        return links.ToImmutableArray();
     }
 
     private static string BuildPagedUrl(
@@ -851,7 +818,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             orderBy = OrderByParsing.ParseFeatureServerOrderBy(
                 string.Join(",", normalized),
                 layer,
-                SortByCoreFields);
+                _sortByCoreFields);
             return true;
         }
         catch (InvalidOperationException ex)
@@ -925,7 +892,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var numberReturned = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            var featureLinks = BuildFeatureLinks(
+            var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                 context.Request,
                 collectionId,
                 FormattableString.Invariant($"{feature.Id}"),

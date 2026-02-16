@@ -14,7 +14,7 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 internal static partial class FeaturesEndpoints
 {
-    private static readonly string[] PatchMethods = ["PATCH"];
+    private static readonly string[] _patchMethods = ["PATCH"];
 
     /// <summary>
     /// Maps features/items CRUD endpoints with delegation to specialized handlers.
@@ -74,7 +74,7 @@ internal static partial class FeaturesEndpoints
 
         endpoints.MapMethods(
                 "/ogc/features/collections/{collectionId}/items/{featureId}",
-                PatchMethods,
+                _patchMethods,
                 HandlePatchFeature)
             .WithDisplayName("OGC API Features Patch Item")
             .WithName("PatchItem")

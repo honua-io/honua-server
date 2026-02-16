@@ -113,7 +113,7 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
             });
 
             // Setup import API mocks
-            await page.RouteAsync("**/import/esri/jobs", async route =>
+            await page.RouteAsync("**/import/geoservices/jobs", async route =>
             {
                 if (route.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
                 {
@@ -121,7 +121,7 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
                 }
             });
 
-            await page.RouteAsync("**/import/esri/discover", async route =>
+            await page.RouteAsync("**/import/geoservices/discover", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {
@@ -142,7 +142,7 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/import/esri/start", async route =>
+            await page.RouteAsync("**/import/geoservices/start", async route =>
             {
                 importStarted = true;
                 await FulfillJsonAsync(route, new
@@ -152,7 +152,7 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync($"**/import/esri/jobs/{jobId}", async route =>
+            await page.RouteAsync($"**/import/geoservices/jobs/{jobId}", async route =>
             {
                 await FulfillJsonAsync(route, new
                 {

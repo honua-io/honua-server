@@ -375,6 +375,18 @@ internal sealed partial class ODataBatchHandler
                     continue;
                 }
 
+                if (parsed.Tail != ODataPathTailKind.None &&
+                    !request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                {
+                    responses.Add(CreateErrorResponse(
+                        request.Id,
+                        405,
+                        "MethodNotAllowed",
+                        "Only GET is supported for $ref and $value requests."));
+                    rollback = true;
+                    continue;
+                }
+
                 var layerId = parsed.LayerId;
                 if (!layerId.HasValue && request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) && request.Body != null)
                 {
@@ -452,7 +464,6 @@ internal sealed partial class ODataBatchHandler
                     }
 
                     case "PATCH":
-                    case "PUT":
                     {
                         if (!objectId.HasValue)
                         {
@@ -909,6 +920,12 @@ internal sealed partial class ODataBatchHandler
                 return CreateErrorResponse(request.Id, 400, "InvalidRequest", $"Unsupported OData resource '{request.Url}'.");
             }
 
+            if (parsed.Tail != ODataPathTailKind.None &&
+                !request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateErrorResponse(request.Id, 405, "MethodNotAllowed", "Only GET is supported for $ref and $value requests.");
+            }
+
             // Verify layer exists
             if (!layerId.HasValue && request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) && request.Body != null)
             {
@@ -932,13 +949,12 @@ internal sealed partial class ODataBatchHandler
             switch (request.Method.ToUpperInvariant())
             {
                 case "GET":
-                    return await HandleGetAsync(request.Id, layer, objectId, request.Url, baseUrl, cancellationToken);
+                    return await HandleGetAsync(request.Id, layer, objectId, request.Url, parsed.Tail, baseUrl, cancellationToken);
 
                 case "POST":
                     return await HandlePostAsync(request.Id, layer, request.Body, baseUrl, cancellationToken);
 
                 case "PATCH":
-                case "PUT":
                     return await HandlePatchAsync(request.Id, layer, objectId, request.Body, request.Headers, baseUrl, cancellationToken);
 
                 case "DELETE":
@@ -966,11 +982,17 @@ internal sealed partial class ODataBatchHandler
         LayerDefinition layer,
         long? objectId,
         string requestUrl,
+        ODataPathTailKind tailKind,
         string baseUrl,
         CancellationToken cancellationToken)
     {
         if (!objectId.HasValue)
         {
+            if (tailKind != ODataPathTailKind.None)
+            {
+                return CreateErrorResponse(requestId, 400, "InvalidRequest", "$ref and $value require an entity key.");
+            }
+
             if (!TryParseCollectionQueryOptions(
                 requestUrl,
                 out var top,
@@ -1023,11 +1045,28 @@ internal sealed partial class ODataBatchHandler
 
         var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
         var payload = FeatureToBody(feature.Value, layer, axisOrder, baseUrl, out var etag);
-        return CreateSuccessResponse(
-            requestId,
-            200,
-            payload,
-            new Dictionary<string, string> { ["ETag"] = etag });
+
+        return tailKind switch
+        {
+            ODataPathTailKind.None => CreateSuccessResponse(
+                requestId,
+                200,
+                payload,
+                new Dictionary<string, string> { ["ETag"] = etag }),
+            ODataPathTailKind.Ref => CreateSuccessResponse(
+                requestId,
+                200,
+                new Dictionary<string, object?>
+                {
+                    ["@odata.id"] = ODataUtilityService.CreateLocationHeader(baseUrl, layer.Id, objectId.Value)
+                }),
+            ODataPathTailKind.Value => CreateSuccessResponse(
+                requestId,
+                200,
+                payload,
+                new Dictionary<string, string> { ["ETag"] = etag }),
+            _ => CreateErrorResponse(requestId, 400, "InvalidRequest", $"Unsupported path segment '{tailKind}'.")
+        };
     }
 
     private async Task<ODataBatchResponseItem> HandlePostAsync(

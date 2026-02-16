@@ -77,25 +77,10 @@ curl http://localhost:8080/healthz/ready
 - Database replication and automated failover
 - Centralized logging, tracing, and alerting
 
-**Operational notes:**
-- Keep rate limiting at the edge
-- Use a dedicated secret manager
-- Define SLOs for latency and availability
-
----
-
-## **Operational Notes**
-
-- **TLS**: Terminate at the edge (nginx, ALB, gateway).
-- **Rate limiting**: Enforce at the edge; application-level rate limiting is intentionally deferred.
-- **Backups**: Use managed snapshots plus point-in-time recovery where possible.
-- **Monitoring**: Track request latency, error rates, and database saturation.
-
 ---
 
 ## **Related Documentation**
 
-- [Security Configuration](SECURITY_CONFIGURATION.md)
-- [Performance Monitoring](performance-monitoring.md)
-- [Operational Excellence](OPERATIONAL_EXCELLENCE.md)
-- [Backup and Restore](backup-restore.md)
+- [Security](security.md)
+- [Monitoring](monitoring.md)
+- [Operations](operations.md)

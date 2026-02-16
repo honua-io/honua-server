@@ -194,6 +194,11 @@ public static class RelationTypes
     public const string TilesetsMap = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-map";
 
     /// <summary>
+    /// Indicates the link target provides a map representation of a geospatial resource.
+    /// </summary>
+    public const string Map = "https://www.opengis.net/def/rel/ogc/1.0/map";
+
+    /// <summary>
     /// Indicates the link target provides a tilesets list for coverage tiles.
     /// </summary>
     public const string TilesetsCoverage = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-coverage";

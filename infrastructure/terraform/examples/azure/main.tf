@@ -11,7 +11,8 @@ module "honua" {
   admin_password = var.honua_admin_password
 
   additional_env = {
-    HONUA_ADMIN_UI = "true"
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
   }
 }
 

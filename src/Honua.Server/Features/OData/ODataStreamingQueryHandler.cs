@@ -103,6 +103,14 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
 
+            if (!string.IsNullOrWhiteSpace(apply) && !string.IsNullOrWhiteSpace(search))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$apply cannot be combined with $search.");
+            }
+
             if (!string.IsNullOrWhiteSpace(apply))
             {
                 if (!computeExpressions.IsDefaultOrEmpty)
@@ -128,6 +136,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                     resolvedLayerId = layerResolution.LayerId;
                 }
 
+                var applyLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                    context,
+                    resolvedLayerId.Value,
+                    LayerValidationHelpers.ValidationProtocol.OData,
+                    cancellationToken: effectiveToken);
+                if (!applyLayerValidation.IsValid)
+                {
+                    return applyLayerValidation.ErrorResult!;
+                }
+
                 var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
                 var result = await _querySearchService.HandleApplyAsync(
                     resolvedLayerId.Value,
@@ -135,6 +153,14 @@ internal sealed partial class ODataStreamingQueryHandler(
                     filter,
                     baseUrl,
                     effectiveToken);
+                if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
+                {
+                    result = new ODataAggregationResult
+                    {
+                        Context = null,
+                        Value = result.Value
+                    };
+                }
 
                 ODataUtilityService.SetODataHeaders(context);
                 return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult,
@@ -166,6 +192,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                     resolvedLayerId = layerResolution.LayerId;
                 }
 
+                var searchLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                    context,
+                    resolvedLayerId.Value,
+                    LayerValidationHelpers.ValidationProtocol.OData,
+                    cancellationToken: effectiveToken);
+                if (!searchLayerValidation.IsValid)
+                {
+                    return searchLayerValidation.ErrorResult!;
+                }
+
                 var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
                 var result = await _querySearchService.HandleSearchAsync(
                     resolvedLayerId.Value,
@@ -174,7 +210,20 @@ internal sealed partial class ODataStreamingQueryHandler(
                     topValue,
                     skipValue,
                     countValue,
+                    filter,
+                    orderby,
+                    select,
+                    expand,
                     effectiveToken);
+                if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
+                {
+                    result = new ODataSearchResult
+                    {
+                        Context = null,
+                        Count = result.Count,
+                        Value = result.Value
+                    };
+                }
 
                 ODataUtilityService.SetODataHeaders(context);
                 return Results.Json(result, ODataJsonContext.Default.ODataSearchResult,
@@ -249,8 +298,17 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId.Value.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
-            // Get total count to support nextLink generation
-            var totalCount = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
+            long? totalCount = null;
+            var streamQuery = featureQuery;
+            if (countValue == true)
+            {
+                totalCount = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
+            }
+            else if (streamQuery.Limit.HasValue && streamQuery.Limit.Value < int.MaxValue)
+            {
+                // Fetch one extra row to compute @odata.nextLink without executing COUNT(*).
+                streamQuery = streamQuery with { Limit = streamQuery.Limit.Value + 1 };
+            }
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
@@ -266,7 +324,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             // Stream the OData response
             await StreamODataFeaturesAsync(
-                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(layerId.Value, featureQuery, effectiveToken),
+                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(layerId.Value, streamQuery, effectiveToken),
                 context,
                 layerId.Value,
                 layer.SpatialReference.ToSrid(),
@@ -281,6 +339,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 useSkipToken,
                 compute,
                 totalCount,
+                ODataUtilityService.ShouldIncludeContext(context.Request, format),
                 computeExpressions,
                 _geometryService,
                 effectiveToken);
@@ -331,7 +390,8 @@ internal sealed partial class ODataStreamingQueryHandler(
         string? expand,
         bool useSkipToken,
         string? compute,
-        long totalCount,
+        long? totalCount,
+        bool includeContext,
         System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
         IGeometryService geometryService,
         CancellationToken cancellationToken)
@@ -345,20 +405,30 @@ internal sealed partial class ODataStreamingQueryHandler(
         // Start OData response
         writer.WriteStartObject();
 
-        if (count == true)
+        if (count == true && totalCount.HasValue)
         {
-            writer.WriteNumber("@odata.count", totalCount);
+            writer.WriteNumber("@odata.count", totalCount.Value);
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
+        if (includeContext)
+        {
+            writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
+        }
 
         // Start value array
         writer.WriteStartArray("value");
 
         var streamedCount = 0;
+        var hasMoreResults = false;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
+            if (streamedCount >= pagination.Limit)
+            {
+                hasMoreResults = true;
+                break;
+            }
+
             await WriteODataFeatureAsync(
                 writer,
                 feature,
@@ -378,7 +448,11 @@ internal sealed partial class ODataStreamingQueryHandler(
         // End value array
         writer.WriteEndArray();
 
-        if (ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount, pagination.Limit))
+        var shouldPaginate = totalCount.HasValue
+            ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
+            : hasMoreResults;
+
+        if (shouldPaginate)
         {
             var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
             var nextLink = ODataUtilityService.GenerateNextLink(
@@ -707,6 +781,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                            TryCollectLayerIds(binary.Right, layerIds);
                 }
 
+                if (binary.Operator is Honua.Core.Queries.Filters.BinaryOperator.Or)
+                {
+                    return false;
+                }
+
                 if (binary.Operator is Honua.Core.Queries.Filters.BinaryOperator.Equal)
                 {
                     if (TryExtractLayerId(binary.Left, binary.Right, layerIds))
@@ -718,9 +797,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                     {
                         return true;
                     }
+
+                    return true;
                 }
 
-                return false;
+                return true;
 
             default:
                 return true;

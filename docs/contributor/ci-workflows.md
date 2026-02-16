@@ -1,0 +1,55 @@
+# GitHub Actions Workflows
+
+This document tracks the current workflow layout. The source of truth is `.github/workflows/`.
+
+## Core Workflows
+
+| Workflow File | Purpose | Typical Trigger |
+|---|---|---|
+| `ci.yml` | Main build/test/format/validation pipeline | PR + push to `trunk` |
+| `pr-validation.yml` | PR policy checks (labels/title/metadata) | PR events |
+| `codeql.yml` | CodeQL static analysis | PR + push + schedule |
+| `container-security.yml` | Container image security scanning | PR + push + schedule |
+| `deploy.yml` | Build/publish container images | push to `trunk` and tags |
+
+## Conformance and Performance
+
+| Workflow File | Purpose | Typical Trigger |
+|---|---|---|
+| `cite-conformance.yml` | OGC API Features CITE tests | schedule + manual |
+| `cite-tiles-conformance.yml` | OGC API Tiles CITE tests | schedule + manual |
+| `performance.yml` | Performance benchmark pipeline | PR/push/manual |
+| `performance-benchmarks.yml` | Extended benchmark + baseline flow | PR/push/manual |
+| `load-soak-nightly.yml` | Load/soak runs | schedule + manual |
+
+## Nightly/Scheduled Security
+
+| Workflow File | Purpose |
+|---|---|
+| `security-nightly.yml` | Dependency/security scanning |
+| `trivy-nightly.yml` | Nightly Trivy scan |
+| `nightly-container-build.yml` | Nightly container build checks |
+
+## Documentation
+
+| Workflow File | Purpose |
+|---|---|
+| `pages.yml` | GitHub Pages publishing |
+
+## Useful Commands
+
+```bash
+# List recent runs for CI
+gh run list --workflow=ci.yml
+
+# View logs for a run
+gh run view <run-id> --log
+
+# Manually start a workflow
+gh workflow run load-soak-nightly.yml
+```
+
+## Notes for Contributors
+
+- If docs and workflows disagree, trust `.github/workflows/*.yml`.
+- When adding a workflow, update this file in the same PR.
