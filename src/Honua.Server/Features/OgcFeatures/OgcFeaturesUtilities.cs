@@ -9,7 +9,9 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -40,6 +42,9 @@ internal static class OgcFeaturesUtilities
                 "datetime",
                 "limit",
                 "offset",
+                "ids",
+                "properties",
+                "sortby",
                 "filter",
                 "filter-lang",
                 "filter-crs"
@@ -273,5 +278,64 @@ internal static class OgcFeaturesUtilities
             ? "yyyy-MM-ddTHH:mm:ss'Z'"
             : "yyyy-MM-ddTHH:mm:ss.fffffff'Z'";
         return utc.ToString(format, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Invalidates output cache for a layer after mutation operations.
+    /// </summary>
+    public static async Task InvalidateLayerCacheAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (cacheInvalidator != null)
+        {
+            await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Builds standard OGC feature links (self, alternates, collection).
+    /// </summary>
+    public static ImmutableArray<Link> BuildFeatureLinks(
+        HttpRequest request,
+        string collectionId,
+        string featureId,
+        string outputFormat)
+    {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
+        var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
+
+        var links = new List<Link>
+        {
+            Link.Create(
+                href: basePath,
+                rel: RelationTypes.Self,
+                type: outputFormat,
+                title: "Feature")
+        };
+
+        foreach (var format in FeatureFormats)
+        {
+            if (string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            links.Add(Link.Create(
+                href: $"{basePath}?f={Uri.EscapeDataString(format.QueryValue)}",
+                rel: RelationTypes.Alternate,
+                type: format.MediaType,
+                title: format.Title));
+        }
+
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
+            rel: RelationTypes.Collection,
+            type: MediaTypes.Json,
+            title: "Collection"));
+
+        return links.ToImmutableArray();
     }
 }

@@ -94,6 +94,8 @@ curl "http://localhost:8080/rest/services/1/MapServer/legend?f=json"
 
 ## **OGC API Features**
 
+Collection IDs are numeric layer IDs (for example, `0`, `1`, `2`).
+
 ### **List Collections**
 
 ```bash
@@ -103,25 +105,25 @@ curl "http://localhost:8080/ogc/features/collections"
 ### **Query Features with BBox**
 
 ```bash
-curl "http://localhost:8080/ogc/features/collections/parcels/items?bbox=-122.5,37.7,-122.3,37.8&limit=100"
+curl "http://localhost:8080/ogc/features/collections/0/items?bbox=-122.5,37.7,-122.3,37.8&limit=100"
 ```
 
 ### **Filter with CQL2 (if enabled)**
 
 ```bash
-curl "http://localhost:8080/ogc/features/collections/parcels/items?filter=population%20%3E%2010000&filter-lang=cql2-text"
+curl "http://localhost:8080/ogc/features/collections/0/items?filter=population%20%3E%2010000&filter-lang=cql2-text"
 ```
 
 ### **Output Formats**
 
 **GeoJSON (default for features):**
 ```bash
-curl "http://localhost:8080/ogc/features/collections/parcels/items?f=geojson"
+curl "http://localhost:8080/ogc/features/collections/0/items?f=geojson"
 ```
 
 **GML (features only):**
 ```bash
-curl "http://localhost:8080/ogc/features/collections/parcels/items?f=gml"
+curl "http://localhost:8080/ogc/features/collections/0/items?f=gml"
 ```
 
 **HTML (metadata and features):**
@@ -132,7 +134,7 @@ curl "http://localhost:8080/ogc/features/collections?f=html"
 **Accept header negotiation:**
 ```bash
 curl -H "Accept: application/gml+xml;version=3.2" \
-  "http://localhost:8080/ogc/features/collections/parcels/items"
+  "http://localhost:8080/ogc/features/collections/0/items"
 ```
 
 ---
@@ -167,16 +169,16 @@ const map = new maplibregl.Map({
     sources: {
       honua: {
         type: 'vector',
-        tiles: ['http://localhost:8080/tiles/parcels/{z}/{x}/{y}.mvt'],
+        tiles: ['http://localhost:8080/tiles/0/{z}/{x}/{y}.mvt'],
         minzoom: 0,
         maxzoom: 14
       }
     },
     layers: [{
-      id: 'parcels-fill',
+      id: 'layer-fill',
       type: 'fill',
       source: 'honua',
-      'source-layer': 'parcels',
+      'source-layer': 'layer',
       paint: { 'fill-color': '#4f46e5', 'fill-opacity': 0.6 }
     }]
   }
@@ -210,5 +212,4 @@ const map = new maplibregl.Map({
 
 - [Protocols Overview](STANDARDS_APIS.md)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
-- [Protocol Coverage Index](specifications/protocol-coverage.md)
 - [Admin API Reference](CONTROL_PLANE_API.md)

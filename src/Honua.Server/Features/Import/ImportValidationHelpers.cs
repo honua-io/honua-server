@@ -16,6 +16,6 @@ internal static class ImportValidationHelpers
         }
 
         return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
-               (char.IsLetter(tableName[0]) || tableName[0] == '_');
+               char.IsLetter(tableName[0]);
     }
 }

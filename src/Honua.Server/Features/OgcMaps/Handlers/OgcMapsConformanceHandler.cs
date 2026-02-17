@@ -30,31 +30,28 @@ internal sealed class OgcMapsConformanceHandler
         {
             ConformsTo = [
                 // OGC API - Maps Part 1: Core
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
 
                 // Collection maps support
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
-
-                // Dataset maps support
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
 
                 // Supported CRS
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
 
-                // Spatial subsetting (bbox parameter)
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox",
+                // Spatial subsetting (bbox and related parameters)
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
 
                 // PNG support
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
 
                 // JPEG support
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
 
                 // TIFF support
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff",
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff",
 
                 // Scaling support (width/height parameters)
-                "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling"
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling"
             ]
         };
 

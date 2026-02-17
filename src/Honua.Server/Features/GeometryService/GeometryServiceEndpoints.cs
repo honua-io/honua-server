@@ -48,6 +48,66 @@ internal static class GeometryServiceEndpoints
             .WithName("GeometryServiceProjectPost")
             .WithTags("GeometryService");
 
+        endpoints.MapGet("/rest/services/geometry/intersect", (Delegate)HandleIntersect)
+            .WithDisplayName("Geometry Service Intersect (GET)")
+            .WithName("GeometryServiceIntersectGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost("/rest/services/geometry/intersect", (Delegate)HandleIntersect)
+            .WithDisplayName("Geometry Service Intersect (POST)")
+            .WithName("GeometryServiceIntersectPost")
+            .WithTags("GeometryService");
+
+        endpoints.MapGet("/rest/services/geometry/union", (Delegate)HandleUnion)
+            .WithDisplayName("Geometry Service Union (GET)")
+            .WithName("GeometryServiceUnionGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost("/rest/services/geometry/union", (Delegate)HandleUnion)
+            .WithDisplayName("Geometry Service Union (POST)")
+            .WithName("GeometryServiceUnionPost")
+            .WithTags("GeometryService");
+
+        endpoints.MapGet("/rest/services/geometry/clip", (Delegate)HandleClip)
+            .WithDisplayName("Geometry Service Clip (GET)")
+            .WithName("GeometryServiceClipGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost("/rest/services/geometry/clip", (Delegate)HandleClip)
+            .WithDisplayName("Geometry Service Clip (POST)")
+            .WithName("GeometryServiceClipPost")
+            .WithTags("GeometryService");
+
+        endpoints.MapGet("/rest/services/geometry/difference", (Delegate)HandleDifference)
+            .WithDisplayName("Geometry Service Difference (GET)")
+            .WithName("GeometryServiceDifferenceGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost("/rest/services/geometry/difference", (Delegate)HandleDifference)
+            .WithDisplayName("Geometry Service Difference (POST)")
+            .WithName("GeometryServiceDifferencePost")
+            .WithTags("GeometryService");
+
+        endpoints.MapGet("/rest/services/geometry/area", (Delegate)HandleArea)
+            .WithDisplayName("Geometry Service Area (GET)")
+            .WithName("GeometryServiceAreaGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost("/rest/services/geometry/area", (Delegate)HandleArea)
+            .WithDisplayName("Geometry Service Area (POST)")
+            .WithName("GeometryServiceAreaPost")
+            .WithTags("GeometryService");
+
+        endpoints.MapGet("/rest/services/geometry/length", (Delegate)HandleLength)
+            .WithDisplayName("Geometry Service Length (GET)")
+            .WithName("GeometryServiceLengthGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost("/rest/services/geometry/length", (Delegate)HandleLength)
+            .WithDisplayName("Geometry Service Length (POST)")
+            .WithName("GeometryServiceLengthPost")
+            .WithTags("GeometryService");
+
         return endpoints;
     }
 
@@ -73,5 +133,53 @@ internal static class GeometryServiceEndpoints
     {
         var ct = context.RequestAborted;
         return await handler.HandleProjectAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleIntersect(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = context.RequestAborted;
+        return await handler.HandleIntersectAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleUnion(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = context.RequestAborted;
+        return await handler.HandleUnionAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleClip(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = context.RequestAborted;
+        return await handler.HandleClipAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleDifference(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = context.RequestAborted;
+        return await handler.HandleDifferenceAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleArea(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = context.RequestAborted;
+        return await handler.HandleAreaAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleLength(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = context.RequestAborted;
+        return await handler.HandleLengthAsync(context, ct).ConfigureAwait(false);
     }
 }

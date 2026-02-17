@@ -48,7 +48,7 @@ variable "honua_metrics_path" {
 variable "honua_metrics_format" {
   description = "Optional format query param for Honua metrics endpoint."
   type        = string
-  default     = "prometheus"
+  default     = ""
 }
 
 variable "scrape_interval" {

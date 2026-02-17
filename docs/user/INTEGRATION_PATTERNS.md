@@ -187,26 +187,6 @@ class FeaturesResolver {
 
 ---
 
-## **Integration Best Practices**
-
-### **1. Error Handling and Resilience**
-- Retry transient errors with jittered backoff.
-- Distinguish between user errors (4xx) and infrastructure errors (5xx).
-
-### **2. Performance Optimization**
-- Use `bbox`, `limit`, and server-side filters.
-- Avoid pulling whole collections; page results.
-
-### **3. Security Considerations**
-- Prefer API keys or OIDC at the edge.
-- Store secrets in your secret manager, not in code.
-
-### **4. Monitoring and Observability**
-- Track API latency and error rates.
-- Record per-sync metrics for ETL workloads.
-
----
-
 ## **Related Documentation**
 
 - [Geospatial API Examples](API_EXAMPLES.md)

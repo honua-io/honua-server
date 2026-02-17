@@ -47,11 +47,13 @@ internal sealed partial class ODataMetadataService
                 new EntitySet
                 {
                     Name = "Layers",
+                    Kind = "EntitySet",
                     Url = "Layers"
                 },
                 new EntitySet
                 {
                     Name = "Features",
+                    Kind = "EntitySet",
                     Url = "Features"
                 }
             }
@@ -262,16 +264,34 @@ internal sealed partial class ODataMetadataService
 
     private static string[] CollectRelationshipNames(LayerDefinition[] layers)
     {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var layer in layers)
-        {
-            foreach (var relationship in layer.LayerRelationships)
+        var relationships = layers
+            .SelectMany(layer => layer.LayerRelationships)
+            .Select(relationship => new
             {
-                var name = ODataUtilityService.SanitizeIdentifier(relationship.Name);
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    names.Add(name);
-                }
+                RelationshipId = relationship.RelationshipId,
+                SanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name)
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.SanitizedName))
+            .ToArray();
+
+        var duplicateNames = relationships
+            .GroupBy(entry => entry.SanitizedName, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var relationship in relationships)
+        {
+            var name = duplicateNames.Contains(relationship.SanitizedName)
+                ? ODataUtilityService.BuildRelationshipMetadataName(
+                    relationship.SanitizedName,
+                    relationship.RelationshipId)
+                : relationship.SanitizedName;
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                names.Add(name);
             }
         }
 

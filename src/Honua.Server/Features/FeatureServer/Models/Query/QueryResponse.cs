@@ -23,6 +23,32 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     public GeoServicesSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
+    /// Name of the display field for the result set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayFieldName { get; init; }
+
+    /// <summary>
+    /// Field metadata for attributes returned in the result set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GeoServicesFieldInfo[]? Fields { get; init; }
+
+    /// <summary>
+    /// Whether returned geometries include Z values.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("hasZ")]
+    public bool? HasZ { get; init; }
+
+    /// <summary>
+    /// Whether returned geometries include M values.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("hasM")]
+    public bool? HasM { get; init; }
+
+    /// <summary>
     /// Object ID field name for the layer
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

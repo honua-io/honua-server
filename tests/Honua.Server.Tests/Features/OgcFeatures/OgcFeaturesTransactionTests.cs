@@ -106,6 +106,87 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PatchFeature_WithPropertiesOnly_ReturnsUpdatedFeatureAndPreservesGeometry()
+    {
+        var createFeature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Patch Original"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(createFeature, OgcJsonContext.Default.GeoJsonFeature);
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items",
+            new StringContent(createJson, Encoding.UTF8, MediaTypes.GeoJson));
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+
+        var patchJson = """
+        {
+            "properties": {
+                "name": "Patch Updated"
+            }
+        }
+        """;
+
+        using var patchRequest = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/ogc/features/collections/{TestLayerId}/items/{created.Id}")
+        {
+            Content = new StringContent(patchJson, Encoding.UTF8, "application/merge-patch+json")
+        };
+
+        var patchResponse = await _fixture.Client.SendAsync(patchRequest);
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var patchedContent = await patchResponse.Content.ReadAsStringAsync();
+        var patched = JsonSerializer.Deserialize(patchedContent, OgcJsonContext.Default.GeoJsonFeature);
+        patched.Should().NotBeNull();
+        patched!.Id.Should().Be(created.Id);
+        patched.Properties["name"]!.ToString().Should().Be("Patch Updated");
+        patched.Geometry.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PatchFeature_WithInvalidPropertiesShape_ReturnsBadRequest()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Invalid Patch");
+
+        var patchJson = """
+        {
+            "properties": "not-an-object"
+        }
+        """;
+
+        using var patchRequest = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}")
+        {
+            Content = new StringContent(patchJson, Encoding.UTF8, "application/merge-patch+json")
+        };
+
+        var response = await _fixture.Client.SendAsync(patchRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Delete)]
     [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task DeleteFeature_WithValidId_ReturnsNoContent()

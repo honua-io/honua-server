@@ -47,6 +47,9 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var value = document.RootElement.GetProperty("value");
         value.ValueKind.Should().Be(JsonValueKind.Array);
         value.EnumerateArray().Should().NotBeEmpty();
+        value.EnumerateArray()
+            .Select(entitySet => entitySet.GetProperty("kind").GetString())
+            .Should().OnlyContain(kind => string.Equals(kind, "EntitySet", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -75,6 +78,10 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         response.Content.Headers.ContentType?.Parameters.Should()
             .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("@odata.context", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -129,6 +136,85 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         content.Should().NotBeNullOrWhiteSpace();
         long.TryParse(content.Trim(), out var count).Should().BeTrue();
         count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features")]
+    public async Task Features_AllLayers_WithLayerFilter_ReturnsCollection()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features?$filter=LayerId eq {TestLayerId}&$top=3");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var values = document.RootElement.GetProperty("value");
+        values.ValueKind.Should().Be(JsonValueKind.Array);
+        values.GetArrayLength().Should().BeLessThanOrEqualTo(3);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features without layer filter")]
+    public async Task Features_AllLayers_WithoutLayerFilter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Features");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features")]
+    public async Task Features_AllLayers_WithLayerFilterAndAdditionalPredicate_ReturnsFilteredResults()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features?$filter=LayerId eq {TestLayerId} and population gt 1000000");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var values = document.RootElement.GetProperty("value").EnumerateArray().ToList();
+        values.Should().NotBeEmpty();
+        values.All(value => value.GetProperty("LayerId").GetInt32() == TestLayerId).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features/$count")]
+    public async Task FeaturesCount_AllLayers_WithLayerFilterAndAdditionalPredicate_ReturnsNumericCount()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features/$count?$filter=LayerId eq {TestLayerId} and population gt 1000000");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrWhiteSpace();
+        long.TryParse(content.Trim(), out var count).Should().BeTrue();
+        count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features/$count without layer filter")]
+    public async Task FeaturesCount_AllLayers_WithoutLayerFilter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Features/$count");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features with multi-layer filter")]
+    public async Task Features_AllLayers_WithMultipleLayerIds_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/odata/Features?$filter=LayerId eq 0 or LayerId eq 1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -239,7 +325,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$format=application/json;odata.metadata=full")]
-    public async Task Features_WithFormatMetadataFull_ReturnsRequestedContentType()
+    public async Task Features_WithFormatMetadataFull_FallsBackToMinimalContentType()
     {
         var format = Uri.EscapeDataString("application/json;odata.metadata=full");
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=1&$format={format}");
@@ -247,7 +333,26 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "full", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId}) with metadata=none")]
+    public async Task Features_WithAcceptMetadataNone_OmitsContextAnnotation()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=none"));
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("@odata.context", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

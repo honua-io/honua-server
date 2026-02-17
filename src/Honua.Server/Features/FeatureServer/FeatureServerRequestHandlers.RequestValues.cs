@@ -80,22 +80,5 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static bool TryGetValue(IReadOnlyDictionary<string, StringValues> values, string key, out StringValues value)
-    {
-        if (values.TryGetValue(key, out value))
-        {
-            return true;
-        }
-
-        foreach (var pair in values)
-        {
-            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase))
-            {
-                value = pair.Value;
-                return true;
-            }
-        }
-
-        value = default;
-        return false;
-    }
+        => values.TryGetValue(key, out value);
 }

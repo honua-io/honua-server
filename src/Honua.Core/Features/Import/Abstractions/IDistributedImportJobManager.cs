@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Import.Abstractions;
 public interface IDistributedImportJobManager
 {
     /// <summary>
-    /// Job queue for Esri imports.
+    /// Job queue for Geoservices imports.
     /// </summary>
     IDistributedJobQueueService JobQueue { get; }
 
@@ -23,10 +23,10 @@ public interface IDistributedImportJobManager
     /// <summary>
     /// Progress store for tracking import jobs.
     /// </summary>
-    IDistributedProgressStore<EsriImportProgress> ProgressStore { get; }
+    IDistributedProgressStore<GeoservicesImportProgress> ProgressStore { get; }
 
     /// <summary>
     /// Store for import requests (needed by background worker).
     /// </summary>
-    IDistributedProgressStore<EsriImportRequest> RequestStore { get; }
+    IDistributedProgressStore<GeoservicesImportRequest> RequestStore { get; }
 }

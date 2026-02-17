@@ -586,6 +586,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
         queryResponse.ObjectIdFieldName.Should().NotBeNullOrEmpty();
+        queryResponse.Fields.Should().NotBeNullOrEmpty();
+        queryResponse.DisplayFieldName.Should().NotBeNullOrWhiteSpace();
+        queryResponse.HasZ.Should().BeFalse();
+        queryResponse.HasM.Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -950,6 +954,63 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             .Select(f => ReadObjectIdValue(f.Attributes["objectid"]))
             .ToArray();
         returnedObjectIds.Should().Contain(new long[] { 1, 3, 5 });
+    }
+
+    /// <summary>
+    /// Tests that objectIds queries are not truncated by the default result record count.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithManyObjectIds_DoesNotApplyDefaultRecordLimit()
+    {
+        await _fixture.EnsureLargeTestDatasetAsync();
+
+        _fixture.CurrentSchema.Should().NotBeNullOrWhiteSpace();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT objectid
+            FROM features
+            WHERE layer_id = @layerId
+            ORDER BY objectid
+            LIMIT 1200;
+            """;
+        command.Parameters.AddWithValue("layerId", TestLayerId);
+
+        var requestedObjectIds = new List<long>(1200);
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                requestedObjectIds.Add(reader.GetInt64(0));
+            }
+        }
+
+        requestedObjectIds.Should().HaveCount(1200);
+        var payload = JsonSerializer.Serialize(new
+        {
+            objectIds = requestedObjectIds,
+            returnIdsOnly = true,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.ObjectIds.Should().NotBeNull();
+        queryResponse.ObjectIds!.Should().HaveCount(requestedObjectIds.Count);
+        queryResponse.ObjectIds.Should().BeEquivalentTo(
+            requestedObjectIds,
+            options => options.WithoutStrictOrdering());
     }
 
     /// <summary>

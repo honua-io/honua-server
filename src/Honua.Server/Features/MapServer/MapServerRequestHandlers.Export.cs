@@ -274,6 +274,11 @@ internal static partial class MapServerEndpoints
             var spatialFilter = CreateBboxSpatialFilter(extent, bboxSrid.Value);
 
             using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+            if (surface is null)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, "Failed to allocate render surface.");
+            }
+
             var canvas = surface.Canvas;
 
             if (parameters.Transparent)
@@ -375,6 +380,10 @@ internal static partial class MapServerEndpoints
         {
             MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -773,8 +782,12 @@ internal static partial class MapServerEndpoints
                 return ExtentTransformResult.Failure(ex.Message);
             }
 
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Honua.Server.MapServerEndpoints");
+
             var transformed = await TryTransformExtentWithPostGisAsync(
                 connectionProvider,
+                logger,
                 extent,
                 fromSrid,
                 toSrid,
@@ -787,6 +800,7 @@ internal static partial class MapServerEndpoints
 
     private static async Task<SkiaMapRenderer.RenderExtent?> TryTransformExtentWithPostGisAsync(
         IDatabaseConnectionProvider connectionProvider,
+        ILogger logger,
         SkiaMapRenderer.RenderExtent extent,
         int fromSrid,
         int toSrid,
@@ -843,8 +857,9 @@ internal static partial class MapServerEndpoints
                 reader.GetDouble(2),
                 reader.GetDouble(3));
         }
-        catch
+        catch (Exception ex)
         {
+            MapServerLog.PostGisExtentTransformFailed(logger, fromSrid, toSrid, ex);
             return null;
         }
     }
@@ -1706,7 +1721,7 @@ internal static partial class MapServerEndpoints
             }
 
             filterExpression = parseResult.Expression;
-            if (filterExpression != null && !IsBooleanFilterExpression(filterExpression))
+            if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
             {
                 error = "Invalid where clause.";
                 return false;
@@ -1758,21 +1773,6 @@ internal static partial class MapServerEndpoints
         }
 
         return true;
-    }
-
-    private static bool IsBooleanFilterExpression(FilterExpression expression)
-    {
-        return expression switch
-        {
-            BinaryExpression => true,
-            UnaryExpression => true,
-            SpatialPredicate => true,
-            SpatialDistancePredicate => true,
-            TemporalPredicate => true,
-            ArrayPredicate => true,
-            Literal literal => literal.Type == LiteralType.Boolean,
-            _ => false
-        };
     }
 
     private static bool TryReadJsonStringOrNumber(JsonElement element, out string? value)

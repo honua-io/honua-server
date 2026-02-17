@@ -54,6 +54,7 @@ public class TestQualityValidationTests : IAsyncLifetime
     [Endpoint("GET /healthz/live")]
     [Endpoint("GET /healthz/ready")]
     [Endpoint("GET /healthz/metrics")]
+    [Endpoint("GET /metrics")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -71,6 +72,7 @@ public class TestQualityValidationTests : IAsyncLifetime
             "/healthz/live",
             "/healthz/ready",
             "/healthz/metrics",
+            "/metrics",
 
             // FeatureServer endpoints
             "/rest/services/test/FeatureServer",

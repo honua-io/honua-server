@@ -2,65 +2,82 @@
 
 ## Getting Started
 
-* [📖 Documentation Overview](README.md)
-* [🗺️ User Journeys](user/USER_JOURNEYS.md)
+* [Documentation Overview](README.md)
+* [User Journeys](user/USER_JOURNEYS.md)
 
 ## API Documentation
 
 ### Geospatial Data APIs
-* [🌐 Protocols Overview](user/STANDARDS_APIS.md)
-* [📊 API Examples](user/API_EXAMPLES.md)
-* [🔗 Integration Patterns](user/INTEGRATION_PATTERNS.md)
-* [📋 Protocol Coverage Index](user/specifications/protocol-coverage.md)
-* [🎯 FeatureServer Coverage Matrix](user/feature-server-matrix.md)
-* [🗺️ MapServer Coverage Matrix](user/map-server-matrix.md)
+* [Protocols Overview](user/STANDARDS_APIS.md)
+* [API Examples](user/API_EXAMPLES.md)
+* [Integration Patterns](user/INTEGRATION_PATTERNS.md)
+
+### Coverage Matrices
+* [FeatureServer Coverage](user/feature-server-matrix.md)
+* [MapServer Coverage](user/map-server-matrix.md)
+* [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
+* [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
+* [OGC API Features Part 1 Core](user/specifications/ogc-api-features-part1-core.md)
+* [OGC API Features Part 2 CRS](user/specifications/ogc-api-features-part2-crs.md)
+* [OGC API Features Part 3 Filtering](user/specifications/ogc-api-features-part3-filtering.md)
+* [Geometry Service Coverage](user/specifications/geometry-service-coverage.md)
 
 ### Server Management API
-* [⚙️ Admin API Reference](user/CONTROL_PLANE_API.md)
+* [Admin API Reference](user/CONTROL_PLANE_API.md)
 
 ### Interactive API Specs
-* [🔗 Interactive Documentation](api-specs/README.md)
-* [🌍 OGC API Features](api-specs/README.md#ogc-api-features)
-* [🗺️ OGC API Tiles](api-specs/README.md#ogc-api-tiles)
-* [⚙️ Admin API](api-specs/README.md#server-management-api)
+* [Interactive Documentation](api-specs/README.md)
 
 ## User Guide
 
-* [🌟 User Guide Overview](user/README.md)
-* [🗄️ Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
-
-### Admin UI
-* [🎛️ Admin Interface](user/admin-ui/README.md)
-* [🔌 Database Connections](user/admin-ui/connections-guide.md)
-* [📄 Layer Publishing](user/admin-ui/layers-guide.md)
-* [📥 Data Import](user/admin-ui/import-guide.md)
-* [🎨 Map Styling](user/admin-ui/styles-guide.md)
-* [🗺️ Map Preview](user/admin-ui/preview-guide.md)
-* [💚 Health Monitoring](user/admin-ui/health-guide.md)
+* [User Guide Overview](user/README.md)
+* [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
+* [Admin UI](user/admin-ui.md)
 
 ## DevOps Guide
 
-* [🚀 DevOps Overview](devops/README.md)
-* [🏗️ Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md)
-* [⭐ Operational Excellence](devops/OPERATIONAL_EXCELLENCE.md)
-* [🎯 Performance Monitoring](devops/performance-monitoring.md)
-* [⚡ Caching Strategy](devops/CACHING_STRATEGY.md)
-* [🔐 Security Configuration](devops/SECURITY_CONFIGURATION.md)
+* [DevOps Overview](devops/README.md)
+* [Infrastructure & Deployment](devops/infrastructure.md)
+* [Docker Compose Sample](devops/docker-compose.md)
+* [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md)
+* [Security](devops/security.md)
+* [Monitoring & Alerting](devops/monitoring.md)
+* [Operations](devops/operations.md)
+* [Troubleshooting](devops/troubleshooting.md)
+* [Runbooks](devops/runbooks/README.md)
 
-### Troubleshooting
-* [🔧 Troubleshooting Overview](devops/TROUBLESHOOTING.md)
-* [🗄️ Database Connection Issues](devops/troubleshooting/database-connection-issues.md)
-* [⚡ Performance Problems](devops/troubleshooting/performance-troubleshooting.md)
-* [🔐 Authentication Issues](devops/troubleshooting/authentication-problems.md)
-* [📥 Import Process Issues](devops/troubleshooting/import-process-issues.md)
-* [🗺️ Spatial Query Problems](devops/troubleshooting/spatial-query-problems.md)
+## Contributor Guide
 
-### Operations
-* [📊 Performance Testing](devops/performance-testing.md)
-* [🚨 Cloud-Native Alerting](alerting/README.md)
-* [📈 Optional Prometheus + Grafana Stack](devops/optional-observability-stack.md)
-* [🔗 Connection Pool Sizing](devops/connection-pool-sizing.md)
-* [🗄️ Query Optimization](devops/query-optimization.md)
-* [💾 Backup and Restore](devops/backup-restore.md)
-* [🔄 Credential Rotation](devops/credential-rotation.md)
-* [⚡ Zero Downtime Migrations](devops/zero-downtime-migrations.md)
+* [Contributor Overview](contributor/README.md)
+* [Development Setup](contributor/development/getting-started.md)
+* [Contributing Guide](contributor/development/contributing.md)
+* [K3d + Helm Development](contributor/development/k3d-helm.md)
+
+### Architecture
+* [Architecture Overview](contributor/ARCHITECTURE.md)
+* [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md)
+* [Architecture Review Criteria](contributor/architecture-criteria.md)
+* [ADRs](contributor/adr/README.md)
+* [Honua Manifesto](contributor/HONUA_MANIFESTO.md)
+
+### Design Patterns
+* [Code Model Optimization](contributor/CODE_MODEL_OPTIMIZATION.md)
+* [GIS Crosscutting Concerns](contributor/GIS_CROSSCUTTING_CONCERNS.md)
+* [Adaptive Sampling](contributor/ADAPTIVE_SAMPLING.md)
+
+### Testing
+* [TestKit (C#)](contributor/testkit.md)
+* [Python Integration Tests](contributor/testing-python.md)
+* [JavaScript Integration Tests](contributor/testing-javascript.md)
+* [Shared Seed Data](contributor/test-seed-data.md)
+* [Benchmarks](contributor/benchmarks.md)
+* [OData Test Parity](contributor/ODATA_TEST_PARITY.md)
+* [CITE OGC Features](contributor/cite-conformance-testing.md)
+* [CITE OGC Tiles](contributor/cite-tiles-conformance-testing.md)
+
+### CI/CD
+* [CI Monitoring](contributor/CI_MONITORING.md)
+* [CI Workflows](contributor/ci-workflows.md)
+* [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
+* [CodeCov Setup](contributor/CODECOV_SETUP.md)
+* [LLM Architecture Review](contributor/development/llm-review-setup.md)

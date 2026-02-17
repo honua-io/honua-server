@@ -21,8 +21,8 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 {
     private readonly RedisJobQueue _jobQueue;
     private readonly RedisLeaderElection _leaderElection;
-    private readonly IDistributedProgressStore<EsriImportProgress> _progressStore;
-    private readonly RedisProgressStore<EsriImportRequest> _requestStore;
+    private readonly IDistributedProgressStore<GeoservicesImportProgress> _progressStore;
+    private readonly RedisProgressStore<GeoservicesImportRequest> _requestStore;
 
     public RedisImportJobManager(
         IUniversalProgressStore universalProgressStore,
@@ -32,21 +32,21 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
     {
         var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
 
-        _jobQueue = new RedisJobQueue(redis, logger, "esri:import:queue");
-        _leaderElection = new RedisLeaderElection(distributedCache, redis, logger, "esri:import:leader", instanceId);
+        _jobQueue = new RedisJobQueue(redis, logger, "geoservices:import:queue");
+        _leaderElection = new RedisLeaderElection(distributedCache, redis, logger, "geoservices:import:leader", instanceId);
 
         // Use the universal progress store for progress tracking
-        _progressStore = new DistributedProgressStoreAdapter<EsriImportProgress>(universalProgressStore);
+        _progressStore = new DistributedProgressStoreAdapter<GeoservicesImportProgress>(universalProgressStore);
 
         // Keep using Redis directly for request storage (not progress tracking)
-        _requestStore = new RedisProgressStore<EsriImportRequest>(
-            distributedCache, logger, "esri:import:request:", EsriImportJsonContext.Default.EsriImportRequest, redis);
+        _requestStore = new RedisProgressStore<GeoservicesImportRequest>(
+            distributedCache, logger, "geoservices:import:request:", GeoservicesImportJsonContext.Default.GeoservicesImportRequest, redis);
     }
 
     public IDistributedJobQueueService JobQueue => _jobQueue;
     public IDistributedLeaderElection LeaderElection => _leaderElection;
-    public IDistributedProgressStore<EsriImportProgress> ProgressStore => _progressStore;
-    public IDistributedProgressStore<EsriImportRequest> RequestStore => _requestStore;
+    public IDistributedProgressStore<GeoservicesImportProgress> ProgressStore => _progressStore;
+    public IDistributedProgressStore<GeoservicesImportRequest> RequestStore => _requestStore;
 
     public void Dispose()
     {
@@ -987,11 +987,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 }
 
 /// <summary>
-/// JSON serialization context for Esri import types.
+/// JSON serialization context for Geoservices import types.
 /// </summary>
-[JsonSerializable(typeof(EsriImportProgress))]
-[JsonSerializable(typeof(EsriImportRequest))]
+[JsonSerializable(typeof(GeoservicesImportProgress))]
+[JsonSerializable(typeof(GeoservicesImportRequest))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-internal sealed partial class EsriImportJsonContext : JsonSerializerContext
+internal sealed partial class GeoservicesImportJsonContext : JsonSerializerContext
 {
 }

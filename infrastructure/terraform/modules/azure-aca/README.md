@@ -15,7 +15,8 @@ module "honua" {
   enable_postgis = true  # Required — Honua needs PostGIS for migrations
 
   additional_env = {
-    HONUA_ADMIN_UI = "true"
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
   }
 }
 ```
@@ -64,6 +65,7 @@ module "honua" {
   log_analytics_enabled = true
 
   additional_env = {
+    HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI      = "true"
     HONUA_OBSERVABILITY = "true"
     Public__BaseUrl     = "https://gis.example.com"
@@ -118,4 +120,4 @@ See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database 
 
 1. Verify PostGIS: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version();"`
 2. Health check: `curl -f https://<app-fqdn>/healthz/ready`
-3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/SECURITY_CONFIGURATION.md)
+3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)

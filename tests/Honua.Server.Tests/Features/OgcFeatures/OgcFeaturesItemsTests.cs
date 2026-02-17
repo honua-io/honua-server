@@ -213,4 +213,96 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
         var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
         numberReturned.Should().BeLessThanOrEqualTo(1);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithIds_ReturnsRequestedFeaturesOnly()
+    {
+        var id1 = await _fixture.InsertFeatureAsync(TestLayerId, "IDs 1");
+        await _fixture.InsertFeatureAsync(TestLayerId, "IDs 2");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?ids={id1}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        features.Should().NotBeEmpty();
+        features.All(f => f.GetProperty("id").GetInt64() == id1).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithProperties_ReturnsProjectedProperties()
+    {
+        var featureId = await _fixture.InsertFeatureAsync(TestLayerId, "Projected Name");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?ids={featureId}&properties=name");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var feature = json.RootElement.GetProperty("features").EnumerateArray().Single();
+        var properties = feature.GetProperty("properties");
+
+        properties.EnumerateObject().Select(p => p.Name).Should().Equal("name");
+        properties.GetProperty("name").GetString().Should().Be("Projected Name");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithSortBy_ReturnsOrderedFeatures()
+    {
+        var alphaId = await _fixture.InsertFeatureAsync(TestLayerId, "SortBy Alpha");
+        var zuluId = await _fixture.InsertFeatureAsync(TestLayerId, "SortBy Zulu");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?ids={alphaId},{zuluId}&sortby=-name");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var names = json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("properties").GetProperty("name").GetString())
+            .ToArray();
+
+        names.Should().Equal("SortBy Zulu", "SortBy Alpha");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithInvalidIds_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?ids=abc");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithInvalidProperties_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?properties=does_not_exist");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithInvalidSortBy_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?sortby=not_a_field");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

@@ -68,4 +68,22 @@ internal static partial class GeometryServiceLog
         Level = LogLevel.Debug,
         Message = "Geometry service request parsed: operation={Operation}, geometryCount={GeometryCount}, geometryType={GeometryType}")]
     public static partial void RequestParsed(ILogger logger, string operation, int geometryCount, string? geometryType);
+
+    [LoggerMessage(
+        EventId = 5507,
+        Level = LogLevel.Information,
+        Message = "Union operation completed: {GeometryCount} geometries")]
+    public static partial void UnionOperationCompleted(ILogger logger, int geometryCount);
+
+    [LoggerMessage(
+        EventId = 5508,
+        Level = LogLevel.Information,
+        Message = "{Operation} operation completed: {GeometryCount} geometries")]
+    public static partial void BinaryOperationCompleted(ILogger logger, string operation, int geometryCount);
+
+    [LoggerMessage(
+        EventId = 5509,
+        Level = LogLevel.Information,
+        Message = "{Operation} operation completed: {GeometryCount} geometries measured")]
+    public static partial void MeasurementOperationCompleted(ILogger logger, string operation, int geometryCount);
 }

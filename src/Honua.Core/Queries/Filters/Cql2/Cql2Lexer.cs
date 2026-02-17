@@ -307,6 +307,23 @@ public sealed class Cql2Lexer
             _position++;
         }
 
+        // Handle scientific notation (e.g. 1.5e10, 2E-3, 3.0e+7)
+        if (_position < _input.Length &&
+            (_input[_position] == 'e' || _input[_position] == 'E'))
+        {
+            _position++;
+            if (_position < _input.Length &&
+                (_input[_position] == '+' || _input[_position] == '-'))
+            {
+                _position++;
+            }
+
+            while (_position < _input.Length && char.IsDigit(_input[_position]))
+            {
+                _position++;
+            }
+        }
+
         var value = _input[start.._position];
         _tokens.Add(Cql2Token.Create(Cql2TokenType.Number, value, start, _position - start));
     }

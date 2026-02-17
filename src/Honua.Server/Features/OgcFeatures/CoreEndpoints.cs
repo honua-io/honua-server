@@ -107,6 +107,13 @@ internal static class CoreEndpoints
             type: MediaTypes.Json,
             title: "Feature collections"));
 
+        // Dataset map representation
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/maps/map",
+            rel: RelationTypes.Map,
+            type: "image/png",
+            title: "Dataset map"));
+
         // Vector tilesets list
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",

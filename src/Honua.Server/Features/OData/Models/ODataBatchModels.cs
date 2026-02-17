@@ -118,7 +118,7 @@ public sealed class ODataAggregationResult
     /// OData context URL.
     /// </summary>
     [JsonPropertyName("@odata.context")]
-    public required string Context { get; init; }
+    public string? Context { get; init; }
 
     /// <summary>
     /// Aggregation result values.
@@ -154,7 +154,7 @@ public sealed class ODataExpandedResponse
     /// OData context URL.
     /// </summary>
     [JsonPropertyName("@odata.context")]
-    public required string Context { get; init; }
+    public string? Context { get; init; }
 
     /// <summary>
     /// Total count of items (when $count=true).
@@ -251,7 +251,7 @@ public sealed class ODataSearchResult
     /// OData context URL.
     /// </summary>
     [JsonPropertyName("@odata.context")]
-    public required string Context { get; init; }
+    public string? Context { get; init; }
 
     /// <summary>
     /// Total count of matching items.

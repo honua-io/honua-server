@@ -416,6 +416,30 @@ public class RasterParsingHelpersTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void TryParseSrid_SafeCurieEpsg_ReturnsSrid()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("[EPSG:3857]");
+        result.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_SafeCurieCrs84_Returns4326()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("[OGC:CRS84]");
+        result.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_UrnEpsg_ReturnsSrid()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("urn:ogc:def:crs:EPSG::32633");
+        result.Should().Be(32633);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void TryParseSrid_Crs84Uri_Returns4326()
     {
         var result = SpatialReferenceHelpers.TryParseSrid("http://www.opengis.net/def/crs/OGC/1.3/CRS84");

@@ -12,6 +12,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
@@ -223,6 +224,17 @@ internal sealed class FeatureServerQueryHandler(
                 inputSrid = layer.SpatialReference.ToSrid();
             }
 
+            if (parsedGeometry != null && inputSrid.HasValue && queryLimits.MaxBboxAreaSqKm.HasValue)
+            {
+                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, inputSrid.Value, queryLimits.MaxBboxAreaSqKm.Value);
+                if (!areaLimitResult.IsValid)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Query parameters exceed configured limits",
+                        [areaLimitResult.ErrorMessage!]);
+                }
+            }
+
             var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
             if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
             {
@@ -260,7 +272,7 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 filterExpression = parseResult.Expression;
-                if (filterExpression != null && !IsBooleanFilterExpression(filterExpression))
+                if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
                         ErrorMessages.Validation.InvalidParameter,
@@ -417,7 +429,7 @@ internal sealed class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnIdsOnly)
             {
-                var idsEffectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
+                var idsEffectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
                 var idsUseStreaming = idsEffectiveLimit > StreamingThreshold;
                 if (idsUseStreaming)
                 {
@@ -454,7 +466,7 @@ internal sealed class FeatureServerQueryHandler(
                 return await CreateCachedResultAsync(response, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
-            var effectiveLimit = query.Limit ?? queryLimits.DefaultRecordCount;
+            var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
             var useStreaming = effectiveLimit > StreamingThreshold;
 
             if (!useStreaming)
@@ -580,7 +592,9 @@ internal sealed class FeatureServerQueryHandler(
             SqlFilter = effectiveSqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,
-            Limit = queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
+            Limit = hasObjectIds
+                ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
+                : queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             OutputSrid = outputSrid,
             Distinct = queryParams.ReturnDistinctValues,
@@ -637,21 +651,178 @@ internal sealed class FeatureServerQueryHandler(
         return query;
     }
 
-    private static bool IsBooleanFilterExpression(FilterExpression expression)
+    private static ValidationResult ValidateBboxAreaLimit(
+        GeoServicesGeometry geometry,
+        int srid,
+        double maxBboxAreaSqKm)
     {
-        return expression switch
+        if (maxBboxAreaSqKm <= 0)
         {
-            BinaryExpression => true,
-            UnaryExpression => true,
-            SpatialPredicate => true,
-            SpatialDistancePredicate => true,
-            TemporalPredicate => true,
-            ArrayPredicate => true,
-            Literal literal => literal.Type == LiteralType.Boolean,
-            _ => false
-        };
+            return ValidationResult.Success();
+        }
+
+        if (!TryGetGeometryEnvelope(geometry, out var minX, out var minY, out var maxX, out var maxY))
+        {
+            return ValidationResult.Success();
+        }
+
+        var bboxAreaSqKm = CalculateBoundingBoxAreaSqKm(minX, minY, maxX, maxY, srid);
+        if (bboxAreaSqKm <= maxBboxAreaSqKm)
+        {
+            return ValidationResult.Success();
+        }
+
+        return ValidationResult.Failure(
+            $"Geometry bounding box area ({bboxAreaSqKm.ToString("F2", CultureInfo.InvariantCulture)} sq km) exceeds maximum allowed area ({maxBboxAreaSqKm.ToString("F2", CultureInfo.InvariantCulture)} sq km).");
     }
 
+    private static bool TryGetGeometryEnvelope(
+        GeoServicesGeometry geometry,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+    {
+        minX = 0;
+        minY = 0;
+        maxX = 0;
+        maxY = 0;
+        var hasCoordinates = false;
+
+        if (geometry.Xmin.HasValue && geometry.Ymin.HasValue && geometry.Xmax.HasValue && geometry.Ymax.HasValue)
+        {
+            minX = geometry.Xmin.Value;
+            minY = geometry.Ymin.Value;
+            maxX = geometry.Xmax.Value;
+            maxY = geometry.Ymax.Value;
+            hasCoordinates = true;
+        }
+
+        hasCoordinates = ExtendEnvelope(geometry.X, geometry.Y, ref minX, ref minY, ref maxX, ref maxY, hasCoordinates) || hasCoordinates;
+
+        if (geometry.Points != null)
+        {
+            foreach (var point in geometry.Points)
+            {
+                if (point is not { Length: >= 2 })
+                {
+                    continue;
+                }
+
+                hasCoordinates = ExtendEnvelope(point[0], point[1], ref minX, ref minY, ref maxX, ref maxY, hasCoordinates) || hasCoordinates;
+            }
+        }
+
+        if (geometry.Paths != null)
+        {
+            foreach (var path in geometry.Paths)
+            {
+                if (path == null)
+                {
+                    continue;
+                }
+
+                foreach (var coordinate in path)
+                {
+                    if (coordinate is not { Length: >= 2 })
+                    {
+                        continue;
+                    }
+
+                    hasCoordinates = ExtendEnvelope(coordinate[0], coordinate[1], ref minX, ref minY, ref maxX, ref maxY, hasCoordinates) || hasCoordinates;
+                }
+            }
+        }
+
+        if (geometry.Rings != null)
+        {
+            foreach (var ring in geometry.Rings)
+            {
+                if (ring == null)
+                {
+                    continue;
+                }
+
+                foreach (var coordinate in ring)
+                {
+                    if (coordinate is not { Length: >= 2 })
+                    {
+                        continue;
+                    }
+
+                    hasCoordinates = ExtendEnvelope(coordinate[0], coordinate[1], ref minX, ref minY, ref maxX, ref maxY, hasCoordinates) || hasCoordinates;
+                }
+            }
+        }
+
+        return hasCoordinates;
+    }
+
+    private static bool ExtendEnvelope(
+        double? x,
+        double? y,
+        ref double minX,
+        ref double minY,
+        ref double maxX,
+        ref double maxY,
+        bool hasCoordinates)
+    {
+        if (!x.HasValue || !y.HasValue || !double.IsFinite(x.Value) || !double.IsFinite(y.Value))
+        {
+            return false;
+        }
+
+        if (!hasCoordinates)
+        {
+            minX = x.Value;
+            maxX = x.Value;
+            minY = y.Value;
+            maxY = y.Value;
+            return true;
+        }
+
+        minX = Math.Min(minX, x.Value);
+        minY = Math.Min(minY, y.Value);
+        maxX = Math.Max(maxX, x.Value);
+        maxY = Math.Max(maxY, y.Value);
+        return true;
+    }
+
+    private static double CalculateBoundingBoxAreaSqKm(double minX, double minY, double maxX, double maxY, int srid)
+    {
+        if (IsGeographicSrid(srid))
+        {
+            return CalculateGeographicAreaSqKm(minX, minY, maxX, maxY);
+        }
+
+        var width = Math.Abs(maxX - minX);
+        var height = Math.Abs(maxY - minY);
+        return width * height / 1_000_000.0;
+    }
+
+    private static double CalculateGeographicAreaSqKm(double minLon, double minLat, double maxLon, double maxLat)
+    {
+        const double earthRadiusKm = 6371.0088;
+
+        var normalizedMinLat = Math.Clamp(minLat, -90.0, 90.0);
+        var normalizedMaxLat = Math.Clamp(maxLat, -90.0, 90.0);
+        var minLatRad = DegreesToRadians(Math.Min(normalizedMinLat, normalizedMaxLat));
+        var maxLatRad = DegreesToRadians(Math.Max(normalizedMinLat, normalizedMaxLat));
+
+        var longitudeSpan = maxLon >= minLon
+            ? maxLon - minLon
+            : (360.0 - minLon) + maxLon;
+        longitudeSpan = Math.Clamp(Math.Abs(longitudeSpan), 0.0, 360.0);
+        var longitudeSpanRad = DegreesToRadians(longitudeSpan);
+
+        var sphericalBand = Math.Abs(Math.Sin(maxLatRad) - Math.Sin(minLatRad));
+        return earthRadiusKm * earthRadiusKm * sphericalBand * longitudeSpanRad;
+    }
+
+    private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
+
+    private static bool IsGeographicSrid(int srid)
+        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
 
     private static bool TryValidateUnsupportedParameters(QueryParameters queryParams, out string? errorMessage)
     {

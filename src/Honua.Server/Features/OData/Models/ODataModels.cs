@@ -17,7 +17,7 @@ public sealed class ServiceDocument
     /// OData context URL
     /// </summary>
     [JsonPropertyName("@odata.context")]
-    public required string Context { get; init; }
+    public string? Context { get; init; }
 
     /// <summary>
     /// Available entity sets
@@ -36,6 +36,12 @@ public sealed class EntitySet
     /// </summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }
+
+    /// <summary>
+    /// Entity set kind discriminator.
+    /// </summary>
+    [JsonPropertyName("kind")]
+    public string Kind { get; init; } = "EntitySet";
 
     /// <summary>
     /// Entity set URL
@@ -93,7 +99,7 @@ public sealed class ODataResponse : ICollectionResponse<object>
     /// OData context URL
     /// </summary>
     [JsonPropertyName("@odata.context")]
-    public required string Context { get; init; }
+    public string? Context { get; init; }
 
     /// <summary>
     /// Total count of items (when $count=true)
@@ -218,7 +224,7 @@ public sealed class ODataFeatureResponse
     /// OData context URL
     /// </summary>
     [JsonPropertyName("@odata.context")]
-    public required string Context { get; init; }
+    public string? Context { get; init; }
 
     /// <summary>
     /// Feature Object ID

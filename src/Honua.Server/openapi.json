@@ -668,6 +668,62 @@
           }
         }
       },
+      "patch": {
+        "summary": "Partially update an existing feature",
+        "description": "Apply a JSON Merge Patch document to update feature properties and/or geometry",
+        "tags": [
+          "OGC API Features",
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "featureId",
+            "in": "path",
+            "required": true,
+            "description": "Feature identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feature updated",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoJsonFeature"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Feature not found"
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a feature from a collection",
         "description": "Remove a feature from the specified collection",

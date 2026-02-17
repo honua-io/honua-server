@@ -4,7 +4,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @implements IAsyncDisposable
 
-@inject IEsriImportClient EsriImportClient
+@inject IGeoservicesImportClient GeoservicesImportClient
 @inject IFileImportClient FileImportClient
 @inject ISnackbar Snackbar
 
@@ -422,7 +422,7 @@
                                                data-testid="@($"import-job-cancel-{context.JobId}")" />
                             </MudTooltip>
                         }
-                        else if (context.Status is EsriImportStatus.Failed or EsriImportStatus.Cancelled)
+                        else if (context.Status is GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled)
                         {
                             <MudTooltip Text="Retry">
                                 <MudIconButton Icon="@Icons.Material.Filled.Replay"
@@ -448,12 +448,12 @@
     private static readonly Regex _tableNameCleanup = new("[^A-Za-z0-9_]+", RegexOptions.CultureInvariant);
 
     private readonly List<LayerSelection> _layers = new();
-    private readonly Dictionary<string, EsriImportProgress> _jobProgress = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, GeoservicesImportProgress> _jobProgress = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _jobActionsInProgress = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _pollingCts;
     private Task? _pollingTask;
 
-    private EsriDiscoverResponse? _discoveryResponse;
+    private GeoservicesDiscoverResponse? _discoveryResponse;
     private string? _serviceUrl;
     private string? _serviceUrlError;
     private string? _discoveryError;
@@ -486,7 +486,7 @@
         SelectedLayerCount > 0 &&
         string.IsNullOrWhiteSpace(_selectionError);
 
-    private IReadOnlyList<EsriImportProgress> JobList => _jobProgress
+    private IReadOnlyList<GeoservicesImportProgress> JobList => _jobProgress
         .Values
         .OrderByDescending(job => job.StartedAt)
         .ToArray();
@@ -515,7 +515,7 @@
         _jobsError = null;
         try
         {
-            var result = await EsriImportClient.ListJobsAsync();
+            var result = await GeoservicesImportClient.ListJobsAsync();
             if (!result.Success || result.Data is null)
             {
                 _jobsError = result.Message ?? "Failed to load import jobs.";
@@ -565,13 +565,13 @@
 
         try
         {
-            var request = new EsriDiscoverRequest
+            var request = new GeoservicesDiscoverRequest
             {
                 ServiceUrl = _serviceUrl?.Trim(),
                 TimeoutSeconds = 30
             };
 
-            var result = await EsriImportClient.DiscoverAsync(request);
+            var result = await GeoservicesImportClient.DiscoverAsync(request);
             if (!result.Success || result.Data is null)
             {
                 _discoveryError = result.Message ?? "Failed to discover service.";
@@ -747,7 +747,7 @@
     {
         layer.StartError = null;
 
-        var request = new EsriStartImportRequest
+        var request = new GeoservicesStartImportRequest
         {
             ServiceUrl = serviceUrl,
             LayerId = layer.Layer.Id,
@@ -759,7 +759,7 @@
         await QueueImportAsync(request, layer);
     }
 
-    private async Task QueueImportAsync(EsriStartImportRequest request, LayerSelection? layer = null)
+    private async Task QueueImportAsync(GeoservicesStartImportRequest request, LayerSelection? layer = null)
     {
         if (string.IsNullOrWhiteSpace(request.ServiceUrl))
         {
@@ -785,7 +785,7 @@
             return;
         }
 
-        var result = await EsriImportClient.StartImportAsync(request);
+        var result = await GeoservicesImportClient.StartImportAsync(request);
         if (!result.Success || result.Data is null)
         {
             var message = result.Message ?? "Failed to start import.";
@@ -804,14 +804,14 @@
 
     private async Task RefreshJobAsync(string jobId, string? serviceUrl = null, int? layerId = null, string? tableName = null)
     {
-        var result = await EsriImportClient.GetJobStatusAsync(jobId);
+        var result = await GeoservicesImportClient.GetJobStatusAsync(jobId);
         if (!result.Success || result.Data is null)
         {
             _jobsError = result.Message ?? "Failed to load import job status.";
-            _jobProgress[jobId] = new EsriImportProgress
+            _jobProgress[jobId] = new GeoservicesImportProgress
             {
                 JobId = jobId,
-                Status = EsriImportStatus.Queued,
+                Status = GeoservicesImportStatus.Queued,
                 SourceServiceUrl = serviceUrl ?? string.Empty,
                 SourceLayerId = layerId ?? 0,
                 TableName = tableName ?? string.Empty,
@@ -823,7 +823,7 @@
         _jobProgress[jobId] = result.Data;
     }
 
-    private async Task CancelJobAsync(EsriImportProgress job)
+    private async Task CancelJobAsync(GeoservicesImportProgress job)
     {
         if (!BeginJobAction(job.JobId))
         {
@@ -832,7 +832,7 @@
 
         try
         {
-            var result = await EsriImportClient.CancelJobAsync(job.JobId);
+            var result = await GeoservicesImportClient.CancelJobAsync(job.JobId);
             if (!result.Success)
             {
                 Snackbar.Add(result.Message ?? "Failed to cancel import job.", Severity.Error);
@@ -847,7 +847,7 @@
         }
     }
 
-    private async Task RetryJobAsync(EsriImportProgress job)
+    private async Task RetryJobAsync(GeoservicesImportProgress job)
     {
         if (string.IsNullOrWhiteSpace(job.SourceServiceUrl))
         {
@@ -862,7 +862,7 @@
 
         try
         {
-            var request = new EsriStartImportRequest
+            var request = new GeoservicesStartImportRequest
             {
                 ServiceUrl = job.SourceServiceUrl,
                 LayerId = job.SourceLayerId,
@@ -1023,7 +1023,7 @@
         return sanitized.ToLowerInvariant();
     }
 
-    private static string DefaultTableName(EsriLayerSummary layer)
+    private static string DefaultTableName(GeoservicesLayerSummary layer)
     {
         var candidate = string.IsNullOrWhiteSpace(layer.Name) ? $"layer_{layer.Id}" : layer.Name;
         var sanitized = _tableNameCleanup.Replace(candidate, "_").Trim('_');
@@ -1090,7 +1090,7 @@
 
         foreach (var jobId in activeJobIds)
         {
-            var result = await EsriImportClient.GetJobStatusAsync(jobId, cancellationToken);
+            var result = await GeoservicesImportClient.GetJobStatusAsync(jobId, cancellationToken);
             if (result.Success && result.Data is not null)
             {
                 _jobProgress[jobId] = result.Data;
@@ -1100,7 +1100,7 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private static bool TryGetProgressPercent(EsriImportProgress progress, out int percent)
+    private static bool TryGetProgressPercent(GeoservicesImportProgress progress, out int percent)
     {
         percent = 0;
 
@@ -1119,7 +1119,7 @@
         return false;
     }
 
-    private static string FormatProgress(EsriImportProgress progress)
+    private static string FormatProgress(GeoservicesImportProgress progress)
     {
         if (progress.EstimatedTotalFeatures is > 0)
         {
@@ -1143,23 +1143,23 @@
     private static string FormatTimestamp(DateTimeOffset? timestamp)
         => timestamp.HasValue ? timestamp.Value.ToLocalTime().ToString("g") : "-";
 
-    private static string GetLayerDisplayName(EsriImportProgress progress)
+    private static string GetLayerDisplayName(GeoservicesImportProgress progress)
         => progress.SourceLayerName ?? $"Layer {progress.SourceLayerId}";
 
-    private static string FormatStatus(EsriImportStatus status)
+    private static string FormatStatus(GeoservicesImportStatus status)
         => status.ToString();
 
-    private static Color GetStatusColor(EsriImportStatus status)
+    private static Color GetStatusColor(GeoservicesImportStatus status)
         => status switch
         {
-            EsriImportStatus.Completed => Color.Success,
-            EsriImportStatus.Failed => Color.Error,
-            EsriImportStatus.Cancelled => Color.Warning,
+            GeoservicesImportStatus.Completed => Color.Success,
+            GeoservicesImportStatus.Failed => Color.Error,
+            GeoservicesImportStatus.Cancelled => Color.Warning,
             _ => Color.Info
         };
 
-    private static bool IsActiveStatus(EsriImportStatus status)
-        => status is not (EsriImportStatus.Completed or EsriImportStatus.Failed or EsriImportStatus.Cancelled);
+    private static bool IsActiveStatus(GeoservicesImportStatus status)
+        => status is not (GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled);
 
     private bool BeginJobAction(string jobId)
         => _jobActionsInProgress.Add(jobId);
@@ -1209,13 +1209,13 @@
 
     private sealed class LayerSelection
     {
-        public LayerSelection(EsriLayerSummary layer, string tableName)
+        public LayerSelection(GeoservicesLayerSummary layer, string tableName)
         {
             Layer = layer;
             TableName = tableName;
         }
 
-        public EsriLayerSummary Layer { get; }
+        public GeoservicesLayerSummary Layer { get; }
         public bool Selected { get; set; }
         public string TableName { get; set; }
         public string? StartError { get; set; }

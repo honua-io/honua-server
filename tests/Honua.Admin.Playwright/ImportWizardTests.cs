@@ -117,7 +117,7 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
 
             var jobCalls = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/start", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/start", async route =>
             {
                 const string jobId = "job-success";
                 jobCalls[jobId] = 0;
@@ -126,12 +126,12 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
                 {
                     jobId,
                     message = "Import queued",
-                    statusUrl = $"/api/v1/admin/import/esri/jobs/{jobId}",
-                    cancelUrl = $"/api/v1/admin/import/esri/jobs/{jobId}/cancel"
+                    statusUrl = $"/api/v1/admin/import/geoservices/jobs/{jobId}",
+                    cancelUrl = $"/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"
                 }, status: 202);
             });
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/jobs/*", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/jobs/*", async route =>
             {
                 var jobId = ExtractJobId(route.Request.Url);
                 if (!jobCalls.ContainsKey(jobId))
@@ -184,7 +184,7 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
 
             var startCount = 0;
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/start", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/start", async route =>
             {
                 startCount += 1;
                 var jobId = startCount == 1 ? "job-failed" : "job-retry";
@@ -193,12 +193,12 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
                 {
                     jobId,
                     message = "Import queued",
-                    statusUrl = $"/api/v1/admin/import/esri/jobs/{jobId}",
-                    cancelUrl = $"/api/v1/admin/import/esri/jobs/{jobId}/cancel"
+                    statusUrl = $"/api/v1/admin/import/geoservices/jobs/{jobId}",
+                    cancelUrl = $"/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"
                 }, status: 202);
             });
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/jobs/*", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/jobs/*", async route =>
             {
                 var jobId = ExtractJobId(route.Request.Url);
                 var status = jobId == "job-failed" ? 7 : 6;
@@ -251,19 +251,19 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
 
             var jobStatus = 4; // InsertingFeatures
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/start", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/start", async route =>
             {
                 const string jobId = "job-cancel";
                 await FulfillJsonAsync(route, new
                 {
                     jobId,
                     message = "Import queued",
-                    statusUrl = $"/api/v1/admin/import/esri/jobs/{jobId}",
-                    cancelUrl = $"/api/v1/admin/import/esri/jobs/{jobId}/cancel"
+                    statusUrl = $"/api/v1/admin/import/geoservices/jobs/{jobId}",
+                    cancelUrl = $"/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"
                 }, status: 202);
             });
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/jobs/*/cancel", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/jobs/*/cancel", async route =>
             {
                 jobStatus = 8; // Cancelled
                 await FulfillJsonAsync(route, new
@@ -273,7 +273,7 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            await page.RouteAsync("**/api/v1/admin/import/esri/jobs/*", async route =>
+            await page.RouteAsync("**/api/v1/admin/import/geoservices/jobs/*", async route =>
             {
                 await FulfillJsonAsync(route, BuildJobPayload("job-cancel", jobStatus, 10, "dams"));
             });
@@ -368,7 +368,7 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
 
     private static Task StubListJobsAsync(IPage page, IEnumerable<object> jobs)
     {
-        return page.RouteAsync("**/api/v1/admin/import/esri/jobs", async route =>
+        return page.RouteAsync("**/api/v1/admin/import/geoservices/jobs", async route =>
         {
             await FulfillJsonAsync(route, new
             {
@@ -379,7 +379,7 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
 
     private static Task StubDiscoverAsync(IPage page, IEnumerable<LayerStub> layers)
     {
-        return page.RouteAsync("**/api/v1/admin/import/esri/discover", async route =>
+        return page.RouteAsync("**/api/v1/admin/import/geoservices/discover", async route =>
         {
             await FulfillJsonAsync(route, new
             {

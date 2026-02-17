@@ -82,9 +82,24 @@ internal sealed class ODataQuerySearchService
         int? top = null,
         int? skip = null,
         bool? count = null,
+        string? filter = null,
+        string? orderby = null,
+        string? select = null,
+        string? expand = null,
         CancellationToken cancellationToken = default)
     {
-        return await _searchService.HandleSearchAsync(layerId, searchExpression, baseUrl, top, skip, count, cancellationToken);
+        return await _searchService.HandleSearchAsync(
+            layerId,
+            searchExpression,
+            baseUrl,
+            top,
+            skip,
+            count,
+            filter,
+            orderby,
+            select,
+            expand,
+            cancellationToken);
     }
 
     /// <summary>

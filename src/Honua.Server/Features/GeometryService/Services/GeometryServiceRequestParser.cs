@@ -158,6 +158,32 @@ internal static class GeometryServiceRequestParser
     }
 
     /// <summary>
+    /// Parses a single geometry object from request parameters.
+    /// </summary>
+    public static (string? GeometryJson, string? Error) ParseSingleGeometry(string? raw, string parameterName = "geometry")
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return (null, $"Parameter '{parameterName}' is required.");
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return (null, $"Parameter '{parameterName}' must be a JSON object.");
+            }
+
+            return (doc.RootElement.GetRawText(), null);
+        }
+        catch (JsonException)
+        {
+            return (null, $"Parameter '{parameterName}' contains invalid JSON.");
+        }
+    }
+
+    /// <summary>
     /// Parses a spatial reference: plain integer "4326" or JSON object {"wkid":4326}.
     /// </summary>
     public static (int Srid, string? Error) ParseSpatialReference(string? raw)

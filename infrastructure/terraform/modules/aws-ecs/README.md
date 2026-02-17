@@ -14,7 +14,8 @@ module "honua" {
   enable_postgis = true  # Required — Honua needs PostGIS for migrations
 
   additional_env = {
-    HONUA_ADMIN_UI = "true"
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
   }
 }
 ```
@@ -67,6 +68,7 @@ module "honua" {
   waf_web_acl_arn = var.waf_acl_arn  # Optional WAFv2
 
   additional_env = {
+    HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
     HONUA_OBSERVABILITY  = "true"
     HONUA_OPENTELEMETRY  = "true"
@@ -129,4 +131,4 @@ See `outputs.tf` for ALB URL, RDS endpoint, secrets ARNs, and connection strings
 
 1. Verify PostGIS: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version();"`
 2. Health check: `curl -f https://<alb-url>/healthz/ready`
-3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/SECURITY_CONFIGURATION.md)
+3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)

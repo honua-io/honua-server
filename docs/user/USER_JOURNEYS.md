@@ -84,10 +84,10 @@ new maplibregl.Map({
     sources: {
       honua: {
         type: 'vector',
-        tiles: ['http://<host>/tiles/parcels/{z}/{x}/{y}.mvt']
+        tiles: ['http://<host>/tiles/0/{z}/{x}/{y}.mvt']
       }
     },
-    layers: [{ id: 'parcels', type: 'fill', source: 'honua', 'source-layer': 'parcels' }]
+    layers: [{ id: 'layer', type: 'fill', source: 'honua', 'source-layer': 'layer' }]
   }
 });
 ```
@@ -116,5 +116,5 @@ new maplibregl.Map({
 
 **Next Steps:**
 - [Deployment Scenarios](../devops/DEPLOYMENT_SCENARIOS.md)
-- [Security Configuration](../devops/SECURITY_CONFIGURATION.md)
-- [Performance Monitoring](../devops/performance-monitoring.md)
+- [Security](../devops/security.md)
+- [Monitoring](../devops/monitoring.md)

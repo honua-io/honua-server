@@ -206,6 +206,24 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         readyResponse.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /metrics")]
+    public async Task PrometheusMetricsEndpoint_ReturnsPrometheusTextExposition()
+    {
+        // Act
+        var response = await _client.GetAsync("/metrics");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        mediaType.Should().NotBeNull();
+        mediaType.Should().BeOneOf("text/plain", "application/openmetrics-text");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("#");
+    }
+
 }
 
 /// <summary>

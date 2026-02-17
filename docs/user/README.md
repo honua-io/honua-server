@@ -15,7 +15,7 @@ This section is for people **using Honua in production** — API consumers, GIS 
 - **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices
 - **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri FeatureServer + MapServer compatibility details
 - **[MapServer Coverage Matrix](map-server-matrix.md)** - Esri MapServer compatibility details
-- **[Protocol Coverage Index](specifications/protocol-coverage.md)** - Standards coverage overview
+- **[Protocols Overview](STANDARDS_APIS.md)** - Protocol selection and coverage links
 
 ## Admin UI
-- **[Admin UI Documentation](admin-ui/README.md)** - Web interface guides for connections, layers, and data management
+- **[Admin UI](admin-ui.md)** - Web interface for connections, layers, imports, styling, and preview

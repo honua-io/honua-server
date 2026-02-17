@@ -157,6 +157,7 @@ public sealed class EndpointRegistryDriftTests : IDisposable
     {
         return path.Equals("/csp-violation-report", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/openapi.json", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/healthz/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) ||

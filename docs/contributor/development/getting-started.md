@@ -171,8 +171,8 @@ Once the server is running:
 | `http://localhost:8080/rest/services` | FeatureServer service catalog |
 | `http://localhost:8080/ogc/features/collections` | OGC API collections |
 | `http://localhost:8080/odata` | OData service root |
-| `http://localhost:8080/openapi.json` | OpenAPI spec |
-| `http://localhost:8080/admin` | Admin UI (requires `HONUA_ADMIN_UI=true`) |
+| `http://localhost:8080/openapi.json` | OGC API Features OpenAPI spec |
+| `http://localhost:8080/admin` | Admin UI (requires `HONUA_SERVE_ADMIN_UI=true`, default on) |
 
 ## Debugging
 
@@ -181,8 +181,8 @@ Once the server is running:
 export Logging__LogLevel__Default=Debug
 export Logging__LogLevel__Honua=Trace
 
-# EF Core query logging
-export Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command=Information
+# Npgsql command logging
+export Logging__LogLevel__Npgsql=Information
 
 # Application logs (Docker)
 docker logs honua-honua-1 -f
@@ -204,7 +204,6 @@ dotnet nuget locals all --clear && dotnet restore --force
 
 ## Next steps
 
-- **[Contributing guide](contributing.md)** — code style, testing requirements, PR process
-- **[Architecture overview](../ARCHITECTURE.md)** — system design and component interaction
-- **[ADRs](../adr/README.md)** — rationale behind key design decisions
-- **[API examples](../../user/API_EXAMPLES.md)** — request/response examples for all protocols
+- [Contributing](contributing.md) — code style, architecture rules, PR process
+- [Architecture](../ARCHITECTURE.md) — system design and component interaction
+- [ADRs](../adr/README.md) — rationale behind key design decisions

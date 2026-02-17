@@ -194,7 +194,7 @@ public sealed class AccessibilityAndMobileTests : IClassFixture<PlaywrightFixtur
             // Set tablet viewport
             await page.SetViewportSizeAsync(768, 1024);
 
-            await page.RouteAsync("**/import/esri/jobs", async route =>
+            await page.RouteAsync("**/import/geoservices/jobs", async route =>
             {
                 await FulfillJsonAsync(route, Array.Empty<object>());
             });

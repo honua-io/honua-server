@@ -2,7 +2,7 @@
 
 The Server Management API powers the Honua Admin UI and supports headless automation (connections, publishing, imports, and operations). It is separate from the geospatial data access APIs.
 
-**Scope**: High-level usage and minimal examples. For the full contract, use the OpenAPI spec exposed by your deployment.
+**Scope**: High-level usage and minimal examples. For endpoint discovery and config metadata, use `/api/v1/admin/config`.
 
 ## **When to Use the Management API**
 
@@ -22,7 +22,8 @@ The Server Management API powers the Honua Admin UI and supports headless automa
 | Endpoint | Purpose |
 |----------|---------|
 | `/api/v1/admin` | Admin API root |
-| `/openapi.json` | OpenAPI schema |
+| `/api/v1/admin/config` | Runtime configuration and env var reference |
+| `/openapi.json` | OGC API Features OpenAPI schema |
 | `/healthz/live` | Liveness check |
 | `/healthz/ready` | Readiness check |
 
@@ -50,7 +51,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Exact endpoints and payloads vary by build. Always verify against `/openapi.json`.
+**Note**: Exact endpoints and payloads vary by build. Use `/api/v1/admin/config` for runtime validation, and `docs/api-specs/admin-api.json` for the current admin contract snapshot in this repo.
 
 ---
 
@@ -64,7 +65,7 @@ Content-Type: application/json
   "name": "primary-db",
   "host": "localhost",
   "port": 5432,
-  "database": "honua",
+  "databaseName": "honua",
   "username": "postgres",
   "password": "secure-password",
   "sslMode": "Require"
@@ -80,8 +81,9 @@ POST /api/v1/admin/connections/{connectionId}/layers
 Content-Type: application/json
 
 {
-  "name": "city-parcels",
-  "tableName": "parcels",
+  "schema": "public",
+  "table": "parcels",
+  "layerName": "city-parcels",
   "geometryColumn": "geom",
   "srid": 4326
 }
@@ -107,7 +109,7 @@ PUT /api/v1/admin/metadata/layers/{layerId}/style
 Content-Type: application/json
 
 {
-  "style": { "version": 8, "sources": {}, "layers": [] }
+  "mapLibreStyle": { "version": 8, "sources": {}, "layers": [] }
 }
 ```
 
@@ -120,12 +122,10 @@ GET /healthz/ready
 GET /healthz/live
 ```
 
-Use readiness for load balancer checks and liveness for container restarts.
-
 ---
 
 ## **Related Documentation**
 
-- [Admin UI Guide](admin-ui/README.md)
+- [Admin UI](admin-ui.md)
 - [Geospatial API Examples](API_EXAMPLES.md)
-- [Security Configuration](../devops/SECURITY_CONFIGURATION.md)
+- [Security](../devops/security.md)

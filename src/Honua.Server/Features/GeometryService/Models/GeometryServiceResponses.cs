@@ -25,6 +25,30 @@ public sealed class GeometryServiceResponse
 }
 
 /// <summary>
+/// Response payload for area operation.
+/// </summary>
+public sealed class GeometryServiceAreaResponse
+{
+    /// <summary>
+    /// Computed area values for the input geometries.
+    /// </summary>
+    [JsonPropertyName("areas")]
+    public double[]? Areas { get; init; }
+}
+
+/// <summary>
+/// Response payload for length operation.
+/// </summary>
+public sealed class GeometryServiceLengthResponse
+{
+    /// <summary>
+    /// Computed length values for the input geometries.
+    /// </summary>
+    [JsonPropertyName("lengths")]
+    public double[]? Lengths { get; init; }
+}
+
+/// <summary>
 /// Error response for geometry service operations.
 /// </summary>
 public sealed class GeometryServiceErrorResponse

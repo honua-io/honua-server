@@ -1,6 +1,6 @@
 # OData v4 Coverage Matrix
 
-This page summarizes OData v4 coverage in Honua Server, focusing on operations and query options. It complements the protocol testing map in ../../contributor/ODATA_TEST_PARITY.md.
+This page summarizes OData v4 coverage in Honua Server, focusing on operations and query options.
 
 Legend:
 - Implemented: endpoint exists and behavior is supported.
@@ -16,11 +16,11 @@ Legend:
 | Layers collection | GET | `/odata/Layers` | `$filter`, `$select`, `$top`, `$skip`, `$count`, `$format` | Collection of layers. |
 | Layers count | GET | `/odata/Layers/$count` | `$filter`, `$format` | Plain text count. |
 | Single layer | GET | `/odata/Layers({layerId})` | `$select`, `$format` | Layer metadata. |
-| Features collection (all layers) | GET | `/odata/Features` | `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$count`, `$expand`, `$apply`, `$search`, `$format` | Requires a `LayerId` filter when layer is not in the path. |
+| Features collection (all layers) | GET | `/odata/Features` | `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$skiptoken`, `$count`, `$expand`, `$compute`, `$apply`, `$search`, `$format` | Requires a `LayerId` filter when layer is not in the path. |
 | Features count (all layers) | GET | `/odata/Features/$count` | `$filter`, `$format` | Requires a `LayerId` filter when layer is not in the path. |
-| Features for layer | GET | `/odata/Layers({layerId})/Features` | `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$count`, `$expand`, `$apply`, `$search`, `$format` | Canonical layer-scoped features. |
+| Features for layer | GET | `/odata/Layers({layerId})/Features` | `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$skiptoken`, `$count`, `$expand`, `$compute`, `$apply`, `$search`, `$format` | Canonical layer-scoped features. |
 | Features count for layer | GET | `/odata/Layers({layerId})/Features/$count` | `$filter`, `$format` | Layer-scoped count. |
-| Legacy features for layer | GET | `/odata/Features({layerId})` | `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$count`, `$expand`, `$apply`, `$search`, `$format` | Legacy layer-scoped route. |
+| Legacy features for layer | GET | `/odata/Features({layerId})` | `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$skiptoken`, `$count`, `$expand`, `$compute`, `$apply`, `$search`, `$format` | Legacy layer-scoped route. |
 | Legacy features count | GET | `/odata/Features({layerId})/$count` | `$filter`, `$format` | Legacy layer-scoped count. |
 | Single feature (canonical) | GET | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | `$select`, `$format` | Entity key is `(LayerId, ObjectId)`. |
 | Single feature (layer route) | GET | `/odata/Layers({layerId})/Features({objectId})` | `$select`, `$format` | Alternative key syntax. |
@@ -33,7 +33,9 @@ Legend:
 | Delete feature | DELETE | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | None | Delete by key. |
 | Delete feature (layer) | DELETE | `/odata/Layers({layerId})/Features({objectId})` | None | Delete by key. |
 | Delete feature (legacy) | DELETE | `/odata/Features({layerId},{objectId})` | None | Legacy key syntax. |
-| Batch operations | POST | `/odata/$batch` | None | JSON batch format; supports atomicity groups. |
+| Feature reference | GET | `/odata/Features(LayerId={layerId},ObjectId={objectId})/$ref` | None | Canonical entity reference (`@odata.id`). |
+| Feature value | GET | `/odata/Features(LayerId={layerId},ObjectId={objectId})/$value` | `$format` | Raw JSON value without OData envelope. |
+| Batch operations | POST | `/odata/$batch` | None | JSON and multipart/mixed batch formats; supports atomicity groups. |
 | Aggregation (legacy) | GET | `/odata/Features({layerId})/$apply` | `$apply`, `$filter` | Supports aggregate/groupby/filter/compute (see below). |
 | Search (legacy) | GET | `/odata/Features({layerId})/$search` | `$search`, `$top`, `$skip`, `$count` | Full-text search. |
 
@@ -45,8 +47,10 @@ Legend:
 | `$select` | Implemented | Field selection for Layers and Features; `*` returns all fields. |
 | `$orderby` | Partial | Simple field names with optional `asc`/`desc`; no expressions or functions. |
 | `$top` / `$skip` | Implemented | Validated and normalized by server limits. |
+| `$skiptoken` | Implemented | Cursor-based pagination; mutually exclusive with `$skip`. |
 | `$count` | Implemented | `@odata.count` in payload; `/.../$count` endpoints return text. |
 | `$expand` | Partial | Supports comma-separated relationship names only; no nested expand options. |
+| `$compute` | Partial | Arithmetic expressions (`field mul 2 as Alias`); cannot be combined with `$apply` or `$search`. |
 | `$search` | Partial | Full-text search across string fields; supports AND/OR/NOT and quoted phrases. |
 | `$apply` | Partial | `aggregate`, `groupby`, `filter`, and `compute` (simple arithmetic) are supported. |
 | `$format` | Partial | Only `json` and `application/json` are accepted. |
@@ -110,7 +114,8 @@ geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000
 
 ## Unsupported or not implemented
 
-- `$compute` query option (separate from `$apply` compute) is not supported.
-- `$skiptoken`, `$deltatoken`, `$value`, and `$ref` endpoints are not supported.
+- `$deltatoken` and delta tracking are not supported.
 - `PUT` updates are not supported (PATCH only).
-- Multipart/mixed batch payloads are not supported (JSON batch only).
+- `$levels` recursive expansion is not supported.
+- `has`, `in`, `any`, `all` filter operators are not supported.
+- `cast`, `isof` type functions are not supported.

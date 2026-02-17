@@ -24,9 +24,16 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     /// <inheritdoc/>
     public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
     {
+        var effectiveResultRecordCount = queryParams.ResultRecordCount;
+        if (!effectiveResultRecordCount.HasValue && queryParams.ObjectIds is { Length: > 0 })
+        {
+            // ObjectIds queries should not be truncated by the default record-count limit.
+            effectiveResultRecordCount = queryParams.ObjectIds.Length;
+        }
+
         var paginationResult = _commonQueryValidator.ValidateAndNormalizePagination(
             queryParams.ResultOffset,
-            queryParams.ResultRecordCount,
+            effectiveResultRecordCount,
             _featureQueryPagination);
         if (!paginationResult.IsValid)
         {

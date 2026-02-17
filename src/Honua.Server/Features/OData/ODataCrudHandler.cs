@@ -100,11 +100,14 @@ internal sealed class ODataCrudHandler(
                 result = result with { Data = payload };
             }
 
-            payload["@odata.context"] = ODataUtilityService.BuildContextUrl(
-                baseUrl,
-                "Features",
-                isSingle: true,
-                select: select);
+            if (ODataUtilityService.ShouldIncludeContext(context.Request, format))
+            {
+                payload["@odata.context"] = ODataUtilityService.BuildContextUrl(
+                    baseUrl,
+                    "Features",
+                    isSingle: true,
+                    select: select);
+            }
 
             HonuaTelemetry.SetSuccess(activity);
         }
@@ -281,10 +284,13 @@ internal sealed class ODataCrudHandler(
                     createdPayload["@odata.etag"] = result.ETag;
                 }
 
-                createdPayload["@odata.context"] = ODataUtilityService.BuildContextUrl(
-                    baseUrl,
-                    "Features",
-                    isSingle: true);
+                if (ODataUtilityService.ShouldIncludeContext(context.Request, format: null))
+                {
+                    createdPayload["@odata.context"] = ODataUtilityService.BuildContextUrl(
+                        baseUrl,
+                        "Features",
+                        isSingle: true);
+                }
             }
 
             if (preferMinimal)
@@ -378,10 +384,13 @@ internal sealed class ODataCrudHandler(
                     updatedPayload["@odata.etag"] = result.ETag;
                 }
 
-                updatedPayload["@odata.context"] = ODataUtilityService.BuildContextUrl(
-                    baseUrl,
-                    "Features",
-                    isSingle: true);
+                if (ODataUtilityService.ShouldIncludeContext(context.Request, format: null))
+                {
+                    updatedPayload["@odata.context"] = ODataUtilityService.BuildContextUrl(
+                        baseUrl,
+                        "Features",
+                        isSingle: true);
+                }
             }
 
             if (preferMinimal)

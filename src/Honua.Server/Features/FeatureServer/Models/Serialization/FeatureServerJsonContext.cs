@@ -25,6 +25,7 @@ namespace Honua.Server.Features.FeatureServer.Models;
 [JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(ExtentInfo))]
 [JsonSerializable(typeof(GeoServicesFieldInfo))]
+[JsonSerializable(typeof(GeoServicesFieldInfo[]), TypeInfoPropertyName = "GeoServicesFieldInfoArray")]
 [JsonSerializable(typeof(QueryResponse))]
 [JsonSerializable(typeof(GeoServicesFeature))]
 [JsonSerializable(typeof(GeoServicesFeature[]), TypeInfoPropertyName = "GeoServicesFeatureArray")]

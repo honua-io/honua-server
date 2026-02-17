@@ -80,16 +80,22 @@ internal static class AllowedQueryParameters
     public static readonly FrozenSet<string> Apply = new[]
         {
             "$apply",
-            "$filter"
+            "$filter",
+            "$format"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     public static readonly FrozenSet<string> Search = new[]
         {
             "$search",
+            "$filter",
+            "$orderby",
+            "$select",
+            "$expand",
             "$top",
             "$skip",
-            "$count"
+            "$count",
+            "$format"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 }

@@ -213,30 +213,28 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits", Protocols.FeatureServer, Operations.Edit),
 
         // OGC API Features
-        new("GET", "/ogc", Protocols.OgcFeatures, Operations.Landing),
-        new("GET", "/ogc/conformance", Protocols.OgcFeatures, Operations.Conformance),
-        new("GET", "/ogc/collections", Protocols.OgcFeatures, Operations.Collections),
-        new("GET", "/ogc/collections/{collectionId}", Protocols.OgcFeatures, Operations.Collection),
-        new("GET", "/ogc/collections/{collectionId}/items", Protocols.OgcFeatures, Operations.Query),
-        new("GET", "/ogc/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.GetFeature),
-        new("POST", "/ogc/collections/{collectionId}/items", Protocols.OgcFeatures, Operations.Create),
-        new("PUT", "/ogc/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.Replace),
-        new("PATCH", "/ogc/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.Update),
-        new("DELETE", "/ogc/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.Delete),
+        new("GET", "/ogc/features", Protocols.OgcFeatures, Operations.Landing),
+        new("GET", "/ogc/features/conformance", Protocols.OgcFeatures, Operations.Conformance),
+        new("GET", "/ogc/features/collections", Protocols.OgcFeatures, Operations.Collections),
+        new("GET", "/ogc/features/collections/{collectionId}", Protocols.OgcFeatures, Operations.Collection),
+        new("GET", "/ogc/features/collections/{collectionId}/items", Protocols.OgcFeatures, Operations.Query),
+        new("GET", "/ogc/features/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.GetFeature),
+        new("POST", "/ogc/features/collections/{collectionId}/items", Protocols.OgcFeatures, Operations.Create),
+        new("PUT", "/ogc/features/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.Replace),
+        new("PATCH", "/ogc/features/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.Update),
+        new("DELETE", "/ogc/features/collections/{collectionId}/items/{featureId}", Protocols.OgcFeatures, Operations.Delete),
 
         // OData
-        new("GET", "/odata/{collectionId}", Protocols.OData, Operations.Query),
+        new("GET", "/odata/Features", Protocols.OData, Operations.Query),
 
         // MVT
-        new("GET", "/tiles/{collectionId}/{z}/{x}/{y}.mvt", Protocols.Tiles, Operations.GetTile),
-        new("GET", "/tiles/{collectionId}.json", Protocols.Tiles, Operations.TileJSON),
+        new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt", Protocols.Tiles, Operations.GetTile),
+        new("GET", "/tiles/{layerId}/tile.json", Protocols.Tiles, Operations.TileJSON),
 
         // Admin
-        new("GET", "/admin/api/layers", Protocols.Admin, Operations.List),
-        new("GET", "/admin/api/layers/{layerId}", Protocols.Admin, Operations.Get),
-        new("POST", "/admin/api/layers", Protocols.Admin, Operations.Create),
-        new("PUT", "/admin/api/layers/{layerId}", Protocols.Admin, Operations.Update),
-        new("DELETE", "/admin/api/layers/{layerId}", Protocols.Admin, Operations.Delete),
+        new("GET", "/api/v1/admin/connections/{id}/layers", Protocols.Admin, Operations.List),
+        new("POST", "/api/v1/admin/connections/{id}/layers", Protocols.Admin, Operations.Create),
+        new("PUT", "/api/v1/admin/connections/{id}/layers/{layerId}/enabled", Protocols.Admin, Operations.Update),
     ];
 }
 ```

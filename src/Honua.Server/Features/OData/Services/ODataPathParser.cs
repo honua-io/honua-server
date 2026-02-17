@@ -15,10 +15,18 @@ internal enum ODataResourceKind
     Feature
 }
 
+internal enum ODataPathTailKind
+{
+    None,
+    Ref,
+    Value
+}
+
 internal readonly record struct ODataParsedPath(
     ODataResourceKind Kind,
     int? LayerId,
-    long? ObjectId);
+    long? ObjectId,
+    ODataPathTailKind Tail);
 
 internal static partial class ODataPathParser
 {
@@ -43,13 +51,13 @@ internal static partial class ODataPathParser
 
         if (path.Equals("Layers", StringComparison.OrdinalIgnoreCase))
         {
-            parsed = new ODataParsedPath(ODataResourceKind.Layers, null, null);
+            parsed = new ODataParsedPath(ODataResourceKind.Layers, null, null, ODataPathTailKind.None);
             return true;
         }
 
         if (path.Equals("Features", StringComparison.OrdinalIgnoreCase))
         {
-            parsed = new ODataParsedPath(ODataResourceKind.Features, null, null);
+            parsed = new ODataParsedPath(ODataResourceKind.Features, null, null, ODataPathTailKind.None);
             return true;
         }
 
@@ -64,7 +72,7 @@ internal static partial class ODataPathParser
 
             if (string.IsNullOrWhiteSpace(layerMatch.Groups["featureSegment"].Value))
             {
-                parsed = new ODataParsedPath(ODataResourceKind.Layer, layerId, null);
+                parsed = new ODataParsedPath(ODataResourceKind.Layer, layerId, null, ODataPathTailKind.None);
                 return true;
             }
 
@@ -72,7 +80,7 @@ internal static partial class ODataPathParser
             featureSegment = featureSegment.TrimStart('/');
             if (featureSegment.Equals("Features", StringComparison.OrdinalIgnoreCase))
             {
-                parsed = new ODataParsedPath(ODataResourceKind.Features, layerId, null);
+                parsed = new ODataParsedPath(ODataResourceKind.Features, layerId, null, ODataPathTailKind.None);
                 return true;
             }
 
@@ -85,7 +93,13 @@ internal static partial class ODataPathParser
                     return false;
                 }
 
-                parsed = new ODataParsedPath(ODataResourceKind.Feature, layerId, objectId);
+                if (!TryParseTail(featureMatch.Groups["tail"].Value, out var tailKind))
+                {
+                    errorMessage = $"Unsupported OData URL format: {url}.";
+                    return false;
+                }
+
+                parsed = new ODataParsedPath(ODataResourceKind.Feature, layerId, objectId, tailKind);
                 return true;
             }
         }
@@ -99,7 +113,13 @@ internal static partial class ODataPathParser
                 return false;
             }
 
-            parsed = new ODataParsedPath(ODataResourceKind.Feature, layerId, objectId);
+            if (!TryParseTail(featureMatchNamed.Groups["tail"].Value, out var tailKind))
+            {
+                errorMessage = $"Unsupported OData URL format: {url}.";
+                return false;
+            }
+
+            parsed = new ODataParsedPath(ODataResourceKind.Feature, layerId, objectId, tailKind);
             return true;
         }
 
@@ -181,6 +201,29 @@ internal static partial class ODataPathParser
 
     private static bool TryParseLong(string value, out long result)
         => long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
+    private static bool TryParseTail(string value, out ODataPathTailKind tailKind)
+    {
+        tailKind = ODataPathTailKind.None;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (value.Equals("$ref", StringComparison.OrdinalIgnoreCase))
+        {
+            tailKind = ODataPathTailKind.Ref;
+            return true;
+        }
+
+        if (value.Equals("$value", StringComparison.OrdinalIgnoreCase))
+        {
+            tailKind = ODataPathTailKind.Value;
+            return true;
+        }
+
+        return false;
+    }
 
     [GeneratedRegex(@"^Layers\((?<layerId>[^)]+)\)(?<featureSegment>/Features(?:\((?<objectId>[^)]+)\))?(?:/(?<tail>\$ref|\$value))?)?$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
