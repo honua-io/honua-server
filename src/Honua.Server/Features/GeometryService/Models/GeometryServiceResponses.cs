@@ -18,6 +18,12 @@ public sealed class GeometryServiceResponse
     public string? GeometryType { get; init; }
 
     /// <summary>
+    /// Spatial reference of the result geometries.
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    public GeometryServiceSpatialReference? SpatialReference { get; init; }
+
+    /// <summary>
     /// Array of result geometries in GeoServices JSON format.
     /// </summary>
     [JsonPropertyName("geometries")]
@@ -58,6 +64,24 @@ public sealed class GeometryServiceErrorResponse
     /// </summary>
     [JsonPropertyName("error")]
     public required GeometryServiceError Error { get; init; }
+}
+
+/// <summary>
+/// Spatial reference for geometry service responses.
+/// </summary>
+public sealed class GeometryServiceSpatialReference
+{
+    /// <summary>
+    /// Well-Known ID (EPSG code).
+    /// </summary>
+    [JsonPropertyName("wkid")]
+    public int Wkid { get; init; }
+
+    /// <summary>
+    /// Latest Well-Known ID.
+    /// </summary>
+    [JsonPropertyName("latestWkid")]
+    public int LatestWkid { get; init; }
 }
 
 /// <summary>

@@ -855,6 +855,7 @@ internal sealed class GeometryServiceHandler(
         return new GeometryServiceResponse
         {
             GeometryType = geometryType,
+            SpatialReference = new GeometryServiceSpatialReference { Wkid = srid, LatestWkid = srid },
             Geometries = geometryElements
         };
     }

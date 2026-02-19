@@ -9,6 +9,7 @@ using Honua.Server.Features.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Geometries;
 
@@ -43,6 +44,7 @@ internal sealed class ImageServerExportHandler
     /// Exports a rendered image from raster data.
     /// </summary>
     public async Task<IResult> ExportImageAsync(
+        HttpContext context,
         int layerId,
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
@@ -60,7 +62,7 @@ internal sealed class ImageServerExportHandler
             if (layer == null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
             // Get raster data
@@ -68,7 +70,7 @@ internal sealed class ImageServerExportHandler
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
             // Use the first raster (could be enhanced for multi-raster scenarios)
@@ -79,7 +81,7 @@ internal sealed class ImageServerExportHandler
             if (query == null)
             {
                 ImageServerLog.InvalidExportParameters(_logger, layerId, "Unable to parse export parameters");
-                return Results.BadRequest("Invalid export parameters");
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid export parameters");
             }
 
             // Determine output dimensions and propagate to query
@@ -133,7 +135,7 @@ internal sealed class ImageServerExportHandler
         {
             ImageServerLog.ExportImageFailed(_logger, ex, layerId);
             scope.RecordException(ex);
-            return Results.Problem("An error occurred while exporting the image.", statusCode: 500);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while exporting the image.");
         }
     }
 

@@ -87,7 +87,7 @@ internal sealed partial class FeatureDataAccess
             {
                 if (transaction != null)
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await transaction.RollbackAsync(CancellationToken.None);
                 }
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
@@ -130,7 +130,7 @@ internal sealed partial class FeatureDataAccess
 
             if (transaction != null)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
 
                 var createResults = System.Linq.Enumerable.Select(editBatch.Creates, _ =>
                     EditOperationResult.Failure("Transaction failed.")).ToImmutableArray();

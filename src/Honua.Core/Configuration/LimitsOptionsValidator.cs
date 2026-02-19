@@ -23,6 +23,8 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
         ValidateDataAnnotations(limits.Attachments, failures, nameof(limits.Attachments));
         ValidateDataAnnotations(limits.Tiles, failures, nameof(limits.Tiles));
         ValidateDataAnnotations(limits.Connections, failures, nameof(limits.Connections));
+        ValidateDataAnnotations(limits.Imports, failures, nameof(limits.Imports));
+        ValidateDataAnnotations(limits.Validation, failures, nameof(limits.Validation));
 
         // Cross-property validation rules
         ValidateQueryLimits(limits.Query, failures);

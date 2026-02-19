@@ -71,6 +71,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]{0,128}$")]
+    private static partial Regex GeoPackageTableNameRegex();
+
     public StreamingFileImportService(
         IDatabaseConnectionProvider connectionProvider,
         ICrsDetectionService crsDetectionService,
@@ -584,7 +587,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             if (transaction != null)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
             }
             throw;
         }
@@ -1552,6 +1555,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         GeoPackageLayerInfo layer,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (!GeoPackageTableNameRegex().IsMatch(layer.TableName))
+        {
+            throw new InvalidOperationException("GeoPackage contains table name with unsupported characters.");
+        }
+
         await using var connection = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly;");
         await connection.OpenAsync(cancellationToken);
 

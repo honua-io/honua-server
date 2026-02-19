@@ -229,8 +229,13 @@ internal static class CollectionsEndpoints
         SpatialExtent? spatialExtent = null;
         if (layer.Extent != null)
         {
-            var extentCrsIdentifier = layer.Extent.Value.SpatialReference.ToOgcCrs();
+            var extentSrid = layer.Extent.Value.SpatialReference;
+            var extentCrsIdentifier = extentSrid == 4326
+                ? OgcFeaturesUtilities.Crs84Uri
+                : extentSrid.ToOgcCrs();
             var extentDefinition = await crsRegistry.ResolveAsync(extentCrsIdentifier, cancellationToken);
+            var extentCrs = extentDefinition?.Uri ?? extentCrsIdentifier;
+
             spatialExtent = new SpatialExtent
             {
                 BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
@@ -238,7 +243,7 @@ internal static class CollectionsEndpoints
                     layer.Extent.Value.MinY,
                     layer.Extent.Value.MaxX,
                     layer.Extent.Value.MaxY)),
-                Crs = extentDefinition?.Uri ?? extentCrsIdentifier
+                Crs = extentCrs
             };
         }
 

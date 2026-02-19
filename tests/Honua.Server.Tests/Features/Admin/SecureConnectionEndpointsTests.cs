@@ -472,23 +472,17 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections/encryption/rotate-key")]
-    public async Task RotateEncryptionKey_WithAdminAuth_ReturnsRotationResult()
+    public async Task RotateEncryptionKey_WithAdminAuth_ReturnsBadRequest_BecauseRotationNotSupported()
     {
-        using var scope = _fixture.Services.CreateScope();
-        var encryptionService = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
-        var previousVersion = await encryptionService.GetCurrentKeyVersionAsync();
-
         var response = await _client.PostAsync("/api/v1/admin/connections/encryption/rotate-key", null);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Key rotation is not supported at runtime (requires re-deployment with new master key)
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<KeyRotationResult>>(responseJson, _jsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<object>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
-        Assert.True(apiResponse.Success);
-        Assert.NotNull(apiResponse.Data);
-        Assert.Equal(previousVersion, apiResponse.Data.PreviousKeyVersion);
-        Assert.True(apiResponse.Data.NewKeyVersion > previousVersion);
+        Assert.False(apiResponse.Success);
     }
 }

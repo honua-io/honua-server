@@ -93,6 +93,13 @@ internal static class CoreEndpoints
             type: MediaTypes.OpenApi,
             title: "API definition"));
 
+        // API documentation
+        links.Add(Link.Create(
+            href: $"{baseUrl}/api-docs",
+            rel: RelationTypes.ServiceDoc,
+            type: MediaTypes.Html,
+            title: "API documentation"));
+
         // Conformance declaration
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/features/conformance",
@@ -170,7 +177,15 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
                 // OGC API Features Part 3 - Filtering
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+                "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+                "http://www.opengis.net/spec/cql2/1.0/conf/basic-spatial-operators",
+
+                // OGC API Features Part 4 - Create, Replace, Delete
+                "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete"
             ).AddRange(OgcConformanceUris.Common),
             Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,

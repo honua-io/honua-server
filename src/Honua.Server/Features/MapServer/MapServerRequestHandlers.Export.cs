@@ -191,12 +191,7 @@ internal static partial class MapServerEndpoints
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
 
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Unsupported export parameters: gdbVersion.");
-            }
+            // gdbVersion is silently ignored to match Esri's behavior of ignoring unsupported parameters.
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
@@ -635,6 +630,9 @@ internal static partial class MapServerEndpoints
         {
             return false;
         }
+
+        if (minX >= maxX || minY >= maxY)
+            return false;
 
         extent = new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
         return true;

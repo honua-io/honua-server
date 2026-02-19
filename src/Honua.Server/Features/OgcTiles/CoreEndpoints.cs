@@ -90,6 +90,12 @@ internal static class CoreEndpoints
             type: MediaTypes.Json,
             title: "Vector tilesets"));
 
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/tiles/tileMatrixSets",
+            rel: "http://www.opengis.net/def/rel/ogc/1.0/tiling-schemes",
+            type: MediaTypes.Json,
+            title: "Tile matrix sets"));
+
         var landingPage = new LandingPage
         {
             Title = "Honua OGC API Tiles",
@@ -121,6 +127,8 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/core",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tileset",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tilesets-list",
+                "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/dataset-tilesets",
+                "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/geodata-tilesets",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30"
             ).AddRange(OgcConformanceUris.Common),

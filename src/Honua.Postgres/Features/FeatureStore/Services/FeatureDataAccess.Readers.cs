@@ -11,7 +11,7 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {
-    private async Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
+    private Task<Feature> ReadFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -54,7 +54,7 @@ internal sealed partial class FeatureDataAccess
             }
 
             var attributes = attributesDictionary.ToImmutableDictionary();
-            return Feature.Create(id, geometry, attributes);
+            return Task.FromResult(Feature.Create(id, geometry, attributes));
         }
         finally
         {
@@ -62,7 +62,7 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
-    private async Task<GmlFeature> ReadGmlFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
+    private Task<GmlFeature> ReadGmlFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
     {
         var id = reader.GetInt64(0);
         var geometryGml = reader.IsDBNull(1) ? null : reader.GetString(1);
@@ -105,7 +105,7 @@ internal sealed partial class FeatureDataAccess
             }
 
             var attributes = attributesDictionary.ToImmutableDictionary();
-            return GmlFeature.Create(id, geometryGml, attributes);
+            return Task.FromResult(GmlFeature.Create(id, geometryGml, attributes));
         }
         finally
         {

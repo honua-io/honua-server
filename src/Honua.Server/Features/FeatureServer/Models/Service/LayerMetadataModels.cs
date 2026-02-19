@@ -41,6 +41,22 @@ public sealed class EditingInfo
 }
 
 /// <summary>
+/// Unique identifier field metadata per the GeoServices REST specification
+/// </summary>
+public sealed class UniqueIdFieldInfo
+{
+    /// <summary>
+    /// Name of the unique identifier field
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Whether the field value is system-maintained (auto-generated)
+    /// </summary>
+    public bool IsSystemMaintained { get; init; }
+}
+
+/// <summary>
 /// Feature template for creating new features
 /// </summary>
 public sealed class FeatureTemplate

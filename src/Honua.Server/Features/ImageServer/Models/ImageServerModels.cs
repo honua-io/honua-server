@@ -12,7 +12,7 @@ namespace Honua.Server.Features.ImageServer.Models;
 public sealed class ImageServerServiceInfo
 {
     [JsonPropertyName("currentVersion")]
-    public required string CurrentVersion { get; init; }
+    public required double CurrentVersion { get; init; }
 
     [JsonPropertyName("serviceDescription")]
     public required string ServiceDescription { get; init; }

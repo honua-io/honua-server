@@ -191,7 +191,7 @@ internal static class DatabaseSchema
     /// <returns>Fully qualified table name</returns>
     public static string GetQualifiedTableName(string tableName, string? schemaName = null)
     {
-        return string.IsNullOrEmpty(schemaName) ? tableName : $"{schemaName}.{tableName}";
+        return string.IsNullOrEmpty(schemaName) ? $"\"{tableName}\"" : $"\"{schemaName}\".\"{tableName}\"";
     }
 
     /// <summary>

@@ -5,8 +5,10 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.ImageServer.Handlers;
@@ -35,6 +37,7 @@ internal sealed class ImageServerTileHandler
     /// Gets a pre-generated image tile for efficient web mapping display.
     /// </summary>
     public async Task<IResult> GetImageTileAsync(
+        HttpContext context,
         int layerId,
         int level,
         int row,
@@ -58,7 +61,7 @@ internal sealed class ImageServerTileHandler
             if (layer == null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
             // Validate tile coordinates (Web Mercator supports zoom levels 0-28)
@@ -66,12 +69,12 @@ internal sealed class ImageServerTileHandler
             if (level < 0 || level > maxZoomLevel || row < 0 || col < 0 ||
                 row >= (1 << level) || col >= (1 << level))
             {
-                return Results.BadRequest("Invalid tile coordinates");
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates");
             }
 
             if (!RasterParsingHelpers.TryParseRasterFormat(format, out var rasterFormat))
             {
-                return Results.BadRequest("Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif.");
+                return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif.");
             }
 
             // Get raster data
@@ -79,7 +82,7 @@ internal sealed class ImageServerTileHandler
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
             ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
@@ -100,7 +103,7 @@ internal sealed class ImageServerTileHandler
             if (tileResult == null)
             {
                 ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
             }
 
             var result = tileResult.Value;
@@ -117,7 +120,7 @@ internal sealed class ImageServerTileHandler
         {
             ImageServerLog.ImageTileFailed(_logger, ex, layerId);
             scope.RecordException(ex);
-            return Results.Problem("An error occurred while retrieving the image tile.", statusCode: 500);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the image tile.");
         }
     }
 }

@@ -11,7 +11,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Current version of the service
     /// </summary>
-    public string CurrentVersion { get; init; } = "10.81";
+    public double CurrentVersion { get; init; } = 10.81;
 
     /// <summary>
     /// Layer identifier
@@ -132,6 +132,11 @@ public sealed class LayerResponse
     /// Display field name (primary field for display)
     /// </summary>
     public string? DisplayField { get; init; }
+
+    /// <summary>
+    /// Unique identifier field metadata per the GeoServices REST spec
+    /// </summary>
+    public UniqueIdFieldInfo? UniqueIdField { get; init; }
 
     /// <summary>
     /// Type ID field name (if used for symbology)

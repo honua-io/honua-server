@@ -9,7 +9,10 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -40,9 +43,11 @@ public class ImageServerTileHandlerTests
         _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
             .Returns((LayerDefinition?)null);
 
-        var result = await _handler.GetImageTileAsync(99, 0, 0, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 99, 0, 0, 0, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -52,9 +57,11 @@ public class ImageServerTileHandlerTests
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
 
-        var result = await _handler.GetImageTileAsync(1, -1, 0, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, -1, 0, 0, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -64,9 +71,11 @@ public class ImageServerTileHandlerTests
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
 
-        var result = await _handler.GetImageTileAsync(1, 29, 0, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 29, 0, 0, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -77,9 +86,11 @@ public class ImageServerTileHandlerTests
             .Returns(CreateTestLayer());
 
         // At level 2, max row is 3 (2^2 - 1)
-        var result = await _handler.GetImageTileAsync(1, 2, 4, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 2, 4, 0, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -90,9 +101,11 @@ public class ImageServerTileHandlerTests
             .Returns(CreateTestLayer());
 
         // At level 1, max col is 1 (2^1 - 1)
-        var result = await _handler.GetImageTileAsync(1, 1, 0, 2, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 1, 0, 2, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -102,9 +115,11 @@ public class ImageServerTileHandlerTests
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
 
-        var result = await _handler.GetImageTileAsync(1, 0, 0, 0, "bmp");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "bmp");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
@@ -118,9 +133,11 @@ public class ImageServerTileHandlerTests
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterInfo>());
 
-        var result = await _handler.GetImageTileAsync(1, 0, 0, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -134,9 +151,11 @@ public class ImageServerTileHandlerTests
         _rasterStore.GetImageTileAsync(1, 100, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
             .Returns((RasterResult?)null);
 
-        var result = await _handler.GetImageTileAsync(1, 0, 0, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -158,7 +177,8 @@ public class ImageServerTileHandlerTests
                 Srid = 3857
             });
 
-        var result = await _handler.GetImageTileAsync(1, 0, 0, 0, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
 
         result.Should().BeOfType<FileContentHttpResult>();
     }
@@ -186,9 +206,22 @@ public class ImageServerTileHandlerTests
                 Srid = 3857
             });
 
-        var result = await _handler.GetImageTileAsync(1, level, row, col, "png");
+        var context = CreateImageServerContext();
+        var result = await _handler.GetImageTileAsync(context, 1, level, row, col, "png");
+        await result.ExecuteAsync(context);
 
-        result.Should().NotBeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().NotBe(StatusCodes.Status400BadRequest);
+    }
+
+    private static DefaultHttpContext CreateImageServerContext()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        var context = new DefaultHttpContext();
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/rest/services/1/ImageServer/tile/0/0/0";
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     private static LayerDefinition CreateTestLayer()

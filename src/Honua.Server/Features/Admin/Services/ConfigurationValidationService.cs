@@ -17,19 +17,21 @@ internal static class ConfigurationValidationService
     /// </summary>
     /// <param name="configuration">The configuration to validate.</param>
     /// <param name="logger">Logger for validation messages.</param>
-    /// <param name="isDevelopment">Whether running in development mode.</param>
+    /// <param name="isDevelopment">Whether running in development or test mode (relaxes security checks).</param>
+    /// <param name="allowMissingDatabase">Whether to allow a missing database connection string (e.g. when migrations are skipped).</param>
     /// <returns>List of validation errors, empty if configuration is valid.</returns>
     public static List<string> ValidateConfiguration(
         IConfiguration configuration,
         ILogger logger,
-        bool isDevelopment)
+        bool isDevelopment,
+        bool allowMissingDatabase = false)
     {
         var errors = new List<string>();
         var warnings = new List<string>();
 
-        // Check database connection (required in production)
+        // Check database connection (required in production unless explicitly allowed)
         var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrEmpty(connectionString) && !isDevelopment)
+        if (string.IsNullOrEmpty(connectionString) && !isDevelopment && !allowMissingDatabase)
         {
             errors.Add("ConnectionStrings__DefaultConnection is required. Set this environment variable to your PostgreSQL connection string.");
         }
@@ -51,9 +53,24 @@ internal static class ConfigurationValidationService
                 errors.Add("HONUA_DEV_AUTH is enabled. This should only be used in development environments.");
             }
 
-            if (string.IsNullOrEmpty(configuration["HONUA_ADMIN_PASSWORD"]))
+            var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
+            if (string.IsNullOrEmpty(adminPassword))
             {
                 errors.Add("HONUA_ADMIN_PASSWORD is required in non-development environments.");
+            }
+            else
+            {
+                ValidateAdminPassword(adminPassword, errors);
+            }
+        }
+        else
+        {
+            var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
+            if (string.IsNullOrEmpty(adminPassword))
+            {
+                warnings.Add("SECURITY WARNING: Development mode with no HONUA_ADMIN_PASSWORD configured. " +
+                    "Authentication bypass is active and all admin endpoints are accessible without credentials. " +
+                    "Set HONUA_ADMIN_PASSWORD to require API key authentication even in development.");
             }
         }
 
@@ -252,6 +269,29 @@ internal static class ConfigurationValidationService
             hasConnection ? "configured" : "not configured",
             cacheEnabled ? "enabled" : "disabled");
     }
+
+    private static void ValidateAdminPassword(string password, List<string> errors)
+    {
+        if (_knownPlaceholderPasswords.Contains(password))
+        {
+            errors.Add("HONUA_ADMIN_PASSWORD is set to a known placeholder value. Please set a strong, unique password before deploying to production.");
+        }
+
+        if (password.Length < 12)
+        {
+            errors.Add("HONUA_ADMIN_PASSWORD must be at least 12 characters long in production.");
+        }
+    }
+
+    private static readonly FrozenSet<string> _knownPlaceholderPasswords = new[]
+        {
+            "CHANGE_ME_BEFORE_USE",
+            "changeme",
+            "password",
+            "admin",
+            "secret"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private enum StorageProvider
     {

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -16,6 +17,9 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
+    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly string _rasterDataTable;
@@ -79,6 +83,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = query.OutputFormat.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
 
         // Build raster expression with chained transformations
         var rasterExpr = "raster";
@@ -117,6 +125,11 @@ internal sealed class PostgresRasterStore : IRasterStore
                 ResamplingAlgorithm.Lanczos => "Lanczos",
                 _ => "NearestNeighbor"
             };
+            if (!_allowedResamplingAlgorithms.Contains(algorithm))
+            {
+                throw new ArgumentException($"Unsupported resampling algorithm: {algorithm}");
+            }
+
             rasterExpr = $"ST_Rescale({rasterExpr}, @pixelW, @pixelH, '{algorithm}')";
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
@@ -293,6 +306,11 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         // Dynamic tile generation via PostGIS
         var formatName = format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
         await using var dynCommand = connection.CreateCommand();
         dynCommand.CommandText = $"""
             WITH tile_bounds AS (

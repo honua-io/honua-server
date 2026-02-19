@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -16,6 +17,8 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 {
+    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterMapRenderer> _logger;
     private readonly string _rasterDataTable;
@@ -56,6 +59,11 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = request.Format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
         var contentType = request.Format.ToContentType();
 
         var requestedOutputSrid = request.Crs;

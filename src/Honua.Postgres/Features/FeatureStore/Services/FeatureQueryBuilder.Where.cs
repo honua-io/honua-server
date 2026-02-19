@@ -82,7 +82,7 @@ internal sealed partial class FeatureQueryBuilder
         var dangerousPattern = FindDangerousPattern(whereClause);
         if (dangerousPattern != null)
         {
-            throw new ArgumentException($"WHERE clause contains dangerous pattern: {dangerousPattern}");
+            throw new ArgumentException("WHERE clause contains an unsupported expression");
         }
 
         var expressions = SplitOnAnd(whereClause);
@@ -336,7 +336,14 @@ internal sealed partial class FeatureQueryBuilder
             "COPY", "TRUNCATE", "GRANT", "REVOKE", "VACUUM", "ANALYZE", "EXPLAIN",
             "DO", "RAISE", "PERFORM", "NOTIFY", "LISTEN",
             "pg_read_file", "pg_write_file", "pg_ls_dir", "pg_stat_file",
-            "lo_import", "lo_export", "pg_sleep", "current_setting", "set_config"
+            "lo_import", "lo_export", "pg_sleep", "current_setting", "set_config",
+            "pg_advisory_lock", "pg_advisory_unlock",
+            "dblink", "dblink_connect",
+            "pg_terminate_backend", "pg_cancel_backend",
+            "pg_reload_conf",
+            "query_to_xml", "xpath",
+            "RETURNING",
+            "chr", "convert_from"
         };
 
         foreach (var pattern in dangerousPatterns)

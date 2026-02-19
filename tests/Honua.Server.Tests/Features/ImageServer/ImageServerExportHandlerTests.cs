@@ -11,7 +11,9 @@ using Honua.Server.Features.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -45,10 +47,12 @@ public class ImageServerExportHandlerTests
         _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
             .Returns((LayerDefinition?)null);
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(99, request);
+        var result = await _handler.ExportImageAsync(context, 99, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -60,10 +64,12 @@ public class ImageServerExportHandlerTests
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterInfo>());
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -72,10 +78,12 @@ public class ImageServerExportHandlerTests
     {
         SetupLayerAndRasters();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(bbox: "invalid-bbox");
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -84,8 +92,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<ExportImageResponse>>();
     }
@@ -96,8 +105,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(bbox: "-180,-90,180,90");
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<ExportImageResponse>>();
     }
@@ -108,8 +118,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(size: 512);
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         var okResult = result as Ok<ExportImageResponse>;
         okResult.Should().NotBeNull();
@@ -121,8 +132,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(format: "jpeg");
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<ExportImageResponse>>();
     }
@@ -133,8 +145,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(interpolation: "RSP_NearestNeighbor");
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<ExportImageResponse>>();
     }
@@ -145,8 +158,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(imageSr: "3857");
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<ExportImageResponse>>();
     }
@@ -164,10 +178,11 @@ public class ImageServerExportHandlerTests
                 return CreateTestRasterResult();
             });
 
+        var context = CreateImageServerContext();
         var request = CreateRequest(
             bbox: "-20037508,-20037508,20037508,20037508",
             bboxSr: "3857");
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<ExportImageResponse>>();
         capturedQuery.Should().NotBeNull();
@@ -194,8 +209,9 @@ public class ImageServerExportHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns((RasterExtent?)null);
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         var okResult = result as Ok<ExportImageResponse>;
         okResult.Should().NotBeNull();
@@ -212,8 +228,9 @@ public class ImageServerExportHandlerTests
     {
         SetupSuccessfulExport();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         var okResult = result as Ok<ExportImageResponse>;
         okResult.Should().NotBeNull();
@@ -244,8 +261,9 @@ public class ImageServerExportHandlerTests
             Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("/temp/test.png");
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
 
         var okResult = result as Ok<ExportImageResponse>;
         okResult.Should().NotBeNull();
@@ -261,16 +279,30 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_RasterStoreThrows_ReturnsProblem()
+    public async Task ExportImageAsync_RasterStoreThrows_ReturnsServerError()
     {
         SetupLayerAndRasters();
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Export failed"));
 
+        var context = CreateImageServerContext();
         var request = CreateRequest();
-        var result = await _handler.ExportImageAsync(1, request);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeAssignableTo<ProblemHttpResult>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    private static DefaultHttpContext CreateImageServerContext()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+
+        var context = new DefaultHttpContext();
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/rest/services/1/ImageServer/exportImage";
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     private void SetupLayerAndRasters()

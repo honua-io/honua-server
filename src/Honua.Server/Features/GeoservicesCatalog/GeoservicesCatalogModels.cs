@@ -8,7 +8,7 @@ namespace Honua.Server.Features.GeoservicesCatalog;
 internal sealed record ServicesDirectoryResponse
 {
     [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 1.0;
+    public double CurrentVersion { get; init; } = 10.81;
 
     [JsonPropertyName("folders")]
     public string[] Folders { get; init; } = [];
@@ -32,10 +32,10 @@ internal sealed record ServiceDirectoryEntry
 internal sealed record RestInfoResponse
 {
     [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 1.0;
+    public double CurrentVersion { get; init; } = 10.81;
 
     [JsonPropertyName("fullVersion")]
-    public string FullVersion { get; init; } = "1.0";
+    public string FullVersion { get; init; } = "10.81";
 
     [JsonPropertyName("authInfo")]
     public RestAuthInfo AuthInfo { get; init; } = new();
