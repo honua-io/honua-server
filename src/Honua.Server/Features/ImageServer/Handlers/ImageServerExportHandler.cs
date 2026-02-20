@@ -131,6 +131,14 @@ internal sealed class ImageServerExportHandler
         {
             throw;
         }
+        catch (TemporaryStorageLimitExceededException ex)
+        {
+            ImageServerLog.ExportStorageLimitReached(_logger, layerId, ex.Message);
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Temporary export storage is currently at capacity. Please retry shortly.",
+                ex.RetryAfterSeconds);
+        }
         catch (Exception ex)
         {
             ImageServerLog.ExportImageFailed(_logger, ex, layerId);

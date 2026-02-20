@@ -287,6 +287,34 @@ public class OgcMapsRenderingHandlerTests
         result.Should().BeOfType<NotFound>();
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_WithTooManyLayerIds_ReturnsBadRequest()
+    {
+        var requestedLayerIds = Enumerable.Range(1, 101).ToArray();
+
+        var result = await _handler.RenderDatasetMapAsync(requestedLayerIds, CreateDefaultRequest());
+
+        result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_ImplicitAllLayersExceedsLimit_ReturnsBadRequest()
+    {
+        var layers = Enumerable.Range(1, 101).Select(CreateTestLayerWithExtent).ToArray();
+        _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
+            .Returns(layers);
+
+        var result = await _handler.RenderDatasetMapAsync(Array.Empty<int>(), CreateDefaultRequest());
+
+        result.Should().BeOfType<BadRequest<string>>();
+        await _mapRenderer.DidNotReceive().RenderDatasetMapAsync(
+            Arg.Any<int[]>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // =========================================================================
     // RenderStyledMapAsync
     // =========================================================================

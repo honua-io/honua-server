@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
@@ -61,6 +62,15 @@ internal sealed class OgcMapsTileSetHandler
                 }
             }
 
+            var relativeTilesBasePath = $"/ogc/maps/collections/{layerId}/map/tiles";
+            var tilesBasePath = relativeTilesBasePath;
+            if (context is not null &&
+                BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
+                !string.IsNullOrWhiteSpace(configuredBaseUrl))
+            {
+                tilesBasePath = $"{configuredBaseUrl}{relativeTilesBasePath}";
+            }
+
             // Create tile set definitions for common tile matrix sets
             var tileSets = new[]
             {
@@ -70,14 +80,22 @@ internal sealed class OgcMapsTileSetHandler
                     Title = $"Map tiles for {layer.Name} in Web Mercator",
                     Description = $"Map tiles generated from {layer.Name} using Web Mercator projection",
                     Crs = "http://www.opengis.net/def/crs/EPSG/0/3857",
+                    TileMatrixSetId = "WebMercatorQuad",
                     TileMatrixSetUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad",
                     Links = [
                         new OgcLink
                         {
-                            Href = $"/ogc/maps/collections/{layerId}/map/tiles",
+                            Href = tilesBasePath,
                             Rel = "self",
                             Type = "application/json",
-                            Title = "Available tile sets for this collection"
+                            Title = "This tileset list"
+                        },
+                        new OgcLink
+                        {
+                            Href = $"{tilesBasePath}/WebMercatorQuad",
+                            Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
+                            Type = "application/json",
+                            Title = "Web Mercator tile matrix set definition"
                         }
                     ]
                 },
@@ -88,14 +106,22 @@ internal sealed class OgcMapsTileSetHandler
                     Title = $"Map tiles for {layer.Name} in WGS84",
                     Description = $"Map tiles generated from {layer.Name} using WGS84 projection",
                     Crs = "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                    TileMatrixSetId = "WorldCRS84Quad",
                     TileMatrixSetUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WorldCRS84Quad",
                     Links = [
                         new OgcLink
                         {
-                            Href = $"/ogc/maps/collections/{layerId}/map/tiles",
+                            Href = tilesBasePath,
                             Rel = "self",
                             Type = "application/json",
-                            Title = "Available tile sets for this collection"
+                            Title = "This tileset list"
+                        },
+                        new OgcLink
+                        {
+                            Href = $"{tilesBasePath}/WorldCRS84Quad",
+                            Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
+                            Type = "application/json",
+                            Title = "WGS84 tile matrix set definition"
                         }
                     ]
                 }

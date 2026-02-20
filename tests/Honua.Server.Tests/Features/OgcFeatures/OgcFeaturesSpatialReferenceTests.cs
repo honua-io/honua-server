@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -104,19 +105,21 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         var created = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.GeoJsonFeature);
         created.Should().NotBeNull();
         created!.Id.Should().NotBeNull();
+        var featureId = NormalizeFeatureId(created.Id);
+        featureId.Should().NotBeNull();
 
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         var srid = await SpatialReferenceTestData.GetGeometrySridAsync(
             _fixture.Postgres,
             schema,
-            created.Id!.Value,
+            featureId!.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         srid.Should().Be(SpatialReferenceTestLayerCatalog.LayerSrid);
 
         var coordinates = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
             _fixture.Postgres,
             schema,
-            created.Id!.Value,
+            featureId.Value,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         coordinates.Should().NotBeNull();
         coordinates!.Value.X.Should().BeApproximately(1000, 1e-6);
@@ -227,6 +230,8 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
         created.Should().NotBeNull();
         created!.Id.Should().NotBeNull();
+        var createdFeatureId = NormalizeFeatureId(created.Id);
+        createdFeatureId.Should().NotBeNull();
 
         var filterJson =
             """{"op":"s_intersects","args":[{"property":"geometry"},{"type":"Point","coordinates":[1000,2000],"crs":{"type":"name","properties":{"name":"EPSG:3857"}}}]}""";
@@ -239,7 +244,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
         collection.Should().NotBeNull();
-        collection!.Features.Should().Contain(f => f.Id == created.Id);
+        collection!.Features.Should().Contain(f => NormalizeFeatureId(f.Id) == createdFeatureId);
     }
 
     [IntegrationTest]
@@ -289,6 +294,8 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
         created.Should().NotBeNull();
         created!.Id.Should().NotBeNull();
+        var createdFeatureId = NormalizeFeatureId(created.Id);
+        createdFeatureId.Should().NotBeNull();
 
         var outputCrs = Uri.EscapeDataString("EPSG:3857");
         var bbox = Uri.EscapeDataString("-1,-1,1,1");
@@ -299,6 +306,22 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
         collection.Should().NotBeNull();
-        collection!.Features.Should().Contain(item => item.Id == created.Id);
+        collection!.Features.Should().Contain(item => NormalizeFeatureId(item.Id) == createdFeatureId);
+    }
+
+    private static long? NormalizeFeatureId(object? id)
+    {
+        return id switch
+        {
+            null => null,
+            long longId => longId,
+            int intId => intId,
+            string strId when long.TryParse(strId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedStringId) => parsedStringId,
+            JsonElement { ValueKind: JsonValueKind.Number } jsonNumberId when jsonNumberId.TryGetInt64(out var parsedNumberId) => parsedNumberId,
+            JsonElement { ValueKind: JsonValueKind.String } jsonStringId
+                when long.TryParse(jsonStringId.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedJsonStringId)
+                    => parsedJsonStringId,
+            _ => null
+        };
     }
 }

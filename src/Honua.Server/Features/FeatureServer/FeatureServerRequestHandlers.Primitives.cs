@@ -140,9 +140,15 @@ internal static partial class FeatureServerEndpoints
     private static bool TryParseRequiredLongArray(
         IReadOnlyDictionary<string, StringValues> values,
         string key,
+        int maxCount,
         out long[] result,
         out string? error)
     {
+        if (maxCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxCount), "Maximum value count must be at least 1.");
+        }
+
         error = null;
         result = [];
 
@@ -162,6 +168,12 @@ internal static partial class FeatureServerEndpoints
         if (result.Length == 0)
         {
             error = $"{key} parameter is required";
+            return false;
+        }
+
+        if (result.Length > maxCount)
+        {
+            error = $"{key} parameter exceeds the maximum of {maxCount} values";
             return false;
         }
 

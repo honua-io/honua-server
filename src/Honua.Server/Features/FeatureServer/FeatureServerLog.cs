@@ -265,13 +265,20 @@ internal static partial class FeatureServerLog
     /// <param name="logger">The logger instance.</param>
     /// <param name="serviceId">The service identifier.</param>
     /// <param name="layerId">The layer identifier.</param>
-    /// <param name="objectIds">The object IDs for which related records are requested.</param>
+    /// <param name="objectIdCount">The number of object IDs requested.</param>
+    /// <param name="objectIdSample">A bounded sample of object IDs for diagnostics.</param>
     /// <param name="relationshipId">The relationship identifier.</param>
     [LoggerMessage(
         EventId = 2401,
         Level = LogLevel.Information,
-        Message = "Related records query requested: {ServiceId}/FeatureServer/{LayerId}/queryRelatedRecords with objectIds: {ObjectIds}, relationshipId: {RelationshipId}")]
-    public static partial void RelatedRecordsQueryRequested(ILogger logger, string serviceId, int layerId, string? objectIds, int? relationshipId);
+        Message = "Related records query requested: {ServiceId}/FeatureServer/{LayerId}/queryRelatedRecords with objectIdCount: {ObjectIdCount}, objectIdSample: {ObjectIdSample}, relationshipId: {RelationshipId}")]
+    public static partial void RelatedRecordsQueryRequested(
+        ILogger logger,
+        string serviceId,
+        int layerId,
+        int objectIdCount,
+        string? objectIdSample,
+        int? relationshipId);
 
     /// <summary>
     /// Logs when a related records query is successfully completed.

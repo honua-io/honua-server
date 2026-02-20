@@ -19,13 +19,44 @@ internal static class BaseUrlResolver
     public static string GetBaseUrl(HttpRequest request)
     {
         var configuration = request.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+        if (TryGetConfiguredBaseUrl(configuration, out var configuredBaseUrl))
+        {
+            return configuredBaseUrl;
+        }
+
+        return $"{request.Scheme}://{request.Host}";
+    }
+
+    public static bool TryGetConfiguredBaseUrl(HttpContext context, out string baseUrl)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return TryGetConfiguredBaseUrl(context.Request, out baseUrl);
+    }
+
+    public static bool TryGetConfiguredBaseUrl(HttpRequest request, out string baseUrl)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var configuration = request.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+        return TryGetConfiguredBaseUrl(configuration, out baseUrl);
+    }
+
+    private static bool TryGetConfiguredBaseUrl(IConfiguration configuration, out string baseUrl)
+    {
+        baseUrl = string.Empty;
         var configured = configuration[BaseUrlConfigKey] ?? configuration[BaseUrlEnvKey];
 
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            return configured.TrimEnd('/');
+            var trimmed = configured.TrimEnd('/');
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) &&
+                (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+            {
+                baseUrl = trimmed;
+                return true;
+            }
         }
 
-        return $"{request.Scheme}://{request.Host}";
+        return false;
     }
 }

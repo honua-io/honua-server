@@ -191,7 +191,11 @@ internal static partial class MapServerEndpoints
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
 
-            // gdbVersion is silently ignored to match Esri's behavior of ignoring unsupported parameters.
+            var gdbVersion = GetValue(values, "gdbVersion");
+            if (!string.IsNullOrWhiteSpace(gdbVersion))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
+            }
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
@@ -289,6 +293,8 @@ internal static partial class MapServerEndpoints
 
             foreach (var renderLayer in renderLayers)
             {
+                context.RequestAborted.ThrowIfCancellationRequested();
+
                 var layer = renderLayer.Layer;
                 if (!IsLayerVisibleAtScale(layer, scaleDenominator))
                 {
@@ -404,11 +410,23 @@ internal static partial class MapServerEndpoints
         {
             var imageContentType = SkiaMapRenderer.GetContentType(parameters.Format);
             var temporaryFileService = context.RequestServices.GetRequiredService<ITemporaryFileService>();
-            var imageUrl = await temporaryFileService.StoreTemporaryFileAsync(
-                imageBytes,
-                imageContentType,
-                TimeSpan.FromHours(1),
-                cancellationToken);
+            string imageUrl;
+            try
+            {
+                imageUrl = await temporaryFileService.StoreTemporaryFileAsync(
+                    imageBytes,
+                    imageContentType,
+                    TimeSpan.FromHours(1),
+                    cancellationToken);
+            }
+            catch (TemporaryStorageLimitExceededException ex)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Temporary export storage is currently at capacity. Please retry shortly.",
+                    ex.RetryAfterSeconds);
+            }
+
             var scale = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, imageSrid);
 
             var response = new ExportImageResponse

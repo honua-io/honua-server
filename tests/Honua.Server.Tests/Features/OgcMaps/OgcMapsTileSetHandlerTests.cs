@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -102,6 +103,61 @@ public class OgcMapsTileSetHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_ValidLayer_IncludesTileMatrixSetId()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var result = await _handler.GetMapTileSetsAsync(1);
+
+        var okResult = result as Ok<TileSet[]>;
+        okResult!.Value.Should().Contain(ts => ts.TileMatrixSetId == "WebMercatorQuad");
+        okResult!.Value.Should().Contain(ts => ts.TileMatrixSetId == "WorldCRS84Quad");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_WithContext_LinksAreAbsolute()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var context = CreateOgcMapsContext();
+        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+
+        var okResult = result as Ok<TileSet[]>;
+        okResult.Should().NotBeNull();
+        foreach (var tileSet in okResult!.Value!)
+        {
+            foreach (var link in tileSet.Links)
+            {
+                link.Href.Should().StartWith("http", "tile set links should be absolute URIs");
+            }
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_TileSets_IncludeTilingSchemeLinks()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var context = CreateOgcMapsContext();
+        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+
+        var okResult = result as Ok<TileSet[]>;
+        okResult.Should().NotBeNull();
+        foreach (var tileSet in okResult!.Value!)
+        {
+            tileSet.Links.Should().Contain(link =>
+                link.Rel == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
+                "each tileset should include a tiling-scheme link");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_AccessDenied_ReturnsUnauthorized()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -129,6 +185,32 @@ public class OgcMapsTileSetHandlerTests
                 }
             }
         };
+
+    private static DefaultHttpContext CreateOgcMapsContext()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Public:BaseUrl"] = "https://api.example.test"
+            })
+            .Build();
+
+        var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(configuration)
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new System.Security.Claims.ClaimsPrincipal(
+                new System.Security.Claims.ClaimsIdentity("TestAuth"))
+        };
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("example.com");
+        context.Request.Path = "/ogc/maps/collections/1/map/tiles";
+        return context;
+    }
 
     private static DefaultHttpContext CreateAnonymousOgcMapsContext()
     {

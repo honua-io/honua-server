@@ -293,6 +293,29 @@ public class ImageServerExportHandlerTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_TemporaryStorageLimitExceeded_ReturnsServiceUnavailable()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult());
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TemporaryStorageLimitExceededException("Storage is full", retryAfterSeconds: 42));
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest();
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        context.Response.Headers["Retry-After"].ToString().Should().Be("42");
+    }
+
     private static DefaultHttpContext CreateImageServerContext()
     {
         var services = new ServiceCollection();

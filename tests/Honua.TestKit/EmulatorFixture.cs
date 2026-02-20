@@ -99,8 +99,9 @@ public sealed class EmulatorFixture : IAsyncLifetime
             _azuriteContainer.StartAsync()
         );
 
-        // Give containers time to initialize
-        await Task.Delay(TimeSpan.FromSeconds(5));
+        var localStackPort = _localStackContainer.GetMappedPublicPort(4566);
+        var azuritePort = _azuriteContainer.GetMappedPublicPort(10000);
+        await WaitForEmulatorsReadyAsync(localStackPort, azuritePort);
     }
 
     private static async Task StopContainersAsync()
@@ -147,6 +148,62 @@ public sealed class EmulatorFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable(AzureBlobConnectionStringEnv,
             $"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:{azuritePort}/devstoreaccount1;");
         Environment.SetEnvironmentVariable(AzureBlobContainerEnv, "test-container");
+    }
+
+    private static async Task WaitForEmulatorsReadyAsync(int localStackPort, int azuritePort)
+    {
+        var timeout = TimeSpan.FromSeconds(45);
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        using var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(2)
+        };
+
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                var localStackReady = await IsLocalStackReadyAsync(httpClient, localStackPort);
+                var azuriteReady = await IsAzuriteReadyAsync(httpClient, azuritePort);
+
+                if (localStackReady && azuriteReady)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(500);
+        }
+
+        var errorDetails = lastError is null ? string.Empty : $" Last error: {lastError.Message}";
+        throw new TimeoutException($"Timed out waiting for emulator containers to become ready.{errorDetails}");
+    }
+
+    private static async Task<bool> IsLocalStackReadyAsync(HttpClient client, int port)
+    {
+        using var response = await client.GetAsync($"http://127.0.0.1:{port}/_localstack/health");
+        if (!response.IsSuccessStatusCode)
+        {
+            return false;
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        return body.Contains("\"s3\": \"available\"", StringComparison.OrdinalIgnoreCase) ||
+               body.Contains("\"s3\":\"available\"", StringComparison.OrdinalIgnoreCase) ||
+               body.Contains("\"s3\": \"running\"", StringComparison.OrdinalIgnoreCase) ||
+               body.Contains("\"s3\":\"running\"", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<bool> IsAzuriteReadyAsync(HttpClient client, int port)
+    {
+        using var response = await client.GetAsync($"http://127.0.0.1:{port}/");
+        return (int)response.StatusCode < 500;
     }
 
     private static void ClearEnvironmentVariables()

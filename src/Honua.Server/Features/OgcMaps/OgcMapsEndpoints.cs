@@ -6,7 +6,6 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcMaps;
 
@@ -127,6 +126,13 @@ public static partial class OgcMapsEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
             }
 
+            if (collectionTokens.Length > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be requested at once.");
+            }
+
             var collectionIds = new List<int>(collectionTokens.Length);
             var invalidCollections = new List<string>();
             foreach (var token in collectionTokens)
@@ -152,6 +158,12 @@ public static partial class OgcMapsEndpoints
             }
 
             selectedLayerIds = collectionIds.Distinct().ToArray();
+            if (selectedLayerIds.Length > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be requested at once.");
+            }
         }
 
         return await handler.RenderDatasetMapAsync(selectedLayerIds, request, context: context, cancellationToken);

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.GeometryService.Services;
+using Honua.Server.Features.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.GeometryService;
 
@@ -115,7 +116,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleBufferAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -123,7 +124,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleSimplifyAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -131,7 +132,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleProjectAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -139,7 +140,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleIntersectAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -147,7 +148,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleUnionAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -155,7 +156,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleClipAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -163,7 +164,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleDifferenceAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -171,7 +172,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleAreaAsync(context, ct).ConfigureAwait(false);
     }
 
@@ -179,7 +180,7 @@ internal static class GeometryServiceEndpoints
         HttpContext context,
         GeometryServiceHandler handler)
     {
-        var ct = context.RequestAborted;
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleLengthAsync(context, ct).ConfigureAwait(false);
     }
 }

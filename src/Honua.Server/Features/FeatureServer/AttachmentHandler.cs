@@ -6,6 +6,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
 
@@ -395,15 +396,14 @@ internal static partial class AttachmentHandler
             return null;
         }
 
-        var builder = new UriBuilder
+        var relativePath = $"{context.Request.PathBase}/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}";
+        if (BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
+            !string.IsNullOrWhiteSpace(configuredBaseUrl))
         {
-            Scheme = context.Request.Scheme,
-            Host = context.Request.Host.Host,
-            Port = context.Request.Host.Port ?? -1,
-            Path = $"{context.Request.PathBase}/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
-        };
+            return $"{configuredBaseUrl}{relativePath}";
+        }
 
-        return builder.Uri.ToString();
+        return relativePath;
     }
 
     #region Logging
