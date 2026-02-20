@@ -108,7 +108,7 @@ internal static class ConfigurationValidationService
                 continue;
             }
 
-            if (IsEnvironmentVariableSet(path))
+            if (IsExternalConfigurationValue(configuration, path, value))
             {
                 continue;
             }
@@ -231,10 +231,34 @@ internal static class ConfigurationValidationService
         }
     }
 
-    private static bool IsEnvironmentVariableSet(string path)
+    private static bool IsExternalConfigurationValue(IConfiguration configuration, string path, string expectedValue)
     {
-        var envVarName = path.Replace(":", "__", StringComparison.Ordinal);
-        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(envVarName));
+        if (configuration is not IConfigurationRoot root)
+        {
+            return false;
+        }
+
+        // Walk providers from highest precedence to lowest and inspect the provider
+        // that currently supplies the effective value.
+        var providers = root.Providers.ToArray();
+        for (var index = providers.Length - 1; index >= 0; index--)
+        {
+            var provider = providers[index];
+            if (!provider.TryGet(path, out var providerValue) ||
+                string.IsNullOrWhiteSpace(providerValue))
+            {
+                continue;
+            }
+
+            if (!string.Equals(providerValue, expectedValue, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return provider is not FileConfigurationProvider;
+        }
+
+        return false;
     }
 
     private static bool IsSecretReference(string value, FrozenSet<string> allowedPrefixes)
@@ -380,7 +404,7 @@ internal static partial class ConfigurationLog
     /// Log configuration error with exception.
     /// </summary>
     [LoggerMessage(
-        EventId = 4015,
+        EventId = 4017,
         Level = LogLevel.Error,
         Message = "Configuration error: {Message}")]
     public static partial void ConfigurationError(ILogger logger, string message, Exception exception);

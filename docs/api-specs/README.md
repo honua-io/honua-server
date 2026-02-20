@@ -1,6 +1,6 @@
 # Interactive API Documentation
 
-Honua Server provides OpenAPI specifications for OGC APIs and a versioned Admin API contract snapshot. These interactive docs allow you to explore and test the APIs directly.
+Honua Server provides OpenAPI specifications for OGC APIs and a curated, versioned Admin API contract snapshot. These interactive docs allow you to explore and test the APIs directly.
 
 ## 🌐 **Available API Specifications**
 
@@ -43,6 +43,9 @@ Honua Server provides OpenAPI specifications for OGC APIs and a versioned Admin 
 **Runtime OpenAPI Endpoint**: Not currently exposed
 **Authentication**: API Key or OIDC required
 
+> **Note**: `admin-api.json` is a curated snapshot and may lag newly added admin endpoints.  
+> Use the [Server Management API guide](../user/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for runtime-validated behavior.
+
 **What you can do**:
 - Manage database connections (create, test, list)
 - Publish and configure layers from database tables
@@ -58,7 +61,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a versioned Admin 
 
 **Protocol**: Esri-compatible REST API
 **Base URL**: `/rest/services`
-**Compatibility**: 100% ArcGIS compatibility
+**Compatibility**: Esri-compatible subset (see coverage matrices for exact operation support)
 
 > **Note**: FeatureServer and MapServer endpoints follow Esri's REST specification and provide self-describing metadata.
 >
@@ -108,7 +111,7 @@ openapi-generator generate \
 ## 🔗 **Related Documentation**
 
 - [**Geospatial Data APIs**](../user/STANDARDS_APIS.md) - Protocol overview and selection guide
-- [**Server Management API**](../user/CONTROL_PLANE_API.md) - Complete admin API reference
+- [**Server Management API**](../user/CONTROL_PLANE_API.md) - Admin API guide and key workflows
 - [**API Examples**](../user/API_EXAMPLES.md) - Code examples for all protocols
 - [**Integration Patterns**](../user/INTEGRATION_PATTERNS.md) - Common integration approaches
 

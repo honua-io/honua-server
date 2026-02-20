@@ -52,6 +52,7 @@ internal static class AllowedQueryParameters
         {
             "$filter",
             "$select",
+            "$orderby",
             "$top",
             "$skip",
             "$skiptoken",

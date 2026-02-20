@@ -90,6 +90,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 FormattableString.Invariant($"{created.Id}"),
                 MediaTypes.GeoJson);
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
+            var featureIdString = FormattableString.Invariant($"{created.Id}");
+            var locationUrl = OgcFeaturesUtilities.BuildFeatureSelfUrl(context.Request, collectionId, featureIdString);
+            context.Response.Headers.Location = locationUrl;
             var response = ToOgcFeature(created, inputCrs.AxisOrder, createLinks);
 
             HonuaTelemetry.SetSuccess(activity);

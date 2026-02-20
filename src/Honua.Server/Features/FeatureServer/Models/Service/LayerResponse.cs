@@ -232,4 +232,10 @@ public sealed class LayerResponse
     /// Feature templates for creating new features
     /// </summary>
     public FeatureTemplate[] Templates { get; init; } = [];
+
+    /// <summary>
+    /// Advanced query capabilities per the GeoServices REST spec.
+    /// Esri clients (ArcGIS Pro, JS API) check this object to enable pagination, statistics, orderBy, etc.
+    /// </summary>
+    public AdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
 }

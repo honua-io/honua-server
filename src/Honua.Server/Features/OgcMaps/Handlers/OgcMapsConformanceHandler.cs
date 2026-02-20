@@ -35,11 +35,23 @@ internal sealed class OgcMapsConformanceHandler
                 // Collection maps support
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
 
+                // Dataset-wide maps support
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
+
+                // Background (bgcolor, transparent parameters)
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background",
+
+                // Collections selection (collections parameter for dataset maps)
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection",
+
                 // Supported CRS
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
 
                 // Spatial subsetting (bbox and related parameters)
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
+
+                // Date & time subsetting
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
 
                 // PNG support
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",

@@ -19,7 +19,7 @@ public class DefaultPerformanceMonitorTests
     }
 
     [Fact]
-    public void RecordDatabaseQuery_ShouldRecordCorrectMetrics()
+    public void RecordDatabaseQuery_ShouldNotThrow()
     {
         // Arrange
         var queryType = "select";
@@ -27,16 +27,13 @@ public class DefaultPerformanceMonitorTests
         var duration = TimeSpan.FromMilliseconds(150);
         var recordCount = 42;
 
-        // Act
-        _monitor.RecordDatabaseQuery(queryType, layerId, duration, recordCount);
-
-        // Assert - No exceptions thrown indicates success
-        // In a real test environment, you would capture and verify the metrics values
-        Assert.True(true);
+        // Act & Assert
+        var exception = Record.Exception(() => _monitor.RecordDatabaseQuery(queryType, layerId, duration, recordCount));
+        Assert.Null(exception);
     }
 
     [Fact]
-    public void RecordHttpRequest_ShouldRecordCorrectMetrics()
+    public void RecordHttpRequest_ShouldNotThrow()
     {
         // Arrange
         var method = "GET";
@@ -44,15 +41,13 @@ public class DefaultPerformanceMonitorTests
         var statusCode = 200;
         var duration = TimeSpan.FromMilliseconds(85);
 
-        // Act
-        _monitor.RecordHttpRequest(method, endpoint, statusCode, duration);
-
-        // Assert
-        Assert.True(true);
+        // Act & Assert
+        var exception = Record.Exception(() => _monitor.RecordHttpRequest(method, endpoint, statusCode, duration));
+        Assert.Null(exception);
     }
 
     [Fact]
-    public void RecordMemoryUsage_ShouldRecordCorrectMetrics()
+    public void RecordMemoryUsage_ShouldNotThrow()
     {
         // Arrange
         var allocatedBytes = 1024 * 1024 * 50; // 50MB
@@ -60,25 +55,21 @@ public class DefaultPerformanceMonitorTests
         var gen1Collections = 5;
         var gen2Collections = 2;
 
-        // Act
-        _monitor.RecordMemoryUsage(allocatedBytes, gen0Collections, gen1Collections, gen2Collections);
-
-        // Assert
-        Assert.True(true);
+        // Act & Assert
+        var exception = Record.Exception(() => _monitor.RecordMemoryUsage(allocatedBytes, gen0Collections, gen1Collections, gen2Collections));
+        Assert.Null(exception);
     }
 
     [Fact]
-    public void RecordCacheMetrics_ShouldRecordCorrectMetrics()
+    public void RecordCacheMetrics_ShouldNotThrow()
     {
         // Arrange
         var cacheType = "layer_metadata";
         var operation = "hit";
 
-        // Act
-        _monitor.RecordCacheMetrics(cacheType, operation);
-
-        // Assert
-        Assert.True(true);
+        // Act & Assert
+        var exception = Record.Exception(() => _monitor.RecordCacheMetrics(cacheType, operation));
+        Assert.Null(exception);
     }
 
     [Fact]
@@ -101,21 +92,22 @@ public class DefaultPerformanceMonitorTests
         // Arrange
         var operationName = "timed-operation";
 
-        // Act & Assert
-        using (var scope = _monitor.StartOperation(operationName))
+        // Act & Assert - scope should be created and disposed without error
+        var exception = Record.Exception(() =>
         {
-            Assert.NotNull(scope);
+            using (var scope = _monitor.StartOperation(operationName))
+            {
+                Assert.NotNull(scope);
 
-            // Simulate some work
-            Thread.Sleep(10);
+                // Simulate some work
+                Thread.Sleep(10);
 
-            // Add tags
-            scope.WithTag("layer", "test")
-                 .WithTag("operation_type", "query");
-        }
-
-        // Scope disposal should record timing metrics
-        Assert.True(true);
+                // Add tags
+                scope.WithTag("layer", "test")
+                     .WithTag("operation_type", "query");
+            }
+        });
+        Assert.Null(exception);
     }
 
     [Fact]
@@ -130,11 +122,9 @@ public class DefaultPerformanceMonitorTests
             { "version", "1.0" }
         };
 
-        // Act
-        _monitor.RecordCounter(name, value, tags);
-
-        // Assert
-        Assert.True(true);
+        // Act & Assert
+        var exception = Record.Exception(() => _monitor.RecordCounter(name, value, tags));
+        Assert.Null(exception);
     }
 
     [Fact]
@@ -148,11 +138,9 @@ public class DefaultPerformanceMonitorTests
             { "operation", "test" }
         };
 
-        // Act
-        _monitor.RecordHistogram(name, value, tags);
-
-        // Assert
-        Assert.True(true);
+        // Act & Assert
+        var exception = Record.Exception(() => _monitor.RecordHistogram(name, value, tags));
+        Assert.Null(exception);
     }
 
     [Fact]

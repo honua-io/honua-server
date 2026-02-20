@@ -60,15 +60,26 @@ public sealed class ODataFilterParser
 
     private FilterExpression ParseAndExpression()
     {
-        var expression = ParseComparisonExpression();
+        var expression = ParseNotExpression();
 
         while (Match(ODataFilterTokenType.And))
         {
-            var right = ParseComparisonExpression();
+            var right = ParseNotExpression();
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }
 
         return expression;
+    }
+
+    private FilterExpression ParseNotExpression()
+    {
+        if (Match(ODataFilterTokenType.Not))
+        {
+            var operand = ParseNotExpression();
+            return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+
+        return ParseComparisonExpression();
     }
 
     private FilterExpression ParseComparisonExpression()
@@ -86,6 +97,22 @@ public sealed class ODataFilterParser
             var right = ParseAdditiveExpression();
             var op = MapComparisonOperator(opToken.Type);
             return NormalizeComparison(left, op, right, opToken.Position);
+        }
+
+        if (Match(ODataFilterTokenType.In))
+        {
+            Consume(ODataFilterTokenType.LeftParen, "Expected '(' after 'in'");
+            var values = new List<FilterExpression>();
+            if (!Check(ODataFilterTokenType.RightParen))
+            {
+                do
+                {
+                    values.Add(ParseAdditiveExpression());
+                } while (Match(ODataFilterTokenType.Comma));
+            }
+
+            Consume(ODataFilterTokenType.RightParen, "Expected ')' after value list");
+            return new BinaryExpression(left, BinaryOperator.In, new ValueList(values));
         }
 
         return left;
@@ -129,10 +156,10 @@ public sealed class ODataFilterParser
 
     private FilterExpression ParseUnaryExpression()
     {
-        if (Match(ODataFilterTokenType.Not))
+        if (Match(ODataFilterTokenType.Minus))
         {
             var operand = ParseUnaryExpression();
-            return new UnaryExpression(UnaryOperator.Not, operand);
+            return new UnaryExpression(UnaryOperator.Negate, operand);
         }
 
         return ParsePrimaryExpression();
@@ -161,12 +188,27 @@ public sealed class ODataFilterParser
         if (Match(ODataFilterTokenType.NumberLiteral))
         {
             var value = Previous().Value;
-            if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+            if (value.Contains('.') || value.Contains('e') || value.Contains('E'))
+            {
+                if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var dbl))
+                {
+                    throw new ODataFilterParseException($"Invalid numeric literal '{value}'", Previous().Position);
+                }
+
+                return new Literal(dbl, LiteralType.Number);
+            }
+
+            if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
             {
                 throw new ODataFilterParseException($"Invalid numeric literal '{value}'", Previous().Position);
             }
 
-            return new Literal(number, LiteralType.Number);
+            if (integer is >= int.MinValue and <= int.MaxValue)
+            {
+                return new Literal((int)integer, LiteralType.Number);
+            }
+
+            return new Literal(integer, LiteralType.Number);
         }
 
         if (Match(ODataFilterTokenType.DateLiteral))
@@ -505,9 +547,15 @@ public sealed class ODataFilterParser
 
     private static FilterExpression AdjustSubstringStart(FilterExpression start)
     {
-        if (start is Literal { Type: LiteralType.Number, Value: double number })
+        if (start is Literal { Type: LiteralType.Number } literal)
         {
-            return new Literal(number + 1, LiteralType.Number);
+            return literal.Value switch
+            {
+                int i => new Literal(i + 1, LiteralType.Number),
+                long l => new Literal(l + 1, LiteralType.Number),
+                double d => new Literal(d + 1, LiteralType.Number),
+                _ => new BinaryExpression(start, BinaryOperator.Add, new Literal(1, LiteralType.Number))
+            };
         }
 
         return new BinaryExpression(start, BinaryOperator.Add, new Literal(1, LiteralType.Number));

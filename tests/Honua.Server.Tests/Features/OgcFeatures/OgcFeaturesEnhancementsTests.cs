@@ -436,9 +436,11 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithBbox_IncludesNullGeometryFeatures()
+    public async Task GetItems_WithBbox_ExcludesNullGeometryFeatures()
     {
         // Arrange - insert a feature without geometry and query with a bbox filter
+        // OGC API Features Part 1, Section 7.15.4: when bbox is provided, only features
+        // with a spatial geometry that intersects the bounding box shall be in the result set.
         var name = $"Null Geometry {Guid.NewGuid():N}";
         await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, name);
         var bbox = "-180,-90,180,90";
@@ -462,7 +464,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
             return props.TryGetProperty("name", out var nameProp)
                 && string.Equals(nameProp.GetString(), name, StringComparison.Ordinal);
-        }).Should().BeTrue();
+        }).Should().BeFalse();
     }
 
     #endregion
@@ -585,6 +587,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /openapi.json")]
+    [Endpoint("GET /ogc/features/api")]
     public async Task GetOpenApiSpec_ReturnsValidOpenApiSpecification()
     {
         // Act

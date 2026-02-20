@@ -420,8 +420,9 @@ internal static class FileUploadSecurity
         }
         catch
         {
-            // If we can't read as text, that's fine - it might be binary
-            return FileValidationResult.Valid();
+            // If we can't read as text, report it as invalid to be safe.
+            // Binary files should not reach this method (IsTextFile check filters them).
+            return FileValidationResult.Invalid("Unable to validate text file content.");
         }
     }
 

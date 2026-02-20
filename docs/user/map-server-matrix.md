@@ -14,11 +14,11 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 
 | Operation | Esri path | Methods | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- |
-| Service metadata | `.../MapServer` | GET | `GET .../MapServer` | Includes `maxRecordCount`, `supportedQueryFormats`. |
+| Service metadata | `.../MapServer` | GET | `GET .../MapServer` | Includes `maxRecordCount`, `supportedQueryFormats`, `documentInfo`, `minScale`/`maxScale`. |
 | Layer metadata | `.../MapServer/{layerId}` | GET | `GET .../MapServer/{layerId}` | Includes `drawingInfo`, query capability flags, `parentLayerId`/`subLayerIds`. |
-| Export map | `.../MapServer/export` | GET/POST | `GET/POST .../MapServer/export` | `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`. Default `transparent=false` per spec. |
-| Identify | `.../MapServer/identify` | GET/POST | `GET/POST .../MapServer/identify` | All geometry types, `dynamicLayers`, `time`/`timeRelation`, `layerDefs`. Returns `displayFieldName`. |
-| Find | `.../MapServer/find` | GET/POST | `GET/POST .../MapServer/find` | Cross-layer text search: `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `returnGeometry`. |
+| Export map | `.../MapServer/export` | GET/POST | `GET/POST .../MapServer/export` | `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`. Default `transparent=false` per spec. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
+| Identify | `.../MapServer/identify` | GET/POST | `GET/POST .../MapServer/identify` | All geometry types, `dynamicLayers`, `time`/`timeRelation`, `layerDefs`. Returns `displayFieldName`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
+| Find | `.../MapServer/find` | GET/POST | `GET/POST .../MapServer/find` | Cross-layer text search: `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
 | Legend | `.../MapServer/legend` | GET | `GET .../MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
 | Layer query | `.../MapServer/{layerId}/query` | GET/POST | `GET/POST .../MapServer/{layerId}/query` | Delegates to FeatureServer query handler. See [FeatureServer matrix](feature-server-matrix.md). |
 
@@ -58,8 +58,10 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 | `maxImageWidth` | Optional | Implemented | Configurable, default 4096. |
 | `maxImageHeight` | Optional | Implemented | Configurable, default 4096. |
 | `maxRecordCount` | Optional | Implemented | From `LimitsOptions.Query.MaxRecordCount`. |
-| `supportedQueryFormats` | Optional | Implemented | From service `SupportedFormats`. |
-| `documentInfo` | Optional | Not implemented | |
+| `supportedQueryFormats` | Optional | Implemented | Comma-separated string from service `SupportedFormats`. |
+| `minScale` | Optional | Implemented | Derived from max of layer `minScale` values. |
+| `maxScale` | Optional | Implemented | Derived from min of layer `maxScale` values. |
+| `documentInfo` | Optional | Implemented | Title, Author, Comments, Subject, Category, Keywords. |
 | `tileInfo` | Optional | Not implemented | No tile cache. |
 
 ### Layer metadata (`GET .../MapServer/{layerId}`)
@@ -84,7 +86,7 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 | `minScale` / `maxScale` | Required | Implemented | |
 | `defaultVisibility` | Required | Implemented | |
 | `maxRecordCount` | Required | Implemented | |
-| `supportedQueryFormats` | Optional | Implemented | From service `SupportedFormats`. |
+| `supportedQueryFormats` | Optional | Implemented | Comma-separated string from service `SupportedFormats`. |
 | `supportsStatistics` | Optional | Implemented | `false` (not yet supported). |
 | `supportsOrderBy` | Optional | Implemented | `true`. |
 | `supportsDistinct` | Optional | Implemented | `true`. |
@@ -127,5 +129,8 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 - Layer queries delegate to the FeatureServer query contract. See the [FeatureServer Coverage Matrix](feature-server-matrix.md) for parameter details.
 - `parentLayerId`/`subLayerIds` are always flat (`-1`/`null`) because the domain model does not support group layers.
 - `drawingInfo` is loaded from `ILayerStyleService` and returned as-is (JSON passthrough).
-- The `find` operation uses SQL `LIKE` for `contains=true` and equality for `contains=false`, searching string fields only.
+- The `find` operation uses SQL `LIKE` with `ESCAPE '\'` for `contains=true` and equality for `contains=false`, searching string fields only. Field names are double-quoted in generated SQL.
 - Export defaults `transparent` to `false` per ArcGIS spec (configurable via `MapServer.DefaultTransparent` in service metadata).
+- `gdbVersion` is consistently rejected with `400 Bad Request` across Export, Identify, and Find operations.
+- Identify result limit uses `LimitsOptions.Query.MaxRecordCount` (configurable) instead of a hard-coded value.
+- `maxAllowableOffset`, `geometryPrecision`, `returnZ`, `returnM`, and other advanced params are silently accepted (no validation error) but not yet applied.

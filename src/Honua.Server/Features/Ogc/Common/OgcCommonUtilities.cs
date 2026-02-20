@@ -536,20 +536,86 @@ internal static class OgcCommonUtilities
     {
         var encodedTitle = WebUtility.HtmlEncode(title);
         var encodedJson = WebUtility.HtmlEncode(json);
+
+        // Extract navigation links from the JSON for a browsable interface
+        var navLinks = ExtractLinksForHtml(json);
+
         return $@"<!DOCTYPE html>
-<html>
+<html lang=""en"">
 <head>
-    <title>{encodedTitle}</title>
+    <meta charset=""utf-8"" />
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
+    <title>{encodedTitle} - OGC API</title>
     <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-        pre {{ background: #f5f5f5; padding: 20px; border-radius: 5px; overflow: auto; }}
-        .title {{ color: #333; margin-bottom: 20px; }}
+        * {{ box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px 40px; color: #1a1a1a; background: #fafafa; }}
+        .header {{ border-bottom: 2px solid #0077b6; padding-bottom: 12px; margin-bottom: 20px; }}
+        .header h1 {{ margin: 0; color: #0077b6; font-size: 1.5em; }}
+        .header .badge {{ display: inline-block; background: #0077b6; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.75em; margin-left: 8px; vertical-align: middle; }}
+        nav {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; }}
+        nav h2 {{ margin: 0 0 8px 0; font-size: 0.9em; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }}
+        nav ul {{ list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }}
+        nav li a {{ display: inline-block; padding: 4px 12px; background: #e8f4f8; border-radius: 4px; text-decoration: none; color: #0077b6; font-size: 0.9em; }}
+        nav li a:hover {{ background: #0077b6; color: #fff; }}
+        nav li a .rel {{ color: #888; font-size: 0.8em; }}
+        .json-container {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; max-height: 75vh; overflow: auto; }}
+        pre {{ margin: 0; padding: 16px; font-size: 0.85em; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }}
     </style>
 </head>
 <body>
-    <h1 class=""title"">{encodedTitle}</h1>
-    <pre><code>{encodedJson}</code></pre>
+    <div class=""header"">
+        <h1>{encodedTitle}<span class=""badge"">OGC API</span></h1>
+    </div>
+    {navLinks}
+    <div class=""json-container"">
+        <pre><code>{encodedJson}</code></pre>
+    </div>
 </body>
 </html>";
+    }
+
+    private static string ExtractLinksForHtml(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("links", out var linksElement) ||
+                linksElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return string.Empty;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<nav><h2>Links</h2><ul>");
+
+            foreach (var link in linksElement.EnumerateArray())
+            {
+                var href = link.TryGetProperty("href", out var hrefProp) ? hrefProp.GetString() : null;
+                var rel = link.TryGetProperty("rel", out var relProp) ? relProp.GetString() : null;
+                var linkTitle = link.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
+
+                if (string.IsNullOrEmpty(href))
+                {
+                    continue;
+                }
+
+                // Only show HTML-navigable links
+                var type = link.TryGetProperty("type", out var typeProp) ? typeProp.GetString() : null;
+                var displayTitle = WebUtility.HtmlEncode(linkTitle ?? rel ?? href);
+                var relLabel = !string.IsNullOrEmpty(rel) ? $" <span class=\"rel\">[{WebUtility.HtmlEncode(rel)}]</span>" : "";
+                var htmlHref = type != null && !type.Contains("html", StringComparison.OrdinalIgnoreCase)
+                    ? href + (href.Contains('?') ? "&" : "?") + "f=html"
+                    : href;
+
+                sb.Append($"<li><a href=\"{WebUtility.HtmlEncode(htmlHref)}\">{displayTitle}{relLabel}</a></li>");
+            }
+
+            sb.Append("</ul></nav>");
+            return sb.ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 }

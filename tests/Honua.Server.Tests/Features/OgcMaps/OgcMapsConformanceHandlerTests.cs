@@ -50,6 +50,46 @@ public class OgcMapsConformanceHandlerTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task GetConformanceAsync_IncludesDatasetMapConformance()
+    {
+        var result = await _handler.GetConformanceAsync();
+
+        result.ConformsTo.Should().Contain(
+            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GetConformanceAsync_IncludesBackgroundConformance()
+    {
+        var result = await _handler.GetConformanceAsync();
+
+        result.ConformsTo.Should().Contain(
+            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GetConformanceAsync_IncludesCollectionsSelectionConformance()
+    {
+        var result = await _handler.GetConformanceAsync();
+
+        result.ConformsTo.Should().Contain(
+            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GetConformanceAsync_IncludesDatetimeConformance()
+    {
+        var result = await _handler.GetConformanceAsync();
+
+        result.ConformsTo.Should().Contain(
+            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task GetConformanceAsync_IncludesFormatConformance()
     {
         var result = await _handler.GetConformanceAsync();
@@ -72,15 +112,5 @@ public class OgcMapsConformanceHandlerTests
             "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting");
         result.ConformsTo.Should().Contain(
             "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Metadata)]
-    public async Task GetConformanceAsync_DoesNotClaimDatasetMapConformance()
-    {
-        var result = await _handler.GetConformanceAsync();
-
-        result.ConformsTo.Should().NotContain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map");
     }
 }

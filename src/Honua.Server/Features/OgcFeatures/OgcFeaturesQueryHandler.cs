@@ -242,6 +242,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             _streamingFeatureStore,
                             layer,
                             query,
+                            totalCount,
                             filterResult.CrsDefinition.Uri,
                             cancellationToken);
                     }
@@ -468,6 +469,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
+
+            // Compute ETag for the feature so clients can use If-Match on subsequent PUT/PATCH
+            var featureETag = _etagService.ComputeETag(ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
+            context.Response.Headers.ETag = featureETag;
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -982,6 +987,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             httpContext.Response.ContentType = _outputFormat;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
+            httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
             EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -1013,6 +1019,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly IStreamingFeatureStore _streamingFeatureStore;
         private readonly LayerDefinition _layer;
         private readonly FeatureQuery _query;
+        private readonly long _numberMatched;
         private readonly string _crsUri;
         private readonly CancellationToken _requestCancellationToken;
 
@@ -1020,12 +1027,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
             IStreamingFeatureStore streamingFeatureStore,
             LayerDefinition layer,
             FeatureQuery query,
+            long numberMatched,
             string crsUri,
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
             _layer = layer;
             _query = query;
+            _numberMatched = numberMatched;
             _crsUri = crsUri;
             _requestCancellationToken = requestCancellationToken;
         }
@@ -1034,6 +1043,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             httpContext.Response.ContentType = MediaTypes.Gml;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
+            httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
             EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(

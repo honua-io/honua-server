@@ -325,15 +325,13 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$format=application/json;odata.metadata=full")]
-    public async Task Features_WithFormatMetadataFull_FallsBackToMinimalContentType()
+    public async Task Features_WithFormatMetadataFull_RejectsUnsupportedMetadataLevel()
     {
         var format = Uri.EscapeDataString("application/json;odata.metadata=full");
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=1&$format={format}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+        // metadata=full is not supported; server should reject with 400
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

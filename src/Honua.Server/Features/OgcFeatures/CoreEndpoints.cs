@@ -54,6 +54,17 @@ internal static class CoreEndpoints
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
 
+        // OGC clients commonly expect the API definition at /ogc/features/api
+        var apiAlias = endpoints.MapGet("/ogc/features/api", HandleGetOpenApiSpec)
+            .WithDisplayName("OGC API Features API Definition")
+            .WithName("OgcApiDefinition")
+            .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")
+            .WithDescription("Alias for the OpenAPI specification at /openapi.json")
+            .WithTags("OGC API Features")
+            .CacheOutput("OgcOpenApi")
+            .Produces<object>(200, MediaTypes.OpenApi)
+            .Produces(404);
+
         return endpoints;
     }
 
@@ -172,6 +183,7 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
+                "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/gml-sf0",
 
                 // OGC API Features Part 2 - Coordinate Reference Systems by Reference
                 "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
@@ -179,6 +191,7 @@ internal static class CoreEndpoints
                 // OGC API Features Part 3 - Filtering
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/sorting",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
                 "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
@@ -186,7 +199,8 @@ internal static class CoreEndpoints
 
                 // OGC API Features Part 4 - Create, Replace, Delete
                 "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete"
-            ).AddRange(OgcConformanceUris.Common),
+            ).AddRange(OgcConformanceUris.Common)
+              .AddRange(OgcConformanceUris.VendorExtensions),
             Links = OgcCommonUtilities.BuildFormatLinks(
                 context.Request,
                 $"{baseUrl}/ogc/features/conformance",

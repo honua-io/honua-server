@@ -437,20 +437,30 @@ internal static class CollectionsEndpoints
         if (layer.Extent != null)
         {
             var extentSrid = layer.Extent.Value.SpatialReference;
-            var extentCrsIdentifier = extentSrid == 4326
-                ? OgcFeaturesUtilities.Crs84Uri
-                : extentSrid.ToOgcCrs();
-            var extentDefinition = await crsRegistry.ResolveAsync(extentCrsIdentifier, cancellationToken);
-            var extentCrs = extentDefinition?.Uri ?? extentCrsIdentifier;
+            var (minX, minY, maxX, maxY) = (
+                layer.Extent.Value.MinX,
+                layer.Extent.Value.MinY,
+                layer.Extent.Value.MaxX,
+                layer.Extent.Value.MaxY);
+
+            // OGC API Part 1 /req/core/fc-md-extent: first bbox MUST be in CRS84 (lon/lat).
+            if (extentSrid != 4326)
+            {
+                try
+                {
+                    (minX, minY) = OgcExtentTransformer.TransformToCrs84(minX, minY, extentSrid);
+                    (maxX, maxY) = OgcExtentTransformer.TransformToCrs84(maxX, maxY, extentSrid);
+                }
+                catch (NotSupportedException)
+                {
+                    // If transformation not supported, leave coordinates as-is (best effort)
+                }
+            }
 
             spatialExtent = new SpatialExtent
             {
-                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                    layer.Extent.Value.MinX,
-                    layer.Extent.Value.MinY,
-                    layer.Extent.Value.MaxX,
-                    layer.Extent.Value.MaxY)),
-                Crs = extentCrs
+                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(minX, minY, maxX, maxY)),
+                Crs = OgcFeaturesUtilities.Crs84Uri
             };
         }
 
@@ -513,7 +523,9 @@ internal static class CollectionsEndpoints
             {
                 Type = "object",
                 Title = "Geometry",
-                Description = "Geometric representation of the feature"
+                Description = "Geometric representation of the feature",
+                Format = "geometry",
+                Ref = "https://geojson.org/schema/Geometry.json"
             };
         }
 

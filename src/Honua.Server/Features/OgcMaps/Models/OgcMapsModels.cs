@@ -69,10 +69,11 @@ public sealed class OgcMapRequest
     public int? Height { get; init; } = 256;
 
     /// <summary>
-    /// Output format of the map.
+    /// Output format of the map. When omitted, the HTTP Accept header is used for
+    /// content negotiation per OGC API - Maps. Falls back to PNG when neither is specified.
     /// </summary>
     [RegularExpression(@"^(png|jpeg|jpg|tiff|tif)$", ErrorMessage = "Format must be png, jpeg, jpg, tiff, or tif")]
-    public string? F { get; init; } = "png";
+    public string? F { get; init; }
 
     /// <summary>
     /// Whether the background should be transparent.
@@ -279,6 +280,9 @@ public sealed class TileSet
 
     [JsonPropertyName("crs")]
     public required string Crs { get; init; }
+
+    [JsonPropertyName("tileMatrixSetId")]
+    public string? TileMatrixSetId { get; init; }
 
     [JsonPropertyName("tileMatrixSetURI")]
     public required string TileMatrixSetUri { get; init; }

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Administrative API for managing Honua Server connections, layers, styles, and observability. This API powers the Honua Admin UI and enables headless automation workflows.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints (connections, layers, styles, and observability). For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -52,7 +52,9 @@
   "paths": {
     "/config": {
       "get": {
-        "tags": ["Configuration"],
+        "tags": [
+          "Configuration"
+        ],
         "summary": "Get Configuration Documentation",
         "description": "Returns system configuration documentation and available settings",
         "operationId": "getConfiguration",
@@ -78,13 +80,15 @@
     },
     "/connections": {
       "get": {
-        "tags": ["Connections"],
+        "tags": [
+          "Connections"
+        ],
         "summary": "List Secure Connections",
-        "description": "Get all configured database connections (connection strings are never exposed)",
+        "description": "Get all configured database connections (credential values are never exposed)",
         "operationId": "getConnections",
         "responses": {
           "200": {
-            "description": "List of database connections",
+            "description": "List of secure connections",
             "content": {
               "application/json": {
                 "schema": {
@@ -102,9 +106,11 @@
         }
       },
       "post": {
-        "tags": ["Connections"],
+        "tags": [
+          "Connections"
+        ],
         "summary": "Create Secure Connection",
-        "description": "Create a new database connection with encrypted storage",
+        "description": "Create a new secure connection using encrypted credentials or external secret reference",
         "operationId": "createConnection",
         "requestBody": {
           "required": true,
@@ -122,7 +128,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectionResponse"
+                  "$ref": "#/components/schemas/ApiResponseConnectionSummary"
                 }
               }
             }
@@ -141,9 +147,11 @@
     },
     "/connections/{id}": {
       "get": {
-        "tags": ["Connections"],
+        "tags": [
+          "Connections"
+        ],
         "summary": "Get Secure Connection",
-        "description": "Get details for a specific database connection",
+        "description": "Get details for a specific secure connection",
         "operationId": "getConnection",
         "parameters": [
           {
@@ -159,39 +167,139 @@
         ],
         "responses": {
           "200": {
-            "description": "Connection details",
+            "description": "Secure connection details",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectionResponse"
+                  "$ref": "#/components/schemas/ApiResponseSecureConnectionDetail"
                 }
               }
             }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Update Secure Connection",
+        "description": "Update mutable secure connection properties",
+        "operationId": "updateConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connection updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseConnectionSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Delete Secure Connection",
+        "description": "Delete a secure connection",
+        "operationId": "deleteConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
     },
     "/connections/{id}/tables": {
       "get": {
-        "tags": ["Connections"],
+        "tags": [
+          "Connections"
+        ],
         "summary": "Get Connection Tables",
-        "description": "List all available tables in the database connection",
+        "description": "List discovered PostGIS tables for a connection identifier (GUID or name)",
         "operationId": "getConnectionTables",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "Connection ID",
+            "description": "Connection identifier (UUID or name)",
             "schema": {
               "type": "string"
             }
@@ -199,39 +307,44 @@
         ],
         "responses": {
           "200": {
-            "description": "List of available tables",
+            "description": "Discovered tables",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TablesResponse"
+                  "$ref": "#/components/schemas/TableDiscoveryResponse"
                 }
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
     },
     "/connections/test": {
       "post": {
-        "tags": ["Connections"],
-        "summary": "Test Connection",
-        "description": "Test a database connection before saving",
-        "operationId": "testConnection",
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Test Draft Connection",
+        "description": "Test a draft connection request before saving",
+        "operationId": "testDraftConnection",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TestConnectionRequest"
+                "$ref": "#/components/schemas/CreateConnectionRequest"
               }
             }
           }
@@ -242,7 +355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectionTestResponse"
+                  "$ref": "#/components/schemas/ApiResponseConnectionTestResult"
                 }
               }
             }
@@ -261,16 +374,18 @@
     },
     "/connections/{id}/layers": {
       "get": {
-        "tags": ["Layers"],
+        "tags": [
+          "Layers"
+        ],
         "summary": "List Published Layers",
-        "description": "Get all published layers for a connection",
+        "description": "Get published layers for a connection and optional service name",
         "operationId": "getPublishedLayers",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "Connection ID",
+            "description": "Connection identifier",
             "schema": {
               "type": "string"
             }
@@ -288,37 +403,42 @@
         ],
         "responses": {
           "200": {
-            "description": "List of published layers",
+            "description": "Published layers",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublishedLayersResponse"
+                  "$ref": "#/components/schemas/ApiResponsePublishedLayerSummaryArray"
                 }
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       },
       "post": {
-        "tags": ["Layers"],
+        "tags": [
+          "Layers"
+        ],
         "summary": "Publish Layer",
-        "description": "Publish a database table as a web service layer",
+        "description": "Publish a PostGIS table as a layer",
         "operationId": "publishLayer",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "Connection ID",
+            "description": "Connection identifier",
             "schema": {
               "type": "string"
             }
@@ -340,7 +460,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublishedLayerResponse"
+                  "$ref": "#/components/schemas/ApiResponsePublishedLayerSummary"
                 }
               }
             }
@@ -353,13 +473,21 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
     },
     "/connections/{id}/layers/{layerId}/enabled": {
       "put": {
-        "tags": ["Layers"],
+        "tags": [
+          "Layers"
+        ],
         "summary": "Set Layer Enabled",
         "description": "Enable or disable a specific published layer",
         "operationId": "setLayerEnabled",
@@ -368,7 +496,7 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "description": "Connection ID",
+            "description": "Connection identifier",
             "schema": {
               "type": "string"
             }
@@ -381,6 +509,16 @@
             "schema": {
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "serviceName",
+            "in": "query",
+            "required": false,
+            "description": "Service name (defaults to default)",
+            "schema": {
+              "type": "string",
+              "default": "default"
             }
           }
         ],
@@ -396,120 +534,35 @@
         },
         "responses": {
           "200": {
-            "description": "Layer enabled status updated",
+            "description": "Layer status updated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LayerStatusResponse"
+                  "$ref": "#/components/schemas/ApiResponsePublishedLayerSummary"
                 }
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/layers/{layerId}/style": {
-      "get": {
-        "tags": ["Styles"],
-        "summary": "Get Layer Style",
-        "description": "Get style metadata for a specific layer",
-        "operationId": "getLayerStyle",
-        "parameters": [
-          {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "description": "Layer ID",
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Layer style metadata",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LayerStyleResponse"
-                }
-              }
-            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      },
-      "put": {
-        "tags": ["Styles"],
-        "summary": "Update Layer Style",
-        "description": "Update style metadata for a specific layer",
-        "operationId": "updateLayerStyle",
-        "parameters": [
-          {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "description": "Layer ID",
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateLayerStyleRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Layer style updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LayerStyleResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
     },
     "/observability/errors": {
       "get": {
-        "tags": ["Observability"],
+        "tags": [
+          "Observability"
+        ],
         "summary": "Get Recent Errors",
         "description": "Get recent system errors and exceptions",
         "operationId": "getRecentErrors",
@@ -535,7 +588,9 @@
     },
     "/observability/telemetry": {
       "get": {
-        "tags": ["Observability"],
+        "tags": [
+          "Observability"
+        ],
         "summary": "Get Telemetry Status",
         "description": "Get current telemetry and tracing configuration status",
         "operationId": "getTelemetryStatus",
@@ -555,6 +610,276 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/connections/{id}/test": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Test Saved Connection",
+        "description": "Run a health test for an existing saved connection",
+        "operationId": "testConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection health test results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseConnectionTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/connections/encryption/validate": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Validate Encryption Service",
+        "description": "Validate encryption service health and return current key version",
+        "operationId": "validateConnectionEncryption",
+        "responses": {
+          "200": {
+            "description": "Encryption validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEncryptionValidationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/connections/encryption/rotate-key": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Rotate Encryption Key",
+        "description": "Rotate encryption key version for connection credential storage",
+        "operationId": "rotateConnectionEncryptionKey",
+        "responses": {
+          "200": {
+            "description": "Key rotation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseKeyRotationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/connections/{id}/layers/enabled": {
+      "put": {
+        "tags": [
+          "Layers"
+        ],
+        "summary": "Set Service Layers Enabled",
+        "description": "Enable or disable all layers for a service within a connection",
+        "operationId": "setServiceLayersEnabled",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceName",
+            "in": "query",
+            "required": false,
+            "description": "Service name (defaults to default)",
+            "schema": {
+              "type": "string",
+              "default": "default"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLayerEnabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service layer statuses updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePublishedLayerSummaryArray"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/metadata/layers/{layerId}/style": {
+      "get": {
+        "tags": [
+          "Styles"
+        ],
+        "summary": "Get Layer Style",
+        "description": "Get style payload for a layer",
+        "operationId": "getAdminLayerStyle",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "description": "Layer ID",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Layer style payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerStyleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Styles"
+        ],
+        "summary": "Update Layer Style",
+        "description": "Update layer style payload",
+        "operationId": "updateAdminLayerStyle",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "description": "Layer ID",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLayerStyleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated layer style payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerStyleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -615,6 +940,16 @@
             }
           }
         }
+      },
+      "Conflict": {
+        "description": "Conflict - resource state prevents the requested operation",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
       }
     },
     "schemas": {
@@ -642,13 +977,20 @@
             "items": {
               "$ref": "#/components/schemas/ConnectionSummary"
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
       "ConnectionSummary": {
         "type": "object",
         "properties": {
-          "id": {
+          "connectionId": {
             "type": "string",
             "format": "uuid",
             "description": "Unique connection identifier"
@@ -659,206 +1001,223 @@
           },
           "description": {
             "type": "string",
-            "description": "Connection description"
+            "description": "Optional connection description"
           },
           "host": {
             "type": "string",
             "description": "Database host"
           },
-          "database": {
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Database port"
+          },
+          "databaseName": {
             "type": "string",
             "description": "Database name"
           },
-          "isHealthy": {
-            "type": "boolean",
-            "description": "Connection health status"
+          "username": {
+            "type": "string",
+            "description": "Database username"
           },
-          "lastTested": {
+          "sslRequired": {
+            "type": "boolean",
+            "description": "Whether SSL is required"
+          },
+          "sslMode": {
+            "type": "string",
+            "enum": [
+              "Disable",
+              "Allow",
+              "Prefer",
+              "Require",
+              "VerifyCA",
+              "VerifyFull"
+            ],
+            "description": "SSL mode"
+          },
+          "storageType": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "external"
+            ],
+            "description": "Credential storage type"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether connection is active"
+          },
+          "healthStatus": {
+            "type": "string",
+            "description": "Health status string"
+          },
+          "lastHealthCheck": {
             "type": "string",
             "format": "date-time",
             "description": "Last health check timestamp"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Creator identity"
           }
         }
       },
       "CreateConnectionRequest": {
         "type": "object",
-        "required": ["name", "host", "database", "username", "password"],
+        "required": [
+          "name",
+          "host",
+          "databaseName",
+          "username"
+        ],
+        "description": "Provide either password or secretReference/secretType. Do not provide both.",
         "properties": {
           "name": {
             "type": "string",
-            "description": "Connection display name",
             "minLength": 1,
-            "maxLength": 255
+            "maxLength": 64,
+            "description": "Connection display name"
           },
           "description": {
             "type": "string",
-            "description": "Optional connection description",
-            "maxLength": 1000
+            "maxLength": 1000,
+            "description": "Optional connection description"
           },
           "host": {
             "type": "string",
-            "description": "Database host or IP address",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Database host or IP address"
           },
           "port": {
             "type": "integer",
-            "description": "Database port number",
             "minimum": 1,
             "maximum": 65535,
-            "default": 5432
+            "default": 5432,
+            "description": "Database port"
           },
-          "database": {
+          "databaseName": {
             "type": "string",
-            "description": "Database name",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Database name"
           },
           "username": {
             "type": "string",
-            "description": "Database username",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Database username"
           },
           "password": {
             "type": "string",
-            "description": "Database password (encrypted at rest)",
-            "minLength": 1
+            "maxLength": 255,
+            "description": "Database password (managed encrypted storage)"
+          },
+          "secretReference": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "External secret manager reference"
+          },
+          "secretType": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Secret provider type (required with secretReference)"
+          },
+          "sslRequired": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether SSL is required"
           },
           "sslMode": {
             "type": "string",
-            "enum": ["Disable", "Allow", "Prefer", "Require"],
-            "description": "SSL connection mode",
-            "default": "Prefer"
+            "enum": [
+              "Disable",
+              "Allow",
+              "Prefer",
+              "Require",
+              "VerifyCA",
+              "VerifyFull"
+            ],
+            "default": "Require",
+            "description": "SSL mode"
           }
         }
       },
       "ConnectionResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ConnectionSummary"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "port": {
-                "type": "integer",
-                "description": "Database port"
-              },
-              "username": {
-                "type": "string",
-                "description": "Database username"
-              },
-              "sslMode": {
-                "type": "string",
-                "description": "SSL connection mode"
-              },
-              "createdAt": {
-                "type": "string",
-                "format": "date-time",
-                "description": "Connection creation timestamp"
-              },
-              "updatedAt": {
-                "type": "string",
-                "format": "date-time",
-                "description": "Last update timestamp"
-              }
-            }
-          }
-        ]
+        "$ref": "#/components/schemas/SecureConnectionDetail"
       },
       "TestConnectionRequest": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CreateConnectionRequest"
-          }
-        ]
+        "$ref": "#/components/schemas/CreateConnectionRequest"
       },
       "ConnectionTestResponse": {
         "type": "object",
         "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Tested connection ID (empty UUID for draft tests)"
+          },
+          "connectionName": {
+            "type": "string",
+            "description": "Connection name"
+          },
           "isHealthy": {
             "type": "boolean",
-            "description": "Connection test result"
+            "description": "Health check result"
           },
-          "responseTimeMs": {
-            "type": "integer",
-            "description": "Connection response time in milliseconds"
-          },
-          "postgisVersion": {
+          "testedAt": {
             "type": "string",
-            "description": "PostGIS version if available"
+            "format": "date-time",
+            "description": "Test execution time"
           },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Available database capabilities"
-          },
-          "error": {
+          "message": {
             "type": "string",
-            "description": "Error message if connection failed"
+            "description": "Human-readable result message"
           }
         }
       },
       "TablesResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TableInfo"
-            }
-          }
-        }
+        "$ref": "#/components/schemas/TableDiscoveryResponse"
       },
       "TableInfo": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string",
-            "description": "Table name"
-          },
           "schema": {
             "type": "string",
             "description": "Schema name"
           },
+          "table": {
+            "type": "string",
+            "description": "Table name"
+          },
+          "geometryColumn": {
+            "type": "string",
+            "description": "Geometry column name"
+          },
           "geometryType": {
             "type": "string",
-            "description": "Geometry type if spatial table"
+            "description": "Geometry type"
           },
           "srid": {
             "type": "integer",
-            "description": "Spatial reference system identifier"
+            "description": "Spatial reference identifier"
           },
-          "rowCount": {
+          "estimatedRows": {
             "type": "integer",
+            "format": "int64",
             "description": "Estimated row count"
           },
-          "bounds": {
-            "$ref": "#/components/schemas/BoundingBox"
-          }
-        }
-      },
-      "BoundingBox": {
-        "type": "object",
-        "properties": {
-          "minX": {
-            "type": "number",
-            "format": "double"
-          },
-          "minY": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxX": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxY": {
-            "type": "number",
-            "format": "double"
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            }
           }
         }
       },
@@ -873,86 +1232,135 @@
             "items": {
               "$ref": "#/components/schemas/PublishedLayerSummary"
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
       "PublishedLayerSummary": {
         "type": "object",
         "properties": {
-          "id": {
+          "layerId": {
             "type": "integer",
+            "format": "int32",
             "description": "Layer ID"
           },
-          "name": {
+          "layerName": {
             "type": "string",
             "description": "Layer name"
           },
-          "title": {
+          "schema": {
             "type": "string",
-            "description": "Layer display title"
+            "description": "Source schema name"
+          },
+          "table": {
+            "type": "string",
+            "description": "Source table name"
           },
           "description": {
             "type": "string",
             "description": "Layer description"
-          },
-          "tableName": {
-            "type": "string",
-            "description": "Source database table"
           },
           "geometryType": {
             "type": "string",
             "description": "Geometry type"
           },
-          "isEnabled": {
-            "type": "boolean",
-            "description": "Layer enabled status"
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer SRID"
           },
-          "protocols": {
-            "$ref": "#/components/schemas/ProtocolConfig"
-          },
-          "createdAt": {
+          "primaryKey": {
             "type": "string",
-            "format": "date-time"
+            "description": "Primary key field"
+          },
+          "fieldCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Published field count"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the layer is enabled"
+          },
+          "serviceName": {
+            "type": "string",
+            "description": "Service name"
           }
         }
       },
       "PublishLayerRequest": {
         "type": "object",
-        "required": ["name", "tableName"],
+        "required": [
+          "schema",
+          "table",
+          "layerName"
+        ],
         "properties": {
-          "name": {
+          "schema": {
             "type": "string",
-            "description": "Layer service name",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 63,
+            "description": "Source schema"
           },
-          "title": {
+          "table": {
             "type": "string",
-            "description": "Layer display title"
+            "minLength": 1,
+            "maxLength": 63,
+            "description": "Source table"
+          },
+          "layerName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Published layer name"
           },
           "description": {
             "type": "string",
-            "description": "Layer description"
-          },
-          "tableName": {
-            "type": "string",
-            "description": "Source database table name",
-            "minLength": 1
+            "maxLength": 1000,
+            "description": "Optional description"
           },
           "geometryColumn": {
             "type": "string",
-            "description": "Geometry column name",
-            "default": "geom"
+            "maxLength": 64,
+            "description": "Geometry column name"
           },
-          "primaryKeyColumn": {
+          "geometryType": {
             "type": "string",
-            "description": "Primary key column name",
-            "default": "id"
+            "maxLength": 64,
+            "description": "Geometry type override"
           },
-          "protocols": {
-            "$ref": "#/components/schemas/ProtocolConfig"
+          "srid": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Target SRID override"
           },
-          "caching": {
-            "$ref": "#/components/schemas/CachingConfig"
+          "primaryKey": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Primary key column"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Subset of fields to publish (empty publishes all)"
+          },
+          "serviceName": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Target service name (defaults to default)"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable layer after publish",
+            "default": true
           }
         }
       },
@@ -1052,42 +1460,13 @@
         }
       },
       "PublishedLayerResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/PublishedLayerSummary"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "endpoints": {
-                "type": "object",
-                "description": "Available service endpoints",
-                "properties": {
-                  "featureServer": {
-                    "type": "string",
-                    "description": "FeatureServer endpoint URL"
-                  },
-                  "ogcFeatures": {
-                    "type": "string",
-                    "description": "OGC API Features endpoint URL"
-                  },
-                  "odata": {
-                    "type": "string",
-                    "description": "OData v4 endpoint URL"
-                  },
-                  "vectorTiles": {
-                    "type": "string",
-                    "description": "Vector tiles endpoint URL pattern"
-                  }
-                }
-              }
-            }
-          }
-        ]
+        "$ref": "#/components/schemas/PublishedLayerSummary"
       },
       "SetLayerEnabledRequest": {
         "type": "object",
-        "required": ["enabled"],
+        "required": [
+          "enabled"
+        ],
         "properties": {
           "enabled": {
             "type": "boolean",
@@ -1119,44 +1498,19 @@
         }
       },
       "LayerStyleResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/StyleMetadata"
-          }
-        }
-      },
-      "StyleMetadata": {
-        "type": "object",
-        "properties": {
-          "layerId": {
-            "type": "integer"
-          },
-          "styleName": {
-            "type": "string"
-          },
-          "styleUrl": {
-            "type": "string"
-          },
-          "lastModified": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
+        "$ref": "#/components/schemas/LayerStylePayload"
       },
       "UpdateLayerStyleRequest": {
         "type": "object",
         "properties": {
-          "styleName": {
-            "type": "string",
-            "description": "Style name or identifier"
-          },
-          "styleData": {
+          "mapLibreStyle": {
             "type": "object",
-            "description": "MapLibre style specification",
+            "description": "MapLibre style JSON",
+            "additionalProperties": true
+          },
+          "drawingInfo": {
+            "type": "object",
+            "description": "GeoServices drawingInfo JSON",
             "additionalProperties": true
           }
         }
@@ -1183,20 +1537,17 @@
             "type": "string",
             "format": "date-time"
           },
-          "level": {
-            "type": "string",
-            "enum": ["Error", "Warning", "Critical"]
+          "correlationId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "integer",
+            "format": "int32"
           },
           "message": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "stackTrace": {
-            "type": "string"
-          },
-          "requestId": {
             "type": "string"
           }
         }
@@ -1214,11 +1565,7 @@
           },
           "otlpEndpoint": {
             "type": "string",
-            "description": "OTLP endpoint URL if configured"
-          },
-          "instrumentationEnabled": {
-            "type": "boolean",
-            "description": "Whether instrumentation is active"
+            "description": "Configured OTLP endpoint URL"
           }
         }
       },
@@ -1229,17 +1576,360 @@
             "type": "boolean",
             "example": false
           },
-          "error": {
+          "message": {
             "type": "string",
             "description": "Error message"
           },
-          "details": {
+          "timestamp": {
             "type": "string",
-            "description": "Additional error details"
+            "format": "date-time",
+            "description": "Response timestamp"
+          }
+        }
+      },
+      "SecureConnectionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ConnectionSummary"
           },
-          "requestId": {
+          {
+            "type": "object",
+            "properties": {
+              "credentialReference": {
+                "type": "string",
+                "description": "Secret manager reference (when using external credentials)"
+              },
+              "encryptionVersion": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Encryption key version"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Last update timestamp"
+              }
+            }
+          }
+        ]
+      },
+      "UpdateConnectionRequest": {
+        "type": "object",
+        "properties": {
+          "description": {
             "type": "string",
-            "description": "Request identifier for support"
+            "maxLength": 1000,
+            "description": "Optional description"
+          },
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Database host"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Database port"
+          },
+          "databaseName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Database name"
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Database username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New password (re-encrypt managed credentials)"
+          },
+          "sslRequired": {
+            "type": "boolean",
+            "description": "Whether SSL is required"
+          },
+          "sslMode": {
+            "type": "string",
+            "enum": [
+              "Disable",
+              "Allow",
+              "Prefer",
+              "Require",
+              "VerifyCA",
+              "VerifyFull"
+            ],
+            "description": "SSL mode"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether connection is active"
+          }
+        }
+      },
+      "EncryptionValidationResult": {
+        "type": "object",
+        "properties": {
+          "isValid": {
+            "type": "boolean",
+            "description": "Whether encryption service is valid"
+          },
+          "currentKeyVersion": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current key version"
+          },
+          "validatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Validation timestamp"
+          },
+          "message": {
+            "type": "string",
+            "description": "Validation message"
+          }
+        }
+      },
+      "KeyRotationResult": {
+        "type": "object",
+        "properties": {
+          "previousKeyVersion": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Previous key version"
+          },
+          "newKeyVersion": {
+            "type": "integer",
+            "format": "int32",
+            "description": "New key version"
+          },
+          "rotatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Rotation timestamp"
+          },
+          "message": {
+            "type": "string",
+            "description": "Rotation message"
+          }
+        }
+      },
+      "TableDiscoveryResponse": {
+        "type": "object",
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TableInfo"
+            }
+          }
+        }
+      },
+      "ColumnInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Column name"
+          },
+          "dataType": {
+            "type": "string",
+            "description": "Column data type"
+          },
+          "isNullable": {
+            "type": "boolean",
+            "description": "Whether NULL is allowed"
+          },
+          "isPrimaryKey": {
+            "type": "boolean",
+            "description": "Whether this is a primary key column"
+          },
+          "maxLength": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Max length for text-like types"
+          }
+        }
+      },
+      "LayerStylePayload": {
+        "type": "object",
+        "properties": {
+          "mapLibreStyle": {
+            "type": "object",
+            "description": "MapLibre style JSON",
+            "additionalProperties": true
+          },
+          "drawingInfo": {
+            "type": "object",
+            "description": "GeoServices drawingInfo JSON",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ApiResponseConnectionSummary": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ConnectionSummary"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseSecureConnectionDetail": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SecureConnectionDetail"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseConnectionTestResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ConnectionTestResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseEncryptionValidationResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EncryptionValidationResult"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseKeyRotationResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KeyRotationResult"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponsePublishedLayerSummary": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PublishedLayerSummary"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponsePublishedLayerSummaryArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublishedLayerSummary"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseLayerStyleResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerStylePayload"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseObject": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

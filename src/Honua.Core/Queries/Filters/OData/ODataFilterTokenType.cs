@@ -25,9 +25,11 @@ internal enum ODataFilterTokenType
     Ge,
     Lt,
     Le,
+    In,
     Add,
     Sub,
     Mul,
     Div,
-    Mod
+    Mod,
+    Minus
 }

@@ -110,19 +110,17 @@ else
 
 if (!string.IsNullOrWhiteSpace(redisConnectionString))
 {
-    builder.Services.TryAddSingleton<IConnectionMultiplexer>(sp =>
+    try
     {
-        try
-        {
-            return ConnectionMultiplexer.Connect(redisConnectionString);
-        }
-        catch (Exception ex)
-        {
-            var logger = sp.GetRequiredService<ILogger<Program>>();
-            logger.LogWarning(ex, "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.");
-            return null!;
-        }
-    });
+        var redisConnection = ConnectionMultiplexer.Connect(redisConnectionString);
+        builder.Services.TryAddSingleton<IConnectionMultiplexer>(redisConnection);
+    }
+    catch (Exception ex)
+    {
+        var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
+        startupLogger.LogWarning(ex, "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.");
+        // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
+    }
 }
 
 // Configure Serilog for structured logging with AOT compatibility

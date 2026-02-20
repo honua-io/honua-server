@@ -13,7 +13,7 @@ This section is for people **using Honua in production** — API consumers, GIS 
 
 ## Reference & Optimization
 - **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices
-- **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri FeatureServer + MapServer compatibility details
+- **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri FeatureServer compatibility details
 - **[MapServer Coverage Matrix](map-server-matrix.md)** - Esri MapServer compatibility details
 - **[Protocols Overview](STANDARDS_APIS.md)** - Protocol selection and coverage links
 

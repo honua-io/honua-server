@@ -449,7 +449,12 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             _featureStore.QueryAsync(TestLayerId, maliciousQuery));
 
-        Assert.Contains("dangerous pattern", exception.Message);
+        var isSqlInjectionRejectionMessage =
+            exception.Message.Contains("dangerous pattern", StringComparison.OrdinalIgnoreCase) ||
+            exception.Message.Contains("unsupported expression", StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            isSqlInjectionRejectionMessage,
+            $"Expected SQL-injection rejection message but got: {exception.Message}");
 
         // Verify table still exists by running a legitimate query
         var verificationQuery = new FeatureQuery();

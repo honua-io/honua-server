@@ -36,10 +36,8 @@ internal static class ODataUtilityService
             "json",
             "application/json",
             "json;odata.metadata=minimal",
-            "json;odata.metadata=full",
             "json;odata.metadata=none",
             "application/json;odata.metadata=minimal",
-            "application/json;odata.metadata=full",
             "application/json;odata.metadata=none"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -391,19 +389,9 @@ internal static class ODataUtilityService
 
         return Results.Json(
             crudResult.Data,
-            GetJsonTypeInfo<T>(),
+            ODataJsonContext.Default.Options,
             contentType: GetODataContentType(context.Request, format),
             statusCode: crudResult.StatusCode);
-    }
-
-    /// <summary>
-    /// Gets the appropriate JsonTypeInfo for serialization based on type.
-    /// </summary>
-    private static System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> GetJsonTypeInfo<T>()
-    {
-        // This would need to be expanded based on the actual types used
-        // For now, return a generic JsonTypeInfo
-        return (System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>)(object)ODataJsonContext.Default.ODataFeatureResponse;
     }
 
     public static Dictionary<string, object?> BuildFeaturePayload(

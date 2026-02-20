@@ -43,7 +43,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly Timer _cleanupTimer;
     private volatile bool _isUsingFallback;
     private volatile bool _disposed;
-    private DateTime _lastRedisFailure = DateTime.MinValue;
+    private long _lastRedisFailureTicks = DateTime.MinValue.Ticks;
 
     public RedisCacheService(
         IDistributedCache? distributedCache,
@@ -418,7 +418,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         if (_isUsingFallback)
         {
             // Check if we should retry Redis
-            if (DateTime.UtcNow - _lastRedisFailure > _options.RetryInterval)
+            var lastFailureDt = new DateTime(Volatile.Read(ref _lastRedisFailureTicks), DateTimeKind.Utc);
+            if (DateTime.UtcNow - lastFailureDt > _options.RetryInterval)
             {
                 var restored = await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
                 return restored || _options.EnableFallback;
@@ -442,7 +443,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     private bool ShouldRetryRedis(DateTime now)
     {
-        return _isUsingFallback && _distributedCache != null && now - _lastRedisFailure > _options.RetryInterval;
+        var lastFailure = new DateTime(Volatile.Read(ref _lastRedisFailureTicks), DateTimeKind.Utc);
+        return _isUsingFallback && _distributedCache != null && now - lastFailure > _options.RetryInterval;
     }
 
     private async Task<bool> TryRestoreRedisAsync(CancellationToken cancellationToken)
@@ -463,7 +465,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
         catch
         {
-            _lastRedisFailure = DateTime.UtcNow;
+            Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
             return false;
         }
     }
@@ -577,7 +579,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         if (!_isUsingFallback)
         {
             _isUsingFallback = true;
-            _lastRedisFailure = DateTime.UtcNow;
+            Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
             RedisCacheServiceLog.RedisConnectionFailed(_logger, ex);
         }
     }

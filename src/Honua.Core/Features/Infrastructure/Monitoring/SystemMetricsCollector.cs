@@ -25,6 +25,7 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
     private volatile int _responseCount;
     private volatile bool _disposed;
     private readonly object _cpuLock = new();
+    private readonly object _responseLock = new();
     private TimeSpan _lastCpuTime;
     private DateTime _lastCpuSampleTime;
 
@@ -69,7 +70,7 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
 
         // Update response time metrics
         var responseMs = responseTime.TotalMilliseconds;
-        lock (this)
+        lock (_responseLock)
         {
             _totalResponseTime += responseMs;
             _responseCount++;

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -18,13 +19,13 @@ using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.MapServer.Models;
 using Honua.Server.Features.MapServer.Rendering;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.MapServer;
 
 internal static partial class MapServerEndpoints
 {
     private const int DefaultTolerance = 3;
-    private const int MaxIdentifyResults = 100;
 
     private enum IdentifyLayerMode
     {
@@ -105,6 +106,12 @@ internal static partial class MapServerEndpoints
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     $"Output format '{responseFormat}' is not supported.");
+            }
+
+            var gdbVersion = GetValue(values, "gdbVersion");
+            if (!string.IsNullOrWhiteSpace(gdbVersion))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
             }
 
             if (string.IsNullOrWhiteSpace(geometryValue))
@@ -201,6 +208,7 @@ internal static partial class MapServerEndpoints
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var maxIdentifyResults = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
             var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(mapExtent, imageWidth, imageDpi, geometrySrid);
             var identifySelection = ResolveIdentifyLayers(service, layersParam, dynamicLayers, context, scaleDenominator);
@@ -266,7 +274,7 @@ internal static partial class MapServerEndpoints
                     SpatialFilter = spatialFilter,
                     SpatialReferenceSrid = service.SpatialReference.Srid,
                     OutputSrid = geometrySrid,
-                    Limit = MaxIdentifyResults,
+                    Limit = maxIdentifyResults,
                     SqlFilter = sqlFilter
                 };
 

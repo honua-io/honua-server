@@ -27,8 +27,10 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private static readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
     private static readonly SemaphoreSlim _geometryStorageInitLock = new(1, 1);
     private static readonly SemaphoreSlim _layerCatalogInitLock = new(1, 1);
-    private static CoreGeometryStorageType? _geometryStorageType;
-    private static bool? _hasLayerCatalog;
+    // Use int sentinels for thread-safe double-checked locking (volatile Nullable<T> is not supported)
+    // -1 = uninitialized, >= 0 = initialized value
+    private static volatile int _geometryStorageTypeValue = -1;
+    private static volatile int _hasLayerCatalogValue = -1;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<FeatureCacheManager> _logger;
@@ -50,10 +52,12 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         {
             if (_executionCounts.Count >= MaxMetricEntries && !_executionCounts.ContainsKey(operationType))
             {
-                _executionCounts.Clear();
-                _totalExecutionTimeMs.Clear();
-                _maxExecutionTimeMs.Clear();
+                // Best-effort eviction: clear all dictionaries. Non-atomic across dictionaries
+                // is acceptable here since metrics are advisory, not transactional.
                 _totalResultCounts.Clear();
+                _maxExecutionTimeMs.Clear();
+                _totalExecutionTimeMs.Clear();
+                _executionCounts.Clear();
             }
 
             _executionCounts.AddOrUpdate(operationType, 1, (key, value) => value + 1);
@@ -154,17 +158,19 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     public async Task<CoreGeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
     {
-        if (_geometryStorageType.HasValue)
+        var cached = _geometryStorageTypeValue;
+        if (cached >= 0)
         {
-            return _geometryStorageType.Value;
+            return (CoreGeometryStorageType)cached;
         }
 
         await _geometryStorageInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_geometryStorageType.HasValue)
+            cached = _geometryStorageTypeValue;
+            if (cached >= 0)
             {
-                return _geometryStorageType.Value;
+                return (CoreGeometryStorageType)cached;
             }
 
             await using var connection = (NpgsqlConnection)await _connectionProvider
@@ -186,20 +192,22 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+            CoreGeometryStorageType result;
             if (await reader.ReadAsync(cancellationToken))
             {
                 var dataTypeOrdinal = reader.GetOrdinal("data_type");
                 var udtNameOrdinal = reader.GetOrdinal("udt_name");
                 var dataType = reader.GetString(dataTypeOrdinal);
                 var udtName = reader.GetString(udtNameOrdinal);
-                _geometryStorageType = ResolveGeometryStorageType(dataType, udtName);
+                result = ResolveGeometryStorageType(dataType, udtName);
             }
             else
             {
-                _geometryStorageType = CoreGeometryStorageType.Bytea; // Default fallback
+                result = CoreGeometryStorageType.Bytea; // Default fallback
             }
 
-            return _geometryStorageType.Value;
+            _geometryStorageTypeValue = (int)result;
+            return result;
         }
         finally
         {
@@ -209,17 +217,19 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     public async Task<bool> IsLayerCatalogAvailableAsync(CancellationToken cancellationToken)
     {
-        if (_hasLayerCatalog.HasValue)
+        var cached = _hasLayerCatalogValue;
+        if (cached >= 0)
         {
-            return _hasLayerCatalog.Value;
+            return cached == 1;
         }
 
         await _layerCatalogInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_hasLayerCatalog.HasValue)
+            cached = _hasLayerCatalogValue;
+            if (cached >= 0)
             {
-                return _hasLayerCatalog.Value;
+                return cached == 1;
             }
 
             await using var connection = (NpgsqlConnection)await _connectionProvider
@@ -236,17 +246,19 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     private async Task<bool> IsLayerCatalogAvailableAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        if (_hasLayerCatalog.HasValue)
+        var cached = _hasLayerCatalogValue;
+        if (cached >= 0)
         {
-            return _hasLayerCatalog.Value;
+            return cached == 1;
         }
 
         await _layerCatalogInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_hasLayerCatalog.HasValue)
+            cached = _hasLayerCatalogValue;
+            if (cached >= 0)
             {
-                return _hasLayerCatalog.Value;
+                return cached == 1;
             }
 
             return await IsLayerCatalogAvailableInternalAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -273,9 +285,10 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             await using var command = new NpgsqlCommand(sql, connection);
 
             var result = await command.ExecuteScalarAsync(cancellationToken);
-            _hasLayerCatalog = (bool)result!;
+            var available = (bool)result!;
+            _hasLayerCatalogValue = available ? 1 : 0;
 
-            return _hasLayerCatalog.Value;
+            return available;
         }
         catch
         {

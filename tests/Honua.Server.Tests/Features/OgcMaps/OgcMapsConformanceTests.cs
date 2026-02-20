@@ -85,12 +85,45 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_DoesNotClaimDatasetMapConformance()
+    public async Task GetConformance_IncludesDatasetMapConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
-            "dataset map conformance is not declared until the full abstract test requirements are implemented");
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
+            "must declare Dataset Map conformance");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/maps/conformance")]
+    public async Task GetConformance_IncludesBackgroundConformance()
+    {
+        var classes = await GetConformanceClassesAsync();
+
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background",
+            "must declare Background conformance for bgcolor/transparent params");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/maps/conformance")]
+    public async Task GetConformance_IncludesCollectionsSelectionConformance()
+    {
+        var classes = await GetConformanceClassesAsync();
+
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection",
+            "must declare Collections Selection conformance for the collections param");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/maps/conformance")]
+    public async Task GetConformance_IncludesDatetimeConformance()
+    {
+        var classes = await GetConformanceClassesAsync();
+
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
+            "must declare Date & Time conformance for the datetime param");
     }
 
     [IntegrationTest]

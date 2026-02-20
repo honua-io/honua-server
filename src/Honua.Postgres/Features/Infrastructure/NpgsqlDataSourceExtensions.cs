@@ -19,20 +19,20 @@ internal static class NpgsqlDataSourceExtensions
     /// <param name="cancellationToken">Cancellation token</param>
     public static async Task WarmupConnectionPoolAsync(this NpgsqlDataSource dataSource, int minConnections = 5, CancellationToken cancellationToken = default)
     {
-        var connections = new List<NpgsqlConnection>();
+        var connections = new NpgsqlConnection[minConnections];
         try
         {
             // Create minimum pool connections in parallel for faster warmup
-            var tasks = Enumerable.Range(0, minConnections)
-                .Select(async _ =>
+            var tasks = new Task[minConnections];
+            for (var i = 0; i < minConnections; i++)
+            {
+                var index = i;
+                tasks[i] = Task.Run(async () =>
                 {
                     var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-                    lock (connections)
-                    {
-                        connections.Add(connection);
-                    }
-                    return connection;
-                });
+                    connections[index] = connection;
+                }, cancellationToken);
+            }
 
             await Task.WhenAll(tasks);
         }
@@ -41,7 +41,10 @@ internal static class NpgsqlDataSourceExtensions
             // Return all connections to the pool
             foreach (var connection in connections)
             {
-                await connection.DisposeAsync();
+                if (connection != null)
+                {
+                    await connection.DisposeAsync();
+                }
             }
         }
     }
