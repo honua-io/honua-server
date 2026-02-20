@@ -559,9 +559,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         foreach (var kvp in _keyLocks)
         {
-            // Remove only idle locks from the dictionary.
-            // Do not dispose here: callers may still hold references obtained from GetOrAdd
-            // and disposing would create racy ObjectDisposedException failures.
+            // Only remove if idle (CurrentCount == 1) and TryRemove atomically matches
+            // the exact key-value pair. If another thread obtained this semaphore via
+            // GetOrAdd between our check and removal, TryRemove will not remove it
+            // because GetOrAdd returns the existing instance (same reference).
+            // However, after removal a new thread could create a different semaphore.
+            // This is acceptable: pruning is best-effort cleanup, not a correctness gate.
             if (kvp.Value.CurrentCount == 1)
             {
                 _keyLocks.TryRemove(kvp);
@@ -683,6 +686,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             _disposed = true;
             _semaphore.Release();
 
+            // Eagerly remove idle semaphores. Use TryRemove with exact KVP match
+            // so we only remove if the dictionary still holds this specific instance.
+            // This is safe: if another thread re-acquired, CurrentCount would be 0.
             if (_semaphore.CurrentCount == 1)
             {
                 _locks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(_key, _semaphore));

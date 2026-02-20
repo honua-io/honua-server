@@ -244,6 +244,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             query,
                             totalCount,
                             filterResult.CrsDefinition.Uri,
+                            streamLinks,
                             cancellationToken);
                     }
 
@@ -1021,6 +1022,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly FeatureQuery _query;
         private readonly long _numberMatched;
         private readonly string _crsUri;
+        private readonly ImmutableArray<Link> _links;
         private readonly CancellationToken _requestCancellationToken;
 
         public StreamingGmlItemsResult(
@@ -1029,6 +1031,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             FeatureQuery query,
             long numberMatched,
             string crsUri,
+            ImmutableArray<Link> links,
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
@@ -1036,6 +1039,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _query = query;
             _numberMatched = numberMatched;
             _crsUri = crsUri;
+            _links = links;
             _requestCancellationToken = requestCancellationToken;
         }
 
@@ -1044,6 +1048,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
             httpContext.Response.ContentType = MediaTypes.Gml;
             httpContext.Response.Headers["Content-Crs"] = FormatContentCrs(_crsUri);
             httpContext.Response.Headers["OGC-NumberMatched"] = _numberMatched.ToString(CultureInfo.InvariantCulture);
+
+            // Emit pagination links as HTTP Link headers (standard for non-JSON formats)
+            foreach (var link in _links)
+            {
+                if (!string.IsNullOrEmpty(link.Href))
+                {
+                    httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
+                }
+            }
+
             EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(

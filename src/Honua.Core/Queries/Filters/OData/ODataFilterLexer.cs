@@ -215,6 +215,15 @@ internal sealed class ODataFilterLexer
         }
 
         var value = _input[start..end];
+
+        // Validate the date portion (YYYY-MM-DD) is a real calendar date
+        var datePart = value.Length >= 10 ? value[..10] : value;
+        if (!DateOnly.TryParseExact(datePart, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+        {
+            token = default;
+            return false;
+        }
+
         _position = end;
 
         var type = value.Contains('T') || value.Contains('t')

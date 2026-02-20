@@ -569,12 +569,8 @@ internal static class OgcResponseFormatter
                 continue;
             }
 
-            var safeKey = key.Replace(" ", "_", StringComparison.Ordinal);
-            var safeValue = value.ToString()?.Replace("&", "&amp;", StringComparison.Ordinal)
-                .Replace("<", "&lt;", StringComparison.Ordinal)
-                .Replace(">", "&gt;", StringComparison.Ordinal)
-                .Replace("\"", "&quot;", StringComparison.Ordinal)
-                .Replace("'", "&apos;", StringComparison.Ordinal);
+            var safeKey = SecurityElement.Escape(key.Replace(" ", "_", StringComparison.Ordinal));
+            var safeValue = SecurityElement.Escape(value.ToString());
 
             builder.AppendLine($"{indent}<app:property name=\"{safeKey}\">{safeValue}</app:property>");
         }
@@ -610,12 +606,8 @@ internal static class OgcResponseFormatter
                 continue;
             }
 
-            var safeKey = key.Replace(" ", "_", StringComparison.Ordinal);
-            var safeValue = value.ToString()?.Replace("&", "&amp;", StringComparison.Ordinal)
-                .Replace("<", "&lt;", StringComparison.Ordinal)
-                .Replace(">", "&gt;", StringComparison.Ordinal)
-                .Replace("\"", "&quot;", StringComparison.Ordinal)
-                .Replace("'", "&apos;", StringComparison.Ordinal);
+            var safeKey = SecurityElement.Escape(key.Replace(" ", "_", StringComparison.Ordinal));
+            var safeValue = SecurityElement.Escape(value.ToString());
 
             writer.WriteLine($"{indent}<app:property name=\"{safeKey}\">{safeValue}</app:property>");
         }

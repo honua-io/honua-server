@@ -48,16 +48,24 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         private static readonly ConcurrentDictionary<string, long> _maxExecutionTimeMs = new();
         private static readonly ConcurrentDictionary<string, long> _totalResultCounts = new();
 
+        private static readonly object _evictionLock = new();
+
         public static void RecordQueryExecution(string operationType, long executionTimeMs, int? resultCount = null)
         {
             if (_executionCounts.Count >= MaxMetricEntries && !_executionCounts.ContainsKey(operationType))
             {
-                // Best-effort eviction: clear all dictionaries. Non-atomic across dictionaries
-                // is acceptable here since metrics are advisory, not transactional.
-                _totalResultCounts.Clear();
-                _maxExecutionTimeMs.Clear();
-                _totalExecutionTimeMs.Clear();
-                _executionCounts.Clear();
+                // Atomic eviction under lock to prevent concurrent threads from
+                // observing partially-cleared state across the four dictionaries.
+                lock (_evictionLock)
+                {
+                    if (_executionCounts.Count >= MaxMetricEntries)
+                    {
+                        _totalResultCounts.Clear();
+                        _maxExecutionTimeMs.Clear();
+                        _totalExecutionTimeMs.Clear();
+                        _executionCounts.Clear();
+                    }
+                }
             }
 
             _executionCounts.AddOrUpdate(operationType, 1, (key, value) => value + 1);

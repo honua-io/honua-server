@@ -766,10 +766,23 @@ public sealed class Cql2Parser
     private Literal ParseNumericLiteral()
     {
         var value = Advance().Value;
+
+        // Try integer types first for precision parity with CQL2-JSON and OData parsers
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        {
+            return new Literal(intValue, LiteralType.Number);
+        }
+
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+        {
+            return new Literal(longValue, LiteralType.Number);
+        }
+
         if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
         {
             return new Literal(number, LiteralType.Number);
         }
+
         throw new ArgumentException($"Invalid number format: {value}");
     }
 

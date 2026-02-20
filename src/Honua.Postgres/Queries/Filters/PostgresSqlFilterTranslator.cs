@@ -72,6 +72,21 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateBinary(BinaryExpression binary, LayerDefinition layer)
     {
+        if (binary.Right is ValueList valueList && valueList.Values.Count == 0)
+        {
+            return binary.Operator switch
+            {
+                BinaryOperator.In => "FALSE",
+                BinaryOperator.NotIn => "TRUE",
+                _ => TranslateBinaryWithValues(binary, layer)
+            };
+        }
+
+        return TranslateBinaryWithValues(binary, layer);
+    }
+
+    private string TranslateBinaryWithValues(BinaryExpression binary, LayerDefinition layer)
+    {
         var left = TranslateExpression(binary.Left, layer);
         var right = TranslateExpression(binary.Right, layer);
 

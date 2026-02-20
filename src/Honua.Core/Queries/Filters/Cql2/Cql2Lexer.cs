@@ -291,8 +291,12 @@ public sealed class Cql2Lexer
             _position++;
         }
 
-        if (_position < _input.Length)
-            _position++; // Skip closing quote
+        if (_position >= _input.Length)
+        {
+            throw new ArgumentException($"Unterminated quoted identifier starting at position {start}");
+        }
+
+        _position++; // Skip closing quote
 
         _tokens.Add(Cql2Token.Create(Cql2TokenType.Identifier, value.ToString(), start, _position - start));
     }

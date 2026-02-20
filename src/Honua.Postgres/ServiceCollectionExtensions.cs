@@ -210,6 +210,10 @@ internal static class ServiceCollectionExtensions
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
             });
 
         // Register Geoservices import service

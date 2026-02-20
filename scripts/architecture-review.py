@@ -406,7 +406,7 @@ def combine_assessments(assessments: List[str], process_blocking: bool) -> str:
 def main():
     """Main analysis function"""
     # Get environment variables
-    base_ref = os.environ.get('GITHUB_BASE_REF', 'main')
+    base_ref = os.environ.get('GITHUB_BASE_REF', 'trunk')
     head_ref = os.environ.get('GITHUB_SHA', 'HEAD')
     api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')
     max_chunk_lines = int(os.environ.get('REVIEW_CHUNK_LINES', '300'))

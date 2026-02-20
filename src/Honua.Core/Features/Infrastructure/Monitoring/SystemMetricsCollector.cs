@@ -70,17 +70,19 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
 
         // Update response time metrics
         var responseMs = responseTime.TotalMilliseconds;
+        bool shouldCleanup;
         lock (_responseLock)
         {
             _totalResponseTime += responseMs;
             _responseCount++;
+            shouldCleanup = _responseCount % 10 == 0;
         }
 
         // Track error for error rate calculation
         _recentRequests.Enqueue((DateTime.UtcNow, isError));
 
         // Clean old entries periodically (every 10th request to avoid overhead)
-        if (_responseCount % 10 == 0)
+        if (shouldCleanup)
         {
             CleanOldErrorEntries();
         }
@@ -128,7 +130,7 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
 
             // Calculate average response time
             double avgResponseTime;
-            lock (this)
+            lock (_responseLock)
             {
                 avgResponseTime = _responseCount > 0 ? _totalResponseTime / _responseCount : 0.0;
             }

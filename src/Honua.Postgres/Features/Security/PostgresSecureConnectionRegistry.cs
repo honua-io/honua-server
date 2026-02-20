@@ -130,8 +130,8 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var dbConnection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = dbConnection.CreateCommand();
+            await using var dbConnection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = dbConnection.CreateCommand();
 
             command.CommandText = sql;
             AddConnectionParameters(command, connection);
@@ -167,13 +167,13 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = connection.CreateCommand();
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
 
             command.CommandText = sql;
             command.Parameters.Add(new NpgsqlParameter("@connection_id", connectionId));
 
-            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -205,13 +205,13 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = connection.CreateCommand();
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
 
             command.CommandText = sql;
             command.Parameters.Add(new NpgsqlParameter("@name", name));
 
-            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -241,12 +241,12 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = connection.CreateCommand();
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
 
             command.CommandText = sql;
 
-            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             var connections = new List<DataConnection>();
 
             while (await reader.ReadAsync(cancellationToken))
@@ -290,8 +290,8 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var dbConnection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = dbConnection.CreateCommand();
+            await using var dbConnection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = dbConnection.CreateCommand();
 
             command.CommandText = sql;
             AddConnectionParameters(command, connection);
@@ -320,8 +320,8 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = connection.CreateCommand();
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
 
             command.CommandText = sql;
             command.Parameters.Add(new NpgsqlParameter("@connection_id", connectionId));
@@ -366,8 +366,8 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         try
         {
-            using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
-            using var command = connection.CreateCommand();
+            await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
 
             command.CommandText = sql;
             command.Parameters.Add(new NpgsqlParameter("@connection_id", connectionId));

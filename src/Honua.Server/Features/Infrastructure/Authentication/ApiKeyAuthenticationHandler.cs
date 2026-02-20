@@ -198,7 +198,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? failureMessage = Context.Items["AuthFailureMessage"] as string;
         if (!string.IsNullOrEmpty(failureMessage))
         {
-            string escapedMessage = failureMessage.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string escapedMessage = System.Text.Json.JsonEncodedText.Encode(failureMessage).ToString();
             string problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{escapedMessage}}"}""";
             return Response.WriteAsync(problemDetails);
         }

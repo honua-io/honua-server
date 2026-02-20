@@ -147,11 +147,13 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.Limit.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
             }
 
             if (query.Offset.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -188,11 +190,13 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.Limit.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
             }
 
             if (query.Offset.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);

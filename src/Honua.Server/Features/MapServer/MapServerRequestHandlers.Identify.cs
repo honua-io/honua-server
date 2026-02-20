@@ -337,6 +337,10 @@ internal static partial class MapServerEndpoints
             var response = new IdentifyResponse { Results = [.. results] };
             return Results.Json(response, MapServerJsonContext.Default.IdentifyResponse, contentType: "application/json");
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (ArgumentException ex)
         {
             MapServerLog.IdentifyFailed(logger, serviceId, ex.Message, ex);

@@ -62,8 +62,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
         ArgumentNullException.ThrowIfNull(testBody);
         if (!string.IsNullOrWhiteSpace(_skipReason))
         {
-            Console.WriteLine(_skipReason);
-            return;
+            throw new InvalidOperationException(_skipReason);
         }
 
         var contextOptions = new BrowserNewContextOptions
