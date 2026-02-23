@@ -147,6 +147,77 @@ internal static partial class FeatureServerEndpoints
         // .Produces(400)
         // .Produces(404);
 
+        // Replication endpoints
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/createReplica", HandleCreateReplica)
+            .WithDisplayName("Create Replica")
+            .WithName("CreateReplica")
+            .WithSummary("Create a replica for offline use or synchronization")
+            .WithDescription("Creates a replica of specified layers for offline editing and synchronization")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/extractChanges", HandleExtractChanges)
+            .WithDisplayName("Extract Changes")
+            .WithName("ExtractChanges")
+            .WithSummary("Extract changes since last synchronization")
+            .WithDescription("Returns changes made since the last synchronization for a registered replica")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/synchronizeReplica", HandleSynchronizeReplica)
+            .WithDisplayName("Synchronize Replica")
+            .WithName("SynchronizeReplica")
+            .WithSummary("Synchronize a replica with the server")
+            .WithDescription("Applies edits from a replica to the server and returns server changes")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/unRegisterReplica", HandleUnRegisterReplica)
+            .WithDisplayName("Unregister Replica")
+            .WithName("UnRegisterReplica")
+            .WithSummary("Unregister a replica")
+            .WithDescription("Removes a registered replica and frees associated resources")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        // Maintenance/utility endpoints
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/append", HandleServiceAppend)
+            .WithDisplayName("Append Features (Service)")
+            .WithName("ServiceAppend")
+            .WithSummary("Append features to a service layer")
+            .WithDescription("Bulk append features to a layer within the service")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/append", HandleLayerAppend)
+            .WithDisplayName("Append Features (Layer)")
+            .WithName("LayerAppend")
+            .WithSummary("Append features to a specific layer")
+            .WithDescription("Bulk append features to a specific layer")
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
+            .WithDisplayName("Calculate")
+            .WithName("Calculate")
+            .WithSummary("Calculate field values for features")
+            .WithDescription("Calculates new field values using expressions for matching features")
+            .WithTags("FeatureServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/queryDomains", HandleQueryDomains)
+            .WithDisplayName("Query Domains")
+            .WithName("QueryDomains")
+            .WithSummary("Query coded-value domains for the service")
+            .WithDescription("Returns domain definitions including coded values and ranges for service fields")
+            .WithTags("FeatureServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/validateSQL", HandleValidateSql)
+            .WithDisplayName("Validate SQL")
+            .WithName("ValidateSQL")
+            .WithSummary("Validate a SQL WHERE clause")
+            .WithDescription("Validates a SQL expression against a layer schema and returns whether it is syntactically valid")
+            .WithTags("FeatureServer");
+
         return endpoints;
     }
 }

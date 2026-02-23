@@ -43,6 +43,15 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         service.Capabilities.Should().Contain("Map");
         service.MaxImageWidth.Should().BeGreaterThan(0);
         service.MaxImageHeight.Should().BeGreaterThan(0);
+        service.TileInfo.Should().NotBeNull();
+        service.TileInfo!.Rows.Should().Be(256);
+        service.TileInfo.Cols.Should().Be(256);
+        service.TileInfo.Dpi.Should().Be(96);
+        service.TileInfo.Format.Should().Be("PNG");
+        service.TileInfo.Origin.Should().NotBeNull();
+        service.TileInfo.SpatialReference.Should().NotBeNull();
+        service.TileInfo.SpatialReference!.Wkid.Should().Be(3857);
+        service.TileInfo.Lods.Should().NotBeNullOrEmpty();
     }
 
     [IntegrationTest]

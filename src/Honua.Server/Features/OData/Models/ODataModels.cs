@@ -114,6 +114,13 @@ public sealed class ODataResponse : ICollectionResponse<object>
     public string? NextLink { get; init; }
 
     /// <summary>
+    /// Delta link for change tracking. When present, clients can use this URL
+    /// with $deltatoken to retrieve only features modified since the snapshot.
+    /// </summary>
+    [JsonPropertyName("@odata.deltaLink")]
+    public string? DeltaLink { get; init; }
+
+    /// <summary>
     /// Collection of data items
     /// </summary>
     [JsonPropertyName("value")]

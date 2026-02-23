@@ -102,6 +102,31 @@ internal static partial class MapServerEndpoints
             .WithDescription("Query features using the FeatureServer query handler")
             .WithTags("MapServer");
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/tile/{z:int}/{y:int}/{x:int}",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleTile(context))
+            .WithDisplayName("Get Map Tile")
+            .WithName("MapServerTile")
+            .WithSummary("Get a cached raster map tile")
+            .WithDescription("Returns a PNG tile rendered from MapServer layer features")
+            .WithTags("MapServer")
+            .CacheOutput("ServiceMetadata");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMTS",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWmts(context))
+            .WithDisplayName("WMTS Service")
+            .WithName("MapServerWmts")
+            .WithSummary("OGC WMTS endpoint")
+            .WithDescription("Provides OGC WMTS GetCapabilities and GetTile operations")
+            .WithTags("MapServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMS",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWms(context))
+            .WithDisplayName("WMS Service")
+            .WithName("MapServerWms")
+            .WithSummary("OGC WMS endpoint")
+            .WithDescription("Provides OGC WMS GetCapabilities and GetMap operations")
+            .WithTags("MapServer");
+
         return endpoints;
     }
 }

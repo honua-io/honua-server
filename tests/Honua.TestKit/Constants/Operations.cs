@@ -80,6 +80,9 @@ public static class Operations
     public const string Export = "Export";
     public const string Identify = "Identify";
     public const string Render = "Render";
+    public const string Tile = "Tile";
+    public const string Wms = "WMS";
+    public const string Wmts = "WMTS";
 
     // Filter Operations
     public const string WhereClause = "WhereClause";
@@ -98,6 +101,18 @@ public static class Operations
     public const string UpdateAttachment = "UpdateAttachment";
     public const string DeleteAttachments = "DeleteAttachments";
     public const string DownloadAttachment = "DownloadAttachment";
+
+    // Replication Operations
+    public const string CreateReplica = "CreateReplica";
+    public const string ExtractChanges = "ExtractChanges";
+    public const string SynchronizeReplica = "SynchronizeReplica";
+    public const string UnRegisterReplica = "UnRegisterReplica";
+
+    // Maintenance Operations
+    public const string Append = "Append";
+    public const string Calculate = "Calculate";
+    public const string QueryDomains = "QueryDomains";
+    public const string ValidateSql = "ValidateSql";
 
     // Test Quality Operations
     public const string TestQuality = "TestQuality";

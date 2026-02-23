@@ -1,0 +1,293 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Concurrent;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Models;
+using Honua.ServiceDefaults;
+
+namespace Honua.Server.Features.FeatureServer;
+
+internal static partial class FeatureServerEndpoints
+{
+    /// <summary>
+    /// In-memory replica store for MVP. Keyed by replica ID.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, ReplicaRecord> _replicaStore = new(StringComparer.OrdinalIgnoreCase);
+
+    private static async Task<IResult> HandleCreateReplica(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.createReplica");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                serviceResult.ErrorMessage ?? "Service not found.");
+        }
+
+        var service = serviceResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+        if (values == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid createReplica request",
+                [readError ?? "Invalid request body."]);
+        }
+
+        var replicaName = GetValueString(values, "replicaName");
+        if (string.IsNullOrWhiteSpace(replicaName))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "replicaName parameter is required");
+        }
+
+        var layersParam = GetValueString(values, "layers");
+        var syncModel = GetValueString(values, "syncModel") ?? "perReplica";
+
+        var layerIds = ParseLayerIds(layersParam, service.Layers);
+
+        var replicaId = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+
+        var record = new ReplicaRecord(
+            replicaId,
+            replicaName,
+            serviceId,
+            syncModel,
+            layerIds,
+            now);
+        _replicaStore[replicaId] = record;
+
+        var response = new CreateReplicaResponse
+        {
+            ReplicaId = replicaId,
+            ReplicaName = replicaName,
+            SyncModel = syncModel,
+            Layers = layerIds.Select(id => new ReplicaLayerInfo
+            {
+                Id = id,
+                ServerGen = now.ToUnixTimeMilliseconds()
+            }).ToArray(),
+            CreationDate = now.ToUnixTimeMilliseconds()
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.CreateReplicaResponse, contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleExtractChanges(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.extractChanges");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                serviceResult.ErrorMessage ?? "Service not found.");
+        }
+
+        var service = serviceResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+        if (values == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid extractChanges request",
+                [readError ?? "Invalid request body."]);
+        }
+
+        var replicaId = GetValueString(values, "replicaID");
+        if (string.IsNullOrWhiteSpace(replicaId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "replicaID parameter is required");
+        }
+
+        if (!_replicaStore.TryGetValue(replicaId, out var replica))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found.");
+        }
+
+        // MVP: return empty changeset (no edit tracking yet)
+        var response = new ExtractChangesResponse
+        {
+            Success = true,
+            ReplicaId = replicaId,
+            LayerChanges = replica.LayerIds.Select(id => new LayerChanges
+            {
+                Id = id,
+                Adds = 0,
+                Updates = 0,
+                Deletes = 0
+            }).ToArray()
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleSynchronizeReplica(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.synchronizeReplica");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                serviceResult.ErrorMessage ?? "Service not found.");
+        }
+
+        var service = serviceResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+        if (values == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid synchronizeReplica request",
+                [readError ?? "Invalid request body."]);
+        }
+
+        var replicaId = GetValueString(values, "replicaID");
+        if (string.IsNullOrWhiteSpace(replicaId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "replicaID parameter is required");
+        }
+
+        if (!_replicaStore.TryGetValue(replicaId, out var replica))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found.");
+        }
+
+        var syncDirection = GetValueString(values, "syncDirection") ?? "download";
+
+        // Update the last sync time
+        _replicaStore[replicaId] = replica with { LastSyncTime = DateTimeOffset.UtcNow };
+
+        var response = new SynchronizeReplicaResponse
+        {
+            Success = true,
+            ReplicaId = replicaId,
+            SyncDirection = syncDirection
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleUnRegisterReplica(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.unRegisterReplica");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                serviceResult.ErrorMessage ?? "Service not found.");
+        }
+
+        var service = serviceResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+        if (values == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid unRegisterReplica request",
+                [readError ?? "Invalid request body."]);
+        }
+
+        var replicaId = GetValueString(values, "replicaID");
+        if (string.IsNullOrWhiteSpace(replicaId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "replicaID parameter is required");
+        }
+
+        if (!_replicaStore.TryRemove(replicaId, out _))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found.");
+        }
+
+        var response = new SuccessResponse { Success = true };
+        return Results.Json(response, FeatureServerJsonContext.Default.SuccessResponse, contentType: "application/json");
+    }
+
+    private static int[] ParseLayerIds(string? layersParam, IReadOnlyList<Honua.Core.Features.Catalog.Domain.LayerDefinition> serviceLayers)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return serviceLayers.Select(l => l.Id).ToArray();
+        }
+
+        var tokens = layersParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var ids = new List<int>();
+        foreach (var token in tokens)
+        {
+            if (int.TryParse(token, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids.Count > 0 ? ids.ToArray() : serviceLayers.Select(l => l.Id).ToArray();
+    }
+
+    /// <summary>
+    /// Internal record for tracking replicas in memory.
+    /// </summary>
+    private sealed record ReplicaRecord(
+        string ReplicaId,
+        string ReplicaName,
+        string ServiceId,
+        string SyncModel,
+        int[] LayerIds,
+        DateTimeOffset CreatedAt)
+    {
+        public DateTimeOffset LastSyncTime { get; init; } = CreatedAt;
+    }
+}

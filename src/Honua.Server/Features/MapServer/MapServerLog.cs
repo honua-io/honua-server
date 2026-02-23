@@ -127,4 +127,67 @@ internal static partial class MapServerLog
         Level = LogLevel.Warning,
         Message = "PostGIS extent transform failed from SRID {FromSrid} to {ToSrid}")]
     public static partial void PostGisExtentTransformFailed(ILogger logger, int fromSrid, int toSrid, Exception exception);
+
+    /// <summary>
+    /// Logs when a tile request is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5450,
+        Level = LogLevel.Information,
+        Message = "MapServer tile requested: {ServiceId} z={Z} y={Y} x={X}")]
+    public static partial void TileRequested(ILogger logger, string serviceId, int z, int y, int x);
+
+    /// <summary>
+    /// Logs when a tile request completes.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5451,
+        Level = LogLevel.Information,
+        Message = "MapServer tile completed: {ServiceId} rendered {FeatureCount} features in {ElapsedMs}ms")]
+    public static partial void TileCompleted(ILogger logger, string serviceId, int featureCount, double elapsedMs);
+
+    /// <summary>
+    /// Logs when a tile request fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5452,
+        Level = LogLevel.Error,
+        Message = "MapServer tile failed: {ServiceId}: {ErrorMessage}")]
+    public static partial void TileFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    /// <summary>
+    /// Logs when a WMS request is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5460,
+        Level = LogLevel.Information,
+        Message = "MapServer WMS {RequestType} requested: {ServiceId}")]
+    public static partial void WmsRequested(ILogger logger, string serviceId, string requestType);
+
+    /// <summary>
+    /// Logs when a WMS request fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5461,
+        Level = LogLevel.Error,
+        Message = "MapServer WMS failed: {ServiceId}: {ErrorMessage}")]
+    public static partial void WmsFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    /// <summary>
+    /// Logs when a WMTS request is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5470,
+        Level = LogLevel.Information,
+        Message = "MapServer WMTS {RequestType} requested: {ServiceId}")]
+    public static partial void WmtsRequested(ILogger logger, string serviceId, string requestType);
+
+    /// <summary>
+    /// Logs when a WMTS request fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5471,
+        Level = LogLevel.Error,
+        Message = "MapServer WMTS failed: {ServiceId}: {ErrorMessage}")]
+    public static partial void WmtsFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 }

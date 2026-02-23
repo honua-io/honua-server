@@ -129,7 +129,7 @@ internal static class TilesEndpoints
 
         var tileLimits = limitsOptions.Value.Tiles;
         var tilesets = accessibleLayers
-            .Select(layer => BuildDatasetTileSetItem(layer, baseUrl, tileLimits))
+            .SelectMany(layer => BuildDatasetTileSetItems(layer, baseUrl, tileLimits))
             .ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
@@ -180,9 +180,9 @@ internal static class TilesEndpoints
 
         var tileLimits = limitsOptions.Value.Tiles;
         var collectionParam = $"collections={Uri.EscapeDataString(layer!.Id.ToString(CultureInfo.InvariantCulture))}";
-        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}?{collectionParam}";
-        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}";
-        var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}";
+        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{tileMatrixSetId}?{collectionParam}";
+        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{tileMatrixSetId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}";
+        var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
         var geodataHref = $"{baseUrl}/ogc/features/collections/{layer!.Id}";
         var titleBase = string.IsNullOrWhiteSpace(layer!.Name) ? $"Layer {layer.Id}" : layer.Name;
 
@@ -194,7 +194,8 @@ internal static class TilesEndpoints
             geodataHref,
             "Geospatial data",
             layer?.Description,
-            tileLimits);
+            tileLimits,
+            tileMatrixSetId);
 
         return OgcCommonUtilities.FormatMetadataResponse(tileset, OgcTilesJsonContext.Default.TileSet, outputFormat, "Tileset");
     }
@@ -277,7 +278,7 @@ internal static class TilesEndpoints
         }
 
         var tileLimits = limitsOptions.Value.Tiles;
-        var tilesets = ImmutableArray.Create(BuildTileSetItem(layerId, layer.Name, baseUrl, tileLimits));
+        var tilesets = BuildTileSetItems(layerId, layer.Name, baseUrl, tileLimits).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
@@ -333,9 +334,9 @@ internal static class TilesEndpoints
         }
 
         var tileLimits = limitsOptions.Value.Tiles;
-        var tilesetHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{OgcTilesUtilities.WebMercatorQuadId}";
+        var tilesetHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}";
         var tileTemplate = $"{tilesetHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}";
-        var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}";
+        var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
         var titleBase = string.IsNullOrWhiteSpace(layer.Name) ? $"Layer {layerId}" : layer.Name;
 
         var tileset = BuildTileset(
@@ -346,7 +347,8 @@ internal static class TilesEndpoints
             $"{baseUrl}/ogc/features/collections/{collectionId}",
             "Collection metadata",
             layer.Description,
-            tileLimits);
+            tileLimits,
+            tileMatrixSetId);
 
         return OgcCommonUtilities.FormatMetadataResponse(tileset, OgcTilesJsonContext.Default.TileSet, outputFormat, "Tileset");
     }
@@ -434,20 +436,29 @@ internal static class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!string.IsNullOrWhiteSpace(format) && !string.Equals(format, "mvt", StringComparison.OrdinalIgnoreCase))
-        {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not supported.");
-        }
+        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request);
 
-        if (!OgcTilesUtilities.AcceptsVectorTiles(request))
+        if (!isRaster)
         {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not acceptable.");
+            if (!string.IsNullOrWhiteSpace(format) &&
+                !string.Equals(format, "mvt", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
+            {
+                return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not supported.");
+            }
+
+            if (!OgcTilesUtilities.AcceptsVectorTiles(request))
+            {
+                return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not acceptable.");
+            }
         }
 
         if (!OgcTilesUtilities.IsSupportedTileMatrixSet(tileMatrixSetId))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
+
+        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
 
         if (!int.TryParse(tileMatrix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zoomLevel))
         {
@@ -461,7 +472,11 @@ internal static class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
         }
 
-        if (!TileMath.ValidateTileCoordinates(tileCol, tileRow, zoomLevel))
+        var validCoords = isGeographic
+            ? TileMath.ValidateTileCoordinatesGeographic(tileCol, tileRow, zoomLevel)
+            : TileMath.ValidateTileCoordinates(tileCol, tileRow, zoomLevel);
+
+        if (!validCoords)
         {
             return StandardErrorHelpers.CreateBadRequest(context, $"Invalid tile coordinates: row={tileRow}, col={tileCol}, matrix={tileMatrix}.");
         }
@@ -486,12 +501,23 @@ internal static class TilesEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.TileX, tileCol);
         activity?.SetTag(HonuaTelemetry.Tags.TileY, tileRow);
 
-        var validationResult = ValidateTileQueryParameters(context, layer, datetime, subset, crs, subsetCrs, out var temporalFilter);
+        var validationResult = ValidateTileQueryParameters(
+            context, layer, datetime, subset, crs, subsetCrs, tileMatrixSetId, out var temporalFilter);
         if (validationResult is not null)
         {
             return validationResult;
         }
 
+        // Raster (PNG) tile path
+        if (isRaster)
+        {
+            return await HandleRasterTileAsync(
+                context, layer, tileCol, tileRow, zoomLevel, isGeographic,
+                getSpatialReferenceSrid, temporalFilter, tileLimits,
+                tileOptionsValue, activity, cancellationToken);
+        }
+
+        // Vector (MVT) tile path
         var query = new FeatureQuery
         {
             SpatialReferenceSrid = getSpatialReferenceSrid(layer),
@@ -511,41 +537,150 @@ internal static class TilesEndpoints
         return CreateTileResult(tileData, tileOptionsValue.CacheMaxAge);
     }
 
-    private static TileSetItem BuildDatasetTileSetItem(LayerDefinition layer, string baseUrl, TileLimits tileLimits)
+    private static async Task<IResult> HandleRasterTileAsync(
+        HttpContext context,
+        LayerDefinition layer,
+        int tileCol,
+        int tileRow,
+        int zoomLevel,
+        bool isGeographic,
+        Func<LayerDefinition, int> getSpatialReferenceSrid,
+        TemporalFilter? temporalFilter,
+        TileLimits tileLimits,
+        TileOptions tileOptionsValue,
+        Activity? activity,
+        CancellationToken cancellationToken)
+    {
+        var bounds = isGeographic
+            ? TileMath.GetTileBoundsGeographic(tileCol, tileRow, zoomLevel)
+            : TileMath.GetTileBounds(tileCol, tileRow, zoomLevel);
+
+        var filterSrid = isGeographic ? 4326 : 3857;
+        var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
+
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var featureQuery = new FeatureQuery
+        {
+            SpatialFilter = spatialFilter,
+            SpatialReferenceSrid = getSpatialReferenceSrid(layer),
+            OutputSrid = filterSrid,
+            Limit = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000,
+            TemporalFilter = temporalFilter
+        };
+
+        var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+
+        if (queryResult.Items.Length == 0)
+        {
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
+            return Results.NoContent();
+        }
+
+        var imageBytes = TileRenderer.RenderTilePng(queryResult.Items, bounds, layer.GeometryType);
+
+        activity?.SetStatus(ActivityStatusCode.Ok);
+        activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, queryResult.Items.Length);
+        activity?.SetTag("honua.tile.bytes", imageBytes.Length);
+        activity?.SetTag("honua.tile.format", "png");
+
+        return CreatePngTileResult(imageBytes, tileOptionsValue.CacheMaxAge);
+    }
+
+    private static SpatialFilter CreateBboxSpatialFilter(TileBounds bounds, int srid)
+    {
+        var wkb = CreateEnvelopeWkb(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax);
+        return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
+    }
+
+    private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
+    {
+        var wkb = new byte[93];
+        var offset = 0;
+
+        wkb[offset++] = 1; // little-endian
+
+        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 3); // WKB Polygon
+        offset += 4;
+
+        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 1); // 1 ring
+        offset += 4;
+
+        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 5); // 5 points
+        offset += 4;
+
+        WritePoint(wkb, ref offset, minX, minY);
+        WritePoint(wkb, ref offset, maxX, minY);
+        WritePoint(wkb, ref offset, maxX, maxY);
+        WritePoint(wkb, ref offset, minX, maxY);
+        WritePoint(wkb, ref offset, minX, minY);
+
+        return wkb;
+    }
+
+    private static void WritePoint(byte[] buffer, ref int offset, double x, double y)
+    {
+        BitConverter.TryWriteBytes(buffer.AsSpan(offset), x);
+        offset += 8;
+        BitConverter.TryWriteBytes(buffer.AsSpan(offset), y);
+        offset += 8;
+    }
+
+    private static IEnumerable<TileSetItem> BuildDatasetTileSetItems(LayerDefinition layer, string baseUrl, TileLimits tileLimits)
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
         var collectionParam = $"collections={Uri.EscapeDataString(collectionId)}";
-        var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}?{collectionParam}";
-        var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}";
-        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}";
-        var title = string.IsNullOrWhiteSpace(layer.Name)
-            ? $"Layer {collectionId} ({OgcTilesUtilities.WebMercatorQuadId})"
-            : $"{layer.Name} ({OgcTilesUtilities.WebMercatorQuadId})";
-        return BuildTileSetItemCore(
-            title,
-            tilesetHref,
-            tileTemplate,
-            tileMatrixSetHref,
+
+        // WebMercatorQuad
+        yield return BuildTileSetItemCore(
+            string.IsNullOrWhiteSpace(layer.Name)
+                ? $"Layer {collectionId} ({OgcTilesUtilities.WebMercatorQuadId})"
+                : $"{layer.Name} ({OgcTilesUtilities.WebMercatorQuadId})",
+            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}?{collectionParam}",
+            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}",
+            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}",
             "Dataset tileset metadata",
-            tileLimits);
+            tileLimits,
+            OgcTilesUtilities.WebMercatorQuadId);
+
+        // WorldCRS84Quad
+        yield return BuildTileSetItemCore(
+            string.IsNullOrWhiteSpace(layer.Name)
+                ? $"Layer {collectionId} ({OgcTilesUtilities.WorldCrs84QuadId})"
+                : $"{layer.Name} ({OgcTilesUtilities.WorldCrs84QuadId})",
+            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WorldCrs84QuadId}?{collectionParam}",
+            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WorldCrs84QuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?{collectionParam}",
+            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WorldCrs84QuadId}",
+            "Dataset tileset metadata",
+            tileLimits,
+            OgcTilesUtilities.WorldCrs84QuadId);
     }
 
-    private static TileSetItem BuildTileSetItem(int layerId, string? layerName, string baseUrl, TileLimits tileLimits)
+    private static IEnumerable<TileSetItem> BuildTileSetItems(int layerId, string? layerName, string baseUrl, TileLimits tileLimits)
     {
         var collectionId = layerId.ToString(CultureInfo.InvariantCulture);
-        var tilesetHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{OgcTilesUtilities.WebMercatorQuadId}";
-        var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}";
-        var tileTemplate = $"{tilesetHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}";
-        var title = string.IsNullOrWhiteSpace(layerName)
-            ? $"Layer {layerId}"
-            : $"{layerName} ({OgcTilesUtilities.WebMercatorQuadId})";
-        return BuildTileSetItemCore(
-            title,
-            tilesetHref,
-            tileTemplate,
-            tileMatrixSetHref,
+
+        // WebMercatorQuad
+        var wmHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{OgcTilesUtilities.WebMercatorQuadId}";
+        yield return BuildTileSetItemCore(
+            string.IsNullOrWhiteSpace(layerName) ? $"Layer {layerId}" : $"{layerName} ({OgcTilesUtilities.WebMercatorQuadId})",
+            wmHref,
+            $"{wmHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
+            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}",
             "Tileset metadata",
-            tileLimits);
+            tileLimits,
+            OgcTilesUtilities.WebMercatorQuadId);
+
+        // WorldCRS84Quad
+        var geoHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{OgcTilesUtilities.WorldCrs84QuadId}";
+        yield return BuildTileSetItemCore(
+            string.IsNullOrWhiteSpace(layerName) ? $"Layer {layerId}" : $"{layerName} ({OgcTilesUtilities.WorldCrs84QuadId})",
+            geoHref,
+            $"{geoHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
+            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WorldCrs84QuadId}",
+            "Tileset metadata",
+            tileLimits,
+            OgcTilesUtilities.WorldCrs84QuadId);
     }
 
     private static TileSetItem BuildTileSetItemCore(
@@ -554,8 +689,16 @@ internal static class TilesEndpoints
         string tileTemplate,
         string tileMatrixSetHref,
         string selfLinkTitle,
-        TileLimits tileLimits)
+        TileLimits tileLimits,
+        string tileMatrixSetId)
     {
+        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
+        var crs = isGeographic ? OgcTilesUtilities.Crs84 : OgcTilesUtilities.WebMercatorCrs;
+        var uri = isGeographic ? OgcTilesUtilities.WorldCrs84QuadUri : OgcTilesUtilities.WebMercatorQuadUri;
+        var matrixLimits = isGeographic
+            ? OgcTilesUtilities.BuildWorldCrs84QuadLimits(tileLimits)
+            : BuildTileMatrixSetLimits(tileLimits);
+
         var links = ImmutableArray.Create(
             Link.Create(
                 href: tilesetHref,
@@ -580,10 +723,10 @@ internal static class TilesEndpoints
         {
             Title = title,
             DataType = "vector",
-            Crs = OgcTilesUtilities.WebMercatorCrs,
-            TileMatrixSetId = OgcTilesUtilities.WebMercatorQuadId,
-            TileMatrixSetUri = OgcTilesUtilities.WebMercatorQuadUri,
-            TileMatrixSetLimits = BuildTileMatrixSetLimits(tileLimits),
+            Crs = crs,
+            TileMatrixSetId = tileMatrixSetId,
+            TileMatrixSetUri = uri,
+            TileMatrixSetLimits = matrixLimits,
             Links = links
         };
     }
@@ -596,8 +739,16 @@ internal static class TilesEndpoints
         string geodataHref,
         string geodataTitle,
         string? description,
-        TileLimits tileLimits)
+        TileLimits tileLimits,
+        string tileMatrixSetId)
     {
+        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
+        var crs = isGeographic ? OgcTilesUtilities.Crs84 : OgcTilesUtilities.WebMercatorCrs;
+        var uri = isGeographic ? OgcTilesUtilities.WorldCrs84QuadUri : OgcTilesUtilities.WebMercatorQuadUri;
+        var matrixLimits = isGeographic
+            ? OgcTilesUtilities.BuildWorldCrs84QuadLimits(tileLimits)
+            : BuildTileMatrixSetLimits(tileLimits);
+
         var links = ImmutableArray.Create(
             Link.Create(
                 href: tilesetHref,
@@ -626,15 +777,15 @@ internal static class TilesEndpoints
 
         return new TileSet
         {
-            Title = $"{titleBase} ({OgcTilesUtilities.WebMercatorQuadId})",
+            Title = $"{titleBase} ({tileMatrixSetId})",
             Description = description,
             DataType = "vector",
-            Crs = OgcTilesUtilities.WebMercatorCrs,
-            TileMatrixSetId = OgcTilesUtilities.WebMercatorQuadId,
-            TileMatrixSetUri = OgcTilesUtilities.WebMercatorQuadUri,
-            TileMatrixSetLimits = BuildTileMatrixSetLimits(tileLimits),
+            Crs = crs,
+            TileMatrixSetId = tileMatrixSetId,
+            TileMatrixSetUri = uri,
+            TileMatrixSetLimits = matrixLimits,
             Links = links,
-            MediaTypes = ImmutableArray.Create(MediaTypes.Mvt)
+            MediaTypes = ImmutableArray.Create(MediaTypes.Mvt, MediaTypes.Png)
         };
     }
 
@@ -815,6 +966,7 @@ internal static class TilesEndpoints
         string? subset,
         string? crs,
         string? subsetCrs,
+        string tileMatrixSetId,
         out TemporalFilter? temporalFilter)
     {
         temporalFilter = null;
@@ -824,18 +976,18 @@ internal static class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "The subset parameter is not supported.");
         }
 
-        if (!IsWebMercatorCrs(crs))
+        if (!IsSupportedCrs(crs, tileMatrixSetId))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
-                $"Unsupported crs '{crs}'. Only EPSG:3857 is supported for tiles.");
+                $"Unsupported crs '{crs}'. Only the CRS matching the tile matrix set is supported.");
         }
 
-        if (!IsWebMercatorCrs(subsetCrs))
+        if (!IsSupportedCrs(subsetCrs, tileMatrixSetId))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
-                $"Unsupported subset-crs '{subsetCrs}'. Only EPSG:3857 is supported for tiles.");
+                $"Unsupported subset-crs '{subsetCrs}'. Only the CRS matching the tile matrix set is supported.");
         }
 
         if (!OgcTemporalFilterParser.TryParse(datetime, layer, out temporalFilter, out var errorMessage))
@@ -846,7 +998,7 @@ internal static class TilesEndpoints
         return null;
     }
 
-    private static bool IsWebMercatorCrs(string? crs)
+    private static bool IsSupportedCrs(string? crs, string tileMatrixSetId)
     {
         if (string.IsNullOrWhiteSpace(crs))
         {
@@ -859,6 +1011,12 @@ internal static class TilesEndpoints
         if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg))
         {
             normalized = $"http://www.opengis.net/def/crs/EPSG/0/{epsg}";
+        }
+
+        if (OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId))
+        {
+            return string.Equals(normalized, OgcTilesUtilities.Crs84, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(normalized, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase);
         }
 
         return string.Equals(normalized, OgcTilesUtilities.WebMercatorCrs, StringComparison.OrdinalIgnoreCase);
@@ -886,6 +1044,9 @@ internal static class TilesEndpoints
     private static TileResult CreateTileResult(byte[] tileData, int cacheMaxAge)
         => new TileResult(tileData, cacheMaxAge);
 
+    private static PngTileResult CreatePngTileResult(byte[] imageData, int cacheMaxAge)
+        => new PngTileResult(imageData, cacheMaxAge);
+
     private sealed class TileResult : IResult
     {
         private readonly IResult _inner;
@@ -894,6 +1055,24 @@ internal static class TilesEndpoints
         public TileResult(byte[] tileData, int cacheMaxAge)
         {
             _inner = Results.Bytes(tileData, MediaTypes.Mvt);
+            _cacheMaxAge = cacheMaxAge;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.Headers["Cache-Control"] = $"public, max-age={_cacheMaxAge}";
+            await _inner.ExecuteAsync(httpContext);
+        }
+    }
+
+    private sealed class PngTileResult : IResult
+    {
+        private readonly IResult _inner;
+        private readonly int _cacheMaxAge;
+
+        public PngTileResult(byte[] imageData, int cacheMaxAge)
+        {
+            _inner = Results.Bytes(imageData, MediaTypes.Png);
             _cacheMaxAge = cacheMaxAge;
         }
 

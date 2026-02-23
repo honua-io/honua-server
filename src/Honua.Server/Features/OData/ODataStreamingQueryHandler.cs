@@ -55,6 +55,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$compute")] string? compute = null,
         [FromQuery(Name = "$search")] string? search = null,
         [FromQuery(Name = "$apply")] string? apply = null,
+        [FromQuery(Name = "$deltatoken")] string? deltatoken = null,
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
@@ -83,6 +84,8 @@ internal sealed partial class ODataStreamingQueryHandler(
                 skip,
                 skiptoken,
                 count,
+                filter,
+                orderby,
                 out var pagination,
                 out var topValue,
                 out var skipValue,
@@ -91,6 +94,20 @@ internal sealed partial class ODataStreamingQueryHandler(
             if (pagingError != null)
             {
                 return pagingError;
+            }
+
+            // Validate $deltatoken if present
+            DateTimeOffset? deltaSince = null;
+            int? deltaLayerId = null;
+            if (!string.IsNullOrWhiteSpace(deltatoken))
+            {
+                if (!ODataDeltaService.TryDecode(deltatoken, out var decodedTimestamp, out var decodedLayerId, out var deltaError))
+                {
+                    return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
+                }
+
+                deltaSince = decodedTimestamp;
+                deltaLayerId = decodedLayerId;
             }
 
             if (!ODataComputeService.TryParse(compute, out var computeExpressions, out var computeError))
@@ -289,6 +306,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     useSkipToken,
                     compute,
                     format,
+                    deltaSince,
                     cancellationToken);
             }
 
@@ -467,6 +485,12 @@ internal sealed partial class ODataStreamingQueryHandler(
                 useSkipToken,
                 compute);
             writer.WriteString("@odata.nextLink", nextLink);
+        }
+        else
+        {
+            // When there are no more pages, include a delta link for change tracking.
+            var deltaLink = ODataUtilityService.GenerateDeltaLink(context.Request, layerId, DateTimeOffset.UtcNow);
+            writer.WriteString("@odata.deltaLink", deltaLink);
         }
 
         // End OData response

@@ -496,7 +496,8 @@ public sealed class ODataPaginationTests : IAsyncLifetime
 
         document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
         var nextLink = nextLinkElement.GetString();
-        nextLink.Should().Contain("$skiptoken=3");
+        // Skip token is now an opaque Base64Url-encoded cursor, not a raw integer
+        nextLink.Should().Contain("$skiptoken=");
         nextLink.Should().NotContain("$skip=");
     }
 

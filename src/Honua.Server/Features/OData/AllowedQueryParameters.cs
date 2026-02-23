@@ -74,6 +74,7 @@ internal static class AllowedQueryParameters
             "$compute",
             "$apply",
             "$search",
+            "$deltatoken",
             "$format"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);

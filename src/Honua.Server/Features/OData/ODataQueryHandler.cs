@@ -321,6 +321,7 @@ internal sealed partial class ODataQueryHandler(
         bool useSkipToken = false,
         [FromQuery(Name = "$compute")] string? compute = null,
         [FromQuery(Name = "$format")] string? format = null,
+        DateTimeOffset? deltaSince = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -461,6 +462,16 @@ internal sealed partial class ODataQueryHandler(
                     filter, select, orderby, count, expand, useSkipToken, compute);
             }
 
+            // Generate delta link when there are no more pages and no nextLink.
+            // The delta link captures the current timestamp so future requests with
+            // $deltatoken can retrieve only features modified after this point.
+            string? deltaLink = null;
+            if (nextLink == null)
+            {
+                deltaLink = ODataUtilityService.GenerateDeltaLink(
+                    context.Request, layerId, DateTimeOffset.UtcNow);
+            }
+
             var response = new ODataResponse
             {
                 Context = ODataUtilityService.ShouldIncludeContext(context.Request, format)
@@ -468,6 +479,7 @@ internal sealed partial class ODataQueryHandler(
                     : null,
                 Count = count == true ? queryResult.TotalCount : null,
                 NextLink = nextLink,
+                DeltaLink = deltaLink,
                 Value = result
             };
 

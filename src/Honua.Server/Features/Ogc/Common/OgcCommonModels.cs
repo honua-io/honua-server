@@ -302,4 +302,9 @@ public static class MediaTypes
     /// Mapbox Vector Tile media type.
     /// </summary>
     public const string Mvt = "application/vnd.mapbox-vector-tile";
+
+    /// <summary>
+    /// PNG image media type.
+    /// </summary>
+    public const string Png = "image/png";
 }
