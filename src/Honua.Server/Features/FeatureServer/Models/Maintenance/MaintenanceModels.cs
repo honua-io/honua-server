@@ -153,6 +153,30 @@ public sealed class DomainInfo
     /// </summary>
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
+
+    /// <summary>
+    /// Coded domain values when the domain type is codedValue.
+    /// </summary>
+    [JsonPropertyName("codedValues")]
+    public DomainCodedValueInfo[]? CodedValues { get; set; }
+}
+
+/// <summary>
+/// A single coded-value entry for a field domain.
+/// </summary>
+public sealed class DomainCodedValueInfo
+{
+    /// <summary>
+    /// Human-friendly display label.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    /// <summary>
+    /// Raw coded value serialized as a string.
+    /// </summary>
+    [JsonPropertyName("code")]
+    public required string Code { get; set; }
 }
 
 /// <summary>

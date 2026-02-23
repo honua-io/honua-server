@@ -75,6 +75,12 @@ internal static partial class FeatureServerEndpoints
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        public static readonly FrozenSet<string> ServiceQuery =
+            Query
+                .Append("layerId")
+                .Append("layers")
+                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
         public static readonly FrozenSet<string> GenerateRenderer = new[]
             {
                 "classificationDef",
@@ -137,6 +143,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     internal static FrozenSet<string> FeatureServerQueryAllowedParameters => AllowedQueryParameters.Query;
+    internal static FrozenSet<string> FeatureServerServiceQueryAllowedParameters => AllowedQueryParameters.ServiceQuery;
     internal static FrozenSet<string> FeatureServerQueryFormats => SupportedFormats.Query;
     internal static FrozenSet<string> JsonOnlyFormats => SupportedFormats.JsonOnly;
 
@@ -495,7 +502,10 @@ internal static partial class FeatureServerEndpoints
                 Name = relationship.Name,
                 RelatedTableId = relationship.RelatedLayerId,
                 Role = relationship.RelationshipType,
-                KeyField = relationship.DestinationForeignKeyField
+                KeyField = relationship.DestinationForeignKeyField,
+                OriginKeyField = relationship.OriginForeignKeyField,
+                DestinationKeyField = relationship.DestinationForeignKeyField,
+                Description = relationship.Description
             })
         ];
     }

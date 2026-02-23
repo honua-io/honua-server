@@ -102,6 +102,20 @@ internal static partial class MapServerEndpoints
             .WithDescription("Query features using the FeatureServer query handler")
             .WithTags("MapServer");
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryGet)
+            .WithDisplayName("Query MapServer Service (GET)")
+            .WithName("MapServerServiceQueryGet")
+            .WithSummary("Query features from a MapServer service using GET")
+            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryPost)
+            .WithDisplayName("Query MapServer Service (POST)")
+            .WithName("MapServerServiceQueryPost")
+            .WithSummary("Query features from a MapServer service using POST")
+            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("MapServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/tile/{z:int}/{y:int}/{x:int}",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleTile(context))
             .WithDisplayName("Get Map Tile")

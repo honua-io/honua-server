@@ -87,6 +87,156 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
+    private static async Task<IResult> HandleServiceQueryFeaturesGet(
+        string serviceId,
+        HttpContext context,
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
+    {
+        if (!TryValidateAllowedParameters(
+                context.Request.Query,
+                queryValidator,
+                FeatureServerServiceQueryAllowedParameters,
+                out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!TryResolveServiceQueryLayerId(values, out var layerId, out var layerError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [layerError ?? "layerId parameter is required."]);
+        }
+
+        if (!TryParseQueryParameters(values, out var queryParams, out var parseError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parseError ?? "Invalid query parameter."]);
+        }
+
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        return await queryHandler.HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            queryParams,
+            context,
+            queryValidator,
+            cancellationToken);
+    }
+
+    private static async Task<IResult> HandleServiceQueryFeaturesPost(
+        string serviceId,
+        HttpContext context,
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
+    {
+        if (!TryValidateAllowedParameters(
+                context.Request.Query,
+                queryValidator,
+                FeatureServerServiceQueryAllowedParameters,
+                out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var (bodyValues, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+        if (bodyValues == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [readError ?? "Invalid request body."]);
+        }
+
+        if (!TryValidateAllowedParameters(
+                bodyValues,
+                queryValidator,
+                FeatureServerServiceQueryAllowedParameters,
+                out error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var mergedValues = ToCaseInsensitiveDictionary(context.Request.Query);
+        foreach (var pair in bodyValues)
+        {
+            mergedValues[pair.Key] = pair.Value;
+        }
+
+        if (!TryResolveServiceQueryLayerId(mergedValues, out var layerId, out var layerError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [layerError ?? "layerId parameter is required."]);
+        }
+
+        if (!TryParseQueryParameters(mergedValues, out var queryParams, out var parseError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parseError ?? "Invalid query parameter."]);
+        }
+
+        return await queryHandler.HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            queryParams,
+            context,
+            queryValidator,
+            cancellationToken);
+    }
+
+    private static bool TryResolveServiceQueryLayerId(
+        IReadOnlyDictionary<string, StringValues> values,
+        out int layerId,
+        out string? error)
+    {
+        layerId = default;
+        error = null;
+
+        if (TryGetValue(values, "layerId", out var layerIdRaw) && !StringValues.IsNullOrEmpty(layerIdRaw))
+        {
+            if (!int.TryParse(layerIdRaw.ToString(), out layerId))
+            {
+                error = "layerId must be an integer";
+                return false;
+            }
+
+            return true;
+        }
+
+        if (!TryGetValue(values, "layers", out var layersRaw) || StringValues.IsNullOrEmpty(layersRaw))
+        {
+            error = "layerId parameter is required for service-level query";
+            return false;
+        }
+
+        var layersValue = layersRaw.ToString();
+        var segments = layersValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length != 1)
+        {
+            error = "layers must contain exactly one layer identifier";
+            return false;
+        }
+
+        if (!int.TryParse(segments[0], out layerId))
+        {
+            error = "layers must contain integer layer identifiers";
+            return false;
+        }
+
+        return true;
+    }
+
     internal static bool TryParseQueryParameters(
         IReadOnlyDictionary<string, StringValues> values,
         out QueryParameters parameters,

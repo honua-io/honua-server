@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -133,18 +135,35 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found.");
         }
 
-        // MVP: return empty changeset (no edit tracking yet)
+        // Query real feature counts from the database for each layer in the replica.
+        // For the first sync (LastSyncTime == CreatedAt), all features are reported as adds.
+        // For subsequent syncs, without dedicated change tracking tables, report zero changes.
+        var isFirstSync = replica.LastSyncTime == replica.CreatedAt;
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var layerChanges = new List<LayerChanges>();
+
+        foreach (var layerIdInReplica in replica.LayerIds)
+        {
+            var adds = 0L;
+            if (isFirstSync)
+            {
+                adds = await featureReader.CountAsync(layerIdInReplica, new FeatureQuery(), cancellationToken);
+            }
+
+            layerChanges.Add(new LayerChanges
+            {
+                Id = layerIdInReplica,
+                Adds = (int)Math.Min(adds, int.MaxValue),
+                Updates = 0,
+                Deletes = 0
+            });
+        }
+
         var response = new ExtractChangesResponse
         {
             Success = true,
             ReplicaId = replicaId,
-            LayerChanges = replica.LayerIds.Select(id => new LayerChanges
-            {
-                Id = id,
-                Adds = 0,
-                Updates = 0,
-                Deletes = 0
-            }).ToArray()
+            LayerChanges = layerChanges.ToArray()
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
@@ -195,6 +214,44 @@ internal static partial class FeatureServerEndpoints
         }
 
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
+        var editsJson = GetValueString(values, "edits");
+
+        // If upload or bidirectional sync includes edits, apply them
+        if (!string.IsNullOrWhiteSpace(editsJson) &&
+            !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase))
+        {
+            GeoServicesFeature[]? features;
+            try
+            {
+                features = System.Text.Json.JsonSerializer.Deserialize(
+                    editsJson, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid edits parameter",
+                    [$"edits must be a valid JSON array: {ex.Message}"]);
+            }
+
+            if (features is { Length: > 0 })
+            {
+                // Apply the incoming edits to the first replica layer
+                var targetLayerId = replica.LayerIds.Length > 0 ? replica.LayerIds[0] : 0;
+                var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
+                var limitsOptions = context.RequestServices
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
+
+                var editRequest = new ApplyEditsRequest { Adds = features, RollbackOnFailure = false };
+                var editResult = await editsHandler.HandleApplyEditsAsync(
+                    serviceId, targetLayerId, editRequest, limitsOptions.Value.Edits, cancellationToken);
+
+                // If the edit handler returned an error, pass it through
+                if (editResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse>)
+                {
+                    return editResult;
+                }
+            }
+        }
 
         // Update the last sync time
         _replicaStore[replicaId] = replica with { LastSyncTime = DateTimeOffset.UtcNow };

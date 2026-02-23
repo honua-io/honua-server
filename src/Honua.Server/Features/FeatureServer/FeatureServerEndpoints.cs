@@ -56,6 +56,22 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        var serviceQueryGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesGet)
+            .WithDisplayName("Query FeatureServer Service (GET)")
+            .WithName("QueryFeatureServiceGet")
+            .WithSummary("Query features from a FeatureServer service using GET")
+            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        var serviceQueryPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
+            .WithDisplayName("Query FeatureServer Service (POST)")
+            .WithName("QueryFeatureServicePost")
+            .WithSummary("Query features from a FeatureServer service using POST")
+            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         // .Produces<QueryResponse>(200, "application/json")
         // .Produces(400)
         // .Produces(404);
