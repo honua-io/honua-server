@@ -253,8 +253,13 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // Update the last sync time
-        _replicaStore[replicaId] = replica with { LastSyncTime = DateTimeOffset.UtcNow };
+        // Update the last sync time; if the replica was removed concurrently, treat as not found
+        var updated = replica with { LastSyncTime = DateTimeOffset.UtcNow };
+        if (!_replicaStore.TryUpdate(replicaId, updated, replica))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found.");
+        }
 
         var response = new SynchronizeReplicaResponse
         {

@@ -345,7 +345,7 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var featureReader = context.RequestServices.GetService<IFeatureReader>();
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var domains = await BuildDomainsAsync(service, featureReader, cancellationToken);
 
         var response = new QueryDomainsResponse
@@ -358,7 +358,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<DomainInfo[]> BuildDomainsAsync(
         ServiceDefinition service,
-        IFeatureReader? featureReader,
+        IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
         var domains = new List<DomainInfo>();
@@ -381,7 +381,7 @@ internal static partial class FeatureServerEndpoints
     private static async Task<DomainInfo?> TryBuildDomainForFieldAsync(
         LayerDefinition layer,
         FieldDefinition field,
-        IFeatureReader? featureReader,
+        IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
         if (field.Type == FieldType.Boolean)
@@ -400,7 +400,7 @@ internal static partial class FeatureServerEndpoints
             };
         }
 
-        if (field.Type != FieldType.String || featureReader == null)
+        if (field.Type != FieldType.String)
         {
             return null;
         }
