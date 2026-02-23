@@ -417,7 +417,7 @@ internal sealed partial class ODataBatchOperationHandler(
             ODataError error => JsonSerializer.Serialize(error, ODataJsonContext.Default.ODataError),
             ODataResponse odataResponse => JsonSerializer.Serialize(odataResponse, ODataJsonContext.Default.ODataResponse),
             Dictionary<string, object?> dictionary => JsonSerializer.Serialize(dictionary, ODataJsonContext.Default.DictionaryStringObject),
-            _ => JsonSerializer.Serialize(body)
+            _ => JsonSerializer.Serialize(body, ODataJsonContext.Default.Object)
         };
     }
 

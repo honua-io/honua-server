@@ -71,6 +71,18 @@ public interface IGeometryOperationService
     Task<byte[]> IntersectAsync(byte[] targetWkb, byte[] intersectorWkb, int srid, CancellationToken ct = default);
 
     /// <summary>
+    /// Clips a geometry using the envelope of another geometry.
+    /// This corresponds to the ArcGIS REST API "clip" operation, which clips input geometries
+    /// to the bounding envelope of the clipping geometry.
+    /// </summary>
+    /// <param name="targetWkb">Target geometry in WKB format.</param>
+    /// <param name="clipEnvelopeWkb">Clipping geometry in WKB format (the envelope will be computed).</param>
+    /// <param name="srid">Spatial reference ID of both geometries.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Clipped geometry in WKB format.</returns>
+    Task<byte[]> ClipAsync(byte[] targetWkb, byte[] clipEnvelopeWkb, int srid, CancellationToken ct = default);
+
+    /// <summary>
     /// Computes the geometric difference of two geometries.
     /// </summary>
     /// <param name="targetWkb">Target geometry in WKB format.</param>

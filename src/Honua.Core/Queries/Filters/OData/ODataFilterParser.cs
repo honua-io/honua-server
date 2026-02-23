@@ -60,26 +60,15 @@ public sealed class ODataFilterParser
 
     private FilterExpression ParseAndExpression()
     {
-        var expression = ParseNotExpression();
+        var expression = ParseComparisonExpression();
 
         while (Match(ODataFilterTokenType.And))
         {
-            var right = ParseNotExpression();
+            var right = ParseComparisonExpression();
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }
 
         return expression;
-    }
-
-    private FilterExpression ParseNotExpression()
-    {
-        if (Match(ODataFilterTokenType.Not))
-        {
-            var operand = ParseNotExpression();
-            return new UnaryExpression(UnaryOperator.Not, operand);
-        }
-
-        return ParseComparisonExpression();
     }
 
     private FilterExpression ParseComparisonExpression()
@@ -156,6 +145,12 @@ public sealed class ODataFilterParser
 
     private FilterExpression ParseUnaryExpression()
     {
+        if (Match(ODataFilterTokenType.Not))
+        {
+            var operand = ParseUnaryExpression();
+            return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+
         if (Match(ODataFilterTokenType.Minus))
         {
             var operand = ParseUnaryExpression();
@@ -570,7 +565,7 @@ public sealed class ODataFilterParser
                 throw new ODataFilterParseException("Null comparisons require eq or ne", position);
             }
 
-            var operand = left is Literal ? right : left;
+            var operand = left is Literal { Type: LiteralType.Null } ? right : left;
             return op == BinaryOperator.Equal
                 ? new UnaryExpression(UnaryOperator.IsNull, operand)
                 : new UnaryExpression(UnaryOperator.IsNotNull, operand);

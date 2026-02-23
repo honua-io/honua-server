@@ -149,6 +149,27 @@ internal sealed class PostgresGeometryOperationService(
         return result as byte[] ?? throw new InvalidOperationException("PostGIS intersect returned null.");
     }
 
+    public async Task<byte[]> ClipAsync(byte[] targetWkb, byte[] clipEnvelopeWkb, int srid, CancellationToken ct = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+
+        cmd.CommandText = """
+            SELECT ST_AsBinary(
+                COALESCE(
+                    ST_Intersection(ST_SetSRID($1::geometry, $3), ST_Envelope(ST_SetSRID($2::geometry, $3))),
+                    ST_GeomFromText('GEOMETRYCOLLECTION EMPTY', $3)
+                ))
+            """;
+
+        cmd.Parameters.Add(new NpgsqlParameter { Value = targetWkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = clipEnvelopeWkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as byte[] ?? throw new InvalidOperationException("PostGIS clip returned null.");
+    }
+
     public async Task<byte[]> DifferenceAsync(byte[] targetWkb, byte[] eraserWkb, int srid, CancellationToken ct = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);

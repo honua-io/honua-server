@@ -617,7 +617,7 @@ internal static class FileUploadSecurity
         {
             var extension = Path.GetExtension(sanitized);
             var nameWithoutExtension = Path.GetFileNameWithoutExtension(sanitized);
-            sanitized = nameWithoutExtension[..Math.Min(200 - extension.Length, nameWithoutExtension.Length)] + extension;
+            sanitized = nameWithoutExtension[..Math.Max(0, Math.Min(200 - extension.Length, nameWithoutExtension.Length))] + extension;
         }
 
         // Ensure it's not empty after sanitization

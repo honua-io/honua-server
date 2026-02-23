@@ -444,7 +444,7 @@ internal sealed class GeometryServiceHandler(
         return await HandleBinaryGeometryOperationAsync(
             context,
             operationName: "clip",
-            operation: (target, other, srid, token) => _operationService.IntersectAsync(target, other, srid, token),
+            operation: (target, other, srid, token) => _operationService.ClipAsync(target, other, srid, token),
             ct);
     }
 

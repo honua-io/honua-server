@@ -135,6 +135,60 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Clip)]
+    [Endpoint("POST /rest/services/geometry/clip")]
+    public async Task Clip_NonRectangularClipGeometry_UsesEnvelopeForClipping()
+    {
+        // The clip geometry is a triangle with vertices at (1,1), (3,1), (2,3).
+        // Its envelope is the rectangle (1,1)-(3,3).
+        // The target polygon is (0,0)-(4,4).
+        // If clip correctly uses the envelope, the result should be a rectangle (1,1)-(3,3),
+        // NOT the intersection with the triangle itself.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[4,0],[4,4],[0,4],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "rings": [[[1,1],[3,1],[2,3],[1,1]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var clipResponse = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/clip",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        clipResponse.Be200Ok();
+        var clipContent = await clipResponse.Content.ReadAsStringAsync();
+        var clipResult = JsonSerializer.Deserialize(clipContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        clipResult.Should().NotBeNull();
+        clipResult!.Geometries.Should().HaveCount(1);
+
+        // Also run the same inputs through intersect to verify the results differ
+        var intersectResponse = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/intersect",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        intersectResponse.Be200Ok();
+        var intersectContent = await intersectResponse.Content.ReadAsStringAsync();
+        var intersectResult = JsonSerializer.Deserialize(intersectContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        intersectResult.Should().NotBeNull();
+        intersectResult!.Geometries.Should().HaveCount(1);
+
+        // Clip (envelope-based) and intersect (full geometry) should produce different geometries
+        // because the clip uses the rectangular envelope of the triangle, not the triangle itself
+        var clipGeom = clipResult.Geometries![0].GetRawText();
+        var intersectGeom = intersectResult.Geometries![0].GetRawText();
+        clipGeom.Should().NotBe(intersectGeom,
+            "clip should use the envelope of the clip geometry, producing a different result than intersect");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Clip)]
     [Endpoint("GET /rest/services/geometry/clip")]
     public async Task Clip_GetMissingParameters_Returns400()
     {

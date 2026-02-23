@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -292,6 +293,38 @@ internal static class ODataUtilityService
     public static IReadOnlySet<string> GetAllowedFormats()
     {
         return _allowedFormats;
+    }
+
+    public static bool TryGetUnsupportedMetadataLevel(HttpRequest request, string? format, out string level)
+    {
+        level = string.Empty;
+
+        if (TryResolveMetadataLevel(format, out var formatLevel))
+        {
+            if (IsUnsupportedMetadataLevel(formatLevel))
+            {
+                level = formatLevel;
+                return true;
+            }
+
+            // $format takes precedence over Accept when present and parseable.
+            return false;
+        }
+
+        var acceptHeader = request.Headers.Accept.ToString();
+        if (TryResolveMetadataLevelFromAccept(acceptHeader, out _))
+        {
+            // A supported Accept metadata level is available; negotiate that level.
+            return false;
+        }
+
+        if (TryResolveUnsupportedMetadataLevelFromAccept(acceptHeader, out var acceptLevel))
+        {
+            level = acceptLevel;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -670,16 +703,84 @@ internal static class ODataUtilityService
             return false;
         }
 
+        var selectedLevel = string.Empty;
+        var selectedQuality = double.MinValue;
+
         var mediaTypes = acceptHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var mediaType in mediaTypes)
         {
-            if (TryResolveMetadataLevelFromMediaType(mediaType, out level))
+            if (!TryResolveMetadataLevelFromMediaType(mediaType, out var candidateLevel))
             {
-                return true;
+                continue;
+            }
+
+            if (IsUnsupportedMetadataLevel(candidateLevel))
+            {
+                continue;
+            }
+
+            var candidateQuality = ResolveQualityFactor(mediaType);
+            if (candidateQuality <= 0)
+            {
+                continue;
+            }
+
+            if (candidateQuality > selectedQuality)
+            {
+                selectedQuality = candidateQuality;
+                selectedLevel = candidateLevel;
             }
         }
 
-        return false;
+        if (selectedQuality < 0 || string.IsNullOrEmpty(selectedLevel))
+        {
+            return false;
+        }
+
+        level = selectedLevel;
+        return true;
+    }
+
+    private static bool TryResolveUnsupportedMetadataLevelFromAccept(string? acceptHeader, out string level)
+    {
+        level = string.Empty;
+        if (string.IsNullOrWhiteSpace(acceptHeader))
+        {
+            return false;
+        }
+
+        var selectedLevel = string.Empty;
+        var selectedQuality = double.MinValue;
+
+        var mediaTypes = acceptHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var mediaType in mediaTypes)
+        {
+            if (!TryResolveMetadataLevelFromMediaType(mediaType, out var candidateLevel) ||
+                !IsUnsupportedMetadataLevel(candidateLevel))
+            {
+                continue;
+            }
+
+            var candidateQuality = ResolveQualityFactor(mediaType);
+            if (candidateQuality <= 0)
+            {
+                continue;
+            }
+
+            if (candidateQuality > selectedQuality)
+            {
+                selectedQuality = candidateQuality;
+                selectedLevel = candidateLevel;
+            }
+        }
+
+        if (selectedQuality < 0 || string.IsNullOrEmpty(selectedLevel))
+        {
+            return false;
+        }
+
+        level = selectedLevel;
+        return true;
     }
 
     private static bool TryResolveMetadataLevelFromMediaType(string mediaType, out string level)
@@ -729,18 +830,43 @@ internal static class ODataUtilityService
         return false;
     }
 
+    private static double ResolveQualityFactor(string mediaType)
+    {
+        var parameters = mediaType.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var parameter in parameters.Skip(1))
+        {
+            var kvp = parameter.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (kvp.Length != 2 || !kvp[0].Equals("q", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var candidate = kvp[1].Trim().Trim('"');
+            if (double.TryParse(candidate, NumberStyles.Float, CultureInfo.InvariantCulture, out var quality) &&
+                quality is >= 0 and <= 1)
+            {
+                return quality;
+            }
+
+            return 1.0;
+        }
+
+        return 1.0;
+    }
+
     private static string ResolveMetadataLevel(HttpRequest request, string? format)
     {
         if (TryResolveMetadataLevel(format, out var formatLevel) ||
             TryResolveMetadataLevelFromAccept(request.Headers.Accept.ToString(), out formatLevel))
         {
-            return string.Equals(formatLevel, ODataMetadataNone, StringComparison.OrdinalIgnoreCase)
-                ? ODataMetadataNone
-                : ODataMetadataMinimal;
+            return formatLevel;
         }
 
         return ODataMetadataMinimal;
     }
+
+    private static bool IsUnsupportedMetadataLevel(string level)
+        => string.Equals(level, ODataMetadataFull, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Validates an OData feature request for required fields.

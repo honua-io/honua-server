@@ -216,6 +216,22 @@ public class FileUploadSecurityTests
 
     [Fact]
     [SecurityTest]
+    public void SanitizeFileName_VeryLongExtension_DoesNotThrow()
+    {
+        // Arrange - extension longer than 200 chars
+        var longExtension = "." + new string('x', 250);
+        var fileName = "file" + longExtension;
+
+        // Act - should not throw ArgumentOutOfRangeException
+        var sanitizedName = FileUploadSecurity.SanitizeFileName(fileName);
+
+        // Assert
+        Assert.False(string.IsNullOrWhiteSpace(sanitizedName));
+        _output.WriteLine($"Sanitized long extension: '{sanitizedName}' (length={sanitizedName.Length})");
+    }
+
+    [Fact]
+    [SecurityTest]
     public void SanitizeFileName_DangerousName_ReturnsSafeName()
     {
         // Arrange

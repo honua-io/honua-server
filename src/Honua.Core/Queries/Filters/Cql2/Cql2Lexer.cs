@@ -305,9 +305,20 @@ public sealed class Cql2Lexer
     {
         var start = _position;
 
+        var hasDecimal = false;
         while (_position < _input.Length &&
                (char.IsDigit(_input[_position]) || _input[_position] == '.'))
         {
+            if (_input[_position] == '.')
+            {
+                if (hasDecimal)
+                {
+                    break; // Stop at second decimal point
+                }
+
+                hasDecimal = true;
+            }
+
             _position++;
         }
 

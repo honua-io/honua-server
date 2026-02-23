@@ -2009,6 +2009,6 @@ internal static partial class MapServerEndpoints
     private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties)
     {
         var result = ExpressionEvaluator.Evaluate(filter, properties);
-        return result is bool b ? b : true;
+        return result is bool b && b;
     }
 }

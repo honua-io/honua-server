@@ -85,6 +85,19 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata with unsupported Accept metadata level")]
+    public async Task ServiceDocument_WithAcceptMetadataFull_RejectsUnsupportedMetadataLevel()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsODataVersionHeader()
@@ -351,6 +364,72 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         document.RootElement.TryGetProperty("@odata.context", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId}) with metadata=full")]
+    public async Task Features_WithAcceptMetadataFull_RejectsUnsupportedMetadataLevel()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId}) with format overriding unsupported Accept metadata level")]
+    public async Task Features_WithFormatMetadataMinimalAndAcceptMetadataFull_UsesFormatPrecedence()
+    {
+        var format = Uri.EscapeDataString("application/json;odata.metadata=minimal");
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1&$format={format}");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
+
+        var response = await _fixture.Client.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId}) with Accept quality metadata preferences")]
+    public async Task Features_WithAcceptQualityMetadataPreferences_PrefersHighestQualityValue()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        request.Headers.Accept.ParseAdd("application/json;odata.metadata=none;q=0.1");
+        request.Headers.Accept.ParseAdd("application/json;odata.metadata=minimal;q=1.0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("@odata.context", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId}) with unsupported preferred Accept and supported fallback")]
+    public async Task Features_WithAcceptMetadataFullAndSupportedFallback_UsesSupportedFallback()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        request.Headers.Accept.ParseAdd("application/json;odata.metadata=full;q=1.0");
+        request.Headers.Accept.ParseAdd("application/json;odata.metadata=minimal;q=0.5");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.Parameters.Should()
+            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]

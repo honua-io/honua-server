@@ -728,19 +728,33 @@ public sealed class Cql2Parser
     {
         Consume(Cql2TokenType.LeftParen, "Expected '(' after BBOX");
 
-        var minX = ParseSignedNumber();
-        Consume(Cql2TokenType.Comma, "Expected ',' after minX");
-        var minY = ParseSignedNumber();
-        Consume(Cql2TokenType.Comma, "Expected ',' after minY");
-        var maxX = ParseSignedNumber();
-        Consume(Cql2TokenType.Comma, "Expected ',' after maxX");
-        var maxY = ParseSignedNumber();
-
-        if (Match(Cql2TokenType.Comma))
+        var values = new List<double>(6);
+        values.Add(ParseSignedNumber());
+        while (Match(Cql2TokenType.Comma))
         {
-            ParseSignedNumber();
-            Consume(Cql2TokenType.Comma, "Expected ',' after minZ");
-            ParseSignedNumber();
+            values.Add(ParseSignedNumber());
+        }
+
+        double minX, minY, maxX, maxY;
+        if (values.Count == 6)
+        {
+            // BBOX(minX, minY, minZ, maxX, maxY, maxZ) — Z values are discarded for 2D polygon
+            minX = values[0];
+            minY = values[1];
+            maxX = values[3];
+            maxY = values[4];
+        }
+        else if (values.Count == 4)
+        {
+            // BBOX(minX, minY, maxX, maxY)
+            minX = values[0];
+            minY = values[1];
+            maxX = values[2];
+            maxY = values[3];
+        }
+        else
+        {
+            throw new ArgumentException($"BBOX requires 4 or 6 values, got {values.Count}");
         }
 
         Consume(Cql2TokenType.RightParen, "Expected ')' after BBOX");

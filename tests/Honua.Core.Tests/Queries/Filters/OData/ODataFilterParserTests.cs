@@ -16,41 +16,44 @@ public class ODataFilterParserTests
     [Fact]
     public void Parse_NotPrecedence_BindsTighterThanOr()
     {
-        // "not A eq 1 or B eq 2" should parse as "(not (A eq 1)) or (B eq 2)"
+        // "not A eq 1 or B eq 2" should parse as "((not A) eq 1) or (B eq 2)"
         var result = _parser.Parse("not A eq 1 or B eq 2");
 
         result.Should().BeOfType<BinaryExpression>();
         var orExpr = (BinaryExpression)result;
         orExpr.Operator.Should().Be(BinaryOperator.Or);
 
-        orExpr.Left.Should().BeOfType<UnaryExpression>();
-        var notExpr = (UnaryExpression)orExpr.Left;
-        notExpr.Operator.Should().Be(UnaryOperator.Not);
-
-        notExpr.Operand.Should().BeOfType<BinaryExpression>();
-        var comparison = (BinaryExpression)notExpr.Operand;
+        orExpr.Left.Should().BeOfType<BinaryExpression>();
+        var comparison = (BinaryExpression)orExpr.Left;
         comparison.Operator.Should().Be(BinaryOperator.Equal);
-        ((PropertyReference)comparison.Left).PropertyName.Should().Be("A");
+
+        comparison.Left.Should().BeOfType<UnaryExpression>();
+        var notExpr = (UnaryExpression)comparison.Left;
+        notExpr.Operator.Should().Be(UnaryOperator.Not);
+        notExpr.Operand.Should().BeOfType<PropertyReference>();
+        ((PropertyReference)notExpr.Operand).PropertyName.Should().Be("A");
+
         ((Literal)comparison.Right).Value.Should().Be(1);
     }
 
     [Fact]
     public void Parse_NotPrecedence_BindsTighterThanAnd()
     {
-        // "not A eq 1 and B eq 2" should parse as "(not (A eq 1)) and (B eq 2)"
+        // "not A eq 1 and B eq 2" should parse as "((not A) eq 1) and (B eq 2)"
         var result = _parser.Parse("not A eq 1 and B eq 2");
 
         result.Should().BeOfType<BinaryExpression>();
         var andExpr = (BinaryExpression)result;
         andExpr.Operator.Should().Be(BinaryOperator.And);
 
-        andExpr.Left.Should().BeOfType<UnaryExpression>();
-        var notExpr = (UnaryExpression)andExpr.Left;
-        notExpr.Operator.Should().Be(UnaryOperator.Not);
-
-        notExpr.Operand.Should().BeOfType<BinaryExpression>();
-        var comparison = (BinaryExpression)notExpr.Operand;
+        andExpr.Left.Should().BeOfType<BinaryExpression>();
+        var comparison = (BinaryExpression)andExpr.Left;
         comparison.Operator.Should().Be(BinaryOperator.Equal);
+
+        comparison.Left.Should().BeOfType<UnaryExpression>();
+        var notExpr = (UnaryExpression)comparison.Left;
+        notExpr.Operator.Should().Be(UnaryOperator.Not);
+        notExpr.Operand.Should().BeOfType<PropertyReference>();
     }
 
     [Fact]
@@ -58,15 +61,32 @@ public class ODataFilterParserTests
     {
         var result = _parser.Parse("not not active eq true");
 
-        result.Should().BeOfType<UnaryExpression>();
-        var outer = (UnaryExpression)result;
+        result.Should().BeOfType<BinaryExpression>();
+        var comparison = (BinaryExpression)result;
+        comparison.Operator.Should().Be(BinaryOperator.Equal);
+
+        comparison.Left.Should().BeOfType<UnaryExpression>();
+        var outer = (UnaryExpression)comparison.Left;
         outer.Operator.Should().Be(UnaryOperator.Not);
 
         outer.Operand.Should().BeOfType<UnaryExpression>();
         var inner = (UnaryExpression)outer.Operand;
         inner.Operator.Should().Be(UnaryOperator.Not);
+        inner.Operand.Should().BeOfType<PropertyReference>();
 
-        inner.Operand.Should().BeOfType<BinaryExpression>();
+        comparison.Right.Should().BeOfType<Literal>();
+        ((Literal)comparison.Right).Value.Should().Be(true);
+    }
+
+    [Fact]
+    public void Parse_NotWithParentheses_AppliesToComparisonExpression()
+    {
+        var result = _parser.Parse("not (A eq 1)");
+
+        result.Should().BeOfType<UnaryExpression>();
+        var notExpr = (UnaryExpression)result;
+        notExpr.Operator.Should().Be(UnaryOperator.Not);
+        notExpr.Operand.Should().BeOfType<BinaryExpression>();
     }
 
     #endregion
@@ -245,6 +265,60 @@ public class ODataFilterParserTests
         var literal = (Literal)binary.Right;
         literal.Value.Should().BeOfType<int>();
         literal.Value.Should().Be(-5);
+    }
+
+    #endregion
+
+    #region Null Comparisons
+
+    [Fact]
+    public void Parse_NullOnRight_ProducesIsNullExpression()
+    {
+        var result = _parser.Parse("name eq null");
+
+        result.Should().BeOfType<UnaryExpression>();
+        var unary = (UnaryExpression)result;
+        unary.Operator.Should().Be(UnaryOperator.IsNull);
+        unary.Operand.Should().BeOfType<PropertyReference>();
+        ((PropertyReference)unary.Operand).PropertyName.Should().Be("name");
+    }
+
+    [Fact]
+    public void Parse_NullOnLeft_ProducesIsNullOnProperty()
+    {
+        // "null eq name" should produce IsNull(name), not IsNull(null)
+        var result = _parser.Parse("null eq name");
+
+        result.Should().BeOfType<UnaryExpression>();
+        var unary = (UnaryExpression)result;
+        unary.Operator.Should().Be(UnaryOperator.IsNull);
+        unary.Operand.Should().BeOfType<PropertyReference>();
+        ((PropertyReference)unary.Operand).PropertyName.Should().Be("name");
+    }
+
+    [Fact]
+    public void Parse_LiteralEqNull_ProducesIsNullOnLiteral()
+    {
+        // "'hello' eq null" — the non-null operand ('hello') should be the subject of IsNull
+        var result = _parser.Parse("'hello' eq null");
+
+        result.Should().BeOfType<UnaryExpression>();
+        var unary = (UnaryExpression)result;
+        unary.Operator.Should().Be(UnaryOperator.IsNull);
+        unary.Operand.Should().BeOfType<Literal>();
+        var literal = (Literal)unary.Operand;
+        literal.Value.Should().Be("hello");
+    }
+
+    [Fact]
+    public void Parse_NullNeProperty_ProducesIsNotNull()
+    {
+        var result = _parser.Parse("name ne null");
+
+        result.Should().BeOfType<UnaryExpression>();
+        var unary = (UnaryExpression)result;
+        unary.Operator.Should().Be(UnaryOperator.IsNotNull);
+        unary.Operand.Should().BeOfType<PropertyReference>();
     }
 
     #endregion

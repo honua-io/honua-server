@@ -914,16 +914,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberMatched", numberMatched);
         writer.WriteNumber("numberReturned", numberReturned);
         writer.WritePropertyName("links");
-
-        var linksTypeInfo = OgcJsonContext.Default.GetTypeInfo(typeof(ImmutableArray<Link>));
-        if (linksTypeInfo is not null)
-        {
-            JsonSerializer.Serialize(writer, links, linksTypeInfo);
-        }
-        else
-        {
-            JsonSerializer.Serialize(writer, links);
-        }
+        JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
 
         writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
         writer.WriteEndObject();
