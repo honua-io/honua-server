@@ -9,7 +9,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `codeql.yml`: static analysis.
 - `container-security.yml`: container security scanning.
 - `performance.yml`, `performance-benchmarks.yml`, `load-soak-nightly.yml`: performance coverage.
-- `cite-conformance.yml`, `cite-tiles-conformance.yml`: OGC conformance testing.
+- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`: OGC conformance testing.
 - `nightly-container-build.yml`: nightly image builds.
 
 ## Quality Gates

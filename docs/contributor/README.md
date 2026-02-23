@@ -33,6 +33,8 @@ This section is for people **building or extending** Honua (core contributors, a
 - [OData Test Parity](ODATA_TEST_PARITY.md) — OData v4 specification compliance
 - [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
 - [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance
+- [CITE WMS 1.3](cite-wms-conformance-testing.md) — OGC WMS conformance
+- [CITE WMTS 1.0](cite-wmts-conformance-testing.md) — OGC WMTS conformance
 
 ## CI/CD
 

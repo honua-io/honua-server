@@ -18,6 +18,8 @@ This document tracks the current workflow layout. The source of truth is `.githu
 |---|---|---|
 | `cite-conformance.yml` | OGC API Features CITE tests | schedule + manual |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE tests | schedule + manual |
+| `cite-wms-conformance.yml` | OGC WMS 1.3 CITE tests | schedule + manual |
+| `cite-wmts-conformance.yml` | OGC WMTS 1.0 CITE tests | schedule + manual |
 | `performance.yml` | Performance benchmark pipeline | PR/push/manual |
 | `performance-benchmarks.yml` | Extended benchmark + baseline flow | PR/push/manual |
 | `load-soak-nightly.yml` | Load/soak runs | schedule + manual |

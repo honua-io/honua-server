@@ -40,7 +40,6 @@ The CITE test suite validates that Honua Server correctly implements the OGC API
 CITE Tiles tests run automatically:
 - Weekly via scheduled workflow (Tuesdays at 6am UTC)
 - Manually via workflow dispatch
-- On pull requests affecting tiles endpoints (when configured)
 
 ## Test Profiles
 
@@ -318,12 +317,7 @@ For detailed investigation:
 
 ## Skipped Tests Documentation
 
-The following tests may be skipped with documented reasons:
-
-| Test | Reason | Issue |
-|------|--------|-------|
-| CRS transformation | Only WebMercatorQuad supported | By design |
-| Raster tiles | Vector tiles only | Out of scope |
+No tests are currently skipped. Both `WebMercatorQuad` and `WorldCRS84Quad` tile matrix sets are supported, and raster (PNG) tile output is available alongside vector (MVT) tiles.
 
 ## Resources
 

@@ -74,6 +74,8 @@
 * [OData Test Parity](contributor/ODATA_TEST_PARITY.md)
 * [CITE OGC Features](contributor/cite-conformance-testing.md)
 * [CITE OGC Tiles](contributor/cite-tiles-conformance-testing.md)
+* [CITE WMS 1.3](contributor/cite-wms-conformance-testing.md)
+* [CITE WMTS 1.0](contributor/cite-wmts-conformance-testing.md)
 
 ### CI/CD
 * [CI Monitoring](contributor/CI_MONITORING.md)
