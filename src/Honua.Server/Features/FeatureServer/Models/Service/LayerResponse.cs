@@ -11,7 +11,7 @@ public sealed class LayerResponse
     /// <summary>
     /// Current version of the service
     /// </summary>
-    public string CurrentVersion { get; init; } = "10.81";
+    public double CurrentVersion { get; init; } = 10.81;
 
     /// <summary>
     /// Layer identifier
@@ -134,6 +134,11 @@ public sealed class LayerResponse
     public string? DisplayField { get; init; }
 
     /// <summary>
+    /// Unique identifier field metadata per the GeoServices REST spec
+    /// </summary>
+    public UniqueIdFieldInfo? UniqueIdField { get; init; }
+
+    /// <summary>
     /// Type ID field name (if used for symbology)
     /// </summary>
     public string? TypeIdField { get; init; }
@@ -227,4 +232,10 @@ public sealed class LayerResponse
     /// Feature templates for creating new features
     /// </summary>
     public FeatureTemplate[] Templates { get; init; } = [];
+
+    /// <summary>
+    /// Advanced query capabilities per the GeoServices REST spec.
+    /// Esri clients (ArcGIS Pro, JS API) check this object to enable pagination, statistics, orderBy, etc.
+    /// </summary>
+    public AdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
 }

@@ -63,12 +63,13 @@ internal static partial class AuthenticationLog
     public static partial void ApiKeyAuthenticationSuccessful(ILogger logger);
 
     /// <summary>
-    /// Logs when development environment with no admin password enables auth bypass
+    /// Logs when development environment with no admin password enables auth bypass.
+    /// This is a security-sensitive path: all admin endpoints are accessible without authentication.
     /// </summary>
     [LoggerMessage(
         EventId = 4106,
-        Level = LogLevel.Information,
-        Message = "Development environment with no admin password configured - enabling auth bypass")]
+        Level = LogLevel.Warning,
+        Message = "SECURITY WARNING: Development auth bypass is active because no HONUA_ADMIN_PASSWORD is configured. All admin endpoints are accessible without authentication. Set HONUA_ADMIN_PASSWORD to require API key authentication.")]
     public static partial void DevelopmentEnvironmentAuthBypass(ILogger logger);
 
     /// <summary>

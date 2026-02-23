@@ -371,6 +371,37 @@ public class Cql2ParserTests
     }
 
     [Fact]
+    public void Parse_Bbox3D_ParsesCorrectCoordinateOrder()
+    {
+        // 3D BBOX: BBOX(minX, minY, minZ, maxX, maxY, maxZ)
+        // The parser should use minX, minY, maxX, maxY (values 0,1,3,4) for the 2D polygon
+        const string cql = "S_INTERSECTS(geom, BBOX(-180, -90, -1000, 180, 90, 1000))";
+
+        var result = _parser.Parse(cql);
+
+        result.Should().BeOfType<SpatialPredicate>();
+        var spatial = (SpatialPredicate)result;
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
+
+        var geometry = (GeometryLiteral)spatial.Right;
+        geometry.OriginalFormat.Should().StartWith("BBOX");
+        // If parsed correctly: minX=-180, minY=-90, maxX=180, maxY=90
+        // (minZ=-1000, maxZ=1000 are discarded for the 2D polygon)
+        // The WKB should represent a valid envelope polygon, not an inverted one
+        geometry.Wkb.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Parse_BboxInvalidValueCount_ThrowsArgumentException()
+    {
+        // 5 values is not valid for BBOX (needs 4 or 6)
+        const string cql = "S_INTERSECTS(geom, BBOX(0, 0, 1, 1, 2))";
+
+        var action = () => _parser.Parse(cql);
+        action.Should().Throw<ArgumentException>().WithMessage("*4 or 6*");
+    }
+
+    [Fact]
     public void Parse_Exponent_IsRightAssociative()
     {
         // Arrange

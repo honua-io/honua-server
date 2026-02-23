@@ -93,11 +93,23 @@ internal static partial class MapServerEndpoints
                 return protocolError;
             }
 
+            var gdbVersion = GetValue(values, "gdbVersion");
+            if (!string.IsNullOrWhiteSpace(gdbVersion))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
+            }
+
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             if (!TryParseLayerDefs(layerDefsValue, queryValidator, out var layerDefs, out var layerDefsError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     layerDefsError ?? "Invalid layerDefs parameter.");
+            }
+
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
 
             var requestedLayerIds = ParseLayerIds(layersParam);
@@ -134,13 +146,10 @@ internal static partial class MapServerEndpoints
 
             var results = new List<FindResult>();
 
-            foreach (var layer in service.Layers)
-            {
-                if (!requestedLayerIds.Contains(layer.Id))
-                {
-                    continue;
-                }
+            var findLayers = ResolveFindLayers(service, requestedLayerIds, dynamicLayers, context);
 
+            foreach (var (layer, definitionExpression) in findLayers)
+            {
                 if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
                 {
                     continue;
@@ -152,7 +161,8 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                layerDefs.TryGetValue(layer.Id, out var layerDef);
+                layerDefs.TryGetValue(layer.Id, out var rawLayerDef);
+                var layerDef = CombineDefinitionExpressions(definitionExpression, rawLayerDef);
 
                 var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
                 var displayField = ResolveDisplayField(layer, objectIdField);
@@ -160,9 +170,10 @@ internal static partial class MapServerEndpoints
                 foreach (var field in fieldsToSearch)
                 {
                     var escapedSearchText = EscapeSqlStringLiteral(searchText);
+                    var quotedFieldName = $"\"{field.Name}\"";
                     var whereClause = contains
-                        ? $"{field.Name} LIKE '%{EscapeLikeWildcards(escapedSearchText)}%'"
-                        : $"{field.Name} = '{escapedSearchText}'";
+                        ? $"{quotedFieldName} LIKE '%{EscapeLikeWildcards(escapedSearchText)}%' ESCAPE '\\'"
+                        : $"{quotedFieldName} = '{escapedSearchText}'";
 
                     if (!string.IsNullOrWhiteSpace(layerDef))
                     {
@@ -283,6 +294,41 @@ internal static partial class MapServerEndpoints
         return layer.AttributeFields
             .Where(f => f.Type == FieldType.String)
             .ToArray();
+    }
+
+    private static List<(LayerDefinition Layer, string? DefinitionExpression)> ResolveFindLayers(
+        ServiceDefinition service,
+        HashSet<int> requestedLayerIds,
+        IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
+        HttpContext context)
+    {
+        if (dynamicLayers.Count > 0)
+        {
+            var layerLookup = service.Layers.ToDictionary(l => l.Id);
+            var result = new List<(LayerDefinition, string?)>();
+
+            foreach (var dl in dynamicLayers)
+            {
+                if (!requestedLayerIds.Contains(dl.Id))
+                {
+                    continue;
+                }
+
+                if (!layerLookup.TryGetValue(dl.MapLayerId, out var layer))
+                {
+                    continue;
+                }
+
+                result.Add((layer, dl.DefinitionExpression));
+            }
+
+            return result;
+        }
+
+        return service.Layers
+            .Where(l => requestedLayerIds.Contains(l.Id))
+            .Select(l => (l, (string?)null))
+            .ToList();
     }
 
     /// <summary>

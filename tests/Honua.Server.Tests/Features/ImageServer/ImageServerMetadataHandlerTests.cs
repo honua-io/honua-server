@@ -10,7 +10,9 @@ using Honua.Server.Features.ImageServer.Handlers;
 using Honua.Server.Features.ImageServer.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -42,9 +44,11 @@ public class ImageServerMetadataHandlerTests
         _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
             .Returns((LayerDefinition?)null);
 
-        var result = await _handler.GetServiceInfoAsync(99);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 99);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -56,14 +60,16 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterInfo>());
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceInfoAsync_NullExtent_ReturnsProblem()
+    public async Task GetServiceInfoAsync_NullExtent_ReturnsServerError()
     {
         SetupLayerAndRasters();
         _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
@@ -71,9 +77,13 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns((RasterExtent?)null);
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeAssignableTo<ProblemHttpResult>();
+        context.Response.StatusCode.Should().BeOneOf(
+            StatusCodes.Status500InternalServerError,
+            StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -82,7 +92,8 @@ public class ImageServerMetadataHandlerTests
     {
         SetupSuccessfulMetadata();
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         result.Should().BeOfType<Ok<ImageServerServiceInfo>>();
     }
@@ -93,7 +104,8 @@ public class ImageServerMetadataHandlerTests
     {
         SetupSuccessfulMetadata();
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
@@ -106,7 +118,8 @@ public class ImageServerMetadataHandlerTests
     {
         SetupSuccessfulMetadata();
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
@@ -119,7 +132,8 @@ public class ImageServerMetadataHandlerTests
     {
         SetupSuccessfulMetadata();
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
@@ -138,7 +152,8 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(CreateTestExtent());
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
@@ -159,7 +174,8 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(CreateTestExtent());
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
@@ -173,7 +189,8 @@ public class ImageServerMetadataHandlerTests
     {
         SetupSuccessfulMetadata();
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
@@ -185,16 +202,18 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceInfoAsync_RasterStoreThrows_ReturnsProblem()
+    public async Task GetServiceInfoAsync_RasterStoreThrows_ReturnsServerError()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Database error"));
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeAssignableTo<ProblemHttpResult>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]
@@ -207,11 +226,24 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(new RasterExtent { XMin = 0, YMin = 0, XMax = 1, YMax = 1, Srid = null });
 
-        var result = await _handler.GetServiceInfoAsync(1);
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
 
         var okResult = result as Ok<ImageServerServiceInfo>;
         okResult.Should().NotBeNull();
         okResult!.Value!.SpatialReference.Wkid.Should().Be(4326);
+    }
+
+    private static DefaultHttpContext CreateImageServerContext()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+
+        var context = new DefaultHttpContext();
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/rest/services/1/ImageServer";
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     private void SetupLayerAndRasters(int? srid = 4326)

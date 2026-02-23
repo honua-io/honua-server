@@ -54,12 +54,14 @@ public static class OgcExtensions
         SimpleGeoJsonGeometry? geometry = null,
         ImmutableArray<Link>? links = null)
     {
-        // Convert ID to long if possible for OGC compatibility
-        long? id = featureBase.Id switch
+        // Per RFC 7946, feature id can be a number or string.
+        // Preserve the original type for round-trip fidelity.
+        object? id = featureBase.Id switch
         {
             long longId => longId,
-            int intId => intId,
+            int intId => (long)intId,
             string strId when long.TryParse(strId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) => parsedId,
+            string strId => strId,
             _ => null
         };
 
@@ -79,10 +81,21 @@ public static class OgcExtensions
     /// <param name="ogcFeature">OGC GeoJSON feature</param>
     /// <returns>Shared GeoJSON feature base</returns>
     public static GeoJsonFeatureBase ToGeoJsonFeatureBase(this GeoJsonFeature ogcFeature)
-        => GeoJsonFeatureBase.Create(
-            ogcFeature.Id,
+    {
+        // Convert object? id back to the shared model's expected type
+        object? id = ogcFeature.Id switch
+        {
+            long l => l,
+            int i => (long)i,
+            string s => s,
+            _ => ogcFeature.Id
+        };
+
+        return GeoJsonFeatureBase.Create(
+            id,
             ogcFeature.Properties.AsReadOnly(),
             ogcFeature.Geometry != null);
+    }
 
     /// <summary>
     /// Converts a shared GeoJsonGeometryBase to OGC SimpleGeoJsonGeometry

@@ -113,4 +113,9 @@ internal static partial class ImageServerLog
         Message = "Invalid identify parameters for layer {LayerId}: {ValidationErrors}")]
     public static partial void InvalidIdentifyParameters(ILogger logger, int layerId, string validationErrors);
 
+    [LoggerMessage(
+        EventId = 5817,
+        Level = LogLevel.Warning,
+        Message = "Temporary export storage limit reached for layer {LayerId}: {ErrorMessage}")]
+    public static partial void ExportStorageLimitReached(ILogger logger, int layerId, string errorMessage);
 }

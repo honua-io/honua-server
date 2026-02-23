@@ -259,6 +259,25 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("layer-styles", "metadata");
             });
 
+            // Image Server service metadata caching policy
+            options.AddPolicy("ImageServerMetadata", policy =>
+            {
+                policy.Expire(TimeSpan.FromMinutes(5));
+                policy.SetVaryByRouteValue("id");
+                policy.SetVaryByQuery("f");
+                policy.Tag("layer-metadata", "metadata");
+            });
+
+            // OGC API Features queryables caching policy
+            options.AddPolicy("OgcQueryables", policy =>
+            {
+                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.SetVaryByRouteValue("collectionId");
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-metadata", "metadata");
+            });
+
             // Note: No default base policy - endpoints must explicitly opt into caching for security
         });
 

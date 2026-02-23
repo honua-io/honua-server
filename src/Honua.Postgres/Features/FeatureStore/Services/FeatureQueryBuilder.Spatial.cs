@@ -50,7 +50,7 @@ internal sealed partial class FeatureQueryBuilder
 
         var filter = query.SpatialFilter.Value;
         var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
-        var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
+        var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
         string? filterGeometry = null;
         string? clause = null;
 

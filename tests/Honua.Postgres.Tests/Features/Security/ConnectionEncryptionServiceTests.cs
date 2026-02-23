@@ -176,61 +176,11 @@ public class ConnectionEncryptionServiceTests : IDisposable
 
     [SecurityTest]
     [Fact]
-    public async Task RotateKeyAsync_IncreasesKeyVersion()
+    public async Task RotateKeyAsync_ThrowsNotSupportedException()
     {
-        // Arrange
-        var originalVersion = await _encryptionService.GetCurrentKeyVersionAsync();
-
-        // Act
-        var newVersion = await _encryptionService.RotateKeyAsync();
-
-        // Assert
-        Assert.Equal(originalVersion + 1, newVersion);
-        Assert.Equal(newVersion, await _encryptionService.GetCurrentKeyVersionAsync());
-    }
-
-    [SecurityTest]
-    [Fact]
-    public async Task RotateKey_OldEncryptedDataStillDecryptable()
-    {
-        // Arrange
-        const string testConnectionString = "Host=localhost;Database=test;Username=user;Password=secret";
-        var encryptedData = await _encryptionService.EncryptConnectionStringAsync(testConnectionString);
-        var originalKeyVersion = await _encryptionService.GetCurrentKeyVersionAsync();
-
-        // Act - Rotate key
-        await _encryptionService.RotateKeyAsync();
-
-        // Assert - Old data should still be decryptable with old key version
-        var decryptedString = await _encryptionService.DecryptConnectionStringAsync(encryptedData, originalKeyVersion);
-        Assert.Equal(testConnectionString, decryptedString);
-    }
-
-    [SecurityTest]
-    [Fact]
-    public async Task RotateKey_NewEncryptionUsesNewKey()
-    {
-        // Arrange
-        const string testConnectionString = "Host=localhost;Database=test;Username=user;Password=secret";
-
-        // Encrypt with original key
-        var originalEncrypted = await _encryptionService.EncryptConnectionStringAsync(testConnectionString);
-        var originalKeyVersion = await _encryptionService.GetCurrentKeyVersionAsync();
-
-        // Act - Rotate key and encrypt again
-        var newKeyVersion = await _encryptionService.RotateKeyAsync();
-        var newEncrypted = await _encryptionService.EncryptConnectionStringAsync(testConnectionString);
-
-        // Assert
-        Assert.NotEqual(originalKeyVersion, newKeyVersion);
-        Assert.False(originalEncrypted.SequenceEqual(newEncrypted)); // Different encryption results
-
-        // Both should decrypt to the same plaintext
-        var originalDecrypted = await _encryptionService.DecryptConnectionStringAsync(originalEncrypted, originalKeyVersion);
-        var newDecrypted = await _encryptionService.DecryptConnectionStringAsync(newEncrypted, newKeyVersion);
-
-        Assert.Equal(testConnectionString, originalDecrypted);
-        Assert.Equal(testConnectionString, newDecrypted);
+        // Act & Assert
+        await Assert.ThrowsAsync<NotSupportedException>(() =>
+            _encryptionService.RotateKeyAsync());
     }
 
     [SecurityTest]

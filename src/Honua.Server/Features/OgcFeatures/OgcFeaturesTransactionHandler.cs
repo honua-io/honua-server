@@ -202,7 +202,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = GenerateETag(existing.Value);
-                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.Ordinal))
                 {
                     return Results.Problem(
                         statusCode: 412,
@@ -327,7 +327,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = GenerateETag(existing.Value);
-                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.Ordinal))
                 {
                     return Results.Problem(
                         statusCode: 412,

@@ -26,7 +26,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (ShouldUseGeodesicKnn(geometryStorageType, query))
         {
-            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
+            var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var filterGeometry = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
             sql.Append(CultureInfo.InvariantCulture, $" ORDER BY ST_Distance({geographyOperand}, {filterGeometry})");
             return;

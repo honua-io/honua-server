@@ -183,6 +183,40 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_InClause_WithEmptyValueList_ReturnsFalseWithoutParameters()
+    {
+        // Arrange
+        var inClause = new BinaryExpression(
+            new PropertyReference("status"),
+            BinaryOperator.In,
+            new ValueList([]));
+
+        // Act
+        var result = _translator.Translate(inClause, _layer);
+
+        // Assert
+        result.Sql.Should().Be("FALSE");
+        result.Parameters.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Translate_NotInClause_WithEmptyValueList_ReturnsTrueWithoutParameters()
+    {
+        // Arrange
+        var notInClause = new BinaryExpression(
+            new PropertyReference("status"),
+            BinaryOperator.NotIn,
+            new ValueList([]));
+
+        // Act
+        var result = _translator.Translate(notInClause, _layer);
+
+        // Assert
+        result.Sql.Should().Be("TRUE");
+        result.Parameters.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Translate_SpatialPredicate_ReturnsCorrectSQL()
     {
         // Arrange

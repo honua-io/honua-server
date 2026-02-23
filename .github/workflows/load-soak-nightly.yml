@@ -109,6 +109,7 @@ jobs:
               raise SystemExit("Postgres did not become ready")
 
           conn.execute("CREATE EXTENSION IF NOT EXISTS postgis;")
+          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis_raster;")
           conn.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
           conn.commit()
 

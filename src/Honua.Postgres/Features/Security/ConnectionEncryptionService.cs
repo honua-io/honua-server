@@ -26,8 +26,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
     private readonly IConfiguration _configuration;
     private readonly ILogger<ConnectionEncryptionService> _logger;
     private readonly byte[] _masterKey;
-    private readonly object _lockObject = new();
-    private volatile int _currentKeyVersion = 1;
+    private readonly int _currentKeyVersion = 1;
     private bool _disposed;
 
     // Logger message delegates for performance
@@ -55,9 +54,9 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         LoggerMessage.Define(LogLevel.Error, new EventId(6, nameof(_logUnexpectedDecryptionError)),
             "Unexpected error during connection string decryption");
 
-    private static readonly Action<ILogger, int, Exception?> _logKeyRotated =
-        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(7, nameof(_logKeyRotated)),
-            "Encryption key rotated to version {NewVersion}. Old keys remain valid for decryption.");
+    private static readonly Action<ILogger, Exception?> _logKeyRotationNotSupported =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(7, nameof(_logKeyRotationNotSupported)),
+            "Key rotation attempted but is not supported at runtime. Re-deploy with a new master key passphrase to rotate keys.");
 
     private static readonly Action<ILogger, Exception?> _logValidationSuccess =
         LoggerMessage.Define(LogLevel.Debug, new EventId(8, nameof(_logValidationSuccess)),
@@ -71,9 +70,13 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         LoggerMessage.Define(LogLevel.Error, new EventId(10, nameof(_logValidationException)),
             "Encryption validation failed with exception");
 
-    private static readonly Action<ILogger, string, Exception?> _logSaltGenerated =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(11, nameof(_logSaltGenerated)),
-            "No salt configured. Generated salt: {Salt}. Save this value in 'Security:ConnectionEncryption:Salt' for production use.");
+    private static readonly Action<ILogger, Exception?> _logSaltGenerated =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(11, nameof(_logSaltGenerated)),
+            "No salt configured. A random salt was generated. Configure 'Security:ConnectionEncryption:Salt' for production use.");
+
+    private static readonly Action<ILogger, string, Exception?> _logSaltFingerprint =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(12, nameof(_logSaltFingerprint)),
+            "Salt fingerprint: {Fingerprint}");
 
     // AES-GCM constants
     private const int AesKeySize = 32; // 256 bits
@@ -160,14 +163,13 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
     {
         ThrowIfDisposed();
 
-        lock (_lockObject)
-        {
-            var newVersion = _currentKeyVersion + 1;
-            _currentKeyVersion = newVersion;
+        _logKeyRotationNotSupported(_logger, null);
 
-            _logKeyRotated(_logger, newVersion, null);
-            return Task.FromResult(newVersion);
-        }
+        throw new NotSupportedException(
+            "In-place key rotation is not supported. The master key is derived from a configured " +
+            "passphrase via PBKDF2 and cannot be changed at runtime. To rotate keys, re-deploy " +
+            "the application with a new 'Security:ConnectionEncryption:MasterKey' value and " +
+            "re-encrypt all stored connection strings.");
     }
 
     public async Task<bool> ValidateEncryptionAsync()
@@ -393,9 +395,13 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
             // Generate a new salt (this should be saved for production use)
             salt = new byte[SaltSize];
             RandomNumberGenerator.Fill(salt);
-            var saltBase64 = Convert.ToBase64String(salt);
 
-            _logSaltGenerated(_logger, saltBase64, null);
+            _logSaltGenerated(_logger, null);
+
+            // Log a truncated fingerprint (first 8 chars of SHA256 hash) for debugging without exposing the salt
+            var saltHash = SHA256.HashData(salt);
+            var fingerprint = Convert.ToHexString(saltHash)[..8];
+            _logSaltFingerprint(_logger, fingerprint, null);
         }
 
         // Derive key using PBKDF2

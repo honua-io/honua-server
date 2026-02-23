@@ -10,6 +10,7 @@ namespace Honua.Server.Features.MapServer.Models;
 /// AOT-compatible JSON serialization context for MapServer models.
 /// </summary>
 [JsonSerializable(typeof(MapServerResponse))]
+[JsonSerializable(typeof(MapServerDocumentInfo))]
 [JsonSerializable(typeof(MapServerLayerInfo))]
 [JsonSerializable(typeof(MapServerLayerInfo[]))]
 [JsonSerializable(typeof(MapServerTableInfo))]

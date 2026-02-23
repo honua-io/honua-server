@@ -79,6 +79,71 @@ public sealed record SimpleGeoJsonGeometry
 }
 
 /// <summary>
+/// JSON converter for GeoJSON feature IDs that supports both string and number values
+/// per RFC 7946 Section 3.2.
+/// </summary>
+public sealed class FeatureIdConverter : JsonConverter<object?>
+{
+    /// <inheritdoc />
+    public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.Number when reader.TryGetInt64(out var longValue) => longValue,
+            JsonTokenType.Number => reader.GetDouble(),
+            JsonTokenType.String => ReadStringId(ref reader),
+            JsonTokenType.Null => null,
+            _ => null
+        };
+    }
+
+    /// <inheritdoc />
+    public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                break;
+            case long l:
+                writer.WriteNumberValue(l);
+                break;
+            case int i:
+                writer.WriteNumberValue(i);
+                break;
+            case double d:
+                writer.WriteNumberValue(d);
+                break;
+            case string s:
+                writer.WriteStringValue(s);
+                break;
+            default:
+                writer.WriteStringValue(value.ToString());
+                break;
+        }
+    }
+
+    private static object? ReadStringId(ref Utf8JsonReader reader)
+    {
+        var str = reader.GetString();
+        if (str == null)
+        {
+            return null;
+        }
+
+        // Try to parse as long for numeric string IDs
+        if (long.TryParse(str, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        // Keep as string for non-numeric IDs (UUID, slug, etc.)
+        return str;
+    }
+}
+
+/// <summary>
 /// GeoJSON Feature for items response
 /// </summary>
 public sealed record GeoJsonFeature
@@ -90,11 +155,11 @@ public sealed record GeoJsonFeature
     public string Type { get; init; } = "Feature";
 
     /// <summary>
-    /// Feature identifier
+    /// Feature identifier. Per RFC 7946, this can be a number or string.
     /// </summary>
     [JsonPropertyName("id")]
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public long? Id { get; init; }
+    [JsonConverter(typeof(FeatureIdConverter))]
+    public object? Id { get; init; }
 
     /// <summary>
     /// Feature geometry in GeoJSON format

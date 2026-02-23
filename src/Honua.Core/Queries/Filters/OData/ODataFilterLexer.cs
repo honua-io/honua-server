@@ -68,7 +68,19 @@ internal sealed class ODataFilterLexer
 
             if (IsNumberStart(c))
             {
+                if (c == '-' && IsOperatorContext(tokens))
+                {
+                    tokens.Add(new ODataFilterToken(ODataFilterTokenType.Minus, "-", _position++));
+                    continue;
+                }
+
                 tokens.Add(ReadNumberLiteral());
+                continue;
+            }
+
+            if (c == '-')
+            {
+                tokens.Add(new ODataFilterToken(ODataFilterTokenType.Minus, "-", _position++));
                 continue;
             }
 
@@ -203,6 +215,15 @@ internal sealed class ODataFilterLexer
         }
 
         var value = _input[start..end];
+
+        // Validate the date portion (YYYY-MM-DD) is a real calendar date
+        var datePart = value.Length >= 10 ? value[..10] : value;
+        if (!DateOnly.TryParseExact(datePart, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+        {
+            token = default;
+            return false;
+        }
+
         _position = end;
 
         var type = value.Contains('T') || value.Contains('t')
@@ -243,6 +264,7 @@ internal sealed class ODataFilterLexer
             "ge" => new ODataFilterToken(ODataFilterTokenType.Ge, value, start),
             "lt" => new ODataFilterToken(ODataFilterTokenType.Lt, value, start),
             "le" => new ODataFilterToken(ODataFilterTokenType.Le, value, start),
+            "in" => new ODataFilterToken(ODataFilterTokenType.In, value, start),
             "add" => new ODataFilterToken(ODataFilterTokenType.Add, value, start),
             "sub" => new ODataFilterToken(ODataFilterTokenType.Sub, value, start),
             "mul" => new ODataFilterToken(ODataFilterTokenType.Mul, value, start),
@@ -271,6 +293,21 @@ internal sealed class ODataFilterLexer
         }
 
         return false;
+    }
+
+    private static bool IsOperatorContext(List<ODataFilterToken> tokens)
+    {
+        if (tokens.Count == 0)
+        {
+            return false;
+        }
+
+        var lastType = tokens[^1].Type;
+        return lastType is ODataFilterTokenType.Identifier
+            or ODataFilterTokenType.NumberLiteral
+            or ODataFilterTokenType.StringLiteral
+            or ODataFilterTokenType.BooleanLiteral
+            or ODataFilterTokenType.RightParen;
     }
 
     private static bool IsIdentifierStart(char c)

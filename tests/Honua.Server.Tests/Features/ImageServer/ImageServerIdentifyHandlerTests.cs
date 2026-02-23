@@ -10,7 +10,9 @@ using Honua.Server.Features.ImageServer.Handlers;
 using Honua.Server.Features.ImageServer.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -41,10 +43,12 @@ public class ImageServerIdentifyHandlerTests
         _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
             .Returns((LayerDefinition?)null);
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("10,20");
-        var result = await _handler.IdentifyAsync(99, request);
+        var result = await _handler.IdentifyAsync(context, 99, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -56,10 +60,12 @@ public class ImageServerIdentifyHandlerTests
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterInfo>());
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("10,20");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<NotFound>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -71,10 +77,12 @@ public class ImageServerIdentifyHandlerTests
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(new[] { CreateTestRasterInfo() });
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("invalid-geometry");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -83,8 +91,9 @@ public class ImageServerIdentifyHandlerTests
     {
         SetupSuccessfulIdentify();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("10.5,20.3");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<IdentifyResponse>>();
     }
@@ -95,8 +104,9 @@ public class ImageServerIdentifyHandlerTests
     {
         SetupSuccessfulIdentify();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("{\"x\":10.5,\"y\":20.3}");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
 
         result.Should().BeOfType<Ok<IdentifyResponse>>();
     }
@@ -112,10 +122,12 @@ public class ImageServerIdentifyHandlerTests
 
         // JSON geometry exceeding 1000 char limit
         var padding = new string(' ', 1001);
+        var context = CreateImageServerContext();
         var request = CreateRequest($"{{\"x\":10,\"y\":20,\"padding\":\"{padding}\"}}");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -127,10 +139,12 @@ public class ImageServerIdentifyHandlerTests
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
             .Returns(new[] { CreateTestRasterInfo() });
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("{invalid-json}");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<BadRequest<string>>();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -139,13 +153,26 @@ public class ImageServerIdentifyHandlerTests
     {
         SetupSuccessfulIdentify();
 
+        var context = CreateImageServerContext();
         var request = CreateRequest("10,20");
-        var result = await _handler.IdentifyAsync(1, request);
+        var result = await _handler.IdentifyAsync(context, 1, request);
 
         var okResult = result as Ok<IdentifyResponse>;
         okResult.Should().NotBeNull();
         okResult!.Value!.Properties.Should().ContainKey("BandCount");
         okResult.Value.Properties.Should().ContainKey("HasData");
+    }
+
+    private static DefaultHttpContext CreateImageServerContext()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+
+        var context = new DefaultHttpContext();
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/rest/services/1/ImageServer/identify";
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     private void SetupSuccessfulIdentify()

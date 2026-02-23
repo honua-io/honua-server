@@ -32,7 +32,7 @@ public static class ResiliencePolicyFactory
             (exception, breakDelay) => onBreak?.Invoke(exception, breakDelay),
             resetHandler);
 
-        return Policy.WrapAsync(circuitPolicy, retryPolicy);
+        return Policy.WrapAsync(retryPolicy, circuitPolicy);
     }
 
     /// <inheritdoc/>
@@ -57,6 +57,6 @@ public static class ResiliencePolicyFactory
             (result, breakDelay) => onBreak?.Invoke(result, breakDelay),
             resetHandler);
 
-        return Policy.WrapAsync(circuitPolicy, retryPolicy);
+        return Policy.WrapAsync(retryPolicy, circuitPolicy);
     }
 }

@@ -23,7 +23,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
-            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
+            var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
@@ -47,7 +47,7 @@ internal sealed partial class FeatureQueryBuilder
 
         if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
         {
-            var geographyOperand = ((GeometryProcessor)_geometryProcessor).GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
+            var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
             var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as distance FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");

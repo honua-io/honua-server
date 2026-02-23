@@ -8,6 +8,9 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex ValidFieldNameRegex();
+
     internal static bool IsValidFieldName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
@@ -15,7 +18,7 @@ internal sealed partial class FeatureQueryBuilder
             return false;
         }
 
-        return Regex.IsMatch(fieldName, @"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant);
+        return ValidFieldNameRegex().IsMatch(fieldName);
     }
 
     internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)

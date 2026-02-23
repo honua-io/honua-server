@@ -37,6 +37,7 @@ namespace Honua.TestKit;
 public sealed class WebAppFixture : IAsyncLifetime
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
+    private static readonly SemaphoreSlim _secureConnectionLock = new(1, 1);
     private static WebApplicationFactory<Program>? _sharedFactory;
     private static PostgresFixture? _sharedPostgres;
     private static int _sharedRefCount;
@@ -541,40 +542,55 @@ public sealed class WebAppFixture : IAsyncLifetime
             return;
         }
 
-        var existing = await registry.GetConnectionByNameAsync(TestSecureConnectionName);
-        if (existing != null)
+        await _secureConnectionLock.WaitAsync().ConfigureAwait(false);
+        try
         {
-            return;
-        }
+            var existing = await registry.GetConnectionByNameAsync(TestSecureConnectionName).ConfigureAwait(false);
+            if (existing != null)
+            {
+                return;
+            }
 
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        if (string.IsNullOrWhiteSpace(builder.Host) ||
-            string.IsNullOrWhiteSpace(builder.Database) ||
-            string.IsNullOrWhiteSpace(builder.Username) ||
-            builder.Port <= 0)
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            if (string.IsNullOrWhiteSpace(builder.Host) ||
+                string.IsNullOrWhiteSpace(builder.Database) ||
+                string.IsNullOrWhiteSpace(builder.Username) ||
+                builder.Port <= 0)
+            {
+                return;
+            }
+
+            var encrypted = await encryptionService.EncryptConnectionStringAsync(connectionString).ConfigureAwait(false);
+            var keyVersion = await encryptionService.GetCurrentKeyVersionAsync().ConfigureAwait(false);
+            var sslRequired = builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull;
+            var sslMode = Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true);
+
+            var connection = DataConnection.CreateWithEncryptedCredentials(
+                name: TestSecureConnectionName,
+                host: builder.Host,
+                port: builder.Port,
+                databaseName: builder.Database,
+                username: builder.Username,
+                encryptedConnectionString: encrypted,
+                encryptionKeyVersion: keyVersion,
+                createdBy: TestSecureConnectionCreatedBy,
+                description: "Test secure connection",
+                sslRequired: sslRequired,
+                sslMode: sslMode);
+
+            try
+            {
+                await registry.CreateConnectionAsync(connection).ConfigureAwait(false);
+            }
+            catch (PostgresException ex) when (string.Equals(ex.SqlState, "23505", StringComparison.Ordinal))
+            {
+                // Another fixture created the same connection concurrently.
+            }
+        }
+        finally
         {
-            return;
+            _secureConnectionLock.Release();
         }
-
-        var encrypted = await encryptionService.EncryptConnectionStringAsync(connectionString).ConfigureAwait(false);
-        var keyVersion = await encryptionService.GetCurrentKeyVersionAsync().ConfigureAwait(false);
-        var sslRequired = builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull;
-        var sslMode = Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true);
-
-        var connection = DataConnection.CreateWithEncryptedCredentials(
-            name: TestSecureConnectionName,
-            host: builder.Host,
-            port: builder.Port,
-            databaseName: builder.Database,
-            username: builder.Username,
-            encryptedConnectionString: encrypted,
-            encryptionKeyVersion: keyVersion,
-            createdBy: TestSecureConnectionCreatedBy,
-            description: "Test secure connection",
-            sslRequired: sslRequired,
-            sslMode: sslMode);
-
-        await registry.CreateConnectionAsync(connection).ConfigureAwait(false);
     }
 
     private static async Task<bool> SecureConnectionTablesAvailableAsync(IDatabaseConnectionProvider connectionProvider)

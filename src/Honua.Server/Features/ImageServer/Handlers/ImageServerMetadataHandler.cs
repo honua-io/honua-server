@@ -6,7 +6,9 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.ImageServer.Handlers;
@@ -18,7 +20,7 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 internal sealed class ImageServerMetadataHandler
 {
     /// <summary>ArcGIS REST API version for compatibility.</summary>
-    private const string ArcGisVersion = "10.9.1";
+    private const double ArcGisVersion = 10.81;
 
     /// <summary>Minimum pixel size advertised in service metadata (finest resolution).</summary>
     private const double MinPixelSize = 0.1;
@@ -53,6 +55,7 @@ internal sealed class ImageServerMetadataHandler
     /// Gets comprehensive service metadata for an Image Server.
     /// </summary>
     public async Task<IResult> GetServiceInfoAsync(
+        HttpContext context,
         int layerId,
         CancellationToken cancellationToken = default)
     {
@@ -65,7 +68,7 @@ internal sealed class ImageServerMetadataHandler
             if (layer == null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
             // Start telemetry activity
@@ -80,7 +83,7 @@ internal sealed class ImageServerMetadataHandler
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
             // Use the first raster for service metadata (could be enhanced for multi-raster scenarios)
@@ -94,7 +97,7 @@ internal sealed class ImageServerMetadataHandler
             if (extent == null)
             {
                 ImageServerLog.ExtentNotAvailable(_logger, layerId);
-                return Results.Problem("Unable to determine raster extent.", statusCode: 500);
+                return StandardErrorHelpers.CreateInternalServerError(context, "Unable to determine raster extent.");
             }
 
             // Build service info response
@@ -146,7 +149,7 @@ internal sealed class ImageServerMetadataHandler
         {
             ImageServerLog.ServiceInfoFailed(_logger, ex, layerId);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return Results.Problem("An error occurred while retrieving service information.", statusCode: 500);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving service information.");
         }
         finally
         {

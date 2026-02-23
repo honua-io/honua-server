@@ -20,6 +20,9 @@ public static class CorsConfiguration
     /// </summary>
     public static void AddCorsPolicies(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        var logger = loggerFactory.CreateLogger("Honua.Server.CorsConfiguration");
+
         services.AddCors(options =>
         {
             // Development policy - more permissive for local development
@@ -34,14 +37,14 @@ public static class CorsConfiguration
                 else
                 {
                     // Fall back to production policy in non-dev environments
-                    ConfigureProductionPolicy(policy, configuration);
+                    ConfigureProductionPolicy(policy, configuration, environment, logger);
                 }
             });
 
             // Production policy - security-focused with specific allowed origins
             options.AddPolicy(ProductionPolicy, policy =>
             {
-                ConfigureProductionPolicy(policy, configuration);
+                ConfigureProductionPolicy(policy, configuration, environment, logger);
             });
 
             // Restricted policy - most secure, minimal permissions
@@ -55,7 +58,7 @@ public static class CorsConfiguration
     /// <summary>
     /// Configures the production CORS policy with allowed origins from configuration.
     /// </summary>
-    private static void ConfigureProductionPolicy(CorsPolicyBuilder policy, IConfiguration configuration)
+    private static void ConfigureProductionPolicy(CorsPolicyBuilder policy, IConfiguration configuration, IWebHostEnvironment environment, ILogger logger)
     {
         var allowedOrigins = ResolveAllowedOrigins(configuration);
         var allowCredentials = configuration.GetValue("Cors:AllowCredentials", false);
@@ -83,6 +86,11 @@ public static class CorsConfiguration
         {
             // No origins configured - explicitly deny all cross-origin requests.
             policy.SetIsOriginAllowed(_ => false);
+
+            if (!environment.IsDevelopment())
+            {
+                CorsLog.NoCorsOriginsConfigured(logger);
+            }
         }
     }
 
@@ -267,6 +275,21 @@ public static class CorsConfiguration
             app.UseCors(ProductionPolicy);
         }
     }
+}
+
+/// <summary>
+/// Source-generated logger for CORS configuration (AOT compatible).
+/// </summary>
+internal static partial class CorsLog
+{
+    /// <summary>
+    /// Log warning when no CORS origins are configured in production.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4060,
+        Level = LogLevel.Warning,
+        Message = "No CORS origins configured. All cross-origin requests will be blocked in production.")]
+    public static partial void NoCorsOriginsConfigured(ILogger logger);
 }
 
 /// <summary>

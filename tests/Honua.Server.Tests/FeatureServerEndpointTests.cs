@@ -276,7 +276,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // Validate required properties
         serviceResponse!.ServiceName.Should().Be(TestServiceId);
         serviceResponse.ServiceDescription.Should().NotBeNullOrEmpty();
-        serviceResponse.CurrentVersion.Should().NotBeNullOrEmpty();
+        serviceResponse.CurrentVersion.Should().BeGreaterThan(0);
         serviceResponse.SpatialReference.Should().NotBeNull();
         serviceResponse.SpatialReference.Wkid.Should().BeGreaterThan(0);
         serviceResponse.Layers.Should().NotBeNull();
@@ -347,7 +347,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         layerResponse!.Id.Should().Be(TestLayerId);
         layerResponse.Name.Should().NotBeNullOrEmpty();
         layerResponse.Type.Should().Be("Feature Layer");
-        layerResponse.CurrentVersion.Should().NotBeNullOrEmpty();
+        layerResponse.CurrentVersion.Should().BeGreaterThan(0);
         layerResponse.GeometryType.Should().NotBeNullOrEmpty();
         layerResponse.SpatialReference.Should().NotBeNull();
         layerResponse.SpatialReference.Wkid.Should().BeGreaterThan(0);
@@ -500,7 +500,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         serviceResponse.Should().NotBeNull();
 
         // Required GeoServices REST service properties
-        serviceResponse!.CurrentVersion.Should().NotBeNullOrEmpty();
+        serviceResponse!.CurrentVersion.Should().BeGreaterThan(0);
         serviceResponse.ServiceName.Should().NotBeNullOrEmpty();
         serviceResponse.ServiceDescription.Should().NotBeNullOrEmpty();
         serviceResponse.Layers.Should().NotBeNull();
@@ -537,7 +537,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         layerResponse.Should().NotBeNull();
 
         // Required GeoServices REST layer properties
-        layerResponse!.CurrentVersion.Should().NotBeNullOrEmpty();
+        layerResponse!.CurrentVersion.Should().BeGreaterThan(0);
         layerResponse.Id.Should().BeGreaterThanOrEqualTo(0);
         layerResponse.Name.Should().NotBeNullOrEmpty();
         layerResponse.Type.Should().Be("Feature Layer");

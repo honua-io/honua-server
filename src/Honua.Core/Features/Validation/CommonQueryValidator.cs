@@ -176,7 +176,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         if (isGeographic)
         {
             if (coords[0] < -180 || coords[0] > 180 || coords[2] < -180 || coords[2] > 180 ||
-                coords[1] < -90 || coords[3] > 90)
+                coords[1] < -90 || coords[1] > 90 || coords[3] < -90 || coords[3] > 90)
             {
                 return ValidationResult<BoundingBox>.Failure(
                     "Geographic coordinates must be within valid ranges (longitude: -180 to 180, latitude: -90 to 90)");

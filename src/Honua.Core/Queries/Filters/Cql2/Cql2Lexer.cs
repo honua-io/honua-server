@@ -291,8 +291,12 @@ public sealed class Cql2Lexer
             _position++;
         }
 
-        if (_position < _input.Length)
-            _position++; // Skip closing quote
+        if (_position >= _input.Length)
+        {
+            throw new ArgumentException($"Unterminated quoted identifier starting at position {start}");
+        }
+
+        _position++; // Skip closing quote
 
         _tokens.Add(Cql2Token.Create(Cql2TokenType.Identifier, value.ToString(), start, _position - start));
     }
@@ -301,9 +305,20 @@ public sealed class Cql2Lexer
     {
         var start = _position;
 
+        var hasDecimal = false;
         while (_position < _input.Length &&
                (char.IsDigit(_input[_position]) || _input[_position] == '.'))
         {
+            if (_input[_position] == '.')
+            {
+                if (hasDecimal)
+                {
+                    break; // Stop at second decimal point
+                }
+
+                hasDecimal = true;
+            }
+
             _position++;
         }
 

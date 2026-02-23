@@ -189,6 +189,20 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/map")]
+    public async Task GetDatasetMap_CollectionsExceedLimit_ReturnsBadRequest()
+    {
+        var collections = string.Join(",", Enumerable.Range(1, 101));
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/map?collections={collections}&bbox=-180,-90,180,90&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("maximum of 100 collections");
+    }
+
     #endregion
 
     #region Styled Map Validation

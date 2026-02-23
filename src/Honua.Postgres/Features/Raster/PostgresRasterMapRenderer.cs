@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Data.Common;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -16,6 +18,8 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 {
+    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterMapRenderer> _logger;
     private readonly string _rasterDataTable;
@@ -56,6 +60,11 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = request.Format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
         var contentType = request.Format.ToContentType();
 
         var requestedOutputSrid = request.Crs;
@@ -96,6 +105,12 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             layerParams.Add($"@layerId{i}");
         }
 
+        // Build GDAL creation options for format-specific settings (quality, etc.)
+        var gdalOptions = BuildGdalCreationOptions(formatName, request);
+        var gdalOptionsExpr = gdalOptions.Length > 0
+            ? $"ARRAY[{string.Join(", ", gdalOptions.Select((_, i) => $"@gdalOpt{i}"))}]"
+            : "NULL";
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH source AS (
@@ -113,7 +128,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 FROM merged
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster(rast, '{formatName}') AS data,
+            SELECT ST_AsGDALRaster(rast, '{formatName}', {gdalOptionsExpr}) AS data,
                    ST_SRID(rast) AS srid
             FROM resized
             """;
@@ -125,6 +140,11 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         AddParameter(command, "@width", request.Width);
         AddParameter(command, "@height", request.Height);
+        for (int g = 0; g < gdalOptions.Length; g++)
+        {
+            AddParameter(command, $"@gdalOpt{g}", gdalOptions[g]);
+        }
+
         foreach (var (name, value) in extraParams)
         {
             AddParameter(command, name, value);
@@ -158,6 +178,28 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             Height = request.Height,
             Srid = srid
         };
+    }
+
+    /// <summary>
+    /// Builds GDAL creation option strings for the given output format and request parameters.
+    /// See https://gdal.org/drivers/raster/ for driver-specific options.
+    /// </summary>
+    private static string[] BuildGdalCreationOptions(string formatName, MapRenderRequest request)
+    {
+        var options = new List<string>();
+
+        if (formatName == "JPEG" && request.Quality.HasValue)
+        {
+            options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={request.Quality.Value}"));
+        }
+        else if (formatName == "GTiff" && request.Quality.HasValue)
+        {
+            // GTiff uses JPEG compression with JPEG_QUALITY for lossy output
+            options.Add("COMPRESS=JPEG");
+            options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={request.Quality.Value}"));
+        }
+
+        return options.ToArray();
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

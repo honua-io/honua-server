@@ -49,49 +49,119 @@ internal static class OgcResponseFormatter
     {
         var encodedTitle = WebUtility.HtmlEncode(title);
         var encodedJson = WebUtility.HtmlEncode(json);
+
+        // Extract summary metadata from the JSON
+        var metadata = ExtractFeatureMetadata(json);
+
         return $@"<!DOCTYPE html>
-<html>
+<html lang=""en"">
 <head>
-    <title>{encodedTitle}</title>
+    <meta charset=""utf-8"" />
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
+    <title>{encodedTitle} - OGC API Features</title>
     <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-        pre {{ background: #f5f5f5; padding: 20px; border-radius: 5px; overflow: auto; }}
-        .title {{ color: #333; margin-bottom: 20px; }}
-        .json-container {{
-            max-height: 70vh;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-        }}
-        .metadata {{
-            background: #e8f4f8;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            border-left: 4px solid #007cba;
-        }}
-        .metadata h3 {{
-            margin: 0 0 10px 0;
-            color: #005577;
-        }}
-        .metadata p {{
-            margin: 5px 0;
-            font-size: 14px;
-        }}
+        * {{ box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px 40px; color: #1a1a1a; background: #fafafa; }}
+        .header {{ border-bottom: 2px solid #0077b6; padding-bottom: 12px; margin-bottom: 20px; }}
+        .header h1 {{ margin: 0; color: #0077b6; font-size: 1.5em; }}
+        .header .badge {{ display: inline-block; background: #0077b6; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.75em; margin-left: 8px; vertical-align: middle; }}
+        .summary {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }}
+        .summary .stat {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 16px; }}
+        .summary .stat .label {{ font-size: 0.75em; color: #888; text-transform: uppercase; }}
+        .summary .stat .value {{ font-size: 1.1em; font-weight: 600; }}
+        nav {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }}
+        nav h2 {{ margin: 0 0 8px 0; font-size: 0.9em; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }}
+        nav ul {{ list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }}
+        nav li a {{ display: inline-block; padding: 4px 12px; background: #e8f4f8; border-radius: 4px; text-decoration: none; color: #0077b6; font-size: 0.9em; }}
+        nav li a:hover {{ background: #0077b6; color: #fff; }}
+        .json-container {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; max-height: 70vh; overflow: auto; }}
+        pre {{ margin: 0; padding: 16px; font-size: 0.85em; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }}
     </style>
 </head>
 <body>
-    <h1 class=""title"">{encodedTitle}</h1>
-    <div class=""metadata"">
-        <h3>OGC API Features Response</h3>
-        <p><strong>Content Type:</strong> application/geo+json</p>
-        <p><strong>Generated:</strong> {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} UTC</p>
+    <div class=""header"">
+        <h1>{encodedTitle}<span class=""badge"">GeoJSON</span></h1>
     </div>
+    {metadata}
     <div class=""json-container"">
         <pre><code>{encodedJson}</code></pre>
     </div>
 </body>
 </html>";
+    }
+
+    private static string ExtractFeatureMetadata(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var sb = new StringBuilder();
+
+            // Summary statistics
+            var hasStats = false;
+            sb.Append("<div class=\"summary\">");
+
+            if (root.TryGetProperty("type", out var typeProp))
+            {
+                var typeVal = typeProp.GetString();
+                if (string.Equals(typeVal, "FeatureCollection", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (root.TryGetProperty("numberMatched", out var matched))
+                    {
+                        sb.Append($"<div class=\"stat\"><div class=\"label\">Matched</div><div class=\"value\">{matched}</div></div>");
+                        hasStats = true;
+                    }
+
+                    if (root.TryGetProperty("numberReturned", out var returned))
+                    {
+                        sb.Append($"<div class=\"stat\"><div class=\"label\">Returned</div><div class=\"value\">{returned}</div></div>");
+                        hasStats = true;
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("timeStamp", out var ts))
+            {
+                sb.Append($"<div class=\"stat\"><div class=\"label\">Timestamp</div><div class=\"value\">{WebUtility.HtmlEncode(ts.GetString())}</div></div>");
+                hasStats = true;
+            }
+
+            sb.Append("</div>");
+            if (!hasStats)
+            {
+                sb.Clear();
+            }
+
+            // Navigation links
+            if (root.TryGetProperty("links", out var linksElement) &&
+                linksElement.ValueKind == JsonValueKind.Array)
+            {
+                sb.Append("<nav><h2>Links</h2><ul>");
+                foreach (var link in linksElement.EnumerateArray())
+                {
+                    var href = link.TryGetProperty("href", out var hrefProp) ? hrefProp.GetString() : null;
+                    var rel = link.TryGetProperty("rel", out var relProp) ? relProp.GetString() : null;
+                    var linkTitle = link.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
+                    if (string.IsNullOrEmpty(href))
+                    {
+                        continue;
+                    }
+
+                    var displayTitle = WebUtility.HtmlEncode(linkTitle ?? rel ?? href);
+                    var htmlHref = href + (href.Contains('?') ? "&" : "?") + "f=html";
+                    sb.Append($"<li><a href=\"{WebUtility.HtmlEncode(htmlHref)}\">{displayTitle}</a></li>");
+                }
+
+                sb.Append("</ul></nav>");
+            }
+
+            return sb.ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     /// <summary>
@@ -100,16 +170,16 @@ internal static class OgcResponseFormatter
     public static string BuildGmlFeatureCollection(IEnumerable<GeoJsonFeature> features)
     {
         var builder = new StringBuilder();
-        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\">");
+        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
 
         foreach (var feature in features)
         {
-            var escapedId = SecurityElement.Escape(feature.Id.ToString());
+            var escapedId = SecurityElement.Escape(feature.Id?.ToString() ?? string.Empty);
             builder.AppendLine("  <wfs:member>");
-            builder.AppendLine($"    <gml:Feature gml:id=\"{escapedId}\">");
+            builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
             builder.AppendLine(BuildGmlGeometry(feature.Geometry, "      "));
             BuildGmlProperties(builder, feature.Properties, "      ");
-            builder.AppendLine("    </gml:Feature>");
+            builder.AppendLine("    </app:Feature>");
             builder.AppendLine("  </wfs:member>");
         }
 
@@ -132,16 +202,16 @@ internal static class OgcResponseFormatter
             leaveOpen: true);
 
         await writer.WriteLineAsync(
-            $"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\">");
+            $"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             var escapedId = SecurityElement.Escape(feature.Id.ToString());
             await writer.WriteLineAsync("  <wfs:member>");
-            await writer.WriteLineAsync($"    <gml:Feature gml:id=\"{escapedId}\">");
+            await writer.WriteLineAsync($"    <app:Feature gml:id=\"{escapedId}\">");
             WriteGmlGeometry(writer, feature.GeometryGml, "      ");
             WriteGmlProperties(writer, feature.Attributes, "      ");
-            await writer.WriteLineAsync("    </gml:Feature>");
+            await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
             await writer.FlushAsync(cancellationToken);
         }
@@ -157,12 +227,12 @@ internal static class OgcResponseFormatter
     {
         var builder = new StringBuilder();
         var escapedId = SecurityElement.Escape(feature.Id?.ToString());
-        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\">");
+        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
         builder.AppendLine("  <wfs:member>");
-        builder.AppendLine($"    <gml:Feature gml:id=\"{escapedId}\">");
+        builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
         builder.AppendLine(BuildGmlGeometry(feature.Geometry, "      "));
         BuildGmlProperties(builder, feature.Properties, "      ");
-        builder.AppendLine("    </gml:Feature>");
+        builder.AppendLine("    </app:Feature>");
         builder.AppendLine("  </wfs:member>");
         builder.AppendLine("</wfs:FeatureCollection>");
         return builder.ToString();
@@ -499,14 +569,10 @@ internal static class OgcResponseFormatter
                 continue;
             }
 
-            var safeKey = key.Replace(" ", "_", StringComparison.Ordinal);
-            var safeValue = value.ToString()?.Replace("&", "&amp;", StringComparison.Ordinal)
-                .Replace("<", "&lt;", StringComparison.Ordinal)
-                .Replace(">", "&gt;", StringComparison.Ordinal)
-                .Replace("\"", "&quot;", StringComparison.Ordinal)
-                .Replace("'", "&apos;", StringComparison.Ordinal);
+            var safeKey = SecurityElement.Escape(key.Replace(" ", "_", StringComparison.Ordinal));
+            var safeValue = SecurityElement.Escape(value.ToString());
 
-            builder.AppendLine($"{indent}<gml:property name=\"{safeKey}\">{safeValue}</gml:property>");
+            builder.AppendLine($"{indent}<app:property name=\"{safeKey}\">{safeValue}</app:property>");
         }
     }
 
@@ -540,14 +606,10 @@ internal static class OgcResponseFormatter
                 continue;
             }
 
-            var safeKey = key.Replace(" ", "_", StringComparison.Ordinal);
-            var safeValue = value.ToString()?.Replace("&", "&amp;", StringComparison.Ordinal)
-                .Replace("<", "&lt;", StringComparison.Ordinal)
-                .Replace(">", "&gt;", StringComparison.Ordinal)
-                .Replace("\"", "&quot;", StringComparison.Ordinal)
-                .Replace("'", "&apos;", StringComparison.Ordinal);
+            var safeKey = SecurityElement.Escape(key.Replace(" ", "_", StringComparison.Ordinal));
+            var safeValue = SecurityElement.Escape(value.ToString());
 
-            writer.WriteLine($"{indent}<gml:property name=\"{safeKey}\">{safeValue}</gml:property>");
+            writer.WriteLine($"{indent}<app:property name=\"{safeKey}\">{safeValue}</app:property>");
         }
     }
 

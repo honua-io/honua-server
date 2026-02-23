@@ -39,4 +39,9 @@ internal interface IGeometryProcessor
     /// Converts distance to meters based on unit
     /// </summary>
     double ConvertDistanceToMeters(double distance, DistanceUnit unit);
+
+    /// <summary>
+    /// Gets the geometry operand for geography (WGS84) operations such as KNN distance queries
+    /// </summary>
+    string GetGeographyOperand(GeometryStorageType storageType, int? layerSrid);
 }

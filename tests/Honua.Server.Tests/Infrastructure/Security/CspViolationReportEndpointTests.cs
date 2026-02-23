@@ -304,4 +304,27 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         // Assert
         Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /csp-violation-report")]
+    public async Task CspViolationReport_WithPayloadExceedingLimit_Returns204NoContent()
+    {
+        var oversizedReport = new CspViolationReport
+        {
+            CspReport = new CspViolationDetails
+            {
+                BlockedUri = "https://example.com/" + new string('x', 70000),
+                ViolatedDirective = "script-src 'self'",
+                OriginalPolicy = "default-src 'self'",
+                DocumentUri = "https://app.example.com/page"
+            }
+        };
+
+        var jsonContent = JsonSerializer.Serialize(oversizedReport, _kebabCaseJsonOptions);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/csp-violation-report", content);
+
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, response.StatusCode);
+    }
 }

@@ -73,9 +73,9 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task DevelopmentBypass_NoPassword_ShouldAllowAccess()
+    public async Task DevelopmentBypass_NoPassword_ShouldRequireExplicitOptIn()
     {
-        // Arrange - Development environment with no password
+        // Arrange - Development environment with no password and no explicit HONUA_DEV_AUTH
         using var factory = new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
@@ -94,13 +94,42 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
         // Act - Try to access admin endpoint without API key
         var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
 
-        // Assert - Should not return 401 when dev bypass is active
-        Assert.NotEqual(401, (int)response.StatusCode);
+        // Assert - Should return 401 because implicit dev bypass was removed for security.
+        // Auth bypass now requires explicit HONUA_DEV_AUTH=true.
+        Assert.Equal(401, (int)response.StatusCode);
         _output.WriteLine($"Development bypass test - Admin response status: {response.StatusCode}");
     }
 
     [Fact]
-    public async Task ExplicitDevBypass_Production_ShouldBeRejected()
+    public async Task DevelopmentBypass_ExplicitDevAuth_ShouldAllowAccess()
+    {
+        // Arrange - Development environment with HONUA_DEV_AUTH explicitly set to true
+        using var factory = new TestWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", ""); // Empty password
+                builder.UseSetting("HONUA_DEV_AUTH", "true");   // Explicit opt-in
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                    });
+                });
+            });
+        using var client = factory.CreateClient();
+
+        // Act - Try to access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
+
+        // Assert - Should not return 401 when dev bypass is explicitly enabled
+        Assert.NotEqual(401, (int)response.StatusCode);
+        _output.WriteLine($"Explicit dev bypass test - Admin response status: {response.StatusCode}");
+    }
+
+    [Fact]
+    public void ExplicitDevBypass_Production_ShouldBeRejected()
     {
         // Arrange - Explicitly enable development bypass in production
         using var factory = new TestWebApplicationFactory()
@@ -120,13 +149,9 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                     });
                 });
             });
-        using var client = factory.CreateClient();
 
-        // Act - Access admin endpoint without API key
-        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
-
-        // Assert - Dev bypass should be ignored in production
-        Assert.Equal(401, (int)response.StatusCode);
-        _output.WriteLine($"Explicit dev bypass in production test - Response status: {response.StatusCode}");
+        // Act & Assert - Startup should fail fast in production when DEV_AUTH is enabled.
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Configuration validation failed", exception.Message);
     }
 }

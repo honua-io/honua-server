@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Server.Features.GeometryService.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.GeometryService.Services;
 
@@ -15,12 +17,24 @@ namespace Honua.Server.Features.GeometryService.Services;
 internal sealed class GeometryServiceHandler(
     IGeometryOperationService operationService,
     IGeometryConverter geometryConverter,
+    IOptions<LimitsOptions> limitsOptions,
     ILogger<GeometryServiceHandler> logger)
 {
+    private const int MaxGeometriesPerRequestUpperBound = 1000;
+    private const int MaxGeometryJsonLengthUpperBound = 10_000_000;
+
     private readonly IGeometryOperationService _operationService = operationService
         ?? throw new ArgumentNullException(nameof(operationService));
     private readonly IGeometryConverter _geometryConverter = geometryConverter
         ?? throw new ArgumentNullException(nameof(geometryConverter));
+    private readonly int _maxGeometriesPerRequest = Math.Clamp(
+        limitsOptions?.Value.Query.MaxRecordCount ?? MaxGeometriesPerRequestUpperBound,
+        1,
+        MaxGeometriesPerRequestUpperBound);
+    private readonly int _maxGeometryJsonLength = (int)Math.Clamp(
+        limitsOptions?.Value.Geometry.MaxGeometrySize ?? MaxGeometryJsonLengthUpperBound,
+        1024L,
+        MaxGeometryJsonLengthUpperBound);
     private readonly ILogger<GeometryServiceHandler> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
     private static readonly Dictionary<string, double> _areaUnitDivisors = new(StringComparer.OrdinalIgnoreCase)
@@ -57,7 +71,9 @@ internal sealed class GeometryServiceHandler(
 
             // Parse geometries
             var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", geomError);
@@ -101,7 +117,8 @@ internal sealed class GeometryServiceHandler(
 
             // Parse distances
             var (distances, distError) = GeometryServiceRequestParser.ParseDoubleArray(
-                GeometryServiceRequestParser.GetValue(values, "distances"));
+                GeometryServiceRequestParser.GetValue(values, "distances"),
+                _maxGeometriesPerRequest);
             if (distError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", distError);
@@ -178,7 +195,9 @@ internal sealed class GeometryServiceHandler(
 
             // Parse geometries
             var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "simplify", geomError);
@@ -258,7 +277,9 @@ internal sealed class GeometryServiceHandler(
 
             // Parse geometries
             var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "project", geomError);
@@ -352,7 +373,9 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "union", geomError);
@@ -421,7 +444,7 @@ internal sealed class GeometryServiceHandler(
         return await HandleBinaryGeometryOperationAsync(
             context,
             operationName: "clip",
-            operation: (target, other, srid, token) => _operationService.IntersectAsync(target, other, srid, token),
+            operation: (target, other, srid, token) => _operationService.ClipAsync(target, other, srid, token),
             ct);
     }
 
@@ -456,7 +479,9 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (geomStrings, _, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "area", geomError);
@@ -532,7 +557,9 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (geomStrings, _, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "length", geomError);
@@ -710,7 +737,9 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
-                GeometryServiceRequestParser.GetValue(values, "geometries"));
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                _maxGeometriesPerRequest,
+                _maxGeometryJsonLength);
             if (geomError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, operationName, geomError);
@@ -724,7 +753,8 @@ internal sealed class GeometryServiceHandler(
             }
 
             var (operatorGeometry, operatorError) = GeometryServiceRequestParser.ParseSingleGeometry(
-                GeometryServiceRequestParser.GetValue(values, "geometry"));
+                GeometryServiceRequestParser.GetValue(values, "geometry"),
+                maxGeometryJsonLength: _maxGeometryJsonLength);
             if (operatorError is not null || string.IsNullOrWhiteSpace(operatorGeometry))
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, operationName, operatorError ?? "Missing geometry");
@@ -855,6 +885,7 @@ internal sealed class GeometryServiceHandler(
         return new GeometryServiceResponse
         {
             GeometryType = geometryType,
+            SpatialReference = new GeometryServiceSpatialReference { Wkid = srid, LatestWkid = srid },
             Geometries = geometryElements
         };
     }

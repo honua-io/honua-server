@@ -51,15 +51,44 @@ public sealed class TemporaryFileOptions
     public long MaxFileSizeBytes { get; init; } = 50 * 1024 * 1024; // 50 MB
 
     /// <summary>
+    /// Maximum total temporary storage size in bytes across all active files.
+    /// </summary>
+    public long MaxTotalStorageBytes { get; init; } = 500 * 1024 * 1024; // 500 MB
+
+    /// <summary>
+    /// Maximum number of active temporary files.
+    /// </summary>
+    public int MaxFileCount { get; init; } = 5000;
+
+    /// <summary>
+    /// Suggested retry-after value (seconds) when temporary storage is saturated.
+    /// </summary>
+    public int StorageFullRetryAfterSeconds { get; init; } = 60;
+
+    /// <summary>
     /// Base URL for serving temporary files.
     /// </summary>
     public string? BaseUrl { get; init; }
 }
 
 /// <summary>
+/// Thrown when temporary file storage limits are exceeded.
+/// </summary>
+internal sealed class TemporaryStorageLimitExceededException : InvalidOperationException
+{
+    public TemporaryStorageLimitExceededException(string message, int? retryAfterSeconds = null)
+        : base(message)
+    {
+        RetryAfterSeconds = retryAfterSeconds;
+    }
+
+    public int? RetryAfterSeconds { get; }
+}
+
+/// <summary>
 /// File system-based implementation of temporary file service.
 /// </summary>
-internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService
+internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService, IDisposable
 {
     private static readonly HashSet<string> _allowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -74,6 +103,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     public FileSystemTemporaryFileService(
         IOptions<TemporaryFileOptions> options,
@@ -108,14 +138,18 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         var filePath = Path.Combine(_options.StorageDirectory, fileName);
 
         var expirationTime = DateTimeOffset.UtcNow.Add(expiration ?? _options.DefaultExpiration);
+        var metadataPath = Path.Combine(_options.StorageDirectory, $"{fileId}.meta");
 
+        await _writeGate.WaitAsync(cancellationToken);
         try
         {
+            await CleanupExpiredFilesInternalAsync(cancellationToken).ConfigureAwait(false);
+            EnsureStorageCapacity(data.Length);
+
             // Write file data
-            await File.WriteAllBytesAsync(filePath, data, cancellationToken);
+            await File.WriteAllBytesAsync(filePath, data, cancellationToken).ConfigureAwait(false);
 
             // Write metadata file
-            var metadataPath = Path.Combine(_options.StorageDirectory, $"{fileId}.meta");
             var metadataObj = new TemporaryFileMetadata
             {
                 ContentType = contentType,
@@ -124,7 +158,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 CreatedAt = DateTimeOffset.UtcNow
             };
             var metadata = System.Text.Json.JsonSerializer.Serialize(metadataObj, TemporaryFileMetadataJsonContext.Default.TemporaryFileMetadata);
-            await File.WriteAllTextAsync(metadataPath, metadata, cancellationToken);
+            await File.WriteAllTextAsync(metadataPath, metadata, cancellationToken).ConfigureAwait(false);
 
             // Generate public URL
             var baseUrl = _options.BaseUrl ?? "/temp";
@@ -134,10 +168,19 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
             return publicUrl;
         }
+        catch (TemporaryStorageLimitExceededException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
+            await DeleteFileAndMetadataAsync(fileId).ConfigureAwait(false);
             LogStoreFileFailed(_logger, fileId, ex);
             throw;
+        }
+        finally
+        {
+            _writeGate.Release();
         }
     }
 
@@ -220,6 +263,19 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     public async Task CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await CleanupExpiredFilesInternalAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    private async Task CleanupExpiredFilesInternalAsync(CancellationToken cancellationToken)
+    {
         try
         {
             var metadataFiles = Directory.GetFiles(_options.StorageDirectory, "*.meta");
@@ -236,7 +292,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                     if (metadata?.ExpiresAt < now)
                     {
                         var fileId = Path.GetFileNameWithoutExtension(metadataPath);
-                        await DeleteFileAndMetadataAsync(fileId);
+                        await DeleteFileAndMetadataAsync(fileId).ConfigureAwait(false);
                         cleanedCount++;
                     }
                 }
@@ -257,7 +313,58 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
     }
 
-    private async Task DeleteFileAndMetadataAsync(string fileId)
+    private void EnsureStorageCapacity(long incomingDataSizeBytes)
+    {
+        if (_options.MaxFileCount <= 0 && _options.MaxTotalStorageBytes <= 0)
+        {
+            return;
+        }
+
+        var fileCount = 0;
+        long totalBytes = 0;
+
+        foreach (var path in Directory.EnumerateFiles(_options.StorageDirectory))
+        {
+            try
+            {
+                if (string.Equals(Path.GetExtension(path), ".meta", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileCount++;
+                }
+
+                totalBytes += new FileInfo(path).Length;
+            }
+            catch (IOException)
+            {
+                // File may have been deleted concurrently.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Ignore inaccessible files under the storage directory.
+            }
+        }
+
+        if (_options.MaxFileCount > 0 && fileCount >= _options.MaxFileCount)
+        {
+            LogTemporaryStorageFileCountLimitExceeded(_logger, fileCount, _options.MaxFileCount);
+            throw new TemporaryStorageLimitExceededException(
+                $"Temporary file storage has reached the maximum file count ({_options.MaxFileCount}).",
+                _options.StorageFullRetryAfterSeconds);
+        }
+
+        // Include metadata overhead to keep quota accounting conservative.
+        const long metadataOverheadBytes = 1024;
+        var projectedTotalBytes = totalBytes + incomingDataSizeBytes + metadataOverheadBytes;
+        if (_options.MaxTotalStorageBytes > 0 && projectedTotalBytes > _options.MaxTotalStorageBytes)
+        {
+            LogTemporaryStorageByteLimitExceeded(_logger, projectedTotalBytes, _options.MaxTotalStorageBytes);
+            throw new TemporaryStorageLimitExceededException(
+                $"Temporary file storage has reached the maximum capacity ({_options.MaxTotalStorageBytes} bytes).",
+                _options.StorageFullRetryAfterSeconds);
+        }
+    }
+
+    private Task DeleteFileAndMetadataAsync(string fileId)
     {
         try
         {
@@ -284,6 +391,8 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         {
             LogDeleteFileFailed(_logger, fileId, ex);
         }
+
+        return Task.CompletedTask;
     }
 
     private static string GetFileExtension(string contentType)
@@ -296,6 +405,11 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             "image/tiff" => ".tif",
             _ => ""
         };
+    }
+
+    public void Dispose()
+    {
+        _writeGate.Dispose();
     }
 
     [LoggerMessage(EventId = 4500, Level = LogLevel.Information,
@@ -325,6 +439,14 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
     [LoggerMessage(EventId = 4506, Level = LogLevel.Warning,
         Message = "Failed to delete temporary file {FileId}")]
     private static partial void LogDeleteFileFailed(ILogger logger, string fileId, Exception exception);
+
+    [LoggerMessage(EventId = 4507, Level = LogLevel.Warning,
+        Message = "Temporary file storage capacity exceeded: projected bytes {ProjectedBytes} > limit {MaxBytes}")]
+    private static partial void LogTemporaryStorageByteLimitExceeded(ILogger logger, long projectedBytes, long maxBytes);
+
+    [LoggerMessage(EventId = 4508, Level = LogLevel.Warning,
+        Message = "Temporary file storage file-count limit reached: current files {CurrentFileCount} >= limit {MaxFileCount}")]
+    private static partial void LogTemporaryStorageFileCountLimitExceeded(ILogger logger, int currentFileCount, int maxFileCount);
 
     [JsonSerializable(typeof(TemporaryFileMetadata))]
     private sealed partial class TemporaryFileMetadataJsonContext : JsonSerializerContext

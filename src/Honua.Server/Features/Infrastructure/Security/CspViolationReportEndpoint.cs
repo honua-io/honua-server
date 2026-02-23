@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,6 +14,10 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public static class CspViolationReportEndpoint
 {
+    private const int MaxViolationReportPayloadBytes = 64 * 1024;
+    private const int MaxLogFieldLength = 512;
+    private const int MaxUserAgentLogLength = 256;
+
     /// <summary>
     /// Registers the CSP violation report endpoint.
     /// </summary>
@@ -49,11 +55,21 @@ public static class CspViolationReportEndpoint
                 return Results.NoContent();
             }
 
-            // Parse the CSP violation report without buffering the body
-            var violationReport = await JsonSerializer.DeserializeAsync(
-                request.Body,
-                CspViolationJsonContext.Default.CspViolationReport,
-                context.RequestAborted);
+            var payload = await ReadPayloadWithLimitAsync(request, logger, clientInfo, context.RequestAborted);
+            if (payload == null)
+            {
+                return Results.NoContent();
+            }
+
+            if (payload.Length == 0)
+            {
+                CspViolationReportLog.EmptyViolationReport(logger, clientInfo);
+                return Results.NoContent();
+            }
+
+            var violationReport = JsonSerializer.Deserialize(
+                payload,
+                CspViolationJsonContext.Default.CspViolationReport);
 
             if (violationReport?.CspReport != null)
             {
@@ -62,10 +78,10 @@ public static class CspViolationReportEndpoint
                 // Log the violation with structured data
                 CspViolationReportLog.CspViolationReported(
                     logger,
-                    violation.BlockedUri ?? "unknown",
-                    violation.ViolatedDirective ?? "unknown",
-                    violation.OriginalPolicy ?? "unknown",
-                    violation.DocumentUri ?? "unknown",
+                    SanitizeForLog(violation.BlockedUri, MaxLogFieldLength),
+                    SanitizeForLog(violation.ViolatedDirective, MaxLogFieldLength),
+                    SanitizeForLog(violation.OriginalPolicy, MaxLogFieldLength),
+                    SanitizeForLog(violation.DocumentUri, MaxLogFieldLength),
                     clientInfo.IpAddress,
                     clientInfo.UserAgent);
 
@@ -80,8 +96,8 @@ public static class CspViolationReportEndpoint
                 {
                     CspViolationReportLog.SuspiciousCspViolation(
                         logger,
-                        violation.BlockedUri ?? "unknown",
-                        violation.SourceFile ?? "unknown",
+                        SanitizeForLog(violation.BlockedUri, MaxLogFieldLength),
+                        SanitizeForLog(violation.SourceFile, MaxLogFieldLength),
                         clientInfo.IpAddress,
                         clientInfo.UserAgent);
                 }
@@ -145,21 +161,92 @@ public static class CspViolationReportEndpoint
     /// <returns>Client information including IP and user agent</returns>
     private static (string IpAddress, string UserAgent) GetClientInfo(HttpContext context)
     {
-        var ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var ipAddress = SanitizeForLog(context.Connection.RemoteIpAddress?.ToString(), maxLength: 128);
+        var userAgent = SanitizeForLog(context.Request.Headers.UserAgent.ToString(), MaxUserAgentLogLength);
 
-        // Check for forwarded IP (when behind proxy/load balancer)
-        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
+        return (ipAddress, userAgent);
+    }
+
+    private static async Task<byte[]?> ReadPayloadWithLimitAsync(
+        HttpRequest request,
+        ILogger logger,
+        (string IpAddress, string UserAgent) clientInfo,
+        CancellationToken cancellationToken)
+    {
+        if (request.ContentLength is > MaxViolationReportPayloadBytes)
         {
-            var firstIp = forwardedFor.ToString().Split(',')[0].Trim();
-            if (!string.IsNullOrEmpty(firstIp))
+            CspViolationReportLog.ViolationReportTooLarge(
+                logger,
+                request.ContentLength.Value,
+                MaxViolationReportPayloadBytes,
+                clientInfo);
+            return null;
+        }
+
+        var rentedBuffer = ArrayPool<byte>.Shared.Rent(4096);
+        try
+        {
+            using var stream = new MemoryStream(
+                request.ContentLength is > 0 and <= MaxViolationReportPayloadBytes
+                    ? (int)request.ContentLength.Value
+                    : 0);
+
+            long totalRead = 0;
+            while (true)
             {
-                ipAddress = firstIp;
+                var read = await request.Body.ReadAsync(
+                    rentedBuffer.AsMemory(0, rentedBuffer.Length),
+                    cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                totalRead += read;
+                if (totalRead > MaxViolationReportPayloadBytes)
+                {
+                    CspViolationReportLog.ViolationReportTooLarge(
+                        logger,
+                        totalRead,
+                        MaxViolationReportPayloadBytes,
+                        clientInfo);
+                    return null;
+                }
+
+                await stream.WriteAsync(rentedBuffer.AsMemory(0, read), cancellationToken);
+            }
+
+            return stream.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rentedBuffer);
+        }
+    }
+
+    private static string SanitizeForLog(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "unknown";
+        }
+
+        var builder = new StringBuilder(capacity: Math.Min(value.Length, maxLength));
+        foreach (var c in value)
+        {
+            if (char.IsControl(c))
+            {
+                continue;
+            }
+
+            builder.Append(c);
+            if (builder.Length >= maxLength)
+            {
+                break;
             }
         }
 
-        var userAgent = context.Request.Headers["User-Agent"].ToString();
-
-        return (ipAddress, userAgent);
+        return builder.Length == 0 ? "unknown" : builder.ToString();
     }
 }
 
@@ -300,4 +387,17 @@ internal static partial class CspViolationReportLog
         Level = LogLevel.Error,
         Message = "Error processing CSP violation report - Error: {ErrorMessage}, Client: {ClientInfo}")]
     public static partial void ViolationReportProcessingError(ILogger logger, string errorMessage, (string IpAddress, string UserAgent) clientInfo);
+
+    /// <summary>
+    /// Logs when a violation report payload exceeds the configured maximum size.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4306,
+        Level = LogLevel.Warning,
+        Message = "CSP violation report payload exceeded maximum size - Size: {PayloadBytes}, Max: {MaxBytes}, Client: {ClientInfo}")]
+    public static partial void ViolationReportTooLarge(
+        ILogger logger,
+        long payloadBytes,
+        int maxBytes,
+        (string IpAddress, string UserAgent) clientInfo);
 }

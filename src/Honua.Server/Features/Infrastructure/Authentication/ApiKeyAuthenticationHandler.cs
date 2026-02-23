@@ -100,12 +100,6 @@ internal sealed class ApiKeyAuthenticationHandler(
             return _authOptions.IsDevelopmentMode || _authOptions.IsTestMode;
         }
 
-        if (_authOptions.IsDevelopmentMode && string.IsNullOrWhiteSpace(_authOptions.AdminPassword))
-        {
-            AuthenticationLog.DevelopmentEnvironmentAuthBypass(Logger);
-            return true;
-        }
-
         return false;
     }
 
@@ -204,7 +198,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? failureMessage = Context.Items["AuthFailureMessage"] as string;
         if (!string.IsNullOrEmpty(failureMessage))
         {
-            string escapedMessage = failureMessage.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            string escapedMessage = System.Text.Json.JsonEncodedText.Encode(failureMessage).ToString();
             string problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{escapedMessage}}"}""";
             return Response.WriteAsync(problemDetails);
         }

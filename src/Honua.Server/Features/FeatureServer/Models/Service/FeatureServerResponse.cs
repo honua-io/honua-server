@@ -13,7 +13,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Current version of the service
     /// </summary>
-    public string CurrentVersion { get; init; } = "10.81";
+    public double CurrentVersion { get; init; } = 10.81;
 
     /// <summary>
     /// Name of the service

@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.ImageServer.Handlers;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.ImageServer;
@@ -76,7 +77,7 @@ public static class ImageServerEndpoints
     {
         if (!IsSupportedResponseFormat(f))
         {
-            return CreateUnsupportedFormatResult();
+            return CreateUnsupportedFormatResult(context);
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
@@ -88,7 +89,7 @@ public static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        return await handler.GetServiceInfoAsync(id, cancellationToken);
+        return await handler.GetServiceInfoAsync(context, id, cancellationToken);
     }
 
     /// <summary>
@@ -103,7 +104,7 @@ public static class ImageServerEndpoints
     {
         if (!IsSupportedResponseFormat(request.F))
         {
-            return CreateUnsupportedFormatResult();
+            return CreateUnsupportedFormatResult(context);
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
@@ -115,7 +116,7 @@ public static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        return await handler.ExportImageAsync(id, request, cancellationToken);
+        return await handler.ExportImageAsync(context, id, request, cancellationToken);
     }
 
     /// <summary>
@@ -130,7 +131,7 @@ public static class ImageServerEndpoints
     {
         if (!IsSupportedResponseFormat(request.F))
         {
-            return CreateUnsupportedFormatResult();
+            return CreateUnsupportedFormatResult(context);
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
@@ -142,7 +143,7 @@ public static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        return await handler.IdentifyAsync(id, request, cancellationToken);
+        return await handler.IdentifyAsync(context, id, request, cancellationToken);
     }
 
     /// <summary>
@@ -167,7 +168,7 @@ public static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        return await handler.GetImageTileAsync(id, level, row, col, format, cancellationToken);
+        return await handler.GetImageTileAsync(context, id, level, row, col, format, cancellationToken);
     }
 
     private static bool IsSupportedResponseFormat(string? format)
@@ -175,6 +176,6 @@ public static class ImageServerEndpoints
            string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
 
-    private static IResult CreateUnsupportedFormatResult()
-        => Results.BadRequest("Only JSON format is supported. Use f=json or f=pjson");
+    private static IResult CreateUnsupportedFormatResult(HttpContext context)
+        => StandardErrorHelpers.CreateBadRequest(context, "Only JSON format is supported. Use f=json or f=pjson");
 }

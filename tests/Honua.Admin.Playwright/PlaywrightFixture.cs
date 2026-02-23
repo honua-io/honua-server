@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using Npgsql;
-using Xunit.Sdk;
 
 namespace Honua.Admin.Playwright;
 
@@ -16,6 +15,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
     private string? _baseUrl;
     private string? _testSchema;
     private string? _artifactsRoot;
+    private string? _skipReason;
     private NpgsqlDataSource? _dataSource;
 
     public IBrowser Browser { get; private set; } = default!;
@@ -42,7 +42,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
         catch (PlaywrightException ex)
         {
             Playwright.Dispose();
-            throw SkipException.ForSkip(BuildPlaywrightSkipMessage(ex));
+            _skipReason = BuildPlaywrightSkipMessage(ex);
         }
     }
 
@@ -60,6 +60,10 @@ public sealed class PlaywrightFixture : IAsyncLifetime
     public async Task RunAsync(string testName, Func<PlaywrightTestContext, Task> testBody)
     {
         ArgumentNullException.ThrowIfNull(testBody);
+        if (!string.IsNullOrWhiteSpace(_skipReason))
+        {
+            throw new InvalidOperationException(_skipReason);
+        }
 
         var contextOptions = new BrowserNewContextOptions
         {

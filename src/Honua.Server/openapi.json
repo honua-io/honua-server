@@ -55,6 +55,30 @@
         }
       }
     },
+    "/api": {
+      "get": {
+        "summary": "Get OpenAPI 3.0 specification for OGC API Features",
+        "description": "Alias for the OpenAPI specification at /openapi.json",
+        "tags": [
+          "OGC API Features"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.0": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Specification not found"
+          }
+        }
+      }
+    },
     "/conformance": {
       "get": {
         "summary": "Get OGC API Features conformance declaration",

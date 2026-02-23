@@ -194,8 +194,7 @@ internal static partial class MapServerEndpoints
             var gdbVersion = GetValue(values, "gdbVersion");
             if (!string.IsNullOrWhiteSpace(gdbVersion))
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Unsupported export parameters: gdbVersion.");
+                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
             }
 
             var timeValue = GetValue(values, "time");
@@ -294,6 +293,8 @@ internal static partial class MapServerEndpoints
 
             foreach (var renderLayer in renderLayers)
             {
+                context.RequestAborted.ThrowIfCancellationRequested();
+
                 var layer = renderLayer.Layer;
                 if (!IsLayerVisibleAtScale(layer, scaleDenominator))
                 {
@@ -409,11 +410,23 @@ internal static partial class MapServerEndpoints
         {
             var imageContentType = SkiaMapRenderer.GetContentType(parameters.Format);
             var temporaryFileService = context.RequestServices.GetRequiredService<ITemporaryFileService>();
-            var imageUrl = await temporaryFileService.StoreTemporaryFileAsync(
-                imageBytes,
-                imageContentType,
-                TimeSpan.FromHours(1),
-                cancellationToken);
+            string imageUrl;
+            try
+            {
+                imageUrl = await temporaryFileService.StoreTemporaryFileAsync(
+                    imageBytes,
+                    imageContentType,
+                    TimeSpan.FromHours(1),
+                    cancellationToken);
+            }
+            catch (TemporaryStorageLimitExceededException ex)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Temporary export storage is currently at capacity. Please retry shortly.",
+                    ex.RetryAfterSeconds);
+            }
+
             var scale = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, imageSrid);
 
             var response = new ExportImageResponse
@@ -635,6 +648,9 @@ internal static partial class MapServerEndpoints
         {
             return false;
         }
+
+        if (minX >= maxX || minY >= maxY)
+            return false;
 
         extent = new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
         return true;
@@ -1993,6 +2009,6 @@ internal static partial class MapServerEndpoints
     private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties)
     {
         var result = ExpressionEvaluator.Evaluate(filter, properties);
-        return result is bool b ? b : true;
+        return result is bool b && b;
     }
 }

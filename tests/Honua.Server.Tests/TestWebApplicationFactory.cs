@@ -101,7 +101,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         public Task<int> GetCurrentKeyVersionAsync() => Task.FromResult(1);
 
-        public Task<int> RotateKeyAsync() => Task.FromResult(1);
+        public Task<int> RotateKeyAsync() => throw new NotSupportedException(
+            "In-place key rotation is not supported.");
 
         public Task<bool> ValidateEncryptionAsync() => Task.FromResult(true);
     }

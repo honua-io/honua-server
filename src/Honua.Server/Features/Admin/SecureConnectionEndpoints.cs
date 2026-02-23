@@ -136,9 +136,14 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {validationError}"));
             }
 
-            if (!Enum.TryParse<SslMode>(request.SslMode, true, out _))
+            if (!Enum.TryParse<SslMode>(request.SslMode, true, out var parsedSslMode))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid SSL mode"));
+            }
+
+            if (request.SslRequired && parsedSslMode == SslMode.Disable)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode 'Disable' is invalid when SSL is required"));
             }
 
             string connectionString;
@@ -156,17 +161,13 @@ internal static partial class SecureConnectionEndpoints
                     return TypedResults.BadRequest(ApiResponse<object>.Failure("Password is required when not using secret reference"));
                 }
 
-                var effectiveSslMode = request.SslRequired
-                    ? SslMode.Require
-                    : SslMode.Prefer;
-
                 connectionString = connectionStringBuilder.BuildConnectionString(
                     request.Host,
                     request.Port,
                     request.DatabaseName,
                     request.Username,
                     request.Password,
-                    effectiveSslMode);
+                    parsedSslMode);
             }
 
             var isHealthy = await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);
@@ -312,6 +313,16 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {validationError}"));
             }
 
+            if (!Enum.TryParse<SslMode>(request.SslMode, true, out var parsedSslMode))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid SSL mode"));
+            }
+
+            if (request.SslRequired && parsedSslMode == SslMode.Disable)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode 'Disable' is invalid when SSL is required"));
+            }
+
             DataConnection connection;
             var userIdentity = context.GetUserIdentity();
 
@@ -329,7 +340,7 @@ internal static partial class SecureConnectionEndpoints
                     userIdentity,
                     request.Description,
                     request.SslRequired,
-                    Enum.Parse<SslMode>(request.SslMode, true));
+                    parsedSslMode);
             }
             else
             {
@@ -340,16 +351,13 @@ internal static partial class SecureConnectionEndpoints
                 }
 
                 // Build connection string and encrypt it
-                var effectiveSslMode = request.SslRequired
-                    ? SslMode.Require
-                    : SslMode.Prefer;
                 var connectionString = connectionStringBuilder.BuildConnectionString(
                     request.Host,
                     request.Port,
                     request.DatabaseName,
                     request.Username,
                     request.Password,
-                    effectiveSslMode);
+                    parsedSslMode);
 
                 var encryptedData = await encryptionService.EncryptConnectionStringAsync(connectionString);
                 var keyVersion = await encryptionService.GetCurrentKeyVersionAsync();
@@ -365,7 +373,7 @@ internal static partial class SecureConnectionEndpoints
                     userIdentity,
                     request.Description,
                     request.SslRequired,
-                    Enum.Parse<SslMode>(request.SslMode, true));
+                    parsedSslMode);
             }
 
             // Create the connection
@@ -521,6 +529,11 @@ internal static partial class SecureConnectionEndpoints
                 sslMode = parsedSslMode;
             }
 
+            if (sslRequired && sslMode == SslMode.Disable)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode 'Disable' is invalid when SSL is required"));
+            }
+
             byte[]? encryptedConnection = existing.ConnectionStringEncrypted;
             int encryptionVersion = existing.EncryptionKeyVersion;
             string? secretRef = existing.SecretRef;
@@ -528,16 +541,13 @@ internal static partial class SecureConnectionEndpoints
 
             if (!string.IsNullOrWhiteSpace(request.Password))
             {
-                var effectiveSslMode = sslRequired
-                    ? SslMode.Require
-                    : SslMode.Prefer;
                 var connectionString = connectionStringBuilder.BuildConnectionString(
                     host,
                     port,
                     databaseName,
                     username,
                     request.Password,
-                    effectiveSslMode);
+                    sslMode);
 
                 encryptedConnection = await encryptionService.EncryptConnectionStringAsync(connectionString);
                 encryptionVersion = await encryptionService.GetCurrentKeyVersionAsync();

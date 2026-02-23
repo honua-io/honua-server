@@ -110,8 +110,17 @@ else
 
 if (!string.IsNullOrWhiteSpace(redisConnectionString))
 {
-    builder.Services.TryAddSingleton<IConnectionMultiplexer>(
-        _ => ConnectionMultiplexer.Connect(redisConnectionString));
+    try
+    {
+        var redisConnection = ConnectionMultiplexer.Connect(redisConnectionString);
+        builder.Services.TryAddSingleton<IConnectionMultiplexer>(redisConnection);
+    }
+    catch (Exception ex)
+    {
+        var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
+        startupLogger.LogWarning(ex, "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.");
+        // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
+    }
 }
 
 // Configure Serilog for structured logging with AOT compatibility
@@ -356,8 +365,7 @@ var configurationErrors = ConfigurationValidationService.ValidateConfiguration(
     app.Configuration,
     app.Logger,
     app.Environment.IsDevelopment() ||
-    app.Environment.IsEnvironment("Test") ||
-    app.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"));
+    app.Environment.IsEnvironment("Test"));
 
 if (configurationErrors.Count > 0)
 {
@@ -379,8 +387,29 @@ app.UseResponseCompression();
 
 if (serveAdminUi)
 {
+    // F-01: Block admin UI in non-Development environments when OIDC is not configured.
+    // Without OIDC the Blazor WASM client uses AnonymousAuthenticationStateProvider,
+    // which renders the full admin dashboard to any visitor.
+    var oidcEnabled = app.Configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
+    var blockAdminUi = !oidcEnabled &&
+                       !app.Environment.IsDevelopment() &&
+                       !app.Environment.IsEnvironment("Test");
+
     app.Map("/admin", adminApp =>
     {
+        if (blockAdminUi)
+        {
+            adminApp.Run(async context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/problem+json; charset=utf-8";
+                await context.Response.WriteAsync(
+                    """{"title":"Unauthorized","status":401,"detail":"Admin UI is disabled because OIDC authentication is not configured. Configure Oidc:Enabled in appsettings or environment variables before accessing the admin UI in production."}""")
+                    .ConfigureAwait(false);
+            });
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(adminDotnetJsAlias))
         {
             adminApp.Use(async (context, next) =>
@@ -622,6 +651,12 @@ async Task RunDatabaseMigrationsAsync()
     {
         // Skip migrations if no connection string is configured
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringNotConfigured(app.Logger);
+
+        if (app.Environment.IsProduction())
+        {
+            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringMissingInProduction(app.Logger);
+        }
+
         migrationState.MarkSkipped();
         return;
     }
@@ -641,8 +676,15 @@ async Task RunDatabaseMigrationsAsync()
             var errorMessage = result.ErrorMessage ?? "Database migration failed.";
             var error = result.Error ?? new InvalidOperationException(errorMessage);
             Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, errorMessage, error);
-            // Don't throw - let the app start and rely on health checks to indicate readiness
             migrationState.MarkFailed(errorMessage);
+
+            // In non-Development environments, re-throw so the app fails to start
+            // (gives a clear CrashLoopBackOff signal in Kubernetes).
+            if (!app.Environment.IsDevelopment())
+            {
+                throw error;
+            }
+
             return;
         }
 
@@ -666,8 +708,14 @@ async Task RunDatabaseMigrationsAsync()
     catch (Exception ex)
     {
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-        // Don't throw - let the app start and rely on health checks to indicate readiness
         migrationState.MarkFailed(ex.Message);
+
+        // In non-Development environments, re-throw so the app fails to start
+        // (gives a clear CrashLoopBackOff signal in Kubernetes).
+        if (!app.Environment.IsDevelopment())
+        {
+            throw;
+        }
     }
 }
 

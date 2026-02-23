@@ -139,7 +139,7 @@ MapServer coverage is tracked separately:
 | Esri parameter | Notes |
 | --- | --- |
 | `useGlobalIds` | Rejected; object IDs are required. |
-| `gdbVersion` | Ignored. |
+| `gdbVersion` | Rejected (`400 Bad Request`). |
 | `returnEditMoment` | Ignored. |
 | `attachments` | Use dedicated attachment endpoints. |
 | `assetMaps` | Ignored. |
@@ -180,7 +180,7 @@ MapServer coverage is tracked separately:
 | `returnZ` | Ignored. |
 | `returnM` | Ignored. |
 | `returnTrueCurves` | Ignored. |
-| `gdbVersion` | Ignored. |
+| `gdbVersion` | Rejected (`400 Bad Request`). |
 | `orderByFields` | Ignored. |
 | `returnCountOnly` | Ignored. |
 | `f` | Response is always JSON. |

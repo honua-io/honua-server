@@ -123,6 +123,66 @@ internal sealed class MapServerResponse
     /// </summary>
     [JsonPropertyName("supportedQueryFormats")]
     public string? SupportedQueryFormats { get; init; }
+
+    /// <summary>
+    /// Minimum visible scale for the service.
+    /// </summary>
+    [JsonPropertyName("minScale")]
+    public double? MinScale { get; init; }
+
+    /// <summary>
+    /// Maximum visible scale for the service.
+    /// </summary>
+    [JsonPropertyName("maxScale")]
+    public double? MaxScale { get; init; }
+
+    /// <summary>
+    /// Document metadata for the service.
+    /// </summary>
+    [JsonPropertyName("documentInfo")]
+    public MapServerDocumentInfo? DocumentInfo { get; init; }
+}
+
+/// <summary>
+/// Document metadata for a MapServer service.
+/// </summary>
+internal sealed class MapServerDocumentInfo
+{
+    /// <summary>
+    /// Document title.
+    /// </summary>
+    [JsonPropertyName("Title")]
+    public string Title { get; init; } = "";
+
+    /// <summary>
+    /// Document author.
+    /// </summary>
+    [JsonPropertyName("Author")]
+    public string Author { get; init; } = "";
+
+    /// <summary>
+    /// Document comments.
+    /// </summary>
+    [JsonPropertyName("Comments")]
+    public string Comments { get; init; } = "";
+
+    /// <summary>
+    /// Document subject.
+    /// </summary>
+    [JsonPropertyName("Subject")]
+    public string Subject { get; init; } = "";
+
+    /// <summary>
+    /// Document category.
+    /// </summary>
+    [JsonPropertyName("Category")]
+    public string Category { get; init; } = "";
+
+    /// <summary>
+    /// Document keywords.
+    /// </summary>
+    [JsonPropertyName("Keywords")]
+    public string Keywords { get; init; } = "";
 }
 
 /// <summary>
@@ -311,10 +371,10 @@ internal sealed class MapServerLayerResponse
     public object? DrawingInfo { get; init; }
 
     /// <summary>
-    /// Supported query output formats.
+    /// Supported query output formats (comma-separated string per ESRI spec).
     /// </summary>
     [JsonPropertyName("supportedQueryFormats")]
-    public string[]? SupportedQueryFormats { get; init; }
+    public string? SupportedQueryFormats { get; init; }
 
     /// <summary>
     /// Indicates whether statistics queries are supported.

@@ -51,7 +51,14 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     /// </summary>
     private sealed class StatementMetrics
     {
-        public int ExecutionCount { get; set; }
+        private int _executionCount;
+        public int ExecutionCount
+        {
+            get => Volatile.Read(ref _executionCount);
+            set => Volatile.Write(ref _executionCount, value);
+        }
+
+        public void IncrementExecutionCount() => Interlocked.Increment(ref _executionCount);
         public DateTime FirstSeen { get; init; } = DateTime.UtcNow;
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
     }
@@ -61,11 +68,18 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     /// </summary>
     private sealed class CachedStatement : IDisposable
     {
+        private int _hitCount;
         public required string StatementName { get; init; }
         public required NpgsqlCommand Command { get; init; }
         public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
-        public int HitCount { get; set; }
+        public int HitCount
+        {
+            get => Volatile.Read(ref _hitCount);
+            set => Volatile.Write(ref _hitCount, value);
+        }
+
+        public void IncrementHitCount() => Interlocked.Increment(ref _hitCount);
 
         public void Dispose()
         {
@@ -127,7 +141,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             },
             (_, existing) =>
             {
-                existing.ExecutionCount++;
+                existing.IncrementExecutionCount();
                 existing.LastUsed = DateTime.UtcNow;
                 return existing;
             });
@@ -136,7 +150,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         if (_cache.TryGetValue(cacheKey, out var cached))
         {
             cached.LastUsed = DateTime.UtcNow;
-            cached.HitCount++;
+            cached.IncrementHitCount();
 
             if (_options.EnablePerformanceLogging)
             {

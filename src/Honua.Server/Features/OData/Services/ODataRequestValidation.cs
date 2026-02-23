@@ -22,9 +22,23 @@ internal static class ODataRequestValidation
     {
         var validationResult = validationService.ValidateAllowedParameters(context.Request.Query.Keys.ToArray(), allowedParameters);
         var error = QueryParameterValidationHelpers.GetValidationError(validationResult);
-        return error == null
-            ? null
-            : ODataUtilityService.CreateODataError(context, "InvalidQueryOption", error);
+        if (error != null)
+        {
+            return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", error);
+        }
+
+        var format = context.Request.Query.TryGetValue("$format", out var formatValues)
+            ? formatValues.ToString()
+            : null;
+        if (ODataUtilityService.TryGetUnsupportedMetadataLevel(context.Request, format, out var metadataLevel))
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "InvalidQueryOption",
+                $"Unsupported odata.metadata level '{metadataLevel}'. Supported values are 'minimal' and 'none'.");
+        }
+
+        return null;
     }
 
     public static IResult? ValidateFormat(

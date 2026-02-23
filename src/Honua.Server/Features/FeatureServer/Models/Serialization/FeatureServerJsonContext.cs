@@ -61,6 +61,7 @@ namespace Honua.Server.Features.FeatureServer.Models;
 [JsonSerializable(typeof(UpdateAttachmentResponse))]
 [JsonSerializable(typeof(DeleteAttachmentResult))]
 [JsonSerializable(typeof(DeleteAttachmentsResponse))]
+[JsonSerializable(typeof(UniqueIdFieldInfo))]
 [JsonSerializable(typeof(EditFieldsInfo))]
 [JsonSerializable(typeof(EditingInfo))]
 [JsonSerializable(typeof(FeatureTemplate))]

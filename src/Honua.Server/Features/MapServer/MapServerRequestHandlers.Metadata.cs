@@ -195,7 +195,14 @@ internal static partial class MapServerEndpoints
             MaxImageWidth = mapConfig?.MaxImageWidth ?? 4096,
             MaxImageHeight = mapConfig?.MaxImageHeight ?? 4096,
             MaxRecordCount = maxRecordCount,
-            SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.SupportedFormats))
+            SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.SupportedFormats)),
+            MinScale = ResolveServiceMinScale(service),
+            MaxScale = ResolveServiceMaxScale(service),
+            DocumentInfo = new MapServerDocumentInfo
+            {
+                Title = service.Name ?? "",
+                Comments = service.Description ?? ""
+            }
         };
     }
 
@@ -239,7 +246,7 @@ internal static partial class MapServerEndpoints
             DefaultVisibility = layer.DefaultVisibility,
             MaxRecordCount = maxRecordCount,
             DrawingInfo = drawingInfo.HasValue ? (object)drawingInfo.Value : null,
-            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
+            SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.SupportedFormats)),
             SupportsOrderBy = true,
             SupportsDistinct = true,
             SupportsPagination = true
@@ -254,6 +261,24 @@ internal static partial class MapServerEndpoints
         }
 
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static double? ResolveServiceMinScale(ServiceDefinition service)
+    {
+        var scales = service.Layers
+            .Where(l => l.MinScale is > 0)
+            .Select(l => l.MinScale!.Value)
+            .ToArray();
+        return scales.Length > 0 ? scales.Max() : null;
+    }
+
+    private static double? ResolveServiceMaxScale(ServiceDefinition service)
+    {
+        var scales = service.Layers
+            .Where(l => l.MaxScale is > 0)
+            .Select(l => l.MaxScale!.Value)
+            .ToArray();
+        return scales.Length > 0 ? scales.Min() : null;
     }
 
     private static string ResolveMapUnits(Honua.Core.Features.Shared.Models.SpatialReference spatialReference)

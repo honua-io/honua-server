@@ -9,7 +9,7 @@ For automation, use the [Server Management API](CONTROL_PLANE_API.md) instead.
 ## Database Connections
 
 1. Open **Connections** > **New Connection**.
-2. Provide host, database, username, and password.
+2. Provide connection details (`host`, `databaseName`, `username`) plus either `password` or `secretReference`/`secretType`.
 3. Save and use **Test Connection** to validate connectivity and PostGIS support.
 
 ---

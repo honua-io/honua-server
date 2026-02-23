@@ -6,8 +6,10 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.ImageServer.Handlers;
@@ -38,6 +40,7 @@ internal sealed class ImageServerIdentifyHandler
     /// Identifies pixel values at a specified geographic location.
     /// </summary>
     public async Task<IResult> IdentifyAsync(
+        HttpContext context,
         int layerId,
         IdentifyRequest request,
         CancellationToken cancellationToken = default)
@@ -55,7 +58,7 @@ internal sealed class ImageServerIdentifyHandler
             if (layer == null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
             // Get raster data
@@ -63,7 +66,7 @@ internal sealed class ImageServerIdentifyHandler
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return Results.NotFound();
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
             // Parse geometry coordinates
@@ -71,7 +74,7 @@ internal sealed class ImageServerIdentifyHandler
             if (!x.HasValue || !y.HasValue)
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, "Invalid geometry coordinates");
-                return Results.BadRequest("Invalid geometry coordinates");
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid geometry coordinates");
             }
 
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);
@@ -118,7 +121,7 @@ internal sealed class ImageServerIdentifyHandler
         {
             ImageServerLog.IdentifyFailed(_logger, ex, layerId);
             scope.RecordException(ex);
-            return Results.Problem("An error occurred while identifying pixel values.", statusCode: 500);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while identifying pixel values.");
         }
     }
 

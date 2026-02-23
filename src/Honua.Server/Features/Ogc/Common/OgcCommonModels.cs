@@ -159,11 +159,6 @@ public static class RelationTypes
     public const string Conformance = "conformance";
 
     /// <summary>
-    /// Indicates the link target provides collections metadata.
-    /// </summary>
-    public const string Collections = "data";
-
-    /// <summary>
     /// Indicates the link target provides the collection containing a feature.
     /// </summary>
     public const string Collection = "collection";

@@ -213,8 +213,10 @@ internal sealed partial class OgcFilterProcessor
                 return FilterProcessingResult.Failure(temporalResult.ErrorMessage!);
             }
 
-            // OGC API Features should retain null-geometry records even when spatial filters are present.
-            var includeNullGeometry = true;
+            // OGC API Features Part 1, Section 7.15.4: when bbox is provided, only features
+            // with a spatial geometry that intersects the bounding box shall be in the result set.
+            // Features with null geometry cannot intersect a bbox, so exclude them.
+            var includeNullGeometry = bboxResult.SpatialFilter == null;
 
             return FilterProcessingResult.Success(
                 combinedFilter,

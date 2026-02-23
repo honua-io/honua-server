@@ -15,5 +15,5 @@ public sealed record PaginationValidationOptions(
     /// <summary>
     /// Default options for generic pagination validation.
     /// </summary>
-    public static PaginationValidationOptions Default { get; } = new(0, 0, "Offset", "Limit");
+    public static PaginationValidationOptions Default { get; } = new(0, 1, "Offset", "Limit");
 }

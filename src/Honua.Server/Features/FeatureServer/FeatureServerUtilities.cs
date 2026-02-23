@@ -216,6 +216,24 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
+    /// <summary>
+    /// Resolves the display field name from layer field definitions.
+    /// Prefers a field named "name", then falls back to the first string-type field, then objectIdField.
+    /// </summary>
+    private static string ResolveDisplayFieldFromLayer(LayerDefinition layer, string objectIdField)
+    {
+        var preferredNameField = layer.Fields.FirstOrDefault(
+            field => field.Name.Equals("name", StringComparison.OrdinalIgnoreCase));
+        if (preferredNameField != null)
+        {
+            return preferredNameField.Name;
+        }
+
+        var firstStringField = layer.Fields.FirstOrDefault(
+            field => field.GeoServicesType.Equals("esriFieldTypeString", StringComparison.OrdinalIgnoreCase));
+        return firstStringField?.Name ?? objectIdField;
+    }
+
     private static string ResolveServiceObjectIdField(ServiceDefinition service)
     {
         var candidate = service.Layers
@@ -238,6 +256,7 @@ internal static partial class FeatureServerEndpoints
         JsonElement? drawingInfo)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var displayField = ResolveDisplayFieldFromLayer(layer, objectIdField);
         var supportsStatistics = true;
         var supportsAdvancedQueries = service.SupportsAdvancedQueries;
         var supportsRelated = layer.HasRelationships;
@@ -255,6 +274,8 @@ internal static partial class FeatureServerEndpoints
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
+            DisplayField = displayField,
+            UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
             Capabilities = BuildLayerCapabilities(service, layer),
             SupportsAdvancedQueries = supportsAdvancedQueries,

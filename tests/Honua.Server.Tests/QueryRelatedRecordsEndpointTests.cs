@@ -322,6 +322,25 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithTooManyObjectIds_Returns400()
+    {
+        var objectIds = string.Join(",", Enumerable.Range(1, 1001));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds={objectIds}&relationshipId={TestRelationshipId}");
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var details = jsonDoc.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty);
+        details.Should().Contain(detail => detail.Contains("objectIds parameter exceeds the maximum of 1000 values"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithNonExistentService_Returns404()
     {
         // Act

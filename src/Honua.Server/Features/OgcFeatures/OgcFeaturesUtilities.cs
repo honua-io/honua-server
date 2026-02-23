@@ -80,6 +80,7 @@ internal static class OgcFeaturesUtilities
     public const string Epsg3857Uri = "http://www.opengis.net/def/crs/EPSG/0/3857";
     public const string WfsNamespace = "http://www.opengis.net/wfs/2.0";
     public const string GmlNamespace = "http://www.opengis.net/gml/3.2";
+    public const string AppNamespace = "http://www.opengis.net/ogcapi-features-1/1.0";
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     public const string AtomNamespace = "http://www.w3.org/2005/Atom";
 
@@ -337,5 +338,65 @@ internal static class OgcFeaturesUtilities
             title: "Collection"));
 
         return links.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Builds the self URL for a feature, used in Location headers for 201 Created responses.
+    /// </summary>
+    public static string BuildFeatureSelfUrl(
+        HttpRequest request,
+        string collectionId,
+        string featureId)
+    {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
+        return $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
+    }
+}
+
+/// <summary>
+/// Transforms extent coordinates to CRS84 for OGC API spec compliance.
+/// </summary>
+internal static class OgcExtentTransformer
+{
+    private const double EarthRadius = 6378137.0;
+    private const double MaxLatitude = 85.0511287798066;
+
+    /// <summary>
+    /// Transforms a coordinate pair to CRS84 (lon/lat in degrees).
+    /// Supports common CRS families; throws <see cref="NotSupportedException"/> for unsupported SRIDs.
+    /// </summary>
+    public static (double Lon, double Lat) TransformToCrs84(double x, double y, int fromSrid)
+    {
+        if (fromSrid == 4326)
+        {
+            return (x, y);
+        }
+
+        if (IsWebMercatorSrid(fromSrid))
+        {
+            return WebMercatorToLonLat(x, y);
+        }
+
+        if (IsGeographicSrid(fromSrid))
+        {
+            // Other geographic CRS (NAD83, etc.) - coordinates are already lon/lat degrees
+            return (x, y);
+        }
+
+        throw new NotSupportedException(
+            $"In-memory extent transformation from SRID {fromSrid} to CRS84 is not supported.");
+    }
+
+    private static bool IsWebMercatorSrid(int srid)
+        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+
+    private static bool IsGeographicSrid(int srid)
+        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+
+    private static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
+    {
+        var lon = x / EarthRadius * 180.0 / Math.PI;
+        var lat = Math.Atan(Math.Exp(y / EarthRadius)) * 360.0 / Math.PI - 90.0;
+        return (lon, lat);
     }
 }

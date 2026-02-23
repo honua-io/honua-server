@@ -100,8 +100,21 @@ internal static class GeometryServiceRequestParser
     /// Parses the ArcGIS geometry wrapper format: {"geometryType":"...","geometries":[...]}
     /// Also supports legacy flat array: [{...},{...}].
     /// </summary>
-    public static (string[] GeometryJsonStrings, string? GeometryType, string? Error) ParseGeometries(string? raw)
+    public static (string[] GeometryJsonStrings, string? GeometryType, string? Error) ParseGeometries(
+        string? raw,
+        int maxGeometryCount,
+        int maxGeometryJsonLength)
     {
+        if (maxGeometryCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxGeometryCount), "Maximum geometry count must be at least 1.");
+        }
+
+        if (maxGeometryJsonLength < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxGeometryJsonLength), "Maximum geometry size must be at least 1 character.");
+        }
+
         if (string.IsNullOrWhiteSpace(raw))
         {
             return ([], null, "Parameter 'geometries' is required.");
@@ -123,11 +136,23 @@ internal static class GeometryServiceRequestParser
 
                 if (root.TryGetProperty("geometries", out var geomArray) && geomArray.ValueKind == JsonValueKind.Array)
                 {
-                    var geometries = new string[geomArray.GetArrayLength()];
+                    var geometryCount = geomArray.GetArrayLength();
+                    if (geometryCount > maxGeometryCount)
+                    {
+                        return ([], geometryType, $"Parameter 'geometries' exceeds the maximum of {maxGeometryCount} geometries.");
+                    }
+
+                    var geometries = new string[geometryCount];
                     var i = 0;
                     foreach (var item in geomArray.EnumerateArray())
                     {
-                        geometries[i++] = item.GetRawText();
+                        var rawGeometry = item.GetRawText();
+                        if (rawGeometry.Length > maxGeometryJsonLength)
+                        {
+                            return ([], geometryType, $"Geometry at index {i} exceeds the maximum size of {maxGeometryJsonLength} characters.");
+                        }
+
+                        geometries[i++] = rawGeometry;
                     }
 
                     return (geometries, geometryType, null);
@@ -139,11 +164,23 @@ internal static class GeometryServiceRequestParser
             // Legacy flat array: [{...},{...}]
             if (root.ValueKind == JsonValueKind.Array)
             {
-                var geometries = new string[root.GetArrayLength()];
+                var geometryCount = root.GetArrayLength();
+                if (geometryCount > maxGeometryCount)
+                {
+                    return ([], null, $"Parameter 'geometries' exceeds the maximum of {maxGeometryCount} geometries.");
+                }
+
+                var geometries = new string[geometryCount];
                 var i = 0;
                 foreach (var item in root.EnumerateArray())
                 {
-                    geometries[i++] = item.GetRawText();
+                    var rawGeometry = item.GetRawText();
+                    if (rawGeometry.Length > maxGeometryJsonLength)
+                    {
+                        return ([], null, $"Geometry at index {i} exceeds the maximum size of {maxGeometryJsonLength} characters.");
+                    }
+
+                    geometries[i++] = rawGeometry;
                 }
 
                 return (geometries, null, null);
@@ -160,8 +197,16 @@ internal static class GeometryServiceRequestParser
     /// <summary>
     /// Parses a single geometry object from request parameters.
     /// </summary>
-    public static (string? GeometryJson, string? Error) ParseSingleGeometry(string? raw, string parameterName = "geometry")
+    public static (string? GeometryJson, string? Error) ParseSingleGeometry(
+        string? raw,
+        string parameterName = "geometry",
+        int maxGeometryJsonLength = int.MaxValue)
     {
+        if (maxGeometryJsonLength < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxGeometryJsonLength), "Maximum geometry size must be at least 1 character.");
+        }
+
         if (string.IsNullOrWhiteSpace(raw))
         {
             return (null, $"Parameter '{parameterName}' is required.");
@@ -175,7 +220,13 @@ internal static class GeometryServiceRequestParser
                 return (null, $"Parameter '{parameterName}' must be a JSON object.");
             }
 
-            return (doc.RootElement.GetRawText(), null);
+            var geometryJson = doc.RootElement.GetRawText();
+            if (geometryJson.Length > maxGeometryJsonLength)
+            {
+                return (null, $"Parameter '{parameterName}' exceeds the maximum size of {maxGeometryJsonLength} characters.");
+            }
+
+            return (geometryJson, null);
         }
         catch (JsonException)
         {
@@ -236,8 +287,13 @@ internal static class GeometryServiceRequestParser
     /// <summary>
     /// Parses a comma-separated string of doubles.
     /// </summary>
-    public static (double[] Values, string? Error) ParseDoubleArray(string? raw)
+    public static (double[] Values, string? Error) ParseDoubleArray(string? raw, int maxValues = int.MaxValue)
     {
+        if (maxValues < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxValues), "Maximum values must be at least 1.");
+        }
+
         if (string.IsNullOrWhiteSpace(raw))
         {
             return ([], null);
@@ -251,7 +307,13 @@ internal static class GeometryServiceRequestParser
                 using var doc = JsonDocument.Parse(raw);
                 if (doc.RootElement.ValueKind == JsonValueKind.Array)
                 {
-                    var values = new double[doc.RootElement.GetArrayLength()];
+                    var length = doc.RootElement.GetArrayLength();
+                    if (length > maxValues)
+                    {
+                        return ([], $"Parameter 'distances' exceeds the maximum of {maxValues} values.");
+                    }
+
+                    var values = new double[length];
                     var i = 0;
                     foreach (var item in doc.RootElement.EnumerateArray())
                     {
@@ -274,6 +336,11 @@ internal static class GeometryServiceRequestParser
 
         // Comma-separated
         var parts = raw.Split(',');
+        if (parts.Length > maxValues)
+        {
+            return ([], $"Parameter 'distances' exceeds the maximum of {maxValues} values.");
+        }
+
         var result = new double[parts.Length];
         for (var i = 0; i < parts.Length; i++)
         {

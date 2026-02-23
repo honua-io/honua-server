@@ -248,6 +248,66 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/geometry/buffer")]
+    public async Task Buffer_WithTooManyGeometries_Returns400()
+    {
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            geometries = new
+            {
+                geometryType = "esriGeometryPoint",
+                geometries = Enumerable.Range(0, 1001)
+                    .Select(i => new { x = i * 0.001, y = i * 0.001 })
+                    .ToArray()
+            },
+            inSR = "4326",
+            distances = "1",
+            unit = "esriMeters"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/buffer",
+            new StringContent(requestBody, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("maximum of 1000 geometries");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/geometry/buffer")]
+    public async Task Buffer_WithTooManyDistances_Returns400()
+    {
+        var distances = string.Join(",", Enumerable.Range(1, 1001));
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            geometries = new
+            {
+                geometryType = "esriGeometryPoint",
+                geometries = new[]
+                {
+                    new { x = -122.4194, y = 37.7749 }
+                }
+            },
+            inSR = "4326",
+            distances,
+            unit = "esriMeters"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/buffer",
+            new StringContent(requestBody, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("maximum of 1000 values");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
     [Endpoint("GET /rest/services/geometry/buffer")]
     public async Task Buffer_GetWithQueryString_ReturnsPolygon()
     {

@@ -9,9 +9,12 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.OgcMaps;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.OgcMaps.Handlers;
 
@@ -25,6 +28,16 @@ internal sealed class OgcMapsRenderingHandler
     private const int MaxImageDimension = 4096;
     private const int DefaultBboxCrsSrid = 4326;
     private static readonly Regex _backgroundColorPattern = new("^0x[0-9A-Fa-f]{6}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Supported image media types mapped to OGC format short names.
+    /// </summary>
+    private static readonly Dictionary<string, RasterFormat> _acceptMediaTypeMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["image/png"] = RasterFormat.PNG,
+        ["image/jpeg"] = RasterFormat.JPEG,
+        ["image/tiff"] = RasterFormat.TIFF
+    };
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterMapRenderer _mapRenderer;
@@ -75,11 +88,11 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             // Create map render request
-            var renderRequest = CreateMapRenderRequest(request, layer);
+            var (renderRequest, validationError) = CreateMapRenderRequest(request, layer, context);
             if (renderRequest == null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, "Failed to parse map request parameters");
-                return CreateBadRequestResult(context, "Invalid map request parameters");
+                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
+                return CreateBadRequestResult(context, validationError!);
             }
 
             OgcMapsLog.CollectionMapRenderStarted(_logger, layerId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -118,6 +131,13 @@ internal sealed class OgcMapsRenderingHandler
         HttpContext? context = null,
         CancellationToken cancellationToken = default)
     {
+        if (layerIds.Length > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+        {
+            return CreateBadRequestResult(
+                context,
+                $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be requested at once.");
+        }
+
         using var scope = HonuaTelemetryScope.StartFeature(
             "render",
             HonuaTelemetry.Protocols.OgcMaps,
@@ -146,11 +166,26 @@ internal sealed class OgcMapsRenderingHandler
                         if (layer.Metadata?.AccessPolicy == null || AccessPolicyHelpers.IsLayerAccessible(context, layer))
                         {
                             layers.Add(layer);
+                            if (layers.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+                            {
+                                return CreateBadRequestResult(
+                                    context,
+                                    $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be rendered in a dataset map request. " +
+                                    "Specify the collections parameter to narrow the request.");
+                            }
                         }
                     }
                 }
                 else
                 {
+                    if (allLayers.Length > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+                    {
+                        return CreateBadRequestResult(
+                            context,
+                            $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be rendered in a dataset map request. " +
+                            "Specify the collections parameter to narrow the request.");
+                    }
+
                     layers.AddRange(allLayers);
                 }
 
@@ -166,6 +201,13 @@ internal sealed class OgcMapsRenderingHandler
                     }
 
                     return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
+                }
+
+                if (layers.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+                {
+                    return CreateBadRequestResult(
+                        context,
+                        $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be rendered in a dataset map request.");
                 }
 
                 resolvedLayerIds = new int[layers.Count];
@@ -205,11 +247,11 @@ internal sealed class OgcMapsRenderingHandler
 
             // Use the first layer for extent calculation
             var primaryLayer = layers[0];
-            var renderRequest = CreateMapRenderRequest(request, primaryLayer);
+            var (renderRequest, validationError) = CreateMapRenderRequest(request, primaryLayer, context);
             if (renderRequest == null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, 0, "Failed to parse dataset map request parameters");
-                return CreateBadRequestResult(context, "Invalid map request parameters");
+                OgcMapsLog.InvalidMapParameters(_logger, 0, validationError!);
+                return CreateBadRequestResult(context, validationError!);
             }
 
             OgcMapsLog.DatasetMapRenderStarted(_logger, resolvedLayerCount, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -276,11 +318,11 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             // Create map render request
-            var renderRequest = CreateMapRenderRequest(request, layer);
+            var (renderRequest, validationError) = CreateMapRenderRequest(request, layer, context);
             if (renderRequest == null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, "Failed to parse styled map request parameters");
-                return CreateBadRequestResult(context, "Invalid map request parameters");
+                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
+                return CreateBadRequestResult(context, validationError!);
             }
 
             OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -373,9 +415,59 @@ internal sealed class OgcMapsRenderingHandler
             {
                 context.Response.Headers["Content-Crs"] = contentCrsHeader;
             }
+
+            // Add self/alternate Link headers per RFC 8288 for format discovery
+            AppendLinkHeaders(context, result.ContentType);
         }
 
         return Results.File(result.Data, result.ContentType);
+    }
+
+    /// <summary>
+    /// Appends RFC 8288 Link headers for self and alternate image format representations.
+    /// </summary>
+    private static void AppendLinkHeaders(HttpContext context, string currentContentType)
+    {
+        var requestPath = context.Request.Path + context.Request.QueryString;
+        context.Response.Headers.Append("Link", $"<{requestPath}>; rel=\"self\"; type=\"{currentContentType}\"");
+
+        foreach (var (mediaType, _) in _acceptMediaTypeMap)
+        {
+            if (!string.Equals(mediaType, currentContentType, StringComparison.OrdinalIgnoreCase))
+            {
+                var altPath = ReplaceFormatInPath(context, mediaType);
+                context.Response.Headers.Append("Link", $"<{altPath}>; rel=\"alternate\"; type=\"{mediaType}\"");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Constructs a path with the format query parameter replaced for alternate link generation.
+    /// </summary>
+    private static string ReplaceFormatInPath(HttpContext context, string mediaType)
+    {
+        var shortName = mediaType switch
+        {
+            "image/png" => "png",
+            "image/jpeg" => "jpeg",
+            "image/tiff" => "tiff",
+            _ => "png"
+        };
+
+        var query = context.Request.Query;
+        var parts = new List<string>();
+        foreach (var kvp in query)
+        {
+            if (string.Equals(kvp.Key, "f", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            parts.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value.ToString())}");
+        }
+
+        parts.Add($"f={shortName}");
+        return $"{context.Request.Path}?{string.Join("&", parts)}";
     }
 
     private static string? FormatContentCrsHeader(int? srid)
@@ -394,7 +486,90 @@ internal sealed class OgcMapsRenderingHandler
     private static string FormatContentBboxHeader(double[] bbox)
         => FormattableString.Invariant($"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}");
 
-    private MapRenderRequest? CreateMapRenderRequest(OgcMapRequest request, Core.Features.Catalog.Domain.LayerDefinition layer)
+    /// <summary>
+    /// Resolves the output format from the Accept header and/or f query parameter.
+    /// The f parameter takes precedence when present; otherwise the Accept header is used.
+    /// Falls back to PNG when neither is specified.
+    /// </summary>
+    internal static RasterFormat? ResolveOutputFormat(string? fParam, HttpContext? context)
+    {
+        // f query parameter takes precedence when explicitly provided
+        if (!string.IsNullOrWhiteSpace(fParam))
+        {
+            return fParam.Trim().ToLowerInvariant() switch
+            {
+                "png" => RasterFormat.PNG,
+                "jpeg" or "jpg" => RasterFormat.JPEG,
+                "tiff" or "tif" => RasterFormat.TIFF,
+                _ => null // unsupported format
+            };
+        }
+
+        // Fall back to HTTP Accept header content negotiation
+        if (context is not null)
+        {
+            var acceptHeader = context.Request.Headers.Accept;
+            if (!StringValues.IsNullOrEmpty(acceptHeader))
+            {
+                var parsed = acceptHeader
+                    .SelectMany(h => h!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    .Select(ParseMediaTypeWithQuality)
+                    .Where(m => m.HasValue)
+                    .OrderByDescending(m => m!.Value.Quality)
+                    .Select(m => m!.Value.MediaType)
+                    .ToList();
+
+                foreach (var mediaType in parsed)
+                {
+                    if (_acceptMediaTypeMap.TryGetValue(mediaType, out var format))
+                    {
+                        return format;
+                    }
+
+                    // Accept: image/* or */*
+                    if (mediaType is "image/*" or "*/*")
+                    {
+                        return RasterFormat.PNG;
+                    }
+                }
+
+                // Accept header present but no supported type matched
+                return null;
+            }
+        }
+
+        // Default to PNG when no format preference is expressed
+        return RasterFormat.PNG;
+    }
+
+    private static (string MediaType, double Quality)? ParseMediaTypeWithQuality(string segment)
+    {
+        var parts = segment.Split(';', StringSplitOptions.TrimEntries);
+        if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0]))
+        {
+            return null;
+        }
+
+        var mediaType = parts[0].Trim();
+        var quality = 1.0;
+
+        for (var i = 1; i < parts.Length; i++)
+        {
+            var param = parts[i].Trim();
+            if (param.StartsWith("q=", StringComparison.OrdinalIgnoreCase) &&
+                double.TryParse(param[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var q))
+            {
+                quality = q;
+            }
+        }
+
+        return (mediaType, quality);
+    }
+
+    private (MapRenderRequest?, string?) CreateMapRenderRequest(
+        OgcMapRequest request,
+        Core.Features.Catalog.Domain.LayerDefinition layer,
+        HttpContext? context = null)
     {
         try
         {
@@ -403,14 +578,14 @@ internal sealed class OgcMapsRenderingHandler
             if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
             {
                 OgcMapsLog.UnsupportedCrs(_logger, request.Crs);
-                return null;
+                return (null, $"Unsupported CRS: '{request.Crs}'. Use EPSG codes or OGC URI format.");
             }
 
             var requestedBboxCrs = SpatialReferenceHelpers.TryParseSrid(request.BboxCrs);
             if (!string.IsNullOrEmpty(request.BboxCrs) && requestedBboxCrs == null)
             {
                 OgcMapsLog.UnsupportedCrs(_logger, request.BboxCrs);
-                return null;
+                return (null, $"Unsupported bbox-crs: '{request.BboxCrs}'. Use EPSG codes or OGC URI format.");
             }
 
             // Parse bounding box
@@ -420,7 +595,7 @@ internal sealed class OgcMapsRenderingHandler
             {
                 if (!RasterParsingHelpers.TryParseBoundingBox(request.Bbox, out var minX, out var minY, out var maxX, out var maxY))
                 {
-                    return null; // Invalid bbox format
+                    return (null, "Invalid bbox format. Expected: minX,minY,maxX,maxY with decimal values.");
                 }
                 bbox = [minX, minY, maxX, maxY];
                 bboxCrs = requestedBboxCrs ?? DefaultBboxCrsSrid;
@@ -430,7 +605,7 @@ internal sealed class OgcMapsRenderingHandler
                 // Use layer extent as default - validate extent exists
                 if (layer.Extent == null)
                 {
-                    return null;
+                    return (null, "No bbox provided and the collection has no default extent.");
                 }
                 var extent = layer.Extent.Value;
                 bbox = [extent.MinX, extent.MinY, extent.MaxX, extent.MaxY];
@@ -438,10 +613,11 @@ internal sealed class OgcMapsRenderingHandler
                 OgcMapsLog.UsingDefaultBounds(_logger, layer.Id, extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
             }
 
-            // Parse format
-            if (!TryParseRequestedFormat(request.F, out var format))
+            // Resolve format from f parameter and/or Accept header
+            var format = ResolveOutputFormat(request.F, context);
+            if (format == null)
             {
-                return null;
+                return (null, $"Unsupported format: '{request.F ?? "(from Accept header)"}'. Supported formats: png, jpeg, tiff.");
             }
 
             // Parse and validate dimensions (prevent DoS via oversized images)
@@ -450,17 +626,17 @@ internal sealed class OgcMapsRenderingHandler
             if (width < 1 || width > MaxImageDimension || height < 1 || height > MaxImageDimension)
             {
                 OgcMapsLog.MapDimensionsExceeded(_logger, width, height, MaxImageDimension, MaxImageDimension);
-                return null;
+                return (null, $"Map dimensions must be between 1 and {MaxImageDimension} pixels. Received: {width}x{height}.");
             }
 
             if (request.Quality is < 1 or > 100)
             {
-                return null;
+                return (null, "Quality must be between 1 and 100.");
             }
 
             if (!string.IsNullOrEmpty(request.BackgroundColor) && !_backgroundColorPattern.IsMatch(request.BackgroundColor))
             {
-                return null;
+                return (null, $"Invalid background color: '{request.BackgroundColor}'. Expected 0xRRGGBB hex format.");
             }
 
             // Parse datetime using invariant culture to avoid ambiguous date formats
@@ -469,66 +645,37 @@ internal sealed class OgcMapsRenderingHandler
             {
                 if (!DateTimeOffset.TryParse(request.Datetime, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDateTime))
                 {
-                    return null;
+                    return (null, $"Invalid datetime format: '{request.Datetime}'. Use ISO 8601 format.");
                 }
 
                 datetime = parsedDateTime;
             }
 
-            return new MapRenderRequest
+            return (new MapRenderRequest
             {
                 BoundingBox = bbox,
                 BoundingBoxCrs = bboxCrs,
                 Crs = outputCrs,
                 Width = width,
                 Height = height,
-                Format = format,
+                Format = format.Value,
                 Transparent = request.Transparent ?? true,
                 BackgroundColor = request.BackgroundColor,
                 DateTime = datetime,
                 Quality = request.Quality
-            };
+            }, null);
         }
         catch (FormatException)
         {
-            return null;
+            return (null, "Invalid numeric format in request parameters.");
         }
         catch (OverflowException)
         {
-            return null;
+            return (null, "Numeric parameter value is out of range.");
         }
-        catch (ArgumentException)
+        catch (ArgumentException ex)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
-
-    private static bool TryParseRequestedFormat(string? requestedFormat, out RasterFormat rasterFormat)
-    {
-        rasterFormat = RasterFormat.PNG;
-
-        if (string.IsNullOrWhiteSpace(requestedFormat))
-        {
-            return true;
-        }
-
-        switch (requestedFormat.Trim().ToLowerInvariant())
-        {
-            case "png":
-                rasterFormat = RasterFormat.PNG;
-                return true;
-            case "jpeg":
-            case "jpg":
-                rasterFormat = RasterFormat.JPEG;
-                return true;
-            case "tiff":
-            case "tif":
-                rasterFormat = RasterFormat.TIFF;
-                return true;
-            default:
-                return false;
-        }
-    }
-
-
 }

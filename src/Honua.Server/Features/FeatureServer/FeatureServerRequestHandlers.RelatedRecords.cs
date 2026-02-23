@@ -2,15 +2,19 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const int MaxRelatedRecordsObjectIdCountUpperBound = 1000;
+
     private static async Task<IResult> HandleQueryRelatedRecordsGet(
         string serviceId,
         int layerId,
@@ -25,7 +29,12 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        if (!TryParseRelatedRecordsParameters(ToCaseInsensitiveDictionary(context.Request.Query), out var queryParams, out var parseError))
+        var maxObjectIdCount = ResolveMaxRelatedRecordsObjectIdCount(context);
+        if (!TryParseRelatedRecordsParameters(
+                ToCaseInsensitiveDictionary(context.Request.Query),
+                maxObjectIdCount,
+                out var queryParams,
+                out var parseError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid query parameters");
         }
@@ -66,7 +75,8 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        if (!TryParseRelatedRecordsParameters(values, out var queryParams, out var parseError))
+        var maxObjectIdCount = ResolveMaxRelatedRecordsObjectIdCount(context);
+        if (!TryParseRelatedRecordsParameters(values, maxObjectIdCount, out var queryParams, out var parseError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid query parameters");
         }
@@ -80,13 +90,14 @@ internal static partial class FeatureServerEndpoints
 
     private static bool TryParseRelatedRecordsParameters(
         IReadOnlyDictionary<string, StringValues> values,
+        int maxObjectIdCount,
         out QueryRelatedRecordsParameters parameters,
         out string? errorMessage)
     {
         parameters = null!;
         errorMessage = null;
 
-        if (!TryParseRequiredLongArray(values, "objectIds", out var objectIds, out errorMessage))
+        if (!TryParseRequiredLongArray(values, "objectIds", maxObjectIdCount, out var objectIds, out errorMessage))
         {
             return false;
         }
@@ -204,5 +215,11 @@ internal static partial class FeatureServerEndpoints
         };
 
         return true;
+    }
+
+    private static int ResolveMaxRelatedRecordsObjectIdCount(HttpContext context)
+    {
+        var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
+        return Math.Clamp(limits.Query.MaxRecordCount, 1, MaxRelatedRecordsObjectIdCountUpperBound);
     }
 }

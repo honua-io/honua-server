@@ -40,8 +40,17 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         try
         {
             var httpContext = _httpContextAccessor.HttpContext!;
-            string objectIdsString = string.Join(",", queryParams.ObjectIds);
-            FeatureServerLog.RelatedRecordsQueryRequested(_logger, serviceId, layerId, objectIdsString, queryParams.RelationshipId);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                var objectIdSample = BuildObjectIdSample(queryParams.ObjectIds);
+                FeatureServerLog.RelatedRecordsQueryRequested(
+                    _logger,
+                    serviceId,
+                    layerId,
+                    queryParams.ObjectIds.Length,
+                    objectIdSample,
+                    queryParams.RelationshipId);
+            }
 
             var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
                 _resourceValidator,
@@ -193,6 +202,16 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         {
             throw;
         }
+        catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
+        {
+            FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            return StandardErrorHelpers.CreateNotFound(_httpContextAccessor.HttpContext!, ex.Message);
+        }
+        catch (Honua.Core.Exceptions.ValidationException ex)
+        {
+            FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            return StandardErrorHelpers.CreateBadRequest(_httpContextAccessor.HttpContext!, ex.Message);
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -244,5 +263,19 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
         errorMessage = $"Unsupported query parameters: {string.Join(", ", unsupported)}.";
         return false;
+    }
+
+    private static string BuildObjectIdSample(long[] objectIds)
+    {
+        const int maxSampleCount = 10;
+        if (objectIds.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var sample = string.Join(",", objectIds.Take(maxSampleCount));
+        return objectIds.Length > maxSampleCount
+            ? $"{sample},..."
+            : sample;
     }
 }

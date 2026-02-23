@@ -534,6 +534,30 @@ internal sealed class FeatureServerQueryHandler(
         {
             throw;
         }
+        catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            if (context.Response.HasStarted)
+            {
+                return _streamingResult;
+            }
+
+            return StandardErrorHelpers.CreateNotFound(context, ex.Message);
+        }
+        catch (Honua.Core.Exceptions.ValidationException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            if (context.Response.HasStarted)
+            {
+                return _streamingResult;
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -1045,7 +1069,12 @@ internal sealed class FeatureServerQueryHandler(
             var fieldName = outFields[i];
             if (feature.Attributes.TryGetValue(fieldName, out var value) && value != null)
             {
-                parts[i] = value.ToString() ?? string.Empty;
+                parts[i] = value switch
+                {
+                    IConvertible convertible => convertible.ToString(CultureInfo.InvariantCulture),
+                    IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+                    _ => value.ToString() ?? string.Empty
+                };
             }
             else
             {

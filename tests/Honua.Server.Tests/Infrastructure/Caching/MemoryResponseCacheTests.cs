@@ -237,10 +237,10 @@ public class MemoryResponseCacheTests : IDisposable
         var longKey = "long-lived";
 
         // Act
-        await _cache.SetAsync(shortKey, "short-value", TimeSpan.FromMilliseconds(50));
+        await _cache.SetAsync(shortKey, "short-value", TimeSpan.FromMilliseconds(100));
         await _cache.SetAsync(longKey, "long-value", TimeSpan.FromMinutes(5));
 
-        await Task.Delay(100); // Wait for short-lived to expire
+        await Task.Delay(300); // Wait for short-lived to expire (generous margin)
 
         // Assert
         Assert.Null(await _cache.GetAsync<string>(shortKey));

@@ -193,6 +193,16 @@ internal static partial class Log
     public static partial void DatabaseConnectionStringNotConfigured(ILogger logger);
 
     /// <summary>
+    /// Logs an error when no database connection string is configured in production.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    [LoggerMessage(
+        EventId = 4016,
+        Level = LogLevel.Error,
+        Message = "No database connection string configured. The application will not be able to serve data requests.")]
+    public static partial void DatabaseConnectionStringMissingInProduction(ILogger logger);
+
+    /// <summary>
     /// Logs when database migrations are deliberately skipped.
     /// </summary>
     /// <param name="logger">The logger instance.</param>

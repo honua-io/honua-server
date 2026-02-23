@@ -411,7 +411,7 @@ internal static class GeoServicesGeometryConverter
         return valid.Count == points.Length ? points : valid.ToArray();
     }
 
-    private static GeoServicesGeometry ConvertGeometryToGeoServicesGeometry(Geometry geometry, GeoServicesSpatialReference? spatialReference)
+    private static GeoServicesGeometry? ConvertGeometryToGeoServicesGeometry(Geometry geometry, GeoServicesSpatialReference? spatialReference)
     {
         return geometry switch
         {
@@ -422,7 +422,7 @@ internal static class GeoServicesGeometryConverter
             Polygon polygon => ConvertPolygon(polygon, spatialReference),
             MultiPolygon multiPolygon => ConvertMultiPolygon(multiPolygon, spatialReference),
             GeometryCollection collection => ConvertGeometryCollection(collection, spatialReference),
-            _ => throw new ArgumentException($"Unsupported geometry type: {geometry.GeometryType}")
+            _ => null
         };
     }
 
@@ -506,7 +506,7 @@ internal static class GeoServicesGeometryConverter
         return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Rings = rings.ToArray(), SpatialReference = spatialReference };
     }
 
-    private static GeoServicesGeometry ConvertGeometryCollection(GeometryCollection collection, GeoServicesSpatialReference? spatialReference)
+    private static GeoServicesGeometry? ConvertGeometryCollection(GeometryCollection collection, GeoServicesSpatialReference? spatialReference)
     {
         var points = new List<Point>();
         var lines = new List<LineString>();
@@ -535,7 +535,8 @@ internal static class GeoServicesGeometryConverter
                     polygons.AddRange(multiPolygon.Geometries.Cast<Polygon>());
                     break;
                 default:
-                    throw new ArgumentException($"Unsupported geometry type: {collection.GetGeometryN(i).GeometryType}");
+                    // Unsupported sub-geometry type; return null to let the caller handle gracefully
+                    return null;
             }
         }
 
@@ -554,7 +555,9 @@ internal static class GeoServicesGeometryConverter
             return ConvertMultiPoint(collection.Factory.CreateMultiPoint(points.ToArray()), spatialReference);
         }
 
-        throw new ArgumentException("GeometryCollection cannot be represented as GeoServices JSON.");
+        // Mixed geometry types cannot be represented in GeoServices JSON; return null
+        // so the feature is still returned with its attributes but without geometry
+        return null;
     }
 
     private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon)

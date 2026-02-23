@@ -143,6 +143,19 @@ public class Cql2LexerTests
     }
 
     [Fact]
+    public void Tokenize_MultipleDecimalPoints_StopsAtSecondDot()
+    {
+        // "1.2.3" should tokenize as number "1.2", dot ".", number "3" — not as one token
+        var lexer = new Cql2Lexer("1.2.3");
+
+        var tokens = lexer.Tokenize();
+
+        // The first token should be "1.2", stopping at the second decimal point
+        tokens[0].Type.Should().Be(Cql2TokenType.Number);
+        tokens[0].Value.Should().Be("1.2");
+    }
+
+    [Fact]
     public void Tokenize_StringLiteral_HandlesEscapedQuotes()
     {
         // Arrange

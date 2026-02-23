@@ -14,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -315,6 +316,62 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections/test")]
+    public async Task TestDraftConnection_UsesRequestedSslMode_WhenBuildingConnectionString()
+    {
+        // Arrange
+        var capturingBuilder = new CapturingConnectionStringBuilder();
+        var localFixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseConnectionStringBuilder>();
+                services.AddSingleton<IDatabaseConnectionStringBuilder>(capturingBuilder);
+
+                services.RemoveAll<IConnectionHealthTester>();
+                services.AddSingleton<IConnectionHealthTester>(new AlwaysHealthyConnectionTester());
+            });
+
+        try
+        {
+            await localFixture.InitializeAsync();
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = $"draft-sslmode-{Guid.NewGuid():N}",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                Password = "testpassword123",
+                SslRequired = true,
+                SslMode = "VerifyFull"
+            };
+
+            var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
+            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await client.PostAsync("/api/v1/admin/connections/test", content);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturingBuilder.LastSslMode.Should().Be(SslMode.VerifyFull);
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections/encryption/validate")]
     public async Task ValidateEncryption_WithAdminAuth_ReturnsValidationResult()
     {
@@ -472,23 +529,42 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections/encryption/rotate-key")]
-    public async Task RotateEncryptionKey_WithAdminAuth_ReturnsRotationResult()
+    public async Task RotateEncryptionKey_WithAdminAuth_ReturnsBadRequest_BecauseRotationNotSupported()
     {
-        using var scope = _fixture.Services.CreateScope();
-        var encryptionService = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
-        var previousVersion = await encryptionService.GetCurrentKeyVersionAsync();
-
         var response = await _client.PostAsync("/api/v1/admin/connections/encryption/rotate-key", null);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Key rotation is not supported at runtime (requires re-deployment with new master key)
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse<KeyRotationResult>>(responseJson, _jsonOptions);
+        var apiResponse = JsonSerializer.Deserialize<ApiResponse<object>>(responseJson, _jsonOptions);
 
         Assert.NotNull(apiResponse);
-        Assert.True(apiResponse.Success);
-        Assert.NotNull(apiResponse.Data);
-        Assert.Equal(previousVersion, apiResponse.Data.PreviousKeyVersion);
-        Assert.True(apiResponse.Data.NewKeyVersion > previousVersion);
+        Assert.False(apiResponse.Success);
+    }
+
+    private sealed class CapturingConnectionStringBuilder : IDatabaseConnectionStringBuilder
+    {
+        public SslMode LastSslMode { get; private set; } = SslMode.Require;
+
+        public string BuildConnectionString(
+            string host,
+            int port,
+            string databaseName,
+            string username,
+            string password,
+            SslMode sslMode)
+        {
+            LastSslMode = sslMode;
+            return "Host=localhost;Port=5432;Database=test;Username=test;Password=test;SslMode=Require";
+        }
+    }
+
+    private sealed class AlwaysHealthyConnectionTester : IConnectionHealthTester
+    {
+        public Task<bool> TestConnectionAsync(string connectionString, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
+        }
     }
 }
