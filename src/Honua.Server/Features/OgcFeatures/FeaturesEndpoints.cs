@@ -30,6 +30,7 @@ internal static partial class FeaturesEndpoints
             .Produces<FeatureCollection>(200, MediaTypes.GeoJson)
             .Produces<FeatureCollection>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Gml)
+            .Produces<string>(200, MediaTypes.Csv)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(400)
             .Produces(404);
@@ -43,6 +44,7 @@ internal static partial class FeaturesEndpoints
             .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
             .Produces<GeoJsonFeature>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Gml)
+            .Produces<string>(200, MediaTypes.Csv)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404)
             .Produces(400);

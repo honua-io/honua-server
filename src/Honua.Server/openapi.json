@@ -182,7 +182,7 @@
             "name": "f",
             "in": "query",
             "required": false,
-            "description": "Output format (json, geojson, gml, xml, or html)",
+            "description": "Output format (json, geojson, gml, xml, csv, or html)",
             "schema": {
               "type": "string",
               "enum": [
@@ -190,6 +190,7 @@
                 "geojson",
                 "gml",
                 "xml",
+                "csv",
                 "html"
               ]
             }
@@ -313,6 +314,11 @@
                 }
               },
               "application/gml+xml;version=3.2": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/csv": {
                 "schema": {
                   "type": "string"
                 }
@@ -579,7 +585,7 @@
             "name": "f",
             "in": "query",
             "required": false,
-            "description": "Output format (json, geojson, gml, xml, or html)",
+            "description": "Output format (json, geojson, gml, xml, csv, or html)",
             "schema": {
               "type": "string",
               "enum": [
@@ -587,6 +593,7 @@
                 "geojson",
                 "gml",
                 "xml",
+                "csv",
                 "html"
               ]
             }
@@ -617,6 +624,11 @@
                 }
               },
               "application/gml+xml;version=3.2": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/csv": {
                 "schema": {
                   "type": "string"
                 }

@@ -32,6 +32,7 @@ internal static class OgcCommonUtilities
             ["geojson"] = MediaTypes.GeoJson,
             ["gml"] = MediaTypes.Gml,
             ["xml"] = MediaTypes.Gml,
+            ["csv"] = MediaTypes.Csv,
             ["html"] = MediaTypes.Html
         };
 
@@ -47,6 +48,7 @@ internal static class OgcCommonUtilities
         MediaTypes.GeoJson,
         MediaTypes.Json,
         MediaTypes.Gml,
+        MediaTypes.Csv,
         MediaTypes.Html
     ];
 

@@ -72,6 +72,7 @@ internal static class OgcFeaturesUtilities
         new FormatOption("geojson", MediaTypes.GeoJson, "GeoJSON"),
         new FormatOption("json", MediaTypes.Json, "JSON"),
         new FormatOption("gml", MediaTypes.Gml, "GML"),
+        new FormatOption("csv", MediaTypes.Csv, "CSV"),
         new FormatOption("html", MediaTypes.Html, "HTML"));
 
     // CRS constants

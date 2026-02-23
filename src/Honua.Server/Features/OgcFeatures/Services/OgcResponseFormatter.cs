@@ -639,14 +639,49 @@ internal static class OgcResponseFormatter
                 row.Add(value);
             }
 
-            // Simplified geometry representation
-            var geometryValue = feature.Geometry?.Type ?? "";
+            var geometryValue = BuildCsvGeometryValue(feature.Geometry);
             row.Add(geometryValue);
 
             builder.AppendLine(string.Join(",", row.Select(EscapeCsvField)));
         }
 
         return builder.ToString();
+    }
+
+    private static string BuildCsvGeometryValue(SimpleGeoJsonGeometry? geometry)
+    {
+        if (geometry == null || string.IsNullOrWhiteSpace(geometry.Type))
+        {
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(geometry.CoordinatesJson))
+        {
+            return JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["type"] = geometry.Type
+            });
+        }
+
+        try
+        {
+            using var coordinatesDocument = JsonDocument.Parse(geometry.CoordinatesJson);
+            using var outputStream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(outputStream))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", geometry.Type);
+                writer.WritePropertyName("coordinates");
+                coordinatesDocument.RootElement.WriteTo(writer);
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(outputStream.ToArray());
+        }
+        catch (JsonException)
+        {
+            return geometry.Type;
+        }
     }
 
     private static string EscapeCsvField(string field)
