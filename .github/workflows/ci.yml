@@ -270,8 +270,8 @@ jobs:
         run: |
           dotnet build tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
             --configuration Release
-          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps
-          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install
+          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps chromium
+          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install chromium
           dotnet test Honua.sln \
             --no-restore \
             --configuration Release \
