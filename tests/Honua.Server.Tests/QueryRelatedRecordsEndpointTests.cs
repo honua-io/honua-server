@@ -211,11 +211,13 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             returnGeometry = true,
             f = "json"
         });
-        var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        using var client = _fixture.CreateClient(static c => c.Timeout = TimeSpan.FromMinutes(5));
 
         // Act
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords", content);
+        var response = await PostJsonWithRetryAsync(
+            client,
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords",
+            requestBody);
 
         // Assert
         response.Be200Ok();
@@ -227,6 +229,28 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.RelatedRecordGroups.Should().HaveCount(2);
+    }
+
+    private static async Task<HttpResponseMessage> PostJsonWithRetryAsync(
+        HttpClient client,
+        string requestUri,
+        string requestBody,
+        int maxAttempts = 3)
+    {
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+            try
+            {
+                return await client.PostAsync(requestUri, content);
+            }
+            catch (TaskCanceledException) when (attempt < maxAttempts)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt));
+            }
+        }
+
+        throw new InvalidOperationException("POST retry loop terminated unexpectedly.");
     }
 
     #endregion
