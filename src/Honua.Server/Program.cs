@@ -265,9 +265,15 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
     options.EnableBasicAuthCompatibility =
         builder.Configuration.GetValue("Authentication:BasicCompatibility:Enabled",
             builder.Configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
-    options.RequireHttpsForBasicAuth =
-        builder.Configuration.GetValue("Authentication:BasicCompatibility:RequireHttps",
-            builder.Configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
+
+    // Enforce HTTPS for basic auth in production - override configuration for security
+    var requireHttpsForBasicAuth = builder.Configuration.GetValue("Authentication:BasicCompatibility:RequireHttps",
+        builder.Configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
+
+    // Always require HTTPS for basic auth in non-development environments
+    options.RequireHttpsForBasicAuth = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test")
+        ? requireHttpsForBasicAuth
+        : true;
 });
 
 // Configure OIDC authentication options
@@ -350,6 +356,13 @@ if (activeDbConnectionTracker != null)
 if (forwardedHeadersEnabled)
 {
     app.UseForwardedHeaders();
+}
+
+// Add HTTPS redirection middleware to enforce HTTPS for all requests
+// This ensures API keys and sensitive data are never transmitted over HTTP
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
 }
 
 app.Use(async (context, next) =>

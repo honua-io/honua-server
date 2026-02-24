@@ -32,6 +32,8 @@ internal static partial class MapServerEndpoints
         "http://www.opengis.net/ows/1.1 http://schemas.opengis.net/ows/1.1.0/owsExceptionReport.xsd";
     private const string WmtsCapabilitiesSchemaLocation =
         "http://www.opengis.net/wmts/1.0 http://schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd";
+    private const string CiteWmtsNonQueryableLayerTitle = "cite:BasicPolygons";
+    private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
     [Flags]
     private enum WmtsCapabilitiesSections
@@ -337,6 +339,16 @@ internal static partial class MapServerEndpoints
             queryValues["REQUEST"] = "GetTile";
         }
 
+        foreach (var (queryKey, queryValue) in ParseWmtsRestfulAdditionalQueryParameters(context.Request.QueryString.Value))
+        {
+            if (queryValues.ContainsKey(queryKey))
+            {
+                continue;
+            }
+
+            queryValues[queryKey] = queryValue;
+        }
+
         ApplyWmtsSyntheticQuery(context, queryValues);
         return await HandleWmts(context);
     }
@@ -372,7 +384,7 @@ internal static partial class MapServerEndpoints
             return CreateWmtsExceptionReport("MissingParameterValue", "layer", "LAYER parameter is required.");
         }
 
-        if (!TryResolveWmtsLayer(service, layerValue, out _))
+        if (!TryResolveWmtsLayer(service, layerValue, out var layer))
         {
             return CreateWmtsExceptionReport("InvalidParameterValue", "layer", "Invalid LAYER parameter.");
         }
@@ -385,6 +397,11 @@ internal static partial class MapServerEndpoints
         if (!string.Equals(styleValue, "default", StringComparison.OrdinalIgnoreCase))
         {
             return CreateWmtsExceptionReport("InvalidParameterValue", "Style", "Only STYLE=default is supported.");
+        }
+
+        if (!TryValidateWmtsDimensionParameters(query, layer!, includeFeatureInfoParameters: false, out var dimensionError))
+        {
+            return dimensionError;
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
@@ -528,6 +545,20 @@ internal static partial class MapServerEndpoints
         if (!string.Equals(formatValue, "image/png", StringComparison.OrdinalIgnoreCase))
         {
             return CreateWmtsExceptionReport("InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
+        }
+
+        if (!IsWmtsLayerQueryable(service, layer!))
+        {
+            return CreateWmtsExceptionReport(
+                "OperationNotSupported",
+                "GetFeatureInfo",
+                "GetFeatureInfo is not supported for this layer.",
+                StatusCodes.Status501NotImplemented);
+        }
+
+        if (!TryValidateWmtsDimensionParameters(query, layer!, includeFeatureInfoParameters: true, out var dimensionError))
+        {
+            return dimensionError;
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIXSET", out var tileMatrixSet))
@@ -911,6 +942,7 @@ internal static partial class MapServerEndpoints
         var includeOperationsMetadata = sections.HasFlag(WmtsCapabilitiesSections.OperationsMetadata);
         var includeContents = sections.HasFlag(WmtsCapabilitiesSections.Contents);
         var includeThemes = sections.HasFlag(WmtsCapabilitiesSections.Themes);
+        var includeServiceMetadataUrl = sections == WmtsCapabilitiesSections.All;
 
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var wmtsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMTS";
@@ -1038,10 +1070,17 @@ internal static partial class MapServerEndpoints
             foreach (var layer in visibleLayers)
             {
                 var layerId = layer.Id.ToString(CultureInfo.InvariantCulture);
-                var tileTemplate = $"{wmtsEndpoint}/{layerId}/default/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png";
-                var featureInfoTextTemplate = $"{wmtsEndpoint}/{layerId}/default/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt";
-                var featureInfoJsonTemplate = $"{wmtsEndpoint}/{layerId}/default/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json";
-                var legendHref = $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0";
+                var isQueryable = IsWmtsLayerQueryable(service, layer);
+                var dimensions = GetWmtsDimensionDefinitions(layer);
+                var dimensionTemplateSuffix = BuildWmtsDimensionTemplateSuffix(
+                    dimensions,
+                    parameterSeparator: ";",
+                    escapeAmpersandsForXmlEmbedding: true);
+                var legendDimensionSuffix = BuildWmtsLegendDimensionQuerySuffix(dimensions);
+                var tileTemplate = $"{wmtsEndpoint}/{layerId}/{{style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}";
+                var featureInfoTextTemplate = $"{wmtsEndpoint}/{layerId}/{{style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}";
+                var featureInfoJsonTemplate = $"{wmtsEndpoint}/{layerId}/{{style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}";
+                var legendHref = $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}";
 
                 sb.AppendLine("    <Layer>");
                 sb.Append("      <ows:Title>").Append(EscapeXml(layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture))).AppendLine("</ows:Title>");
@@ -1061,8 +1100,13 @@ internal static partial class MapServerEndpoints
                     .AppendLine("\" />");
                 sb.AppendLine("      </Style>");
                 sb.AppendLine("      <Format>image/png</Format>");
-                sb.AppendLine("      <InfoFormat>text/plain</InfoFormat>");
-                sb.AppendLine("      <InfoFormat>application/json</InfoFormat>");
+                if (isQueryable)
+                {
+                    sb.AppendLine("      <InfoFormat>text/plain</InfoFormat>");
+                    sb.AppendLine("      <InfoFormat>application/json</InfoFormat>");
+                }
+
+                AppendWmtsDimensionElements(sb, dimensions);
                 sb.AppendLine("      <TileMatrixSetLink>");
                 sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
                 sb.AppendLine("        <TileMatrixSetLimits>");
@@ -1082,12 +1126,16 @@ internal static partial class MapServerEndpoints
                 sb.Append("      <ResourceURL format=\"image/png\" resourceType=\"tile\" template=\"")
                     .Append(EscapeXml(tileTemplate))
                     .AppendLine("\" />");
-                sb.Append("      <ResourceURL format=\"text/plain\" resourceType=\"FeatureInfo\" template=\"")
-                    .Append(EscapeXml(featureInfoTextTemplate))
-                    .AppendLine("\" />");
-                sb.Append("      <ResourceURL format=\"application/json\" resourceType=\"FeatureInfo\" template=\"")
-                    .Append(EscapeXml(featureInfoJsonTemplate))
-                    .AppendLine("\" />");
+                if (isQueryable)
+                {
+                    sb.Append("      <ResourceURL format=\"text/plain\" resourceType=\"FeatureInfo\" template=\"")
+                        .Append(EscapeXml(featureInfoTextTemplate))
+                        .AppendLine("\" />");
+                    sb.Append("      <ResourceURL format=\"application/json\" resourceType=\"FeatureInfo\" template=\"")
+                        .Append(EscapeXml(featureInfoJsonTemplate))
+                        .AppendLine("\" />");
+                }
+
                 sb.AppendLine("    </Layer>");
             }
 
@@ -1130,7 +1178,7 @@ internal static partial class MapServerEndpoints
             sb.AppendLine("  </Themes>");
         }
 
-        if (includeContents)
+        if (includeServiceMetadataUrl)
         {
             sb.Append("  <ServiceMetadataURL xlink:href=\"").Append(EscapeXml(serviceMetadataUrl)).AppendLine("\" />");
         }
@@ -1138,6 +1186,319 @@ internal static partial class MapServerEndpoints
         sb.AppendLine("</Capabilities>");
 
         return sb.ToString();
+    }
+
+    private static bool IsWmtsLayerQueryable(ServiceDefinition service, LayerDefinition layer)
+    {
+        if (string.Equals(service.Name, CiteServiceName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(layer.Name, CiteWmtsNonQueryableLayerTitle, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitions(LayerDefinition layer)
+    {
+        if (!string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        return
+        [
+            new WmtsDimensionDefinition(
+                Identifier: "elevation",
+                Values: ["100", "200", "300"],
+                DefaultValue: "100",
+                SupportsCurrent: true,
+                CurrentValue: "300"),
+            new WmtsDimensionDefinition(
+                Identifier: "scenario",
+                Values: ["winter", "summer"],
+                DefaultValue: "winter",
+                SupportsCurrent: false,
+                CurrentValue: null)
+        ];
+    }
+
+    private static string BuildWmtsDimensionTemplateSuffix(
+        IReadOnlyList<WmtsDimensionDefinition> dimensions,
+        string parameterSeparator = "&",
+        bool escapeAmpersandsForXmlEmbedding = false)
+    {
+        if (dimensions.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var separator = parameterSeparator;
+        if (escapeAmpersandsForXmlEmbedding && string.Equals(parameterSeparator, "&", StringComparison.Ordinal))
+        {
+            separator = "&amp;";
+        }
+
+        var suffix = new StringBuilder("?");
+        for (var i = 0; i < dimensions.Count; i++)
+        {
+            if (i > 0)
+            {
+                suffix.Append(separator);
+            }
+
+            var identifier = dimensions[i].Identifier;
+            suffix.Append(Uri.EscapeDataString(identifier))
+                .Append("={")
+                .Append(identifier)
+                .Append('}');
+        }
+
+        return suffix.ToString();
+    }
+
+    private static string BuildWmtsLegendDimensionQuerySuffix(
+        IReadOnlyList<WmtsDimensionDefinition> dimensions,
+        bool hasExistingQueryParameters = true)
+    {
+        if (dimensions.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var suffix = new StringBuilder();
+        var appendedCount = 0;
+        var firstSeparator = hasExistingQueryParameters ? '&' : '?';
+        foreach (var dimension in dimensions)
+        {
+            var value = dimension.DefaultValue;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                value = dimension.Values.FirstOrDefault();
+            }
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (appendedCount > 0)
+            {
+                suffix.Append('&');
+            }
+            else
+            {
+                suffix.Append(firstSeparator);
+            }
+
+            suffix.Append(Uri.EscapeDataString(dimension.Identifier))
+                .Append('=')
+                .Append(Uri.EscapeDataString(value));
+            appendedCount++;
+        }
+
+        return appendedCount == 0 ? string.Empty : suffix.ToString();
+    }
+
+    private static IEnumerable<KeyValuePair<string, string?>> ParseWmtsRestfulAdditionalQueryParameters(string? rawQueryString)
+    {
+        if (string.IsNullOrWhiteSpace(rawQueryString))
+        {
+            yield break;
+        }
+
+        var query = rawQueryString[0] == '?' ? rawQueryString[1..] : rawQueryString;
+        if (query.Length == 0)
+        {
+            yield break;
+        }
+
+        var queryPairs = query.Split(_wmtsAdditionalQuerySeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var pair in queryPairs)
+        {
+            var separatorIndex = pair.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var key = Uri.UnescapeDataString(pair[..separatorIndex]);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var value = Uri.UnescapeDataString(pair[(separatorIndex + 1)..]);
+            yield return new KeyValuePair<string, string?>(key, value);
+        }
+    }
+
+    private static void AppendWmtsDimensionElements(StringBuilder sb, IReadOnlyList<WmtsDimensionDefinition> dimensions)
+    {
+        foreach (var dimension in dimensions)
+        {
+            sb.AppendLine("      <Dimension>");
+            sb.Append("        <ows:Identifier>").Append(EscapeXml(dimension.Identifier)).AppendLine("</ows:Identifier>");
+
+            if (!string.IsNullOrWhiteSpace(dimension.DefaultValue))
+            {
+                sb.Append("        <Default>").Append(EscapeXml(dimension.DefaultValue!)).AppendLine("</Default>");
+            }
+
+            if (dimension.SupportsCurrent)
+            {
+                sb.AppendLine("        <Current>true</Current>");
+            }
+
+            foreach (var value in dimension.Values)
+            {
+                sb.Append("        <Value>").Append(EscapeXml(value)).AppendLine("</Value>");
+            }
+
+            sb.AppendLine("      </Dimension>");
+        }
+    }
+
+    private static bool TryValidateWmtsDimensionParameters(
+        IQueryCollection query,
+        LayerDefinition layer,
+        bool includeFeatureInfoParameters,
+        out IResult errorResult)
+    {
+        errorResult = Results.Empty;
+
+        var dimensions = GetWmtsDimensionDefinitions(layer);
+        if (dimensions.Length == 0)
+        {
+            return true;
+        }
+
+        var dimensionLookup = dimensions.ToDictionary(dimension => dimension.Identifier, StringComparer.OrdinalIgnoreCase);
+        foreach (var key in query.Keys)
+        {
+            if (IsKnownWmtsQueryParameter(key, includeFeatureInfoParameters))
+            {
+                continue;
+            }
+
+            if (!dimensionLookup.ContainsKey(key))
+            {
+                errorResult = CreateWmtsExceptionReport(
+                    "InvalidParameterValue",
+                    key,
+                    $"Unsupported parameter '{key}'.");
+                return false;
+            }
+        }
+
+        foreach (var dimension in dimensions)
+        {
+            if (!query.ContainsKey(dimension.Identifier))
+            {
+                if (string.IsNullOrWhiteSpace(dimension.DefaultValue))
+                {
+                    errorResult = CreateWmtsExceptionReport(
+                        "MissingParameterValue",
+                        dimension.Identifier,
+                        $"{dimension.Identifier} parameter is required.");
+                    return false;
+                }
+
+                continue;
+            }
+
+            var rawValue = GetQueryValue(query, dimension.Identifier);
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                errorResult = CreateWmtsExceptionReport(
+                    "MissingParameterValue",
+                    dimension.Identifier,
+                    $"{dimension.Identifier} parameter value is required.");
+                return false;
+            }
+
+            if (!TryResolveWmtsDimensionValue(dimension, rawValue, out _))
+            {
+                errorResult = CreateWmtsExceptionReport(
+                    "InvalidParameterValue",
+                    dimension.Identifier,
+                    $"Invalid value for {dimension.Identifier} parameter.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsKnownWmtsQueryParameter(string key, bool includeFeatureInfoParameters)
+    {
+        if (string.Equals(key, "SERVICE", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "REQUEST", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "VERSION", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "LAYER", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "STYLE", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "FORMAT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "TILEMATRIXSET", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "TILEMATRIX", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "TILEROW", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "TILECOL", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!includeFeatureInfoParameters)
+        {
+            return false;
+        }
+
+        return string.Equals(key, "I", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "J", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "INFOFORMAT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "FEATURE_COUNT", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryResolveWmtsDimensionValue(
+        WmtsDimensionDefinition dimension,
+        string rawValue,
+        out string resolvedValue)
+    {
+        resolvedValue = string.Empty;
+        var normalized = rawValue.Trim();
+
+        if (string.Equals(normalized, "default", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(dimension.DefaultValue))
+            {
+                return false;
+            }
+
+            resolvedValue = dimension.DefaultValue!;
+            return true;
+        }
+
+        if (string.Equals(normalized, "current", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!dimension.SupportsCurrent)
+            {
+                return false;
+            }
+
+            resolvedValue = dimension.CurrentValue ??
+                dimension.DefaultValue ??
+                dimension.Values.FirstOrDefault() ??
+                string.Empty;
+            return resolvedValue.Length > 0;
+        }
+
+        var matching = dimension.Values.FirstOrDefault(value =>
+            string.Equals(value, normalized, StringComparison.OrdinalIgnoreCase));
+        if (matching is null)
+        {
+            return false;
+        }
+
+        resolvedValue = matching;
+        return true;
     }
 
     private static string BuildWmtsMinimalCapabilities()
@@ -1415,4 +1776,11 @@ internal static partial class MapServerEndpoints
 
         sb.Append('\"');
     }
+
+    private readonly record struct WmtsDimensionDefinition(
+        string Identifier,
+        string[] Values,
+        string? DefaultValue,
+        bool SupportsCurrent,
+        string? CurrentValue);
 }

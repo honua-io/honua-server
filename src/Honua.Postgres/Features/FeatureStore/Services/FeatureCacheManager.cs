@@ -107,7 +107,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tableSchema = string.IsNullOrEmpty(schemaName) ? null : schemaName;
-        _layerCatalogSchema = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName;
+        _layerCatalogSchema = "honua";
         var quotedSchema = global::Honua.Postgres.Features.Infrastructure.SchemaSearchPath.ValidateAndQuote(_layerCatalogSchema);
         _layerCatalogTable = $"{quotedSchema}.\"layers\"";
     }

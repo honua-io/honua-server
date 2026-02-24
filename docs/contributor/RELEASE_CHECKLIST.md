@@ -5,6 +5,8 @@ Use this checklist for every MVP release.
 ## Core Release Gates
 
 - [ ] CI green on `trunk`
+- [ ] Full production audit run completed: `./scripts/run-production-audit.sh --mode full`
+- [ ] Audit artifacts reviewed and attached from `.audit/runs/<timestamp>/summary.md`
 - [ ] Conformance workflows pass (OGC Features, OGC Tiles, WMS, WMTS)
 - [ ] OpenAPI contract governance checks pass
 - [ ] Control-plane SDK artifacts generated and attached to release

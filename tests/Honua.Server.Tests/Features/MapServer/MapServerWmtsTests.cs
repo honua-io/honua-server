@@ -141,6 +141,7 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
         content.Should().Contain("<Themes>");
         content.Should().Contain("resourceType=\"FeatureInfo\"");
         content.Should().Contain("/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png");
+        content.Should().Contain("/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png");
 
         var themesIndex = content.IndexOf("<Themes>", StringComparison.Ordinal);
         var serviceMetadataIndex = content.IndexOf("<ServiceMetadataURL ", StringComparison.Ordinal);
@@ -201,6 +202,20 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
         content.Should().Contain("<Themes>");
         content.Should().Contain("<LayerRef>");
         content.Should().NotContain("<Contents>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_SectionsContents_ExcludesServiceMetadataUrl()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&SECTIONS=Contents");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<Contents>");
+        content.Should().NotContain("<ServiceMetadataURL ");
     }
 
     [IntegrationTest]

@@ -1,0 +1,2 @@
+agent	phase	check	required	status	duration_seconds	log_path	notes
+architecture	1	dotnet-format-verify	required	PASS	63	.audit/runs/20260224T183347Z/logs/phase1-architecture-dotnet-format-verify.log	

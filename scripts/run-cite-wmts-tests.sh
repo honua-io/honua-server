@@ -26,6 +26,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="default"
+SKIP_BUILD=false
 WMTS_FAIL_EARLY="off"
 WMTS_INCLUDE_COMMON_OPERATIONS_TESTS="on"
 WMTS_INCLUDE_GETCAPABILITIES_TESTS="on"
@@ -82,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -90,6 +95,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Use specific CITE profile (minimal|default|full)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             exit 0
             ;;
@@ -118,13 +124,17 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! docker build -t honua-server:latest . > /dev/null 2>&1; then
-    echo -e "${RED}Failed to build Honua Server Docker image${NC}"
-    exit 1
-fi
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    echo -e "${YELLOW}Skipping Docker image build; using existing honua-server:latest${NC}"
+else
+    echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
+    if ! docker build -t honua-server:latest . > /dev/null 2>&1; then
+        echo -e "${RED}Failed to build Honua Server Docker image${NC}"
+        exit 1
+    fi
 
-echo -e "${GREEN}Honua Server image built successfully${NC}"
+    echo -e "${GREEN}Honua Server image built successfully${NC}"
+fi
 
 cleanup() {
     if [[ "$CLEANUP" == "true" && "$INTERACTIVE" == "false" ]]; then
@@ -196,6 +206,11 @@ if [[ -z "$POSTGRES_CONTAINER" ]]; then
 fi
 
 docker cp docker/cite-mapserver-seed.sql "$POSTGRES_CONTAINER":/tmp/cite-mapserver-seed.sql
+if ! docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='honua_cite_wmts'" | grep -q 1; then
+    echo "Creating honua_cite_wmts database..."
+    docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "CREATE DATABASE honua_cite_wmts;" >/dev/null
+fi
+
 docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite_wmts -f /tmp/cite-mapserver-seed.sql >/dev/null
 echo -e "${GREEN}CITE WMTS database seeded${NC}"
 

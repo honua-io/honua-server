@@ -58,7 +58,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".wkt"] = SupportedFileFormat.Wkt,
             [".zip"] = SupportedFileFormat.Shapefile,
             [".gpkg"] = SupportedFileFormat.GeoPackage,
-            [".gpx"] = SupportedFileFormat.Gpx
+            [".gpx"] = SupportedFileFormat.Gpx,
+            [".csv"] = SupportedFileFormat.Csv
         }
         .ToFrozenDictionary();
     private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
@@ -434,6 +435,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
@@ -969,6 +971,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
                 SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
@@ -1027,6 +1030,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
+                SupportedFileFormat.Csv => 4326,
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
                 _ => null
@@ -1079,6 +1083,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
+            SupportedFileFormat.Csv => 4326,
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             _ => null
         };

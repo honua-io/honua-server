@@ -47,6 +47,11 @@ public enum SupportedFileFormat
     Wkt,
 
     /// <summary>
+    /// Comma-separated values (.csv)
+    /// </summary>
+    Csv,
+
+    /// <summary>
     /// Tiny Well-Known Binary format (.twkb)
     /// </summary>
     TinyWkb

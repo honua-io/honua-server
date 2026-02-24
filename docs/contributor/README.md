@@ -30,6 +30,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest Esri compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
 - [Benchmarks](benchmarks.md) — BenchmarkDotNet performance tests
+- [Production Audit Playbook](PRODUCTION_AUDIT_PLAYBOOK.md) — phased production-readiness audit execution
 - [OData Test Parity](ODATA_TEST_PARITY.md) — OData v4 specification compliance
 - [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
 - [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance

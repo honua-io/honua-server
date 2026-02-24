@@ -411,6 +411,11 @@ internal static partial class SecureConnectionEndpoints
             return TypedResults.Created($"/api/v1/admin/connections/{createdConnection.ConnectionId}",
                 ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Failed to create secure connection due to invalid operation");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to create secure connection");
@@ -662,7 +667,7 @@ internal static partial class SecureConnectionEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<KeyRotationResult>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<KeyRotationResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleRotateEncryptionKey(
             [FromServices] IConnectionEncryptionService encryptionService,
             HttpContext context,
@@ -684,6 +689,11 @@ internal static partial class SecureConnectionEndpoints
             logger.LogWarning("Encryption key rotated from {Previous} to {New}", previousVersion, newVersion);
 
             return TypedResults.Ok(ApiResponse<KeyRotationResult>.CreateSuccess(result));
+        }
+        catch (NotSupportedException ex)
+        {
+            logger.LogWarning(ex, "Encryption key rotation is not supported");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
         catch (Exception ex)
         {

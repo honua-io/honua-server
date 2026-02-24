@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
@@ -15,19 +16,26 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// This implementation provides comprehensive performance monitoring using the .NET Metrics API
 /// and integrates with OpenTelemetry for telemetry export.
 /// </remarks>
-internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider, IHttpRequestMetricsSnapshotProvider
+internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider, IHttpRequestMetricsSnapshotProvider
 {
     private readonly ConcurrentDictionary<string, CacheOperationCounters> _cacheCounters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, LatencyTracker> _operationLatencyTrackers = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gcLock = new();
     private long _lastGen0Collections = -1;
     private long _lastGen1Collections = -1;
     private long _lastGen2Collections = -1;
     private readonly RequestMetricsAggregator _requestMetrics;
+    private readonly MemoryPressureTracker _memoryTracker;
+    private readonly ILogger<DefaultPerformanceMonitor>? _logger;
 
-    public DefaultPerformanceMonitor(IOptions<PerformanceMonitoringOptions>? options = null)
+    public DefaultPerformanceMonitor(
+        IOptions<PerformanceMonitoringOptions>? options = null,
+        ILogger<DefaultPerformanceMonitor>? logger = null)
     {
         var slowThresholdMs = options?.Value.SlowRequestThreshold.TotalMilliseconds ?? 1000.0;
         _requestMetrics = new RequestMetricsAggregator(slowThresholdMs);
+        _memoryTracker = new MemoryPressureTracker();
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -207,6 +215,139 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
         histogram.Record(value, tagPairs);
     }
 
+    /// <inheritdoc />
+    public void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null)
+    {
+        var durationMs = duration.TotalMilliseconds;
+        var tags = new List<KeyValuePair<string, object?>>
+        {
+            new("operation_type", operationType),
+            new("coordinate_count", coordinateCount.ToString(CultureInfo.InvariantCulture))
+        };
+
+        if (fromSrid.HasValue)
+        {
+            tags.Add(new("from_srid", fromSrid.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (toSrid.HasValue)
+        {
+            tags.Add(new("to_srid", toSrid.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        var tagArray = tags.ToArray();
+
+        // Record to specific metrics based on operation type
+        switch (operationType.ToLowerInvariant())
+        {
+            case "transform":
+            case "coordinate_transform":
+                PerformanceMetrics.CoordinateTransformDuration.Record(durationMs, tagArray);
+                PerformanceMetrics.CoordinateTransformCount.Add(1, tagArray);
+                break;
+
+            case "spatial_query":
+            case "intersects":
+            case "contains":
+            case "overlaps":
+            case "within":
+                PerformanceMetrics.SpatialQueryDuration.Record(durationMs, tagArray);
+                PerformanceMetrics.SpatialQueryCount.Add(1, tagArray);
+                break;
+
+            case "spatial_filter":
+            case "buffer":
+            case "simplify":
+                PerformanceMetrics.SpatialFilterDuration.Record(durationMs, tagArray);
+                PerformanceMetrics.SpatialFilterCount.Add(1, tagArray);
+                break;
+
+            default:
+                // Fall back to general geometry metrics
+                PerformanceMetrics.GeometryOperationDuration.Record(durationMs, tagArray);
+                PerformanceMetrics.GeometryOperationCount.Add(1, tagArray);
+                PerformanceMetrics.GeometryComplexity.Record(coordinateCount, tagArray);
+                break;
+        }
+
+        // Track latency percentiles
+        var latencyKey = $"geospatial_{operationType}";
+        var tracker = _operationLatencyTrackers.GetOrAdd(latencyKey, _ => new LatencyTracker());
+        tracker.RecordLatency(durationMs);
+    }
+
+    /// <inheritdoc />
+    public void RecordMemoryPressure(double memoryPressurePercent, long allocatedMB, long availableMB)
+    {
+        PerformanceMetrics.AllocatedMemoryMB.Record(allocatedMB);
+
+        var isHighPressure = _memoryTracker.RecordPressure(memoryPressurePercent);
+
+        if (isHighPressure)
+        {
+            PerformanceMetrics.HighMemoryPressureAlerts.Add(1);
+
+            if (_logger != null)
+            {
+                PerformanceMonitorLog.HighMemoryPressureDetected(
+                    _logger, memoryPressurePercent, allocatedMB, availableMB);
+            }
+        }
+
+        var tags = new KeyValuePair<string, object?>[]
+        {
+            new("pressure_level", GetPressureLevel(memoryPressurePercent))
+        };
+
+        PerformanceMetrics.CreateHistogram("honua_memory_pressure_detailed").Record(memoryPressurePercent, tags);
+    }
+
+    /// <inheritdoc />
+    public void RecordCacheLatency(string cacheType, string operation, TimeSpan duration, bool success = true)
+    {
+        var tags = new KeyValuePair<string, object?>[]
+        {
+            new("cache_type", cacheType),
+            new("operation", operation),
+            new("success", success.ToString().ToLowerInvariant())
+        };
+
+        PerformanceMetrics.CacheOperationLatency.Record(duration.TotalMilliseconds, tags);
+
+        if (!success)
+        {
+            PerformanceMetrics.CacheErrors.Add(1, tags);
+        }
+
+        // Track cache latency percentiles
+        var latencyKey = $"cache_{cacheType}_{operation}";
+        var tracker = _operationLatencyTrackers.GetOrAdd(latencyKey, _ => new LatencyTracker());
+        tracker.RecordLatency(duration.TotalMilliseconds);
+    }
+
+    /// <inheritdoc />
+    public void RecordErrorWithContext(string errorType, string operation, IDictionary<string, object>? context, Exception? exception = null)
+    {
+        var tags = new List<KeyValuePair<string, object?>>
+        {
+            new("error_type", errorType),
+            new("operation", operation)
+        };
+
+        if (exception != null)
+        {
+            tags.Add(new("exception_type", exception.GetType().Name));
+        }
+
+        PerformanceMetrics.ApplicationErrors.Add(1, tags.ToArray());
+
+        if (_logger != null && context != null)
+        {
+            using var scope = _logger.BeginScope(context);
+            PerformanceMonitorLog.ErrorWithContext(_logger, errorType, operation, exception);
+        }
+    }
+
     /// <summary>
     /// Converts a dictionary of tags to KeyValuePair array for metrics.
     /// </summary>
@@ -220,6 +361,22 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
         }
 
         return tags.Select(kvp => new KeyValuePair<string, object?>(kvp.Key, kvp.Value)).ToArray();
+    }
+
+    /// <summary>
+    /// Gets the pressure level category for the given pressure percentage.
+    /// </summary>
+    /// <param name="pressurePercent">Memory pressure percentage</param>
+    /// <returns>Pressure level category</returns>
+    private static string GetPressureLevel(double pressurePercent)
+    {
+        return pressurePercent switch
+        {
+            < 50 => "low",
+            < 70 => "medium",
+            < 85 => "high",
+            _ => "critical"
+        };
     }
 
     /// <summary>
@@ -412,5 +569,122 @@ internal sealed class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMet
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Tracks latency metrics and calculates percentiles.
+    /// </summary>
+    private sealed class LatencyTracker
+    {
+        private const int SampleSize = 100;
+        private readonly double[] _samples = new double[SampleSize];
+        private int _index = -1;
+        private readonly object _lock = new();
+
+        public void RecordLatency(double latencyMs)
+        {
+            lock (_lock)
+            {
+                var nextIndex = Interlocked.Increment(ref _index);
+                _samples[nextIndex % SampleSize] = latencyMs;
+            }
+        }
+
+        public LatencyPercentiles GetPercentiles()
+        {
+            lock (_lock)
+            {
+                var values = _samples.Where(v => v > 0).ToArray();
+                if (values.Length == 0)
+                {
+                    return new LatencyPercentiles(0, 0, 0, 0);
+                }
+
+                Array.Sort(values);
+
+                var p50Index = (int)(values.Length * 0.5) - 1;
+                var p95Index = (int)(values.Length * 0.95) - 1;
+                var p99Index = (int)(values.Length * 0.99) - 1;
+
+                p50Index = Math.Max(0, p50Index);
+                p95Index = Math.Max(0, p95Index);
+                p99Index = Math.Max(0, p99Index);
+
+                return new LatencyPercentiles(
+                    values.Average(),
+                    values[p50Index],
+                    values[p95Index],
+                    values[p99Index]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Represents latency percentile measurements.
+    /// </summary>
+    private sealed record LatencyPercentiles(double Average, double P50, double P95, double P99);
+
+    /// <summary>
+    /// Tracks memory pressure and triggers alerts for sustained high pressure.
+    /// </summary>
+    private sealed class MemoryPressureTracker
+    {
+        private const int HighPressureThreshold = 80;
+        private const int CriticalPressureThreshold = 90;
+        private const int ConsecutiveHighPressureLimit = 3;
+
+        private readonly Queue<double> _recentMeasurements = new(10);
+        private int _consecutiveHighPressure;
+        private DateTime _lastAlertTime = DateTime.MinValue;
+        private readonly TimeSpan _alertCooldown = TimeSpan.FromMinutes(5);
+
+        public bool RecordPressure(double pressurePercent)
+        {
+            _recentMeasurements.Enqueue(pressurePercent);
+            if (_recentMeasurements.Count > 10)
+            {
+                _recentMeasurements.Dequeue();
+            }
+
+            var isHighPressure = pressurePercent >= HighPressureThreshold;
+
+            if (isHighPressure)
+            {
+                _consecutiveHighPressure++;
+            }
+            else
+            {
+                _consecutiveHighPressure = 0;
+            }
+
+            // Trigger alert if we have sustained high pressure and haven't alerted recently
+            var shouldAlert = (_consecutiveHighPressure >= ConsecutiveHighPressureLimit ||
+                              pressurePercent >= CriticalPressureThreshold) &&
+                             DateTime.UtcNow - _lastAlertTime > _alertCooldown;
+
+            if (shouldAlert)
+            {
+                _lastAlertTime = DateTime.UtcNow;
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Logging definitions for performance monitoring.
+    /// </summary>
+    private static partial class PerformanceMonitorLog
+    {
+        [LoggerMessage(7001, LogLevel.Warning,
+            "High memory pressure detected: {PressurePercent:F1}% (Allocated: {AllocatedMB}MB, Available: {AvailableMB}MB)")]
+        public static partial void HighMemoryPressureDetected(
+            ILogger logger, double pressurePercent, long allocatedMB, long availableMB);
+
+        [LoggerMessage(7002, LogLevel.Error,
+            "Error in operation {Operation} of type {ErrorType}")]
+        public static partial void ErrorWithContext(
+            ILogger logger, string errorType, string operation, Exception? exception);
     }
 }

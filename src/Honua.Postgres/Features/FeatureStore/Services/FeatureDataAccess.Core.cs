@@ -106,7 +106,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
             return;
         }
 
-        _performanceMonitor.RecordDatabaseQuery(
+        _performanceMonitor?.RecordDatabaseQuery(
             queryType,
             layerId.ToString(CultureInfo.InvariantCulture),
             TimeSpan.FromMilliseconds(elapsedMs),

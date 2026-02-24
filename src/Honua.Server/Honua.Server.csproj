@@ -9,9 +9,12 @@
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
     <StripSymbols>true</StripSymbols>
     <DefaultItemExcludes>$(DefaultItemExcludes);publish/**</DefaultItemExcludes>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Suppress trim warnings from Serilog and endpoint mapping for AOT compatibility -->
     <!-- Suppress obsolete warnings for deprecated interfaces during transition period -->
     <!-- Suppress analyzer warnings that are not critical for compilation -->
+    <!-- Temporarily allow CS1591 while establishing warnings-as-errors framework -->
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CS0618;CS0612;CA1041;CA1000;CA1848;CA1862;IDE0051;IDE0052;IDE0005</NoWarn>
   </PropertyGroup>
 

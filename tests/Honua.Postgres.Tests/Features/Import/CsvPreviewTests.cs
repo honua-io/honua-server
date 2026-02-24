@@ -3,132 +3,85 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Import;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Postgres.Tests.Features.Import;
 
-public sealed class GeoPackagePreviewTests
+public sealed class CsvPreviewTests
 {
     [Fact]
-    public async Task PreviewFileAsync_GeoPackage_ReturnsLayerMetadataAndAttributes()
+    public async Task PreviewFileAsync_CsvWithLongitudeLatitudeColumns_ReturnsPreviewMetadata()
     {
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var csv = """
+            id,name,longitude,latitude,category
+            1,San Francisco,-122.4194,37.7749,city
+            2,Oakland,-122.2711,37.8044,city
+            """;
 
-        try
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "sample.csv");
+
+        preview.Format.Should().Be(SupportedFileFormat.Csv);
+        preview.DetectedSrid.Should().Be(4326);
+        preview.TotalFeatureCount.Should().Be(2);
+        preview.SampleProperties.Should().ContainKey("name");
+        preview.SampleProperties["name"].Should().Be("San Francisco");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_CsvWithWktGeometryColumn_ReturnsPreviewMetadata()
+    {
+        var csv = """
+            id,name,wkt
+            1,Test Feature,POINT(-122.4194 37.7749)
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "sample.csv");
+
+        preview.Format.Should().Be(SupportedFileFormat.Csv);
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.SampleProperties.Should().ContainKey("name");
+        preview.SampleProperties["name"].Should().Be("Test Feature");
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_CsvWithExcessivelyLargeRecord_ThrowsInvalidOperationException()
+    {
+        // Create a CSV with an unbalanced quote that would cause unbounded memory allocation
+        // This simulates a malicious CSV designed to exhaust memory
+        var csvBuilder = new StringBuilder();
+        csvBuilder.AppendLine("id,name,description");
+        csvBuilder.Append("1,Test,\"This is a very long field that never closes the quote");
+
+        // Add enough data to exceed the 10MB limit
+        var largeData = new string('x', 5 * 1024 * 1024); // 5MB of data
+        csvBuilder.AppendLine(largeData);
+        csvBuilder.AppendLine(largeData); // Another 5MB, total > 10MB
+        csvBuilder.AppendLine("more data to push over the limit");
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csvBuilder.ToString()));
+
+        // The streaming reader should throw before consuming all available memory
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            CreateGeoPackage(filePath);
-
-            await using var stream = File.OpenRead(filePath);
-            var service = CreateService();
-
-            var preview = await service.PreviewFileAsync(stream, "sample.gpkg");
-
-            preview.Format.Should().Be(SupportedFileFormat.GeoPackage);
-            preview.AvailableLayers.Should().Contain("sample_layer");
-            preview.DetectedSrid.Should().Be(4326);
-            preview.TotalFeatureCount.Should().Be(1);
-            preview.SampleProperties.Should().ContainKey("name");
-            preview.SampleProperties["name"].Should().Be("Test Feature");
-        }
-        finally
-        {
-            if (File.Exists(filePath))
+            await foreach (var feature in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
             {
-                File.Delete(filePath);
+                // Should not reach here due to the memory limit
             }
-        }
-    }
+        });
 
-    private static void CreateGeoPackage(string filePath)
-    {
-        using var connection = new SqliteConnection($"Data Source={filePath}");
-        connection.Open();
-
-        ExecuteNonQuery(connection, """
-            CREATE TABLE gpkg_spatial_ref_sys (
-                srs_name TEXT NOT NULL,
-                srs_id INTEGER NOT NULL PRIMARY KEY,
-                organization TEXT NOT NULL,
-                organization_coordsys_id INTEGER NOT NULL,
-                definition TEXT NOT NULL,
-                description TEXT
-            );
-            """);
-
-        ExecuteNonQuery(connection, """
-            INSERT INTO gpkg_spatial_ref_sys (srs_name, srs_id, organization, organization_coordsys_id, definition, description)
-            VALUES ('WGS 84', 4326, 'EPSG', 4326, 'EPSG:4326', 'WGS 84');
-            """);
-
-        ExecuteNonQuery(connection, """
-            CREATE TABLE gpkg_contents (
-                table_name TEXT NOT NULL PRIMARY KEY,
-                data_type TEXT NOT NULL,
-                identifier TEXT,
-                description TEXT DEFAULT '',
-                last_change DATETIME NOT NULL,
-                min_x DOUBLE,
-                min_y DOUBLE,
-                max_x DOUBLE,
-                max_y DOUBLE,
-                srs_id INTEGER
-            );
-            """);
-
-        ExecuteNonQuery(connection, """
-            CREATE TABLE gpkg_geometry_columns (
-                table_name TEXT NOT NULL,
-                column_name TEXT NOT NULL,
-                geometry_type_name TEXT NOT NULL,
-                srs_id INTEGER NOT NULL,
-                z TINYINT NOT NULL,
-                m TINYINT NOT NULL,
-                PRIMARY KEY (table_name, column_name)
-            );
-            """);
-
-        ExecuteNonQuery(connection, """
-            CREATE TABLE sample_layer (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                geom BLOB,
-                name TEXT
-            );
-            """);
-
-        ExecuteNonQuery(connection, """
-            INSERT INTO gpkg_contents (table_name, data_type, identifier, description, last_change, srs_id)
-            VALUES ('sample_layer', 'features', 'sample_layer', 'Sample layer', CURRENT_TIMESTAMP, 4326);
-            """);
-
-        ExecuteNonQuery(connection, """
-            INSERT INTO gpkg_geometry_columns (table_name, column_name, geometry_type_name, srs_id, z, m)
-            VALUES ('sample_layer', 'geom', 'POINT', 4326, 0, 0);
-            """);
-
-        var geometry = new GeometryFactory(new PrecisionModel(), 4326)
-            .CreatePoint(new Coordinate(-122.4, 37.6));
-        var writer = new GeoPackageGeoWriter();
-        var geometryBytes = writer.Write(geometry);
-
-        using var insert = connection.CreateCommand();
-        insert.CommandText = "INSERT INTO sample_layer (geom, name) VALUES ($geom, $name);";
-        insert.Parameters.AddWithValue("$geom", geometryBytes);
-        insert.Parameters.AddWithValue("$name", "Test Feature");
-        insert.ExecuteNonQuery();
-    }
-
-    private static void ExecuteNonQuery(SqliteConnection connection, string sql)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.ExecuteNonQuery();
+        exception.Message.Should().Contain("CSV record exceeds maximum size limit");
+        exception.Message.Should().Contain("10,485,760 bytes");
     }
 
     private static StreamingFileImportService CreateService()

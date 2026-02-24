@@ -105,4 +105,16 @@ internal static partial class FileStorageLog
         Level = LogLevel.Warning,
         Message = "Failed to report upload progress for {UploadId}")]
     public static partial void ProgressUpdateFailed(ILogger logger, Exception exception, string uploadId);
+
+    [LoggerMessage(
+        EventId = 5421,
+        Level = LogLevel.Information,
+        Message = "Cleaned up cancelled upload {UploadId}, removed temp file {TempFileId}")]
+    public static partial void CleanupCancelledUpload(ILogger logger, string uploadId, string tempFileId);
+
+    [LoggerMessage(
+        EventId = 5422,
+        Level = LogLevel.Warning,
+        Message = "Failed to cleanup cancelled upload {UploadId}")]
+    public static partial void CleanupCancelledUploadFailed(ILogger logger, string uploadId, Exception exception);
 }

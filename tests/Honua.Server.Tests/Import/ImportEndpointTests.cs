@@ -47,6 +47,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Should().Contain(".kml");
         content.Should().Contain(".gpkg");
         content.Should().Contain(".gpx");
+        content.Should().Contain(".csv");
         content.Should().Contain(".zip");
     }
 
@@ -66,6 +67,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Should().Contain(".kml");
         content.Should().Contain(".gpkg");
         content.Should().Contain(".gpx");
+        content.Should().Contain(".csv");
         content.Should().Contain(".zip");
     }
 
