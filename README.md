@@ -151,6 +151,7 @@ infrastructure/
 | Deploy to production | [Infrastructure](infrastructure/README.md) |
 | Call the API | [Standards APIs](docs/user/STANDARDS_APIS.md) / [API Examples](docs/user/API_EXAMPLES.md) |
 | Manage services and layers | [Control Plane API](docs/user/CONTROL_PLANE_API.md) |
+| Check MVP compatibility limits | [MVP Compatibility Contract](docs/user/MVP_COMPATIBILITY_CONTRACT.md) |
 | Understand the architecture | [Architecture](docs/contributor/ARCHITECTURE.md) / [ADRs](docs/contributor/adr/README.md) |
 | Configure security | [Security Configuration](docs/devops/security.md) |
 | Troubleshoot issues | [Troubleshooting](docs/devops/troubleshooting.md) / [Runbooks](docs/devops/runbooks/README.md) |

@@ -31,6 +31,7 @@ internal static class GeoservicesCatalogEndpoints
             .WithSummary("List available GeoServices endpoints")
             .WithDescription("Returns FeatureServer, MapServer, and ImageServer service directory entries.")
             .WithTags("GeoServices Catalog")
+            .CacheOutput("ServiceDirectory")
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 

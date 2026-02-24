@@ -14,7 +14,7 @@ namespace Honua.Server.Features.FileStorage;
 
 internal sealed class AwsS3FileStorage : CloudFileStorageBase
 {
-    private static readonly TimeSpan _defaultSignedUrlLifetime = TimeSpan.FromMinutes(15);
+    private readonly TimeSpan _signedUrlLifetime;
 
     private readonly AwsS3Options _options;
     private readonly AmazonS3Client _client;
@@ -28,6 +28,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         ArgumentNullException.ThrowIfNull(options);
 
         var resolved = options.Value ?? throw new ArgumentNullException(nameof(options));
+        _signedUrlLifetime = resolved.SignedUrlLifetime;
         _options = resolved.AwsS3 ?? throw new InvalidOperationException("AWS S3 options are not configured.");
 
         if (string.IsNullOrWhiteSpace(_options.BucketName))
@@ -339,7 +340,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             BucketName = _options.BucketName,
             Key = fileId,
             Verb = HttpVerb.GET,
-            Expires = DateTime.UtcNow.Add(expiresIn ?? _defaultSignedUrlLifetime)
+            Expires = DateTime.UtcNow.Add(expiresIn ?? _signedUrlLifetime)
         };
 
         return _client.GetPreSignedURL(request);
@@ -366,7 +367,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             Key = objectKey,
             Verb = HttpVerb.PUT,
             ContentType = contentType,
-            Expires = DateTime.UtcNow.Add(expiresIn ?? _defaultSignedUrlLifetime)
+            Expires = DateTime.UtcNow.Add(expiresIn ?? _signedUrlLifetime)
         };
 
         var url = _client.GetPreSignedURL(request);

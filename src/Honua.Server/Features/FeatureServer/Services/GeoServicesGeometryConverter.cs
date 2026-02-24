@@ -15,6 +15,9 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// </summary>
 internal static class GeoServicesGeometryConverter
 {
+    [ThreadStatic]
+    private static WKBReader? _wkbReader;
+
     /// <summary>
     /// Converts WKB geometry to GeoServices format.
     /// </summary>
@@ -28,7 +31,7 @@ internal static class GeoServicesGeometryConverter
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        var reader = new WKBReader();
+        var reader = GetWkbReader();
         Geometry geometry;
 
         try
@@ -65,6 +68,12 @@ internal static class GeoServicesGeometryConverter
             : null;
 
         return ConvertGeometryToGeoServicesGeometry(geometry, spatialReference);
+    }
+
+    private static WKBReader GetWkbReader()
+    {
+        _wkbReader ??= new WKBReader();
+        return _wkbReader;
     }
 
     /// <summary>

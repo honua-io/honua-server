@@ -15,6 +15,7 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// </summary>
 internal sealed class FeatureServerQueryExecutor
 {
+    private const int FlushInterval = 64;
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly StreamingQueryFormatter _streamingFormatter;
@@ -151,10 +152,15 @@ internal sealed class FeatureServerQueryExecutor
         writer.WriteStartArray("objectIds");
 
         var features = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
+        var idsSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             writer.WriteNumberValue(feature.Id);
-            await writer.FlushAsync(cancellationToken);
+            if (++idsSinceFlush >= FlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                idsSinceFlush = 0;
+            }
         }
 
         writer.WriteEndArray();

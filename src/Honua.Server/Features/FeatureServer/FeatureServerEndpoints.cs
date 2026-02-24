@@ -227,6 +227,13 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns domain definitions including coded values and ranges for service fields")
             .WithTags("FeatureServer");
 
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/relationships", HandleQueryRelationships)
+            .WithDisplayName("Query Relationships")
+            .WithName("QueryRelationships")
+            .WithSummary("Query relationship metadata for a service")
+            .WithDescription("Returns relationship definitions across all layers in the feature service")
+            .WithTags("FeatureServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/validateSQL", HandleValidateSql)
             .WithDisplayName("Validate SQL")
             .WithName("ValidateSQL")

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Caching.Memory;
@@ -12,14 +13,17 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 {
     private readonly IMemoryCache _cache;
     private readonly ConcurrentDictionary<string, byte> _keys = new(StringComparer.Ordinal);
+    private readonly int _maxEntries;
     private bool _disposed;
 
-    public MemoryResponseCache(IMemoryCache cache, ILogger<MemoryResponseCache> logger)
+    public MemoryResponseCache(IMemoryCache cache, ILogger<MemoryResponseCache> logger, int maxEntries = 10000)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxEntries, 1);
 
         _cache = cache;
+        _maxEntries = maxEntries;
     }
 
     public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
@@ -54,6 +58,11 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
                 _keys.TryRemove(evicted, out _);
             }
         });
+
+        if (_keys.Count >= _maxEntries)
+        {
+            TrimEntries();
+        }
 
         _cache.Set(key, value, options);
         _keys[key] = 0;
@@ -147,6 +156,22 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 
         _keys.Clear();
         _disposed = true;
+    }
+
+    private void TrimEntries()
+    {
+        var excess = _keys.Count - _maxEntries + 1;
+        if (excess <= 0)
+        {
+            excess = Math.Max(1, _maxEntries / 20);
+        }
+
+        var keysToEvict = _keys.Keys.Take(excess).ToArray();
+        foreach (var candidate in keysToEvict)
+        {
+            _cache.Remove(candidate);
+            _keys.TryRemove(candidate, out _);
+        }
     }
 
     private static void ValidateKey(string key)

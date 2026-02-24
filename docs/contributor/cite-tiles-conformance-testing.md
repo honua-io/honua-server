@@ -38,8 +38,16 @@ The CITE test suite validates that Honua Server correctly implements the OGC API
 ### Running in CI
 
 CITE Tiles tests run automatically:
+- On pull requests to `trunk`/`main` that touch OGC Tiles/CITE files
+- On pushes to `trunk`/`main` that touch OGC Tiles/CITE files
 - Weekly via scheduled workflow (Tuesdays at 6am UTC)
 - Manually via workflow dispatch
+
+## CI Baseline
+
+- `failed_tests` must be `0`
+- `total_tests` must be greater than `0`
+- Results are uploaded as artifacts, including markdown summary and raw TeamEngine outputs
 
 ## Test Profiles
 

@@ -39,6 +39,12 @@ public sealed record CloudStorageOptions
     public AzureBlobOptions? AzureBlob { get; set; }
 
     /// <summary>
+    /// Lifetime for pre-signed download/upload URLs.
+    /// Default: 15 minutes.
+    /// </summary>
+    public TimeSpan SignedUrlLifetime { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
     /// Whether to enable automatic cleanup of expired files
     /// </summary>
     public bool EnableAutomaticCleanup { get; set; } = true;

@@ -43,6 +43,68 @@ public sealed class RedisScaleOutTests
         instanceIds.Should().HaveCountGreaterOrEqualTo(2, "scale tests should exercise multiple instances via nginx");
     }
 
+    [ScaleTest(BaseUrlEnv)]
+    [Operation(Operations.TestInfrastructure)]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /odata/$metadata")]
+    [Endpoint("GET /ogc/features")]
+    public async Task LoadBalancer_EmitsInstanceHeaders_ForRestOgcAndODataPaths()
+    {
+        using var client = CreateClient();
+        var paths = new[]
+        {
+            "/rest/services?f=json",
+            "/ogc/features",
+            "/odata/$metadata"
+        };
+
+        foreach (var path in paths)
+        {
+            using var response = await SendRequestAsync(client, path);
+            ((int)response.StatusCode).Should().BeLessThan(500, $"upstream should respond for '{path}'");
+            await response.Content.ReadAsByteArrayAsync();
+
+            var hasInstanceHeader = response.Headers.TryGetValues("X-Instance-ID", out var instanceHeaders);
+            hasInstanceHeader.Should().BeTrue($"scale-test nginx should emit X-Instance-ID for '{path}'");
+
+            var instanceId = instanceHeaders?.FirstOrDefault();
+            instanceId.Should().NotBeNullOrWhiteSpace($"X-Instance-ID should identify the upstream instance for '{path}'");
+        }
+    }
+
+    [ScaleTest(BaseUrlEnv)]
+    [Operation(Operations.TestInfrastructure)]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /odata/$metadata")]
+    public async Task LoadBalancer_DistributesRequestsAcrossInstances_ForRestAndOData()
+    {
+        using var client = CreateClient();
+        var restInstances = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var odataInstances = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < 15; i++)
+        {
+            using (var restResponse = await SendRequestAsync(client, "/rest/services?f=json"))
+            {
+                ((int)restResponse.StatusCode).Should().BeLessThan(500);
+                await restResponse.Content.ReadAsByteArrayAsync();
+                restResponse.Headers.TryGetValues("X-Instance-ID", out var headers).Should().BeTrue();
+                restInstances.Add(headers!.First());
+            }
+
+            using (var odataResponse = await SendRequestAsync(client, "/odata/$metadata"))
+            {
+                ((int)odataResponse.StatusCode).Should().BeLessThan(500);
+                await odataResponse.Content.ReadAsByteArrayAsync();
+                odataResponse.Headers.TryGetValues("X-Instance-ID", out var headers).Should().BeTrue();
+                odataInstances.Add(headers!.First());
+            }
+        }
+
+        restInstances.Should().HaveCountGreaterOrEqualTo(2, "REST requests should route to multiple Honua instances");
+        odataInstances.Should().HaveCountGreaterOrEqualTo(2, "OData requests should route to multiple Honua instances");
+    }
+
     [ScaleTest(BaseUrlEnv, RedisEnv)]
     [Operation(Operations.Cache)]
     [Endpoint("GET /ogc/features")]

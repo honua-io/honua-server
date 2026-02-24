@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.Import;
@@ -502,7 +503,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
 /// </summary>
 internal sealed partial class UniversalImportJobService : IImportJobService, IDisposable
 {
-    private readonly IFileImportService _importService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<UniversalImportJobService> _logger;
@@ -511,12 +512,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private bool _disposed;
 
     public UniversalImportJobService(
-        IFileImportService importService,
+        IServiceScopeFactory scopeFactory,
         IUniversalProgressStore progressStore,
         IPerformanceMonitor performanceMonitor,
         ILogger<UniversalImportJobService> logger)
     {
-        _importService = importService ?? throw new ArgumentNullException(nameof(importService));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -530,7 +531,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     {
         request.Validate();
 
-        var format = _importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
+        SupportedFileFormat format;
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
+            format = importService.DetectFormat(request.FileName) ?? SupportedFileFormat.GeoJson;
+        }
         var formatName = format.ToString();
 
         string jobId;
@@ -662,7 +668,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 }
             });
 
-            var result = await _importService.ImportFileAsync(request, progress, cancellationToken);
+            using var scope = _scopeFactory.CreateScope();
+            var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
+            var result = await importService.ImportFileAsync(request, progress, cancellationToken);
 
             if (_jobs.TryGetValue(jobId, out state))
             {

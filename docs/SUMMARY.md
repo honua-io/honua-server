@@ -15,6 +15,7 @@
 ### Coverage Matrices
 * [FeatureServer Coverage](user/feature-server-matrix.md)
 * [MapServer Coverage](user/map-server-matrix.md)
+* [OGC API Tiles Coverage](user/specifications/ogc-api-tiles-coverage.md)
 * [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
 * [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
 * [OGC API Features Part 1 Core](user/specifications/ogc-api-features-part1-core.md)
@@ -24,6 +25,9 @@
 
 ### Server Management API
 * [Admin API Reference](user/CONTROL_PLANE_API.md)
+* [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md)
+* [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md)
+* [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
 
 ### Interactive API Specs
 * [Interactive Documentation](api-specs/README.md)
@@ -72,6 +76,7 @@
 * [Shared Seed Data](contributor/test-seed-data.md)
 * [Benchmarks](contributor/benchmarks.md)
 * [OData Test Parity](contributor/ODATA_TEST_PARITY.md)
+* [Protocol Parity Audit (#305-#310)](contributor/PROTOCOL_PARITY_305_310_AUDIT.md)
 * [CITE OGC Features](contributor/cite-conformance-testing.md)
 * [CITE OGC Tiles](contributor/cite-tiles-conformance-testing.md)
 * [CITE WMS 1.3](contributor/cite-wms-conformance-testing.md)
@@ -81,5 +86,6 @@
 * [CI Monitoring](contributor/CI_MONITORING.md)
 * [CI Workflows](contributor/ci-workflows.md)
 * [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
+* [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 * [CodeCov Setup](contributor/CODECOV_SETUP.md)
 * [LLM Architecture Review](contributor/development/llm-review-setup.md)

@@ -119,6 +119,7 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/relationships"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL"),
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/tile.json"),
@@ -149,7 +150,10 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/MapServer/query"),
         new("GET", "/rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}"),
         new("GET", "/rest/services/{serviceId}/MapServer/WMTS"),
+        new("GET", "/rest/services/{serviceId}/MapServer/WMTS/{**restPath}"),
         new("GET", "/rest/services/{serviceId}/MapServer/WMS"),
+        new("GET", "/ogc/services/{serviceId}/wmts"),
+        new("GET", "/ogc/services/{serviceId}/wms"),
 
         new("GET", "/rest/services/{id}/ImageServer"),
         new("GET", "/rest/services/{id}/ImageServer/exportImage"),

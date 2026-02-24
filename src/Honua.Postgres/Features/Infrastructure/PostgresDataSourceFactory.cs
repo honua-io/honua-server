@@ -9,12 +9,6 @@ namespace Honua.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {
-    private const int DefaultMinPoolSize = 5;
-    private const int DefaultConnectionIdleLifetimeSeconds = 300;
-    private const int DefaultConnectionPruningIntervalSeconds = 10;
-    private const int DefaultCommandTimeoutSeconds = 30;
-    private const int DefaultBufferSizeBytes = 16384;
-
     public static NpgsqlDataSource Create(string connectionString, IConfiguration configuration, bool schemaHeadersEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -52,12 +46,12 @@ internal static class PostgresDataSourceFactory
             connectionStringBuilder.MaxPoolSize = limits.MaxConnectionPoolSize;
         }
 
-        connectionStringBuilder.MinPoolSize = Math.Min(DefaultMinPoolSize, connectionStringBuilder.MaxPoolSize);
-        connectionStringBuilder.ConnectionIdleLifetime = DefaultConnectionIdleLifetimeSeconds;
-        connectionStringBuilder.ConnectionPruningInterval = DefaultConnectionPruningIntervalSeconds;
-        connectionStringBuilder.CommandTimeout = DefaultCommandTimeoutSeconds;
-        connectionStringBuilder.WriteBufferSize = DefaultBufferSizeBytes;
-        connectionStringBuilder.ReadBufferSize = DefaultBufferSizeBytes;
+        connectionStringBuilder.MinPoolSize = Math.Min(limits.MinConnectionPoolSize, connectionStringBuilder.MaxPoolSize);
+        connectionStringBuilder.ConnectionIdleLifetime = limits.ConnectionIdleLifetimeSeconds;
+        connectionStringBuilder.ConnectionPruningInterval = limits.ConnectionPruningIntervalSeconds;
+        connectionStringBuilder.CommandTimeout = limits.CommandTimeoutSeconds;
+        connectionStringBuilder.WriteBufferSize = limits.BufferSizeBytes;
+        connectionStringBuilder.ReadBufferSize = limits.BufferSizeBytes;
         connectionStringBuilder.NoResetOnClose = !schemaHeadersEnabled;
         connectionStringBuilder.Multiplexing = !schemaHeadersEnabled;
 
@@ -76,7 +70,10 @@ internal static class PostgresDataSourceFactory
         }
 
         // SECURITY: Configure lock timeouts to prevent indefinite blocking
+        var lockTimeout = (int)limits.LockTimeout.TotalSeconds;
+        var statementTimeout = (int)limits.StatementTimeout.TotalSeconds;
+        var idleTimeout = (int)limits.IdleInTransactionTimeout.TotalSeconds;
         connectionStringBuilder.Options =
-            "-c lock_timeout=30s -c statement_timeout=120s -c idle_in_transaction_session_timeout=60s";
+            $"-c lock_timeout={lockTimeout}s -c statement_timeout={statementTimeout}s -c idle_in_transaction_session_timeout={idleTimeout}s";
     }
 }

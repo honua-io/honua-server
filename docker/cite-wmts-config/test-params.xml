@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<values xmlns:parsers="http://www.occamlab.com/te/parsers">
+  <parsers:session>
+    <parsers:test>ets-wmts10</parsers:test>
+    <parsers:profile>default</parsers:profile>
+  </parsers:session>
+  <value key="capabilities-url">http://honua-server:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&amp;REQUEST=GetCapabilities&amp;VERSION=1.0.0</value>
+  <value key="fail-early">on</value>
+  <value key="include-CommonOperations-tests">on</value>
+  <value key="include-GetCapabilities-tests">on</value>
+  <value key="include-GetTile-tests">on</value>
+  <value key="include-GetFeatureInfo-tests">off</value>
+  <value key="include-kvp-get-encoding">on</value>
+  <value key="include-restful-encoding">off</value>
+</values>

@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
@@ -99,14 +100,14 @@ internal static class OgcTilesUtilities
     /// </summary>
     public const string WorldCrs84Title = "World CRS84 Quad";
 
-    private const double WebMercatorExtent = 20037508.342789244;
+    private const double WebMercatorExtent = SpatialConstants.WebMercatorExtent;
     private const int DefaultTileSize = 256;
-    private const double PixelSizeMeters = 0.00028;
+    private const double PixelSizeMeters = SpatialConstants.PixelSizeMeters;
 
     /// <summary>
     /// Cell size in degrees per pixel at the equator (standardised OGC value).
     /// </summary>
-    private const double DegreesPerPixel = 0.00028 * 180.0 / 20037508.342789244;
+    private const double DegreesPerPixel = SpatialConstants.DegreesPerPixel;
 
     /// <summary>
     /// Determines whether the given tile matrix set identifier is supported.
@@ -235,6 +236,33 @@ internal static class OgcTilesUtilities
             WellKnownScaleSet = WorldCrs84ScaleSet,
             TileMatrices = tileMatrices.ToImmutableArray()
         };
+    }
+
+    /// <summary>
+    /// Builds tile matrix set limits for WebMercatorQuad (square tiles, 1×1 at zoom 0).
+    /// </summary>
+    public static ImmutableArray<TileMatrixSetLimit> BuildWebMercatorQuadLimits(TileLimits limits)
+    {
+        var minZoom = Math.Max(0, limits.MinTileZoom);
+        var maxZoom = Math.Max(minZoom, limits.MaxTileZoom);
+        var matrixLimits = new List<TileMatrixSetLimit>();
+
+        for (var zoom = minZoom; zoom <= maxZoom; zoom++)
+        {
+            var matrixSize = 1 << zoom;
+            var maxIndex = matrixSize - 1;
+
+            matrixLimits.Add(new TileMatrixSetLimit
+            {
+                TileMatrix = zoom.ToString(CultureInfo.InvariantCulture),
+                MinTileRow = 0,
+                MaxTileRow = maxIndex,
+                MinTileCol = 0,
+                MaxTileCol = maxIndex
+            });
+        }
+
+        return matrixLimits.ToImmutableArray();
     }
 
     /// <summary>

@@ -259,10 +259,56 @@ public sealed class ConnectionLimits
     public int MaxConnectionPoolSize { get; init; } = 100;
 
     /// <summary>
+    /// Minimum size of the database connection pool.
+    /// Clamped to not exceed <see cref="MaxConnectionPoolSize"/>.
+    /// </summary>
+    [Range(0, 100)]
+    public int MinConnectionPoolSize { get; init; } = 5;
+
+    /// <summary>
     /// Overall timeout for HTTP requests including database operations.
     /// Range: 10 seconds to 10 minutes.
     /// </summary>
     public TimeSpan RequestTimeout { get; init; } = TimeConstants.TwoMinutesTimeSpan;
+
+    /// <summary>
+    /// Default command timeout for database operations in seconds.
+    /// </summary>
+    [Range(5, 600)]
+    public int CommandTimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// PostgreSQL lock_timeout session parameter. Prevents indefinite blocking on row/table locks.
+    /// </summary>
+    public TimeSpan LockTimeout { get; init; } = TimeConstants.ThirtySecondsTimeSpan;
+
+    /// <summary>
+    /// PostgreSQL statement_timeout session parameter. Aborts statements that exceed this duration.
+    /// </summary>
+    public TimeSpan StatementTimeout { get; init; } = TimeConstants.TwoMinutesTimeSpan;
+
+    /// <summary>
+    /// PostgreSQL idle_in_transaction_session_timeout parameter. Terminates sessions idle inside a transaction.
+    /// </summary>
+    public TimeSpan IdleInTransactionTimeout { get; init; } = TimeConstants.OneMinuteTimeSpan;
+
+    /// <summary>
+    /// Connection idle lifetime in seconds before pruning from the pool.
+    /// </summary>
+    [Range(30, 3600)]
+    public int ConnectionIdleLifetimeSeconds { get; init; } = 300;
+
+    /// <summary>
+    /// Interval in seconds between connection pruning sweeps.
+    /// </summary>
+    [Range(1, 300)]
+    public int ConnectionPruningIntervalSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// Read and write buffer size in bytes for database connections.
+    /// </summary>
+    [Range(4096, 65536)]
+    public int BufferSizeBytes { get; init; } = 16384;
 }
 
 /// <summary>

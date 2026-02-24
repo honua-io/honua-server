@@ -245,6 +245,10 @@ cite-results/*
 cite-tiles-results/*
 !cite-tiles-results/cite-summary.md
 !cite-tiles-results/conformance.json
+client-compat-results/
+.tmp-cite/
+cite-wms-results/
+cite-wmts-results/
 
 # Environment files (keep examples, ignore actual configs)
 .env
@@ -253,6 +257,10 @@ cite-tiles-results/*
 .env.docker
 !.env.example
 !.env.*.example
+
+# Private keys
+*.pem
+scripts/setup-github-app-env.sh
 
 # AI assistant workspace files
 .serena/

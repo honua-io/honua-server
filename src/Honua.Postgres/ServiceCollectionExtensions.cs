@@ -195,13 +195,13 @@ internal static class ServiceCollectionExtensions
 
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking
-        services.AddScoped<IImportJobService>(serviceProvider =>
+        services.AddSingleton<IImportJobService>(serviceProvider =>
         {
-            var importService = serviceProvider.GetRequiredService<IFileImportService>();
+            var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
             var progressStore = serviceProvider.GetRequiredService<IUniversalProgressStore>();
             var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
             var logger = serviceProvider.GetRequiredService<ILogger<UniversalImportJobService>>();
-            return new UniversalImportJobService(importService, progressStore, performanceMonitor, logger);
+            return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger);
         });
 
         // Register ArcGIS REST client for Geoservices service imports

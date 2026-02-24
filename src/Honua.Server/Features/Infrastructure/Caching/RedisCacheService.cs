@@ -165,7 +165,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             return;
 
         string prefixedKey = GetPrefixedKey(key);
-        byte[] data = JsonSerializer.SerializeToUtf8Bytes(value, CacheJsonContext.Default.Options);
+        if (!TrySerialize(value, prefixedKey, out var data))
+        {
+            return;
+        }
 
         // Try Redis first if available
         if (_distributedCache != null)
@@ -217,8 +220,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 // If still at capacity, remove one entry by earliest expiry
                 if (_fallbackCache.Count >= _options.FallbackMaxEntries)
                 {
-                    var oldest = _fallbackCache.MinBy(x => x.Value.ExpiresAt);
-                    if (oldest.Key != null)
+                    var oldest = _fallbackCache
+                        .OrderBy(x => x.Value.ExpiresAt)
+                        .FirstOrDefault();
+                    if (!string.IsNullOrEmpty(oldest.Key))
                     {
                         _fallbackCache.TryRemove(oldest.Key, out _);
                     }
@@ -474,7 +479,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         try
         {
-            value = JsonSerializer.Deserialize<T>(data, CacheJsonContext.Default.Options);
+            var typeInfo = ResolveTypeInfo<T>();
+            value = JsonSerializer.Deserialize(data, typeInfo) as T;
             return value != null;
         }
         catch (JsonException ex)
@@ -489,6 +495,28 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, cacheKey, ex);
             return false;
         }
+    }
+
+    private bool TrySerialize<T>(T value, string cacheKey, out byte[] data) where T : class
+    {
+        try
+        {
+            var typeInfo = ResolveTypeInfo<T>();
+            data = JsonSerializer.SerializeToUtf8Bytes((object?)value, typeInfo);
+            return true;
+        }
+        catch (NotSupportedException ex)
+        {
+            data = Array.Empty<byte>();
+            RedisCacheServiceLog.CacheEntrySerializationFailed(_logger, cacheKey, ex);
+            return false;
+        }
+    }
+
+    private static System.Text.Json.Serialization.Metadata.JsonTypeInfo ResolveTypeInfo<T>() where T : class
+    {
+        return CacheJsonContext.Default.GetTypeInfo(typeof(T))
+            ?? throw new NotSupportedException($"Type '{typeof(T).FullName}' is not registered in {nameof(CacheJsonContext)}.");
     }
 
     private async Task RemoveCorruptRedisEntryAsync(string prefixedKey, CancellationToken cancellationToken)
@@ -776,5 +804,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1006, LogLevel.Debug, "Failed to acquire distributed lock for cache key {CacheKey}")]
         public static partial void DistributedLockFailed(ILogger logger, string cacheKey, Exception exception);
+
+        [LoggerMessage(1007, LogLevel.Warning, "Failed to serialize cache entry {CacheKey}")]
+        public static partial void CacheEntrySerializationFailed(ILogger logger, string cacheKey, Exception exception);
     }
 }

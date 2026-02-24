@@ -23,7 +23,7 @@ services:
       POSTGRESQL_CONF_shared_buffers: "256MB"
       POSTGRESQL_CONF_effective_cache_size: "1GB"
     ports:
-      - "5434:5432"
+      - "${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_scale_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
@@ -39,7 +39,7 @@ services:
     image: redis:7.4-alpine
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
-      - "6379:6379"
+      - "${HONUA_SCALE_TEST_REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -63,6 +63,9 @@ services:
       HONUA_INSTANCE_ID: "${HOSTNAME}"
       HONUA_ENABLE_METRICS: "true"
       HONUA_ENABLE_TRACING: "true"
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:-scale-test-master-key-that-is-at-least-32-characters-long}"
+      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:-c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=}"
       # Caching configuration
       Cache__Enabled: "true"
       Cache__EnableFallback: "true"
@@ -100,15 +103,15 @@ services:
   nginx:
     image: nginx:1.25-alpine
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "${HONUA_SCALE_TEST_HTTP_PORT:-8080}:80"
+      - "${HONUA_SCALE_TEST_HTTPS_PORT:-8443}:443"
     volumes:
       - ./docker/nginx/scale-test.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - honua
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/healthz/live"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/healthz/live"]
       interval: 30s
       timeout: 10s
       retries: 3

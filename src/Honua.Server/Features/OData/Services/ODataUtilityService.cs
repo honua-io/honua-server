@@ -429,19 +429,25 @@ internal static class ODataUtilityService
             return Results.NoContent();
         }
 
+        var contentType = GetODataContentType(context.Request, format);
         if (crudResult.Data is Dictionary<string, object?> dictionary)
         {
             return Results.Json(
                 dictionary,
                 ODataJsonContext.Default.DictionaryStringObject,
-                contentType: GetODataContentType(context.Request, format),
+                contentType: contentType,
                 statusCode: crudResult.StatusCode);
         }
 
+        if (crudResult.Data is null)
+        {
+            return Results.StatusCode(crudResult.StatusCode);
+        }
+
         return Results.Json(
-            crudResult.Data,
-            ODataJsonContext.Default.Options,
-            contentType: GetODataContentType(context.Request, format),
+            (object)crudResult.Data,
+            ODataJsonContext.Default.Object,
+            contentType: contentType,
             statusCode: crudResult.StatusCode);
     }
 

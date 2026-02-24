@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Import;
 
 /// <summary>
 /// Background service for processing Geoservices import jobs.
-/// Uses distributed leader election to ensure only one instance processes jobs at a time.
+/// Uses Redis leader election when available, with a local fallback leader when Redis is unavailable.
 /// </summary>
 internal sealed partial class GeoservicesImportBackgroundService : BackgroundService
 {
@@ -38,8 +38,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             try
             {
                 // Try to acquire or maintain leadership
-                var isLeader = _jobManager.LeaderElection.IsLeader ||
-                               await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken);
+                var isLeader = await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken);
 
                 if (!isLeader)
                 {
@@ -49,7 +48,13 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 }
 
                 // Send heartbeat to maintain leadership
-                await _jobManager.LeaderElection.HeartbeatAsync(stoppingToken);
+                var heartbeatMaintained = await _jobManager.LeaderElection.HeartbeatAsync(stoppingToken);
+                if (!heartbeatMaintained)
+                {
+                    Log.NotLeader(_logger, _jobManager.LeaderElection.InstanceId);
+                    await Task.Delay(_leaderCheckInterval, stoppingToken);
+                    continue;
+                }
 
                 // Try to dequeue and process a job
                 var jobId = await _jobManager.JobQueue.DequeueAsync(_pollInterval, stoppingToken);

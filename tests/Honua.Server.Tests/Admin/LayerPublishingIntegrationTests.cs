@@ -225,6 +225,44 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         api.Message.Should().Contain("Primary key field 'id' must be included in selected fields.");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WhenLayerTableIsEmpty_ReturnsCreated()
+    {
+        await ResetPublishedMetadataAsync();
+
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish sequence bootstrap integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+
+        publishApi.Should().NotBeNull();
+        publishApi!.Success.Should().BeTrue();
+        publishApi.Data.Should().NotBeNull();
+
+        _layerId = publishApi.Data!.LayerId;
+        _layerId.Value.Should().BeGreaterThan(0);
+    }
+
     private async Task CreatePostGisTableAsync()
     {
         var sql = $"""
@@ -326,5 +364,18 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             serviceCommand.Parameters.AddWithValue("serviceName", _serviceName);
             await serviceCommand.ExecuteNonQueryAsync();
         }
+    }
+
+    private async Task ResetPublishedMetadataAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM honua.layer_fields;
+            DELETE FROM honua.service_layers;
+            DELETE FROM honua.layers;
+            DELETE FROM honua.services;
+            """;
+        await command.ExecuteNonQueryAsync();
     }
 }

@@ -32,6 +32,9 @@ internal static class ObservabilityServiceCollectionExtensions
     // Configure output caching for metadata endpoints
     private static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration)
     {
+        var ttl = new OutputCacheTtlOptions();
+        configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
+
         services.AddOutputCache(options =>
         {
             // Add dynamic tags and restrict caching to anonymous requests only.
@@ -44,16 +47,24 @@ internal static class ObservabilityServiceCollectionExtensions
             // Service metadata caching policy
             options.AddPolicy("ServiceMetadata", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(5));
+                policy.Expire(ttl.ServiceMetadata);
                 policy.SetVaryByRouteValue("serviceId");
                 policy.SetVaryByQuery("f"); // Support for format parameter if used
                 policy.Tag("service-metadata", "metadata");
             });
 
+            // GeoServices service directory caching policy
+            options.AddPolicy("ServiceDirectory", policy =>
+            {
+                policy.Expire(ttl.ServiceDirectory);
+                policy.SetVaryByQuery("f");
+                policy.Tag("service-directory", "metadata");
+            });
+
             // Layer metadata caching policy
             options.AddPolicy("LayerMetadata", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(5));
+                policy.Expire(ttl.LayerMetadata);
                 policy.SetVaryByRouteValue("serviceId", "layerId");
                 policy.SetVaryByQuery("f"); // Support for format parameter if used
                 policy.Tag("layer-metadata", "metadata");
@@ -62,7 +73,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Features landing page caching policy
             options.AddPolicy("OgcLandingPage", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(30));
+                policy.Expire(ttl.OgcLandingPage);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-metadata", "metadata");
@@ -71,7 +82,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Features conformance caching policy
             options.AddPolicy("OgcConformance", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcConformance);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-metadata", "metadata");
@@ -80,7 +91,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Features collections list caching policy
             options.AddPolicy("OgcCollections", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcCollections);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-metadata", "metadata");
@@ -89,7 +100,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Features single collection caching policy
             options.AddPolicy("OgcCollection", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcCollection);
                 policy.SetVaryByRouteValue("collectionId");
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
@@ -98,7 +109,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
             options.AddPolicy("OgcOpenApi", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcOpenApi);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-metadata", "metadata");
@@ -107,7 +118,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles landing page caching policy
             options.AddPolicy("OgcTilesLandingPage", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(30));
+                policy.Expire(ttl.OgcTilesLandingPage);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
@@ -116,7 +127,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles conformance caching policy
             options.AddPolicy("OgcTilesConformance", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcTilesConformance);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
@@ -125,7 +136,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Maps conformance caching policy
             options.AddPolicy("OgcMapsConformance", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcMapsConformance);
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-maps", "metadata");
             });
@@ -133,7 +144,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles OpenAPI caching policy
             options.AddPolicy("OgcTilesOpenApi", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcTilesOpenApi);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
@@ -142,7 +153,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles collections list caching policy
             options.AddPolicy("OgcTilesCollections", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcTilesCollections);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
@@ -151,7 +162,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles single collection caching policy
             options.AddPolicy("OgcTilesCollection", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcTilesCollection);
                 policy.SetVaryByRouteValue("collectionId");
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
@@ -161,7 +172,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles tile matrix sets list caching policy
             options.AddPolicy("OgcTilesTileMatrixSets", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(12));
+                policy.Expire(ttl.OgcTilesTileMatrixSets);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
@@ -170,7 +181,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles tile matrix set caching policy
             options.AddPolicy("OgcTilesTileMatrixSet", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(12));
+                policy.Expire(ttl.OgcTilesTileMatrixSet);
                 policy.SetVaryByRouteValue("tileMatrixSetId");
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
@@ -180,7 +191,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles tilesets list caching policy
             options.AddPolicy("OgcTilesTilesets", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcTilesTilesets);
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
@@ -189,7 +200,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles dataset tileset metadata caching policy
             options.AddPolicy("OgcTilesDatasetTileset", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcTilesDatasetTileset);
                 policy.SetVaryByRouteValue("tileMatrixSetId");
                 policy.SetVaryByQuery("f", "collections");
                 policy.SetVaryByHeader("Accept");
@@ -199,7 +210,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles collection tilesets list caching policy
             options.AddPolicy("OgcTilesCollectionTilesets", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcTilesCollectionTilesets);
                 policy.SetVaryByRouteValue("collectionId");
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
@@ -209,7 +220,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles collection tileset metadata caching policy
             options.AddPolicy("OgcTilesCollectionTileset", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcTilesCollectionTileset);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId");
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
@@ -219,7 +230,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles dataset tile caching policy
             options.AddPolicy("OgcTilesDatasetTile", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcTilesDatasetTile);
                 policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
                 policy.Tag("ogc-tiles", "tiles");
@@ -228,7 +239,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles tile caching policy
             options.AddPolicy("OgcTilesTile", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1));
+                policy.Expire(ttl.OgcTilesTile);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
                 policy.Tag("ogc-tiles", "tiles");
@@ -237,7 +248,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // MVT tile caching policy
             options.AddPolicy("MvtTile", policy =>
             {
-                policy.Expire(TimeSpan.FromHours(1)); // Cache tiles for 1 hour by default
+                policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 policy.SetVaryByQuery("where"); // Support for WHERE clause filtering
                 policy.Tag("mvt-tiles", "tiles");
@@ -246,7 +257,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // TileJSON metadata caching policy
             options.AddPolicy("TileJson", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.TileJson);
                 policy.SetVaryByRouteValue("layerId");
                 policy.Tag("mvt-tiles", "metadata");
             });
@@ -254,7 +265,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // Layer style caching policy
             options.AddPolicy("LayerStyle", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.LayerStyle);
                 policy.SetVaryByRouteValue("layerId");
                 policy.Tag("layer-styles", "metadata");
             });
@@ -262,7 +273,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // Image Server service metadata caching policy
             options.AddPolicy("ImageServerMetadata", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(5));
+                policy.Expire(ttl.ImageServerMetadata);
                 policy.SetVaryByRouteValue("id");
                 policy.SetVaryByQuery("f");
                 policy.Tag("layer-metadata", "metadata");
@@ -271,7 +282,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Features queryables caching policy
             options.AddPolicy("OgcQueryables", policy =>
             {
-                policy.Expire(TimeSpan.FromMinutes(10));
+                policy.Expire(ttl.OgcQueryables);
                 policy.SetVaryByRouteValue("collectionId");
                 policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
@@ -285,10 +296,11 @@ internal static class ObservabilityServiceCollectionExtensions
             ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
         if (!string.IsNullOrWhiteSpace(redisConnectionString))
         {
+            var cacheKeyPrefix = configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
             services.AddStackExchangeRedisOutputCache(options =>
             {
                 options.Configuration = redisConnectionString;
-                options.InstanceName = "honua:outputcache:";
+                options.InstanceName = $"{cacheKeyPrefix}outputcache:";
             });
         }
     }

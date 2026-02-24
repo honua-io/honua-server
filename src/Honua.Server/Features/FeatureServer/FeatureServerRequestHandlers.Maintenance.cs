@@ -13,7 +13,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -41,23 +41,10 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
-        var edits = GetValueString(values, "edits");
-        if (string.IsNullOrWhiteSpace(edits))
+        var (features, parseError) = TryParseEditsArray(values, context);
+        if (parseError != null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "edits parameter is required");
-        }
-
-        GeoServicesFeature[]? features;
-        try
-        {
-            features = JsonSerializer.Deserialize(edits, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
-        }
-        catch (JsonException ex)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid edits parameter",
-                [$"edits must be a valid JSON array of features: {ex.Message}"]);
+            return parseError;
         }
 
         if (features == null || features.Length == 0)
@@ -96,23 +83,10 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
-        var edits = GetValueString(values, "edits");
-        if (string.IsNullOrWhiteSpace(edits))
+        var (features, parseError) = TryParseEditsArray(values, context);
+        if (parseError != null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "edits parameter is required");
-        }
-
-        GeoServicesFeature[]? features;
-        try
-        {
-            features = JsonSerializer.Deserialize(edits, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
-        }
-        catch (JsonException ex)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid edits parameter",
-                [$"edits must be a valid JSON array of features: {ex.Message}"]);
+            return parseError;
         }
 
         if (features == null || features.Length == 0)
@@ -199,19 +173,14 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Parse calcExpression as JSON array of {field, sqlExpression}
-        CalcExpressionEntry[]? expressions;
-        try
-        {
-            expressions = JsonSerializer.Deserialize<CalcExpressionEntry[]>(calcExpression);
-        }
-        catch (JsonException ex)
+        if (!TryParseCalcExpressionEntries(calcExpression, out var expressions))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid calcExpression parameter",
-                [$"calcExpression must be a valid JSON array: {ex.Message}"]);
+                ["calcExpression must be a valid JSON array of {field, sqlExpression} objects."]);
         }
 
-        if (expressions == null || expressions.Length == 0)
+        if (expressions.Length == 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "calcExpression must contain at least one expression");
@@ -241,6 +210,19 @@ internal static partial class FeatureServerEndpoints
             }
 
             parsedExpressions.Add((expr.Field, value, isFieldRef));
+        }
+
+        // Validate that all target field names exist in the layer schema
+        var validFieldNames = new HashSet<string>(
+            layer.Fields.Select(f => f.Name),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var (field, _, _) in parsedExpressions)
+        {
+            if (!validFieldNames.Contains(field))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    $"Field '{field}' does not exist in layer {layerId}.");
+            }
         }
 
         // Build optional WHERE filter
@@ -313,6 +295,16 @@ internal static partial class FeatureServerEndpoints
         var featureWriter = context.RequestServices.GetRequiredService<IFeatureWriter>();
         var editResult = await featureWriter.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
 
+        // Invalidate output cache after successful mutations
+        if (!editResult.HasErrors && editResult.UpdatedCount > 0)
+        {
+            var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+            if (cacheInvalidator != null)
+            {
+                await cacheInvalidator.InvalidateLayerAsync(serviceId, layerId, cancellationToken);
+            }
+        }
+
         var calcResponse = new CalculateResponse
         {
             Success = !editResult.HasErrors,
@@ -354,6 +346,52 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryDomainsResponse, contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleQueryRelationships(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.queryRelationships");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                serviceResult.ErrorMessage ?? "Service not found.");
+        }
+
+        var service = serviceResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var response = new QueryRelationshipsResponse
+        {
+            Relationships =
+            [
+                ..service.Layers.SelectMany(layer =>
+                    layer.LayerRelationships.Select(relationship => new ServiceRelationshipInfo
+                    {
+                        Id = relationship.RelationshipId,
+                        Name = relationship.Name,
+                        LayerId = layer.Id,
+                        RelatedTableId = relationship.RelatedLayerId,
+                        Role = relationship.RelationshipType,
+                        KeyField = relationship.DestinationForeignKeyField,
+                        OriginKeyField = relationship.OriginForeignKeyField,
+                        DestinationKeyField = relationship.DestinationForeignKeyField,
+                        Description = relationship.Description
+                    }))
+            ]
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.QueryRelationshipsResponse, contentType: "application/json");
     }
 
     private static async Task<DomainInfo[]> BuildDomainsAsync(
@@ -578,6 +616,66 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
+    private static bool TryParseCalcExpressionEntries(string calcExpression, out CalcExpressionEntry[] expressions)
+    {
+        expressions = [];
+
+        try
+        {
+            using var document = JsonDocument.Parse(calcExpression);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            var parsedExpressions = new List<CalcExpressionEntry>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                string? field = null;
+                if (element.TryGetProperty("field", out var fieldElement) &&
+                    fieldElement.ValueKind != JsonValueKind.Null)
+                {
+                    if (fieldElement.ValueKind != JsonValueKind.String)
+                    {
+                        return false;
+                    }
+
+                    field = fieldElement.GetString();
+                }
+
+                string? sqlExpression = null;
+                if (element.TryGetProperty("sqlExpression", out var sqlExpressionElement) &&
+                    sqlExpressionElement.ValueKind != JsonValueKind.Null)
+                {
+                    if (sqlExpressionElement.ValueKind != JsonValueKind.String)
+                    {
+                        return false;
+                    }
+
+                    sqlExpression = sqlExpressionElement.GetString();
+                }
+
+                parsedExpressions.Add(new CalcExpressionEntry
+                {
+                    Field = field,
+                    SqlExpression = sqlExpression
+                });
+            }
+
+            expressions = [.. parsedExpressions];
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private sealed class CalcExpressionEntry
     {
         [System.Text.Json.Serialization.JsonPropertyName("field")]
@@ -646,5 +744,34 @@ internal static partial class FeatureServerEndpoints
             ValidationError = null
         };
         return Results.Json(validResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Parses the "edits" parameter from request values into a feature array.
+    /// Returns a tuple of (features, error). On success, error is null.
+    /// </summary>
+    private static (GeoServicesFeature[]? Features, IResult? Error) TryParseEditsArray(
+        IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
+        HttpContext context)
+    {
+        var edits = GetValueString(values, "edits");
+        if (string.IsNullOrWhiteSpace(edits))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "edits parameter is required"));
+        }
+
+        GeoServicesFeature[]? features;
+        try
+        {
+            features = JsonSerializer.Deserialize(edits, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
+        }
+        catch (JsonException)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid edits parameter",
+                ["edits must be a valid JSON array of features."]));
+        }
+
+        return (features, null);
     }
 }

@@ -45,6 +45,7 @@ None
 - [ ] Issue number linked above
 - [ ] Tests added for new functionality
 - [ ] Documentation updated if needed
+- [ ] If protocol/auth behavior changed, updated MVP compatibility contract and release checklist notes
 
 ## Reviewer Checklist
 - [ ] Code follows project architecture (vertical slices, no controllers)

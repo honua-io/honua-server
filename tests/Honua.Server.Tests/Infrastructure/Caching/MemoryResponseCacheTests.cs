@@ -247,6 +247,52 @@ public class MemoryResponseCacheTests : IDisposable
         Assert.NotNull(await _cache.GetAsync<string>(longKey));
     }
 
+    [Fact]
+    public async Task SetAsync_WhenMaxEntriesExceeded_TrimsEntries()
+    {
+        // Arrange
+        using var boundedMemoryCache = new MemoryCache(new MemoryCacheOptions());
+        using var boundedCache = new MemoryResponseCache(
+            boundedMemoryCache,
+            NullLogger<MemoryResponseCache>.Instance,
+            maxEntries: 3);
+
+        // Act
+        await boundedCache.SetAsync("k1", "v1", TimeSpan.FromMinutes(5));
+        await boundedCache.SetAsync("k2", "v2", TimeSpan.FromMinutes(5));
+        await boundedCache.SetAsync("k3", "v3", TimeSpan.FromMinutes(5));
+        await boundedCache.SetAsync("k4", "v4", TimeSpan.FromMinutes(5));
+
+        // Assert
+        var keys = new[] { "k1", "k2", "k3", "k4" };
+        var presentCount = 0;
+        foreach (var key in keys)
+        {
+            if (await boundedCache.GetAsync<string>(key) is not null)
+            {
+                presentCount++;
+            }
+        }
+
+        Assert.True(presentCount <= 3, "cache should not retain more entries than the configured max");
+    }
+
+    [Fact]
+    public void Constructor_WithInvalidMaxEntries_ThrowsArgumentOutOfRangeException()
+    {
+        // Arrange
+        using var memoryCache = new MemoryCache(new MemoryCacheOptions());
+
+        // Act
+        var action = () => new MemoryResponseCache(
+            memoryCache,
+            NullLogger<MemoryResponseCache>.Instance,
+            maxEntries: 0);
+
+        // Assert
+        Assert.Throws<ArgumentOutOfRangeException>(action);
+    }
+
     public void Dispose()
     {
         _cache?.Dispose();

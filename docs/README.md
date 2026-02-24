@@ -9,6 +9,7 @@
 | **Deploy to production** | [Infrastructure & Deployment](devops/infrastructure.md) |
 | **Monitor and troubleshoot** | [Monitoring](devops/monitoring.md) / [Troubleshooting](devops/troubleshooting.md) |
 | **Evaluate protocol coverage** | [Coverage Matrices](#coverage-matrices) |
+| **Check MVP launch limits** | [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) |
 | **Contribute** | [Getting Started](contributor/development/getting-started.md) |
 
 ## User Documentation
@@ -18,6 +19,9 @@
 - [API Examples](user/API_EXAMPLES.md) — request/response examples
 - [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches
 - [Admin API](user/CONTROL_PLANE_API.md) — server management endpoints
+- [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) — SDK and upgrade workflow
+- [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md) — deprecation and compatibility guarantees
+- [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) — launch-ready protocol and limitation summary
 - [Admin UI](user/admin-ui.md) — browser interface guide
 - [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling
 
@@ -25,6 +29,7 @@
 
 - [FeatureServer Coverage](user/feature-server-matrix.md)
 - [MapServer Coverage](user/map-server-matrix.md)
+- [OGC API Tiles Coverage](user/specifications/ogc-api-tiles-coverage.md)
 - [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
 - [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
 
@@ -44,3 +49,4 @@
 - [Contributing](contributor/development/contributing.md) — code style, architecture rules, PR process
 - [Architecture](contributor/ARCHITECTURE.md) — system design
 - [ADRs](contributor/adr/README.md) — architectural decisions
+- [Release Checklist](contributor/RELEASE_CHECKLIST.md) — required compatibility/certification updates per release

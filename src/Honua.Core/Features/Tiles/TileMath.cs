@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.Core.Features.Tiles;
 
 /// <summary>
@@ -8,10 +10,7 @@ namespace Honua.Core.Features.Tiles;
 /// </summary>
 public static class TileMath
 {
-    /// <summary>
-    /// Web Mercator bounds in meters
-    /// </summary>
-    private const double WebMercatorExtent = 20037508.342789244;
+    private const double WebMercatorExtent = SpatialConstants.WebMercatorExtent;
 
     /// <summary>
     /// Gets the bounding box for a tile in Web Mercator coordinates (EPSG:3857)

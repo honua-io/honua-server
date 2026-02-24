@@ -35,6 +35,12 @@ internal sealed class GlobalExceptionMiddleware(
         {
             // Client disconnected; skip logging and response shaping.
         }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("response has already started", StringComparison.OrdinalIgnoreCase))
+        {
+            // Authentication/authorization handlers may throw after they begin writing a challenge response.
+            // Preserve the original response instead of replacing it with a secondary 500.
+        }
         catch (Exception ex)
         {
             // Log the unhandled exception with correlation ID

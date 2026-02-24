@@ -27,4 +27,14 @@ public sealed class ApiKeyAuthenticationOptions
     /// Gets or sets the development authentication bypass value
     /// </summary>
     public string? DevAuthBypass { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether HTTP Basic auth is accepted as a compatibility mode.
+    /// </summary>
+    public bool EnableBasicAuthCompatibility { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether Basic auth compatibility requires HTTPS transport.
+    /// </summary>
+    public bool RequireHttpsForBasicAuth { get; set; } = true;
 }

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<values xmlns:parsers="http://www.occamlab.com/te/parsers">
+  <parsers:session>
+    <parsers:test>ets-wms13</parsers:test>
+    <parsers:profile>default</parsers:profile>
+  </parsers:session>
+  <value key="capabilities-url">http://honua-server:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&amp;REQUEST=GetCapabilities&amp;VERSION=1.3.0</value>
+  <value key="updatesequence">auto</value>
+  <value key="high-updatesequence"></value>
+  <value key="low-updatesequence"></value>
+  <value key="basic">false</value>
+  <value key="queryable">false</value>
+  <value key="raster_elevation">false</value>
+  <value key="vector_elevation">false</value>
+  <value key="time">false</value>
+  <value key="recommended">false</value>
+</values>

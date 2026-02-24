@@ -14,7 +14,7 @@ namespace Honua.Server.Features.FileStorage;
 
 internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 {
-    private static readonly TimeSpan _defaultSignedUrlLifetime = TimeSpan.FromMinutes(15);
+    private readonly TimeSpan _signedUrlLifetime;
 
     private readonly AzureBlobOptions _options;
     private readonly BlobContainerClient _containerClient;
@@ -28,6 +28,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         ArgumentNullException.ThrowIfNull(options);
 
         var resolved = options.Value ?? throw new ArgumentNullException(nameof(options));
+        _signedUrlLifetime = resolved.SignedUrlLifetime;
         _options = resolved.AzureBlob ?? throw new InvalidOperationException("Azure Blob options are not configured.");
 
         if (string.IsNullOrWhiteSpace(_options.ConnectionString))
@@ -388,7 +389,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
             BlobContainerName = _options.ContainerName,
             BlobName = fileId,
             Resource = "b",
-            ExpiresOn = DateTimeOffset.UtcNow.Add(expiresIn ?? _defaultSignedUrlLifetime)
+            ExpiresOn = DateTimeOffset.UtcNow.Add(expiresIn ?? _signedUrlLifetime)
         };
         sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
@@ -421,7 +422,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
             BlobContainerName = _options.ContainerName,
             BlobName = objectKey,
             Resource = "b",
-            ExpiresOn = DateTimeOffset.UtcNow.Add(expiresIn ?? _defaultSignedUrlLifetime)
+            ExpiresOn = DateTimeOffset.UtcNow.Add(expiresIn ?? _signedUrlLifetime)
         };
         sasBuilder.SetPermissions(BlobSasPermissions.Create | BlobSasPermissions.Write);
 

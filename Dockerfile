@@ -58,6 +58,7 @@ RUN apk upgrade --no-cache && \
     icu-libs \
     tzdata \
     curl \
+    fontconfig \
     ca-certificates && \
     rm -rf /var/cache/apk/* && \
     rm -rf /tmp/*

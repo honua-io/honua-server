@@ -35,6 +35,8 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<FeatureCacheManager> _logger;
     private readonly string? _tableSchema;
+    private readonly string _layerCatalogSchema;
+    private readonly string _layerCatalogTable;
 
     /// <summary>
     /// Performance metrics tracking
@@ -105,6 +107,9 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tableSchema = string.IsNullOrEmpty(schemaName) ? null : schemaName;
+        _layerCatalogSchema = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName;
+        var quotedSchema = global::Honua.Postgres.Features.Infrastructure.SchemaSearchPath.ValidateAndQuote(_layerCatalogSchema);
+        _layerCatalogTable = $"{quotedSchema}.\"layers\"";
     }
 
     public async Task<int?> GetLayerSridAsync(int layerId, CancellationToken cancellationToken)
@@ -132,11 +137,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            const string sql = """
-                SELECT srid
-                FROM honua.layers
-                WHERE layer_id = $1
-                """;
+            var sql = $"SELECT srid FROM {_layerCatalogTable} WHERE layer_id = $1";
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue(layerId);
@@ -285,12 +286,13 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
                 SELECT EXISTS (
                     SELECT 1
                     FROM information_schema.tables
-                    WHERE table_schema = 'honua'
+                    WHERE table_schema = @schema
                       AND table_name = 'layers'
                 )
                 """;
 
             await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("schema", _layerCatalogSchema);
 
             var result = await command.ExecuteScalarAsync(cancellationToken);
             var available = (bool)result!;

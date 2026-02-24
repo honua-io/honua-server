@@ -1,0 +1,55 @@
+name: OpenAPI Contract Governance
+
+on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'docs/api-specs/**'
+      - 'src/Honua.Server/Features/Admin/**'
+      - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
+      - 'scripts/validate-openapi-contracts.sh'
+      - '.github/workflows/openapi-contract-governance.yml'
+  push:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'docs/api-specs/**'
+      - 'src/Honua.Server/Features/Admin/**'
+      - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
+      - 'scripts/validate-openapi-contracts.sh'
+      - '.github/workflows/openapi-contract-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-openapi-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine baseline ref
+        id: baseline
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            echo "ref=origin/${GITHUB_BASE_REF}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate curated OpenAPI contracts
+        env:
+          OPENAPI_BASE_REF: ${{ steps.baseline.outputs.ref }}
+          OPENAPI_ALLOW_BREAKING_CHANGES: ${{ vars.OPENAPI_ALLOW_BREAKING_CHANGES || 'false' }}
+        run: |
+          chmod +x scripts/validate-openapi-contracts.sh
+          ./scripts/validate-openapi-contracts.sh

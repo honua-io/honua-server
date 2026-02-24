@@ -1,0 +1,88 @@
+name: Control Plane SDK Governance
+
+on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'docs/api-specs/admin-api.json'
+      - 'scripts/generate-control-plane-sdks.sh'
+      - '.github/workflows/control-plane-sdk-governance.yml'
+  push:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'docs/api-specs/admin-api.json'
+      - 'scripts/generate-control-plane-sdks.sh'
+      - '.github/workflows/control-plane-sdk-governance.yml'
+  workflow_dispatch:
+    inputs:
+      sdk_version:
+        description: 'Override SDK version for generated artifacts (for example: 1.2.0)'
+        required: false
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  generate-control-plane-sdks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve SDK version
+        id: sdk-version
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            echo "value=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${{ github.event.inputs.sdk_version }}" ]]; then
+            echo "value=${{ github.event.inputs.sdk_version }}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "value=0.0.0-ci.${GITHUB_RUN_NUMBER}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Generate control-plane SDKs
+        env:
+          SDK_VERSION: ${{ steps.sdk-version.outputs.value }}
+        run: |
+          chmod +x scripts/generate-control-plane-sdks.sh
+          ./scripts/generate-control-plane-sdks.sh artifacts/control-plane-sdks
+
+      - name: Upload SDK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-plane-sdks-${{ steps.sdk-version.outputs.value }}
+          path: artifacts/control-plane-sdks/
+          retention-days: 30
+
+  publish-release-assets:
+    if: github.event_name == 'release'
+    needs: generate-control-plane-sdks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download generated SDK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: control-plane-sdks-${{ github.ref_name }}
+          path: artifacts/control-plane-sdks
+
+      - name: Attach SDK artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/control-plane-sdks/*.tar.gz
+            artifacts/control-plane-sdks/manifest.json
+            artifacts/control-plane-sdks/SHA256SUMS.txt

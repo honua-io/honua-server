@@ -209,7 +209,7 @@ internal static partial class MapServerEndpoints
 
     private static TileInfo BuildTileInfo()
     {
-        const double webMercatorOrigin = 20037508.342787;
+        const double webMercatorOrigin = SpatialConstants.WebMercatorExtent;
         const int tileSize = 256;
         const int maxZoom = 22;
         const double pixelSize = 0.00028;

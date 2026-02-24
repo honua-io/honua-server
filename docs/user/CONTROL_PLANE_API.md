@@ -55,6 +55,44 @@ Additional metrics endpoints:
 
 **Note**: Exact endpoints and payloads vary by build. Use `/api/v1/admin/config` for runtime validation. `docs/api-specs/admin-api.json` is a curated contract snapshot and may lag some newly added endpoints.
 
+## **SDKs and Contract Governance**
+
+- Generate control-plane SDK artifacts locally:
+
+```bash
+./scripts/validate-openapi-contracts.sh
+./scripts/generate-control-plane-sdks.sh
+```
+
+- CI contract governance and SDK generation:
+- `.github/workflows/openapi-contract-governance.yml`
+- `.github/workflows/control-plane-sdk-governance.yml`
+
+- Versioning/deprecation policy:
+- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
+
+- Migration and upgrade guidance:
+- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
+
+---
+
+## **Authentication Behavior**
+
+- Supported admin auth schemes:
+- `X-API-Key` (default)
+- `Authorization: Bearer <jwt>` when OIDC is enabled
+- `Authorization: Basic ...` only when Basic compatibility mode is enabled
+
+- Precedence:
+- Bearer is evaluated first when OIDC is enabled and a Bearer header is present
+- Otherwise `X-API-Key` is evaluated
+- Basic compatibility is evaluated only when enabled and no valid `X-API-Key` is present
+
+- Challenge headers:
+- `WWW-Authenticate: ApiKey ...` is always returned for API-key challenges
+- `WWW-Authenticate: Basic ...` is added when Basic compatibility mode is enabled
+- Bearer failures include standard Bearer challenge headers
+
 ---
 
 ## **Connection Management (Minimal Example)**
@@ -223,3 +261,5 @@ GET /healthz/live
 - [Admin UI](admin-ui.md)
 - [Geospatial API Examples](API_EXAMPLES.md)
 - [Security](../devops/security.md)
+- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)

@@ -588,43 +588,7 @@ internal static class TilesEndpoints
     }
 
     private static SpatialFilter CreateBboxSpatialFilter(TileBounds bounds, int srid)
-    {
-        var wkb = CreateEnvelopeWkb(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax);
-        return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
-    }
-
-    private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
-    {
-        var wkb = new byte[93];
-        var offset = 0;
-
-        wkb[offset++] = 1; // little-endian
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 3); // WKB Polygon
-        offset += 4;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 1); // 1 ring
-        offset += 4;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 5); // 5 points
-        offset += 4;
-
-        WritePoint(wkb, ref offset, minX, minY);
-        WritePoint(wkb, ref offset, maxX, minY);
-        WritePoint(wkb, ref offset, maxX, maxY);
-        WritePoint(wkb, ref offset, minX, maxY);
-        WritePoint(wkb, ref offset, minX, minY);
-
-        return wkb;
-    }
-
-    private static void WritePoint(byte[] buffer, ref int offset, double x, double y)
-    {
-        BitConverter.TryWriteBytes(buffer.AsSpan(offset), x);
-        offset += 8;
-        BitConverter.TryWriteBytes(buffer.AsSpan(offset), y);
-        offset += 8;
-    }
+        => SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
 
     private static IEnumerable<TileSetItem> BuildDatasetTileSetItems(LayerDefinition layer, string baseUrl, TileLimits tileLimits)
     {
@@ -821,28 +785,7 @@ internal static class TilesEndpoints
     }
 
     private static ImmutableArray<TileMatrixSetLimit> BuildTileMatrixSetLimits(TileLimits limits)
-    {
-        var minZoom = Math.Max(0, limits.MinTileZoom);
-        var maxZoom = Math.Max(minZoom, limits.MaxTileZoom);
-        var matrixLimits = new List<TileMatrixSetLimit>();
-
-        for (var zoom = minZoom; zoom <= maxZoom; zoom++)
-        {
-            var matrixSize = 1 << zoom;
-            var maxIndex = matrixSize - 1;
-
-            matrixLimits.Add(new TileMatrixSetLimit
-            {
-                TileMatrix = zoom.ToString(CultureInfo.InvariantCulture),
-                MinTileRow = 0,
-                MaxTileRow = maxIndex,
-                MinTileCol = 0,
-                MaxTileCol = maxIndex
-            });
-        }
-
-        return matrixLimits.ToImmutableArray();
-    }
+        => OgcTilesUtilities.BuildWebMercatorQuadLimits(limits);
 
     private static async Task<(LayerDefinition? Layer, IResult? Error)> ResolveDatasetLayerAsync(
         string? collections,
@@ -874,13 +817,6 @@ internal static class TilesEndpoints
             if (accessibleLayers.Length == 0)
             {
                 return (null, AccessPolicyHelpers.RequireAnyLayerAccess(context, layers));
-            }
-
-            if (accessibleLayers.Length > 1)
-            {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    "The collections parameter is required when multiple collections are available."));
             }
 
             return (accessibleLayers[0], null);

@@ -25,6 +25,9 @@
     },
     {
       "BearerAuth": []
+    },
+    {
+      "BasicAuth": []
     }
   ],
   "tags": [
@@ -891,13 +894,18 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-API-Key",
-        "description": "API Key authentication for admin operations"
+        "description": "API Key authentication for admin operations. Evaluated when Bearer is not selected."
       },
       "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "OAuth2/OIDC bearer token authentication"
+        "description": "OAuth2/OIDC bearer token authentication. If a Bearer header is present and OIDC is enabled, Bearer takes precedence over API key fallback."
+      },
+      "BasicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "Optional HTTP Basic compatibility mode for legacy clients (requires HTTPS in production). Basic is used only when compatibility mode is enabled and API key auth did not succeed."
       }
     },
     "responses": {

@@ -28,7 +28,8 @@ MapServer coverage is tracked separately:
 | Append | `/rest/services/{serviceName}/FeatureServer/append` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/append` | Bulk append features to a target layer. Parses `edits` as a JSON array of GeoServices features; delegates to `applyEdits` internally. Returns `numFeaturesAppended` / `numFeaturesFailed`. |
 | Query | `/rest/services/{serviceName}/FeatureServer/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/query` | Service-level query that delegates to a target layer provided by `layerId` or `layers`. |
 | Query Domains | `/rest/services/{serviceName}/FeatureServer/queryDomains` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/queryDomains` | Returns coded-value domain definitions by sampling feature values from the database. Supports `layers` parameter. |
-| Create Replica | `/rest/services/{serviceName}/FeatureServer/createReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/createReplica` | Creates a replica for offline synchronization. Parameters: `replicaName`, `layers`, `syncModel`. In-memory replica store. |
+| Relationships | `/rest/services/{serviceName}/FeatureServer/relationships` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/relationships` | Returns relationship definitions aggregated across service layers. |
+| Create Replica | `/rest/services/{serviceName}/FeatureServer/createReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/createReplica` | Creates a replica for offline synchronization. Parameters: `replicaName`, `layers`, `syncModel`. Distributed cache-backed replica registration with in-memory fallback. |
 | Extract Changes | `/rest/services/{serviceName}/FeatureServer/extractChanges` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/extractChanges` | Returns changes since last synchronization. First sync reports all features as adds (real DB count); subsequent syncs report zero changes (no change tracking tables). |
 | Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica` | Synchronizes a replica. Supports `download`, `upload`, and `bidirectional` sync directions. Incoming edits on upload/bidirectional syncs are applied via `applyEdits`. |
 | Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica` | Removes a registered replica. |
@@ -38,7 +39,6 @@ MapServer coverage is tracked separately:
 | Esri operation | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Not implemented | |
-| Relationships | `/rest/services/{serviceName}/FeatureServer/relationships` | GET | Not implemented | |
 
 ## Feature Layer (resource + operations)
 

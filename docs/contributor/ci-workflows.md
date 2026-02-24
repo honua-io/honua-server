@@ -17,9 +17,11 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | Workflow File | Purpose | Typical Trigger |
 |---|---|---|
 | `cite-conformance.yml` | OGC API Features CITE tests | schedule + manual |
-| `cite-tiles-conformance.yml` | OGC API Tiles CITE tests | schedule + manual |
-| `cite-wms-conformance.yml` | OGC WMS 1.3 CITE tests | schedule + manual |
-| `cite-wmts-conformance.yml` | OGC WMTS 1.0 CITE tests | schedule + manual |
+| `cite-tiles-conformance.yml` | OGC API Tiles CITE tests | PR + push + schedule + manual |
+| `cite-wms-conformance.yml` | OGC WMS 1.3 CITE tests | PR + push + schedule + manual |
+| `cite-wmts-conformance.yml` | OGC WMTS 1.0 CITE tests | PR + push + schedule + manual |
+| `openapi-contract-governance.yml` | Control-plane OpenAPI validation + breaking-change diff | PR + push + manual |
+| `control-plane-sdk-governance.yml` | Reproducible control-plane SDK generation and release assets | PR + push + release + manual |
 | `performance.yml` | Performance benchmark pipeline | PR/push/manual |
 | `performance-benchmarks.yml` | Extended benchmark + baseline flow | PR/push/manual |
 | `load-soak-nightly.yml` | Load/soak runs | schedule + manual |

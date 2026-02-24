@@ -49,6 +49,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
+    private const int StreamingFlushInterval = 32;
     private static readonly ImmutableHashSet<string> _sortByCoreFields = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
         FieldNames.ObjectId,
@@ -929,6 +930,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteStartArray("features");
 
         var numberReturned = 0;
+        var featuresSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(
@@ -940,7 +942,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;
-            await writer.FlushAsync(cancellationToken);
+            if (++featuresSinceFlush >= StreamingFlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                featuresSinceFlush = 0;
+            }
         }
 
         writer.WriteEndArray();

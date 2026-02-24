@@ -19,6 +19,8 @@ namespace Honua.Server.Features.OgcFeatures.Services;
 /// </summary>
 internal static class OgcResponseFormatter
 {
+    private const int StreamingFlushInterval = 32;
+
     /// <summary>
     /// Formats feature responses based on requested output format.
     /// </summary>
@@ -204,6 +206,7 @@ internal static class OgcResponseFormatter
         await writer.WriteLineAsync(
             $"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
 
+        var writtenSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             var escapedId = SecurityElement.Escape(feature.Id.ToString());
@@ -213,7 +216,11 @@ internal static class OgcResponseFormatter
             WriteGmlProperties(writer, feature.Attributes, "      ");
             await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
-            await writer.FlushAsync(cancellationToken);
+            if (++writtenSinceFlush >= StreamingFlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                writtenSinceFlush = 0;
+            }
         }
 
         await writer.WriteLineAsync("</wfs:FeatureCollection>");

@@ -236,6 +236,35 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.QueryRelationships)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/relationships")]
+    public async Task QueryRelationships_ValidService_ReturnsRelationshipsArray()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/relationships?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.TryGetProperty("relationships", out var relationships).Should().BeTrue();
+        relationships.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelationships)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/relationships")]
+    public async Task QueryRelationships_InvalidService_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/nonexistent/FeatureServer/relationships?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ValidateSql)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
     public async Task ValidateSql_ValidExpression_ReturnsIsValid()

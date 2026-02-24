@@ -265,6 +265,14 @@ internal static partial class GeoservicesImportEndpoints
                     statusCode: StatusCodes.Status202Accepted)
                 .ExecuteAsync(context);
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import queue is unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Distributed import queue is temporarily unavailable. Retry when Redis is healthy.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
         catch (Exception ex)
         {
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);

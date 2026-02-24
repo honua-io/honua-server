@@ -13,9 +13,16 @@ This guide covers authentication, authorization, edge security, and related oper
 **Admin API**: secured with an API key in the `X-API-Key` header.
 - Set `HONUA_ADMIN_PASSWORD` in your secret manager.
 
+**Basic compatibility mode** (optional): accept `Authorization: Basic ...` and map the password to the admin API key.
+- Enable with `HONUA_ENABLE_BASIC_AUTH_COMPAT=true` (or `Authentication__BasicCompatibility__Enabled=true`).
+- Keep `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` in production.
+- Intended only for legacy client compatibility during migration.
+
 **OIDC**: optional for the Admin UI and token-based access.
 - Configure `Oidc__Enabled` and a provider block (`Oidc__Generic`, `Oidc__AzureAd`, or `Oidc__Google`).
 - Verify claims mapping and admin roles in your IdP.
+- Optional static signing-key mode for controlled environments/tests:
+- `Oidc__TokenValidation__SymmetricSigningKey=<shared-secret>`
 
 ---
 
@@ -28,7 +35,18 @@ This guide covers authentication, authorization, edge security, and related oper
 
 Authentication schemes:
 - **API key** via `X-API-Key` (automation and service access).
+- **HTTP Basic compatibility** (optional) for legacy clients, using the Basic password as the API key.
 - **OIDC** for browser-based Admin UI and token-based access.
+
+Authentication precedence:
+- If OIDC is enabled and `Authorization: Bearer ...` is present, Bearer auth is evaluated first.
+- Otherwise, `X-API-Key` is evaluated.
+- Basic compatibility is only evaluated when enabled and when no valid `X-API-Key` header is present.
+
+Challenge behavior:
+- API key challenges include `WWW-Authenticate: ApiKey ...`.
+- When Basic compatibility mode is enabled, challenges also include `WWW-Authenticate: Basic ...`.
+- Bearer-token failures return Bearer challenge headers from the JWT handler.
 
 ---
 

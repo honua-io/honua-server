@@ -359,8 +359,8 @@ internal static class OgcFeaturesUtilities
 /// </summary>
 internal static class OgcExtentTransformer
 {
-    private const double EarthRadius = 6378137.0;
-    private const double MaxLatitude = 85.0511287798066;
+    private const double EarthRadius = SpatialConstants.EarthRadius;
+    private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
 
     /// <summary>
     /// Transforms a coordinate pair to CRS84 (lon/lat in degrees).

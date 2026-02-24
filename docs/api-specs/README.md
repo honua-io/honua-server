@@ -41,7 +41,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 **Base URL**: `/api/v1/admin`
 **OpenAPI Spec**: [admin-api.json](admin-api.json)
 **Runtime OpenAPI Endpoint**: Not currently exposed
-**Authentication**: API Key or OIDC required
+**Authentication**: API Key, OIDC bearer token, or optional HTTP Basic compatibility mode
 
 > **Note**: `admin-api.json` is a curated snapshot and may lag newly added admin endpoints.  
 > Use the [Server Management API guide](../user/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for runtime-validated behavior.
@@ -101,17 +101,21 @@ openapi-generator generate \
   -g python \
   -o ./honua-python-client
 
-# Generate C# client from Admin API
-openapi-generator generate \
-  -i docs/api-specs/admin-api.json \
-  -g csharp \
-  -o ./honua-csharp-client
+# Generate control-plane SDK artifacts (TypeScript + Python + .NET)
+./scripts/validate-openapi-contracts.sh
+./scripts/generate-control-plane-sdks.sh
 ```
+
+Control-plane SDK governance and contract diff checks:
+- `.github/workflows/openapi-contract-governance.yml`
+- `.github/workflows/control-plane-sdk-governance.yml`
 
 ## 🔗 **Related Documentation**
 
 - [**Geospatial Data APIs**](../user/STANDARDS_APIS.md) - Protocol overview and selection guide
 - [**Server Management API**](../user/CONTROL_PLANE_API.md) - Admin API guide and key workflows
+- [**Control Plane Versioning Policy**](../user/CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
+- [**Control Plane Migration Guide**](../user/CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
 - [**API Examples**](../user/API_EXAMPLES.md) - Code examples for all protocols
 - [**Integration Patterns**](../user/INTEGRATION_PATTERNS.md) - Common integration approaches
 

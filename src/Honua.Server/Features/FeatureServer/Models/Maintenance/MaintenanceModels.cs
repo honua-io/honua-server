@@ -126,6 +126,78 @@ public sealed class QueryDomainsResponse
 }
 
 /// <summary>
+/// Response model for relationships endpoint.
+/// </summary>
+public sealed class QueryRelationshipsResponse
+{
+    /// <summary>
+    /// Service-level relationships aggregated across layers.
+    /// </summary>
+    [JsonPropertyName("relationships")]
+    public ServiceRelationshipInfo[]? Relationships { get; set; }
+}
+
+/// <summary>
+/// Relationship metadata at the service level.
+/// </summary>
+public sealed class ServiceRelationshipInfo
+{
+    /// <summary>
+    /// Relationship identifier.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>
+    /// Relationship display name.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Origin layer identifier.
+    /// </summary>
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; set; }
+
+    /// <summary>
+    /// Related table/layer identifier.
+    /// </summary>
+    [JsonPropertyName("relatedTableId")]
+    public int RelatedTableId { get; set; }
+
+    /// <summary>
+    /// Relationship role value.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
+
+    /// <summary>
+    /// Key field used for lookups.
+    /// </summary>
+    [JsonPropertyName("keyField")]
+    public string? KeyField { get; set; }
+
+    /// <summary>
+    /// Origin key field.
+    /// </summary>
+    [JsonPropertyName("originKeyField")]
+    public string? OriginKeyField { get; set; }
+
+    /// <summary>
+    /// Destination key field.
+    /// </summary>
+    [JsonPropertyName("destinationKeyField")]
+    public string? DestinationKeyField { get; set; }
+
+    /// <summary>
+    /// Optional relationship description.
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+}
+
+/// <summary>
 /// Information about a coded-value domain.
 /// </summary>
 public sealed class DomainInfo

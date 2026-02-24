@@ -46,6 +46,13 @@ internal static class ConfigurationValidationService
         LogFeatureStatus(configuration, logger, "HONUA_SKIP_MIGRATIONS", "Skip migrations");
 
         // Warn about dev-only settings in production
+        var basicAuthCompatibilityEnabled = configuration.GetValue(
+            "Authentication:BasicCompatibility:Enabled",
+            configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
+        var basicAuthRequireHttps = configuration.GetValue(
+            "Authentication:BasicCompatibility:RequireHttps",
+            configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
+
         if (!isDevelopment)
         {
             if (configuration.IsFeatureEnabled("DEV_AUTH"))
@@ -62,6 +69,16 @@ internal static class ConfigurationValidationService
             {
                 ValidateAdminPassword(adminPassword, errors);
             }
+
+            if (basicAuthCompatibilityEnabled && !basicAuthRequireHttps)
+            {
+                errors.Add("HTTP Basic authentication compatibility requires HTTPS in non-development environments. Set HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true.");
+            }
+
+            if (basicAuthCompatibilityEnabled)
+            {
+                warnings.Add("HTTP Basic authentication compatibility mode is enabled. Prefer X-API-Key or OIDC bearer tokens for long-term clients.");
+            }
         }
         else
         {
@@ -71,6 +88,11 @@ internal static class ConfigurationValidationService
                 warnings.Add("SECURITY WARNING: Development mode with no HONUA_ADMIN_PASSWORD configured. " +
                     "Authentication bypass is active and all admin endpoints are accessible without credentials. " +
                     "Set HONUA_ADMIN_PASSWORD to require API key authentication even in development.");
+            }
+
+            if (basicAuthCompatibilityEnabled && !basicAuthRequireHttps)
+            {
+                warnings.Add("HTTP Basic authentication compatibility is enabled without HTTPS enforcement for development use.");
             }
         }
 

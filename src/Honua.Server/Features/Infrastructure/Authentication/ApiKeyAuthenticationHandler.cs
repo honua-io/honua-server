@@ -26,7 +26,11 @@ internal sealed class ApiKeyAuthenticationHandler(
     ApiKeyAuthenticationDependencies dependencies) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     private const string ApiKeyHeader = "X-API-Key";
+    private const string AuthorizationHeader = "Authorization";
+    private const string BasicSchemePrefix = "Basic ";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
+    private const string AuthFailureMessageKey = "AuthFailureMessage";
+    private const string AuthRealm = "Honua Admin";
 
     private readonly ApiKeyAuthenticationOptions _authOptions = dependencies?.Options ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IConnectionSecretResolver? _secretResolver = dependencies.SecretResolver;
@@ -43,17 +47,24 @@ internal sealed class ApiKeyAuthenticationHandler(
             return CreateSuccessfulAuthenticationResult("dev-bypass");
         }
 
-        // Extract API key from header
-        if (!Request.Headers.TryGetValue(ApiKeyHeader, out StringValues apiKeyValues))
-        {
-            AuthenticationLog.NoApiKeyFound(Logger, ApiKeyHeader);
-            return AuthenticateResult.NoResult();
-        }
-
-        string? providedApiKey = apiKeyValues.FirstOrDefault();
+        // Extract API key from explicit header, or from Basic auth compatibility mode.
+        var providedApiKey = GetApiKeyFromHeader();
         if (string.IsNullOrEmpty(providedApiKey))
         {
-            AuthenticationLog.EmptyApiKeyProvided(Logger, ApiKeyHeader);
+            if (TryGetApiKeyFromBasicAuthorizationHeader(out providedApiKey, out var basicFailure))
+            {
+                // Basic auth compatibility successfully extracted the API key.
+            }
+            else if (!string.IsNullOrEmpty(basicFailure))
+            {
+                Context.Items[AuthFailureMessageKey] = basicFailure;
+                return AuthenticateResult.Fail(basicFailure);
+            }
+        }
+
+        if (string.IsNullOrEmpty(providedApiKey))
+        {
+            AuthenticationLog.NoApiKeyFound(Logger, ApiKeyHeader);
             return AuthenticateResult.NoResult();
         }
 
@@ -66,14 +77,14 @@ internal sealed class ApiKeyAuthenticationHandler(
         catch (Exception ex)
         {
             AuthenticationLog.AdminPasswordResolutionFailed(Logger, ex);
-            Context.Items["AuthFailureMessage"] = "Admin authentication not configured";
+            Context.Items[AuthFailureMessageKey] = "Admin authentication not configured";
             return AuthenticateResult.Fail("Admin authentication not configured");
         }
         if (string.IsNullOrEmpty(configuredPassword))
         {
             AuthenticationLog.NoAdminPasswordConfigured(Logger, AdminPasswordEnvVar);
             // Store the failure message for the challenge handler
-            Context.Items["AuthFailureMessage"] = "Admin authentication not configured";
+            Context.Items[AuthFailureMessageKey] = "Admin authentication not configured";
             return AuthenticateResult.Fail("Admin authentication not configured");
         }
 
@@ -86,6 +97,101 @@ internal sealed class ApiKeyAuthenticationHandler(
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
         return CreateSuccessfulAuthenticationResult("admin");
+    }
+
+    private string? GetApiKeyFromHeader()
+    {
+        if (!Request.Headers.TryGetValue(ApiKeyHeader, out StringValues apiKeyValues))
+        {
+            return null;
+        }
+
+        var providedApiKey = apiKeyValues.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(providedApiKey))
+        {
+            AuthenticationLog.EmptyApiKeyProvided(Logger, ApiKeyHeader);
+            return null;
+        }
+
+        return providedApiKey;
+    }
+
+    private bool TryGetApiKeyFromBasicAuthorizationHeader(out string? apiKey, out string? failureMessage)
+    {
+        apiKey = null;
+        failureMessage = null;
+
+        if (!_authOptions.EnableBasicAuthCompatibility)
+        {
+            return false;
+        }
+
+        if (!Request.Headers.TryGetValue(AuthorizationHeader, out var authHeaderValues))
+        {
+            return false;
+        }
+
+        var authorization = authHeaderValues.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(authorization) ||
+            !authorization.StartsWith(BasicSchemePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (_authOptions.RequireHttpsForBasicAuth && !IsHttpsRequest())
+        {
+            AuthenticationLog.BasicAuthRejectedInsecureTransport(Logger);
+            failureMessage = "HTTP Basic authentication compatibility requires HTTPS.";
+            return false;
+        }
+
+        var encoded = authorization[BasicSchemePrefix.Length..].Trim();
+        if (string.IsNullOrWhiteSpace(encoded))
+        {
+            AuthenticationLog.InvalidBasicAuthorizationHeader(Logger);
+            failureMessage = "Invalid HTTP Basic authorization header.";
+            return false;
+        }
+
+        byte[] decodedBytes;
+        try
+        {
+            decodedBytes = Convert.FromBase64String(encoded);
+        }
+        catch (FormatException)
+        {
+            AuthenticationLog.InvalidBasicAuthorizationHeader(Logger);
+            failureMessage = "Invalid HTTP Basic authorization header.";
+            return false;
+        }
+
+        var decoded = Encoding.UTF8.GetString(decodedBytes);
+        var separatorIndex = decoded.IndexOf(':');
+        if (separatorIndex < 0 || separatorIndex == decoded.Length - 1)
+        {
+            AuthenticationLog.InvalidBasicAuthorizationHeader(Logger);
+            failureMessage = "Invalid HTTP Basic authorization header.";
+            return false;
+        }
+
+        var password = decoded[(separatorIndex + 1)..];
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            AuthenticationLog.InvalidBasicAuthorizationHeader(Logger);
+            failureMessage = "Invalid HTTP Basic authorization header.";
+            return false;
+        }
+
+        AuthenticationLog.BasicAuthCompatibilityUsed(Logger);
+        apiKey = password;
+        return true;
+    }
+
+    private bool IsHttpsRequest()
+    {
+        // Trust only the resolved request scheme. Reverse-proxy headers must be
+        // normalized by ForwardedHeaders middleware before reaching auth.
+        return Request.IsHttps;
     }
 
     /// <summary>
@@ -191,11 +297,17 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// </summary>
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
+        Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
+        if (_authOptions.EnableBasicAuthCompatibility)
+        {
+            Response.Headers.Append("WWW-Authenticate", $"Basic realm=\"{AuthRealm}\", charset=\"UTF-8\"");
+        }
+
         Response.StatusCode = 401;
         Response.ContentType = "application/problem+json; charset=utf-8";
 
         // Check if there's a specific failure message from authentication
-        string? failureMessage = Context.Items["AuthFailureMessage"] as string;
+        string? failureMessage = Context.Items[AuthFailureMessageKey] as string;
         if (!string.IsNullOrEmpty(failureMessage))
         {
             string escapedMessage = System.Text.Json.JsonEncodedText.Encode(failureMessage).ToString();

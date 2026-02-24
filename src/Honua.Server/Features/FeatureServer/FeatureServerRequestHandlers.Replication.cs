@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
@@ -15,11 +14,6 @@ namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// In-memory replica store for MVP. Keyed by replica ID.
-    /// </summary>
-    private static readonly ConcurrentDictionary<string, ReplicaRecord> _replicaStore = new(StringComparer.OrdinalIgnoreCase);
-
     private static async Task<IResult> HandleCreateReplica(
         string serviceId,
         HttpContext context)
@@ -42,6 +36,8 @@ internal static partial class FeatureServerEndpoints
         {
             return accessError;
         }
+
+        var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
@@ -66,14 +62,14 @@ internal static partial class FeatureServerEndpoints
         var replicaId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
 
-        var record = new ReplicaRecord(
+        var record = new ReplicaState(
             replicaId,
             replicaName,
             serviceId,
             syncModel,
             layerIds,
             now);
-        _replicaStore[replicaId] = record;
+        await replicaStore.SetAsync(record, cancellationToken: cancellationToken);
 
         var response = new CreateReplicaResponse
         {
@@ -114,6 +110,8 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
+
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
@@ -129,10 +127,19 @@ internal static partial class FeatureServerEndpoints
                 "replicaID parameter is required");
         }
 
-        if (!_replicaStore.TryGetValue(replicaId, out var replica))
+        activity?.SetTag("honua.replicaId", replicaId);
+
+        var replica = await replicaStore.GetAsync(replicaId, cancellationToken);
+        if (replica == null)
         {
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Replica '{replicaId}' not found.");
+        }
+
+        if (!string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
         // Query real feature counts from the database for each layer in the replica.
@@ -192,6 +199,8 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
+
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
@@ -207,10 +216,19 @@ internal static partial class FeatureServerEndpoints
                 "replicaID parameter is required");
         }
 
-        if (!_replicaStore.TryGetValue(replicaId, out var replica))
+        activity?.SetTag("honua.replicaId", replicaId);
+
+        var replica = await replicaStore.GetAsync(replicaId, cancellationToken);
+        if (replica == null)
         {
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Replica '{replicaId}' not found.");
+        }
+
+        if (!string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
@@ -226,11 +244,11 @@ internal static partial class FeatureServerEndpoints
                 features = System.Text.Json.JsonSerializer.Deserialize(
                     editsJson, FeatureServerJsonContext.Default.GeoServicesFeatureArray);
             }
-            catch (System.Text.Json.JsonException ex)
+            catch (System.Text.Json.JsonException)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid edits parameter",
-                    [$"edits must be a valid JSON array: {ex.Message}"]);
+                    ["edits must be a valid JSON array of features."]);
             }
 
             if (features is { Length: > 0 })
@@ -253,13 +271,9 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // Update the last sync time; if the replica was removed concurrently, treat as not found
+        // Update the last sync time in distributed store.
         var updated = replica with { LastSyncTime = DateTimeOffset.UtcNow };
-        if (!_replicaStore.TryUpdate(replicaId, updated, replica))
-        {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found.");
-        }
+        await replicaStore.SetAsync(updated, cancellationToken: cancellationToken);
 
         var response = new SynchronizeReplicaResponse
         {
@@ -294,6 +308,8 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
+
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
@@ -309,7 +325,18 @@ internal static partial class FeatureServerEndpoints
                 "replicaID parameter is required");
         }
 
-        if (!_replicaStore.TryRemove(replicaId, out _))
+        activity?.SetTag("honua.replicaId", replicaId);
+
+        var replica = await replicaStore.GetAsync(replicaId, cancellationToken);
+        if (replica == null ||
+            !string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var removed = await replicaStore.RemoveAsync(replicaId, cancellationToken);
+        if (!removed)
         {
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Replica '{replicaId}' not found.");
@@ -337,19 +364,5 @@ internal static partial class FeatureServerEndpoints
         }
 
         return ids.Count > 0 ? ids.ToArray() : serviceLayers.Select(l => l.Id).ToArray();
-    }
-
-    /// <summary>
-    /// Internal record for tracking replicas in memory.
-    /// </summary>
-    private sealed record ReplicaRecord(
-        string ReplicaId,
-        string ReplicaName,
-        string ServiceId,
-        string SyncModel,
-        int[] LayerIds,
-        DateTimeOffset CreatedAt)
-    {
-        public DateTimeOffset LastSyncTime { get; init; } = CreatedAt;
     }
 }

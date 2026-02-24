@@ -112,6 +112,7 @@ public static class Operations
     public const string Append = "Append";
     public const string Calculate = "Calculate";
     public const string QueryDomains = "QueryDomains";
+    public const string QueryRelationships = "QueryRelationships";
     public const string ValidateSql = "ValidateSql";
 
     // Test Quality Operations

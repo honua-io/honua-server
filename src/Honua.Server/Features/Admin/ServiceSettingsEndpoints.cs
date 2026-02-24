@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -46,7 +47,7 @@ internal static class ServiceSettingsEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, ProblemHttpResult>>
         HandleListServices(
             [FromServices] ILayerCatalog catalog,
             ILogger<ServiceSettingsEndpointsLog> logger,
@@ -66,11 +67,14 @@ internal static class ServiceSettingsEndpoints
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to list services");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to list services."));
+            return TypedResults.Problem(
+                title: "Service listing failed",
+                detail: "An internal error occurred while listing services.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
         HandleGetSettings(
             string serviceName,
             [FromServices] ILayerCatalog catalog,
@@ -91,11 +95,14 @@ internal static class ServiceSettingsEndpoints
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to get service settings for {ServiceName}", serviceName);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to get service settings."));
+            return TypedResults.Problem(
+                title: "Service settings retrieval failed",
+                detail: "An internal error occurred while retrieving service settings.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateProtocols(
             string serviceName,
             UpdateProtocolsRequest request,
@@ -126,6 +133,7 @@ internal static class ServiceSettingsEndpoints
             };
 
             await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
+            await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
 
             // Re-read to return updated state
             var updated = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
@@ -135,11 +143,14 @@ internal static class ServiceSettingsEndpoints
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to update protocols for {ServiceName}", serviceName);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to update service protocols."));
+            return TypedResults.Problem(
+                title: "Protocol update failed",
+                detail: "An internal error occurred while updating service protocols.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateMapServerSettings(
             string serviceName,
             UpdateMapServerSettingsRequest request,
@@ -175,6 +186,7 @@ internal static class ServiceSettingsEndpoints
             };
 
             await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
+            await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
 
             // Re-read to return updated state
             var refreshed = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
@@ -184,7 +196,10 @@ internal static class ServiceSettingsEndpoints
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to update MapServer settings for {ServiceName}", serviceName);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to update MapServer settings."));
+            return TypedResults.Problem(
+                title: "MapServer settings update failed",
+                detail: "An internal error occurred while updating MapServer settings.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -208,5 +223,30 @@ internal static class ServiceSettingsEndpoints
                 MaxFeaturesPerLayer = mapConfig.MaxFeaturesPerLayer
             }
         };
+    }
+
+    private static async Task InvalidateServiceCatalogCacheAsync(
+        HttpContext context,
+        string serviceName,
+        ServiceDefinition service,
+        ILogger<ServiceSettingsEndpointsLog> logger)
+    {
+        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (cacheInvalidator == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await cacheInvalidator.InvalidateServiceCatalogAsync(
+                serviceName,
+                service.Layers.Select(layer => layer.Id),
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Failed to invalidate service catalog cache for {ServiceName}", serviceName);
+        }
     }
 }
