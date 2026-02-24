@@ -42,7 +42,7 @@ internal static partial class MapServerEndpoints
     private const double CiteLakesDefaultElevation = 500;
     private const string CiteAutosDefaultTime = "2000-01-01T00:00:30Z";
     private const string CiteAutosExtent = "2000-01-01T00:00:00Z/2000-01-01T00:01:00Z/PT5S";
-    private static readonly DateTimeOffset[] CiteAutosInstants =
+    private static readonly DateTimeOffset[] _citeAutosInstants =
     [
         new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero),
         new DateTimeOffset(2000, 1, 1, 0, 0, 5, TimeSpan.Zero),
@@ -58,7 +58,7 @@ internal static partial class MapServerEndpoints
         new DateTimeOffset(2000, 1, 1, 0, 0, 55, TimeSpan.Zero),
         new DateTimeOffset(2000, 1, 1, 0, 1, 0, TimeSpan.Zero)
     ];
-    private static readonly (int X, int Y)[] CiteAutosMarkerPoints =
+    private static readonly (int X, int Y)[] _citeAutosMarkerPoints =
     [
         (135, 105),
         (95, 115),
@@ -1301,7 +1301,7 @@ internal static partial class MapServerEndpoints
             }
 
             var nearestIndex = GetNearestCiteAutosInstantIndex(instantValue);
-            var nearestInstant = CiteAutosInstants[nearestIndex - 1];
+            var nearestInstant = _citeAutosInstants[nearestIndex - 1];
             activeInstants.Add(nearestIndex);
 
             if (nearestInstant != instantValue && nearestWarningValue is null)
@@ -1348,7 +1348,7 @@ internal static partial class MapServerEndpoints
     {
         if (string.Equals(token, "current", StringComparison.OrdinalIgnoreCase))
         {
-            value = CiteAutosInstants[^1];
+            value = _citeAutosInstants[^1];
             return true;
         }
 
@@ -1367,9 +1367,9 @@ internal static partial class MapServerEndpoints
 
     private static IEnumerable<(DateTimeOffset Instant, int Index)> EnumerateCiteAutosInstants()
     {
-        for (var i = 0; i < CiteAutosInstants.Length; i++)
+        for (var i = 0; i < _citeAutosInstants.Length; i++)
         {
-            yield return (CiteAutosInstants[i], i + 1);
+            yield return (_citeAutosInstants[i], i + 1);
         }
     }
 
@@ -1377,9 +1377,9 @@ internal static partial class MapServerEndpoints
     {
         var nearestDistance = long.MaxValue;
         var nearestIndex = 1;
-        for (var i = 0; i < CiteAutosInstants.Length; i++)
+        for (var i = 0; i < _citeAutosInstants.Length; i++)
         {
-            var distance = Math.Abs((CiteAutosInstants[i] - timestamp).Ticks);
+            var distance = Math.Abs((_citeAutosInstants[i] - timestamp).Ticks);
             if (distance < nearestDistance)
             {
                 nearestDistance = distance;
@@ -1543,12 +1543,12 @@ internal static partial class MapServerEndpoints
 
         foreach (var marker in activeMarkers)
         {
-            if (marker < 1 || marker > CiteAutosMarkerPoints.Length)
+            if (marker < 1 || marker > _citeAutosMarkerPoints.Length)
             {
                 continue;
             }
 
-            var point = CiteAutosMarkerPoints[marker - 1];
+            var point = _citeAutosMarkerPoints[marker - 1];
             canvas.DrawRect(ScaleRect(point.X, point.Y, 10, 10, width, height, 420, 240), markerPaint);
         }
 

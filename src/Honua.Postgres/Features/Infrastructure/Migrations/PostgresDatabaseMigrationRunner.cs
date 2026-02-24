@@ -12,8 +12,8 @@ namespace Honua.Postgres.Features.Infrastructure.Migrations;
 internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 {
     private const long MigrationLockKey = 8_044_282_257_919_950_151;
-    private static readonly TimeSpan MigrationLockWaitTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan MigrationLockRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
 
     public async Task<DatabaseMigrationResult> RunMigrationsAsync(
         string connectionString,
@@ -40,7 +40,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         if (!lockAcquired)
         {
             var error = new TimeoutException(
-                $"Timed out waiting {MigrationLockWaitTimeout.TotalMinutes:F0} minute(s) for database migration lock.");
+                $"Timed out waiting {_migrationLockWaitTimeout.TotalMinutes:F0} minute(s) for database migration lock.");
             return DatabaseMigrationResult.Failed(error, error.Message);
         }
 
@@ -73,7 +73,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 
     private static async Task<bool> TryAcquireMigrationLockAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.Add(MigrationLockWaitTimeout);
+        var deadline = DateTime.UtcNow.Add(_migrationLockWaitTimeout);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -87,7 +87,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 return true;
             }
 
-            await Task.Delay(MigrationLockRetryDelay, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(_migrationLockRetryDelay, cancellationToken).ConfigureAwait(false);
         }
 
         return false;

@@ -22,7 +22,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
 {
     private const string KeyPrefix = "featureserver:replica:";
     private const int MaxFallbackEntries = 5000;
-    private static readonly TimeSpan DefaultTtl = TimeSpan.FromDays(7);
+    private static readonly TimeSpan _defaultTtl = TimeSpan.FromDays(7);
 
     private readonly IDistributedCache? _cache;
     private readonly ILogger<DistributedReplicaStore> _logger;
@@ -41,7 +41,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         ArgumentNullException.ThrowIfNull(replica);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var effectiveTtl = ttl ?? DefaultTtl;
+        var effectiveTtl = ttl ?? _defaultTtl;
         var now = DateTimeOffset.UtcNow;
         _fallback[replica.ReplicaId] = new FallbackReplicaEntry(replica, now.Add(effectiveTtl));
         CleanupFallback(now, enforceLimit: true);
@@ -83,7 +83,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                     var replica = JsonSerializer.Deserialize(payload, FeatureServerJsonContext.Default.ReplicaState);
                     if (replica != null)
                     {
-                        _fallback[replicaId] = new FallbackReplicaEntry(replica, now.Add(DefaultTtl));
+                        _fallback[replicaId] = new FallbackReplicaEntry(replica, now.Add(_defaultTtl));
                         return replica;
                     }
                 }
