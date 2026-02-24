@@ -181,6 +181,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Reclaim disk space for test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk space before cleanup:"
+          df -h
+          docker system df || true
+
+          if command -v sudo >/dev/null 2>&1; then
+            SUDO="sudo"
+          else
+            SUDO=""
+          fi
+
+          $SUDO rm -rf /usr/local/lib/android || true
+          $SUDO rm -rf /opt/ghc || true
+          $SUDO rm -rf /usr/share/swift || true
+          $SUDO rm -rf /opt/hostedtoolcache/CodeQL || true
+
+          docker system prune -af --volumes || true
+          docker builder prune -af || true
+
+          echo "Disk space after cleanup:"
+          df -h
+          docker system df || true
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -248,12 +274,12 @@ jobs:
 
       - name: Pre-pull Docker images for faster tests
         run: |
-          docker pull postgis/postgis:16-3.4-alpine || true
-          docker pull postgis/postgis:18-3.6 || true
+          docker pull --quiet postgis/postgis:16-3.4-alpine || true
+          docker pull --quiet postgis/postgis:18-3.6 || true
 
       - name: Start emulator containers (Azurite + Localstack)
         run: |
-          docker compose -f .devcontainer/docker-compose.emulators.yml up -d
+          docker compose -f .devcontainer/docker-compose.emulators.yml up -d --quiet-pull
           for i in {1..30}; do
             if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
               && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
