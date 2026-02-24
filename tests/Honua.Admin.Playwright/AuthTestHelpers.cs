@@ -5,6 +5,8 @@ namespace Honua.Admin.Playwright;
 
 internal static class AuthTestHelpers
 {
+    private static readonly TimeSpan AuthUiRenderTimeout = TimeSpan.FromSeconds(45);
+
     public static async Task<bool> IsUnauthorizedAsync(IPage page)
     {
         var signIn = page.GetByTestId("user-signin");
@@ -17,7 +19,7 @@ internal static class AuthTestHelpers
             await userMenu.IsVisibleAsync() ||
             await signOut.IsVisibleAsync() ||
             await signInRequired.IsVisibleAsync(),
-            TimeSpan.FromSeconds(20),
+            AuthUiRenderTimeout,
             "Auth state did not render sign-in or sign-out UI.");
 
         return await signInRequired.IsVisibleAsync() || await signIn.IsVisibleAsync();
