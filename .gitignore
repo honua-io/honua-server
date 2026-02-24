@@ -246,6 +246,13 @@ cite-tiles-results/*
 !cite-tiles-results/cite-summary.md
 !cite-tiles-results/conformance.json
 client-compat-results/
+# Deferred local scaffolding for issue #320 (not shipping in this PR)
+docker/client-compat-compose.yml
+docker/client-compat-seed.sql
+scripts/CLIENT_COMPAT_README.md
+scripts/client-compat-server.sh
+scripts/run-client-compat-tests.ps1
+scripts/setup-playwright-wsl.sh
 .tmp-cite/
 cite-wms-results/
 cite-wmts-results/
