@@ -24,6 +24,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:split-packages": "npm run build --silent && node scripts/prepare-split-packages.mjs",
+    "pack:split-packages": "npm run build:split-packages --silent && npm pack ./dist/packages/honua-sdk && npm pack ./dist/packages/honua-sdk-esri-compat && npm pack ./dist/packages/honua-migrate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js scan",

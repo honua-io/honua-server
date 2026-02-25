@@ -37,6 +37,25 @@ npm run typecheck
 npm test
 npm run scan:arcgis -- ../../path/to/arcgis-app
 npm run migrate:arcgis -- ../../path/to/arcgis-app --write --report migration-report.json
+npm run build:split-packages
+```
+
+## Split Package Artifacts
+
+Generate publish-ready split packages under `dist/packages/`:
+
+- `@honua/sdk` -> `dist/packages/honua-sdk`
+- `@honua/sdk-esri-compat` -> `dist/packages/honua-sdk-esri-compat`
+- `@honua/honua-migrate` -> `dist/packages/honua-migrate`
+
+```bash
+npm run build:split-packages
+```
+
+Create local tarballs for all split packages:
+
+```bash
+npm run pack:split-packages
 ```
 
 ## Migration CLI
