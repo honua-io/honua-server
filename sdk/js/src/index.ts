@@ -40,6 +40,7 @@ export type {
   ArcGisUsageStyle,
   JsMigrationReport,
   ManualRewriteMetric,
+  ManualInterventionMetric,
   MigrationGateResult,
   MigrationReadiness,
   MigrationReasonSummary,

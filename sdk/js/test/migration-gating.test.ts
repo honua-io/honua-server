@@ -40,6 +40,14 @@ function createReport(): JsMigrationReport {
       ratio: 0.2,
       scope: "scope",
     },
+    manualInterventionMetric: {
+      numerator: 2,
+      denominator: 6,
+      ratio: 0.3333333333333333,
+      scope: "scope",
+      manualCodemodCallSites: 1,
+      unhandledUsageHits: 1,
+    },
     readiness: "blocked",
     gates: [
       {

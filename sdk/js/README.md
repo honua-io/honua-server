@@ -59,6 +59,7 @@ The codemod is intentionally conservative:
 - it skips complex constructors and records manual TODO entries in the report,
 - optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
 - it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,
+- it computes `manualIntervention = numerator / denominator` across codemod-scoped call sites plus unhandled ArcGIS usage hits,
 - it supports CI gating flags:
   - `--fail-on-manual`
   - `--fail-on-unhandled`

@@ -61,6 +61,7 @@ function runCodemod(args: ParsedArgs): void {
       `autoMigrated=${codemodResult.metrics.autoMigratedCallSites}`,
       `manual=${codemodResult.metrics.manualCallSites}`,
       `manualRewrite=${report.manualRewriteMetric.numerator}/${report.manualRewriteMetric.denominator}`,
+      `manualIntervention=${report.manualInterventionMetric.numerator}/${report.manualInterventionMetric.denominator}`,
       `writeMode=${args.write ? "enabled" : "dry-run"}`,
       `annotateTodos=${args.annotateTodos ? "enabled" : "disabled"}`,
       `readiness=${report.readiness}`,

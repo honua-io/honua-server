@@ -108,6 +108,13 @@ describe("buildJsMigrationReport", () => {
       denominator: 4,
       ratio: 0.25,
     });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 1,
+      denominator: 4,
+      ratio: 0.25,
+      manualCodemodCallSites: 1,
+      unhandledUsageHits: 0,
+    });
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 1,
       map: 0,

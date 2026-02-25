@@ -13,12 +13,22 @@ export interface ManualRewriteMetric {
   scope: string;
 }
 
+export interface ManualInterventionMetric {
+  numerator: number;
+  denominator: number;
+  ratio: number;
+  scope: string;
+  manualCodemodCallSites: number;
+  unhandledUsageHits: number;
+}
+
 export interface JsMigrationReport {
   rootDir: string;
   scanSummary: string;
   scanReport: ArcGisScanReport;
   codemodResult: EsriCompatCodemodResult;
   manualRewriteMetric: ManualRewriteMetric;
+  manualInterventionMetric: ManualInterventionMetric;
   readiness: MigrationReadiness;
   gates: MigrationGateResult[];
   manualTodosByKind: Record<CodemodConstructorKind, number>;
@@ -68,6 +78,14 @@ export function buildJsMigrationReport(
   const manualTodosByKind = summarizeManualTodosByKind(codemodResult.manualTodos);
   const manualTodoReasons = summarizeManualTodoReasons(codemodResult.manualTodos);
   const unhandledArcGisModules = summarizeUnhandledModules(resolvedScan);
+  const unhandledUsageHits = unhandledArcGisModules.reduce(
+    (total, moduleItem) => total + moduleItem.count,
+    0,
+  );
+  const interventionNumerator = numerator + unhandledUsageHits;
+  const interventionDenominator = denominator + unhandledUsageHits;
+  const interventionRatio =
+    interventionDenominator === 0 ? 0 : interventionNumerator / interventionDenominator;
   const gates = buildMigrationGates(codemodResult, resolvedScan, unhandledArcGisModules);
   const readiness = determineReadiness(gates);
 
@@ -81,6 +99,15 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope: "FeatureLayer/Map/MapView/SceneView/WebMap constructor call sites in safe-codemod scope",
+    },
+    manualInterventionMetric: {
+      numerator: interventionNumerator,
+      denominator: interventionDenominator,
+      ratio: interventionRatio,
+      scope:
+        "Codemod-scoped call sites plus unhandled ArcGIS module usage hits (static-import/dynamic-import/require)",
+      manualCodemodCallSites: numerator,
+      unhandledUsageHits,
     },
     readiness,
     gates,

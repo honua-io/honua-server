@@ -91,6 +91,13 @@ describe("arcgis migration integration", () => {
     expect(report.scanReport.flags).toContain("webmap-detected");
     expect(report.manualRewriteMetric.numerator).toBe(1);
     expect(report.manualRewriteMetric.denominator).toBe(6);
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 1,
+      denominator: 6,
+      ratio: 1 / 6,
+      manualCodemodCallSites: 1,
+      unhandledUsageHits: 0,
+    });
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 1,
       map: 0,
@@ -159,6 +166,13 @@ describe("arcgis migration integration", () => {
       denominator: 3,
       ratio: 0,
     });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 0,
+      denominator: 3,
+      ratio: 0,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 0,
+    });
     expect(report.unhandledArcGisModules).toEqual([]);
     expect(report.readiness).toBe("ready");
     expect(report.gates).toEqual([
@@ -205,6 +219,13 @@ describe("arcgis migration integration", () => {
       numerator: 0,
       denominator: 0,
       ratio: 0,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 1,
+      denominator: 1,
+      ratio: 1,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 1,
     });
     expect(report.unhandledArcGisModules).toEqual([
       {
